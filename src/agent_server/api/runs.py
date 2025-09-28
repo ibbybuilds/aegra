@@ -280,6 +280,11 @@ async def create_and_stream_run(
     if not assistant:
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
+    # If context was not provided, default to the assistant's stored context
+    if not context and assistant.context:
+        context = assistant.context
+        config["configurable"] = context
+
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
     if assistant.graph_id not in available_graphs:

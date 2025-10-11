@@ -276,6 +276,59 @@ class TestSearchAssistants:
         assert isinstance(data, list)
         assert len(data) == 2
 
+    def test_search_assistants_zero_results(self, client, mock_assistant_service):
+        """Test searching when no assistants match"""
+        mock_assistant_service.search_assistants.return_value = []
+
+        resp = client.post(
+            "/assistants/search",
+            json={"graph_id": "nonexistent-graph"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 0
+
+    def test_search_assistants_single_result(self, client, mock_assistant_service):
+        """Test searching with exactly one result"""
+        assistant = make_assistant("asst-1", "Single Assistant", "unique-graph")
+        mock_assistant_service.search_assistants.return_value = [assistant]
+
+        resp = client.post(
+            "/assistants/search",
+            json={"name": "Single Assistant"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["assistant_id"] == "asst-1"
+        assert data[0]["name"] == "Single Assistant"
+
+    def test_search_assistants_multiple_results(self, client, mock_assistant_service):
+        """Test searching with multiple results"""
+        assistants = [
+            make_assistant("asst-1", "Assistant 1", "graph-1"),
+            make_assistant("asst-2", "Assistant 2", "graph-1"),
+            make_assistant("asst-3", "Assistant 3", "graph-1"),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={"graph_id": "graph-1"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 3
+        for i, assistant in enumerate(data, 1):
+            assert assistant["assistant_id"] == f"asst-{i}"
+            assert assistant["graph_id"] == "graph-1"
+
     def test_search_assistants_by_graph_id(self, client, mock_assistant_service):
         """Test searching by graph_id"""
         assistants = [
@@ -293,6 +346,39 @@ class TestSearchAssistants:
         assert len(data) == 1
         assert data[0]["graph_id"] == "my-graph"
 
+    def test_search_assistants_by_name(self, client, mock_assistant_service):
+        """Test searching by name"""
+        assistants = [
+            make_assistant("asst-1", "Test Assistant"),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={"name": "Test Assistant"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "Test Assistant"
+
+    def test_search_assistants_by_description(self, client, mock_assistant_service):
+        """Test searching by description"""
+        assistants = [
+            make_assistant("asst-1", description="A helpful assistant"),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={"description": "helpful"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+
     def test_search_assistants_by_metadata(self, client, mock_assistant_service):
         """Test searching by metadata"""
         assistants = [
@@ -303,6 +389,24 @@ class TestSearchAssistants:
         resp = client.post(
             "/assistants/search",
             json={"metadata": {"env": "prod"}},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+
+    def test_search_assistants_by_multiple_metadata_fields(
+        self, client, mock_assistant_service
+    ):
+        """Test searching by multiple metadata fields"""
+        assistants = [
+            make_assistant("asst-1", metadata={"env": "prod", "region": "us-east"}),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={"metadata": {"env": "prod", "region": "us-east"}},
         )
 
         assert resp.status_code == 200
@@ -323,6 +427,65 @@ class TestSearchAssistants:
         data = resp.json()
         assert isinstance(data, list)
 
+    def test_search_assistants_with_offset(self, client, mock_assistant_service):
+        """Test searching with offset to skip results"""
+        assistants = [
+            make_assistant("asst-2", "Assistant 2"),
+            make_assistant("asst-3", "Assistant 3"),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={"offset": 2, "limit": 10},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+    def test_search_assistants_with_small_limit(self, client, mock_assistant_service):
+        """Test searching with small page size"""
+        assistants = [
+            make_assistant("asst-1", "Assistant 1"),
+            make_assistant("asst-2", "Assistant 2"),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={"limit": 2},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+
+    def test_search_assistants_combined_filters(self, client, mock_assistant_service):
+        """Test searching with multiple filter criteria"""
+        assistants = [
+            make_assistant(
+                "asst-1", "Prod Assistant", "prod-graph", metadata={"env": "prod"}
+            ),
+        ]
+        mock_assistant_service.search_assistants.return_value = assistants
+
+        resp = client.post(
+            "/assistants/search",
+            json={
+                "name": "Prod Assistant",
+                "graph_id": "prod-graph",
+                "metadata": {"env": "prod"},
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "Prod Assistant"
+        assert data[0]["graph_id"] == "prod-graph"
+
 
 class TestCountAssistants:
     """Test POST /assistants/count"""
@@ -336,8 +499,41 @@ class TestCountAssistants:
         assert resp.status_code == 200
         assert resp.json() == 42
 
-    def test_count_assistants_with_filters(self, client, mock_assistant_service):
-        """Test counting with filters"""
+    def test_count_assistants_zero(self, client, mock_assistant_service):
+        """Test count returning zero"""
+        mock_assistant_service.count_assistants.return_value = 0
+
+        resp = client.post("/assistants/count", json={})
+
+        assert resp.status_code == 200
+        assert resp.json() == 0
+
+    def test_count_assistants_single(self, client, mock_assistant_service):
+        """Test count returning one"""
+        mock_assistant_service.count_assistants.return_value = 1
+
+        resp = client.post(
+            "/assistants/count",
+            json={"name": "Unique Assistant"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == 1
+
+    def test_count_assistants_multiple(self, client, mock_assistant_service):
+        """Test count returning multiple"""
+        mock_assistant_service.count_assistants.return_value = 15
+
+        resp = client.post(
+            "/assistants/count",
+            json={"graph_id": "popular-graph"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == 15
+
+    def test_count_assistants_by_graph_id(self, client, mock_assistant_service):
+        """Test counting assistants by graph_id"""
         mock_assistant_service.count_assistants.return_value = 5
 
         resp = client.post(
@@ -348,14 +544,44 @@ class TestCountAssistants:
         assert resp.status_code == 200
         assert resp.json() == 5
 
-    def test_count_assistants_zero(self, client, mock_assistant_service):
-        """Test count returning zero"""
-        mock_assistant_service.count_assistants.return_value = 0
+    def test_count_assistants_by_name(self, client, mock_assistant_service):
+        """Test counting assistants by name"""
+        mock_assistant_service.count_assistants.return_value = 2
 
-        resp = client.post("/assistants/count", json={})
+        resp = client.post(
+            "/assistants/count",
+            json={"name": "Test Assistant"},
+        )
 
         assert resp.status_code == 200
-        assert resp.json() == 0
+        assert resp.json() == 2
+
+    def test_count_assistants_by_metadata(self, client, mock_assistant_service):
+        """Test counting assistants by metadata"""
+        mock_assistant_service.count_assistants.return_value = 8
+
+        resp = client.post(
+            "/assistants/count",
+            json={"metadata": {"env": "prod"}},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == 8
+
+    def test_count_assistants_by_multiple_filters(self, client, mock_assistant_service):
+        """Test counting with multiple filter criteria"""
+        mock_assistant_service.count_assistants.return_value = 3
+
+        resp = client.post(
+            "/assistants/count",
+            json={
+                "graph_id": "prod-graph",
+                "metadata": {"env": "prod", "region": "us-east"},
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == 3
 
 
 class TestSetLatestAssistant:

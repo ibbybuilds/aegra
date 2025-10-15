@@ -1,7 +1,8 @@
-import logging
 import os
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.getLogger(__name__)
 
 _LANGFUSE_LOGGING_ENABLED = os.getenv("LANGFUSE_LOGGING", "false").lower() == "true"
 

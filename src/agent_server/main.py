@@ -20,8 +20,8 @@ if str(graphs_dir) not in sys.path:
     sys.path.insert(0, str(graphs_dir))
 
 # ruff: noqa: E402 - imports below require sys.path modification above
-import logging
-
+import structlog
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,13 +34,13 @@ from .api.threads import router as threads_router
 from .core.auth_middleware import get_auth_backend, on_auth_error
 from .core.database import db_manager
 from .core.health import router as health_router
-from .middleware import DoubleEncodedJSONMiddleware
+from .middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
 from .models.errors import AgentProtocolError, get_error_type
 
 # Task management for run cancellation
 active_runs: dict[str, asyncio.Task] = {}
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -82,6 +82,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+app.add_middleware(StructLogMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

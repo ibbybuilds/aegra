@@ -5,12 +5,15 @@ import contextlib
 import json
 from datetime import UTC, datetime
 
+import structlog
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from ..core.database import db_manager
 from ..core.serializers import GeneralSerializer
 from ..core.sse import SSEEvent
+
+logger = structlog.get_logger(__name__)
 
 
 class EventStore:
@@ -160,7 +163,7 @@ class EventStore:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Error in event store cleanup: {e}")
+                logger.error(f"Error in event store cleanup: {e}")
 
     async def _cleanup_old_runs(self) -> None:
         # Retain events for 1 hour by default

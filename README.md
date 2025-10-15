@@ -34,13 +34,13 @@ Aegra is participating in Hacktoberfest! We welcome **meaningful contributions**
 
 **What we're looking for:**
 - Feature development and enhancements
-- Bug fixes that improve stability  
+- Bug fixes that improve stability
 - Substantial documentation improvements
 - Testing and feedback on real use cases
 
 **What we're NOT looking for:**
 - Single typo fixes
-- Whitespace changes  
+- Whitespace changes
 - Low-effort PRs for swag hunting
 
 Quality over quantity. If you're here to build something real, we'd love your help.
@@ -243,10 +243,20 @@ HOST=0.0.0.0
 PORT=8000
 DEBUG=true
 
+# Logging
+LOG_LEVEL=INFO
+ENV_MODE=LOCAL # DEVELOPMENT, PRODUCTION, LOCAL (PRODUCTION outputs JSON logs)
+LOG_VERBOSITY=standard # standard, verbose (verbose outputs request-id for each request)
+
 # LLM Providers
 OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=...
 # TOGETHER_API_KEY=...
+
+LANGFUSE_LOGGING=true
+LANGFUSE_SECRET_KEY=sk-...
+LANGFUSE_PUBLIC_KEY=pk-...
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
 ### Graph Configuration

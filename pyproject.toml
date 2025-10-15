@@ -41,6 +41,8 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "uvicorn>=0.35.0",
     "langfuse>=3.3.4",
+    "structlog>=25.4.0",
+    "asgi-correlation-id>=4.3.4",
 ]
 
 [project.urls]

@@ -1,13 +1,14 @@
 """LangGraph-specific serialization"""
 
 import json
-import logging
 from typing import Any
+
+import structlog
 
 from .base import SerializationError, Serializer
 from .general import GeneralSerializer
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class LangGraphSerializer(Serializer):

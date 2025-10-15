@@ -3,11 +3,11 @@
 import asyncio
 import contextlib
 import json
-import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +38,7 @@ from ..services.thread_state_service import ThreadStateService
 # Use logging.getLogger(__name__) and appropriate levels (debug/info/warning/error).
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 thread_state_service = ThreadStateService()
 
@@ -442,8 +442,6 @@ async def delete_thread(
     Automatically cancels any active runs and deletes the thread.
     CASCADE DELETE automatically removes all run records when thread is deleted.
     """
-    logger = logging.getLogger(__name__)
-
     # Check if thread exists
     stmt = select(ThreadORM).where(
         ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity

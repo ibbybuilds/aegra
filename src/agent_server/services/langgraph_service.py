@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Any, TypeVar
 from uuid import uuid5
 
+import structlog
 from langgraph.graph import StateGraph
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
 from ..observability.langfuse_integration import get_tracing_callbacks
 
 State = TypeVar("State")
+logger = structlog.get_logger(__name__)
 
 
 class LangGraphService:
@@ -92,6 +94,7 @@ class LangGraphService:
         from sqlalchemy import select
 
         from ..core.orm import Assistant as AssistantORM
+        from ..core.orm import AssistantVersion as AssistantVersionORM
         from ..core.orm import get_session
 
         # Fixed namespace used to derive assistant IDs from graph IDs
@@ -116,6 +119,17 @@ class LangGraphService:
                         graph_id=graph_id,
                         config={},
                         user_id="system",
+                        metadata_dict={"created_by": "system"},
+                    )
+                )
+                session.add(
+                    AssistantVersionORM(
+                        assistant_id=assistant_id,
+                        version=1,
+                        name=graph_id,
+                        description=f"Default assistant for graph '{graph_id}'",
+                        graph_id=graph_id,
+                        metadata_dict={"created_by": "system"},
                     )
                 )
             await session.commit()
@@ -146,7 +160,7 @@ class LangGraphService:
             # a Postgres checkpointer for durable state.
             checkpointer_cm = await db_manager.get_checkpointer()
             store_cm = await db_manager.get_store()
-            print(f"🔧 Compiling graph '{graph_id}' with Postgres persistence")
+            logger.info(f"🔧 Compiling graph '{graph_id}' with Postgres persistence")
             compiled_graph = base_graph.compile(
                 checkpointer=checkpointer_cm, store=store_cm
             )
@@ -162,7 +176,7 @@ class LangGraphService:
                 )
             except Exception:
                 # Fallback: property may be immutably set; run as-is with warning
-                print(
+                logger.warning(
                     f"⚠️  Pre-compiled graph '{graph_id}' does not support checkpointer injection; running without persistence"
                 )
                 compiled_graph = base_graph

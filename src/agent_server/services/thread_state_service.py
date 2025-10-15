@@ -1,13 +1,14 @@
 """Thread state conversion service"""
 
-import logging
 from datetime import datetime
 from typing import Any
+
+import structlog
 
 from ..core.serializers import LangGraphSerializer
 from ..models.threads import ThreadCheckpoint, ThreadState
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class ThreadStateService:

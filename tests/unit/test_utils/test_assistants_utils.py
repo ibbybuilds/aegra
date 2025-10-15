@@ -2,8 +2,8 @@
 
 from uuid import uuid5
 
-from src.agent_server.constants import ASSISTANT_NAMESPACE_UUID
-from src.agent_server.utils.assistants import resolve_assistant_id
+from aegra.agent_server.constants import ASSISTANT_NAMESPACE_UUID
+from aegra.agent_server.utils.assistants import resolve_assistant_id
 
 
 class TestResolveAssistantId:

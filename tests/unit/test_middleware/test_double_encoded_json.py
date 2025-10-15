@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_server.middleware.double_encoded_json import DoubleEncodedJSONMiddleware
+from aegra.agent_server.middleware.double_encoded_json import DoubleEncodedJSONMiddleware
 
 
 @pytest.mark.asyncio

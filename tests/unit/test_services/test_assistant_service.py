@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import HTTPException
 
-from agent_server.models import Assistant, AssistantCreate, AssistantUpdate
-from agent_server.services.assistant_service import AssistantService, to_pydantic
+from aegra.agent_server.models import Assistant, AssistantCreate, AssistantUpdate
+from aegra.agent_server.services.assistant_service import AssistantService, to_pydantic
 
 
 @pytest.fixture

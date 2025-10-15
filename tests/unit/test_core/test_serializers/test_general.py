@@ -5,9 +5,9 @@ from collections import namedtuple
 import pytest
 from pydantic import BaseModel
 
-from src.agent_server.core.serializers.base import SerializationError
-from src.agent_server.core.serializers.general import GeneralSerializer
-from src.agent_server.core.serializers.langgraph import LangGraphSerializer
+from aegra.agent_server.core.serializers.base import SerializationError
+from aegra.agent_server.core.serializers.general import GeneralSerializer
+from aegra.agent_server.core.serializers.langgraph import LangGraphSerializer
 
 
 class PydanticV2Model(BaseModel):

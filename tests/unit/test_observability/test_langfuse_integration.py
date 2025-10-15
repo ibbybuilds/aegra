@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 def reload_langfuse_module():
     """Helper to reload the langfuse_integration module"""
-    import src.agent_server.observability.langfuse_integration as langfuse_module
+    import aegra.agent_server.observability.langfuse_integration as langfuse_module
 
     return importlib.reload(langfuse_module)
 

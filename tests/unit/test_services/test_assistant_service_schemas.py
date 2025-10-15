@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from agent_server.services.assistant_service import (
+from aegra.agent_server.services.assistant_service import (
     _extract_graph_schemas,
     _get_configurable_jsonschema,
     _state_jsonschema,

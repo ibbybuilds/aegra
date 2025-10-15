@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, mock_open, patch
 
 import pytest
 
-from agent_server.services.langgraph_service import (
+from aegra.agent_server.services.langgraph_service import (
     LangGraphService,
     create_run_config,
     create_thread_config,
@@ -57,7 +57,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ),
         ):
             service = LangGraphService()
@@ -75,7 +75,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ),
         ):
             service = LangGraphService("explicit.json")
@@ -96,7 +96,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ),
         ):
             service = LangGraphService()
@@ -117,7 +117,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ),
         ):
             service = LangGraphService()
@@ -205,7 +205,7 @@ class TestLangGraphServiceGraphs:
             patch.object(
                 service, "_load_graph_from_file", return_value=mock_graph
             ) as mock_load,
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             # Mock database manager
             mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
@@ -264,7 +264,7 @@ class TestLangGraphServiceGraphs:
             patch.object(
                 service, "_load_graph_from_file", return_value=new_graph
             ) as mock_load,
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
             mock_db_manager.get_store = AsyncMock(return_value="store")
@@ -530,7 +530,7 @@ class TestLangGraphServiceConfigs:
         additional_config = {"custom": "value"}
 
         with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
+            "aegra.agent_server.services.langgraph_service.get_tracing_callbacks",
             return_value=[],
         ):
             result = create_run_config(run_id, thread_id, mock_user, additional_config)
@@ -552,7 +552,7 @@ class TestLangGraphServiceConfigs:
         checkpoint = {"checkpoint_key": "checkpoint_value"}
 
         with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
+            "aegra.agent_server.services.langgraph_service.get_tracing_callbacks",
             return_value=[],
         ):
             result = create_run_config(
@@ -574,7 +574,7 @@ class TestLangGraphServiceConfigs:
         mock_callbacks = [Mock(), Mock()]
 
         with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
+            "aegra.agent_server.services.langgraph_service.get_tracing_callbacks",
             return_value=mock_callbacks,
         ):
             result = create_run_config(run_id, thread_id, mock_user)
@@ -602,7 +602,7 @@ class TestLangGraphServiceConfigs:
         mock_callbacks = [Mock(), Mock()]
 
         with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
+            "aegra.agent_server.services.langgraph_service.get_tracing_callbacks",
             return_value=mock_callbacks,
         ):
             result = create_run_config(run_id, thread_id, mock_user, additional_config)
@@ -627,7 +627,7 @@ class TestLangGraphServiceConfigs:
         mock_callbacks = [Mock(), Mock()]
 
         with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
+            "aegra.agent_server.services.langgraph_service.get_tracing_callbacks",
             return_value=mock_callbacks,
         ):
             result = create_run_config(run_id, thread_id, mock_user, additional_config)
@@ -640,7 +640,7 @@ class TestLangGraphServiceConfigs:
         thread_id = "thread-456"
 
         with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
+            "aegra.agent_server.services.langgraph_service.get_tracing_callbacks",
             return_value=[],
         ):
             result = create_run_config(run_id, thread_id, None)

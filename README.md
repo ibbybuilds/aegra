@@ -34,13 +34,13 @@ Aegra is participating in Hacktoberfest! We welcome **meaningful contributions**
 
 **What we're looking for:**
 - Feature development and enhancements
-- Bug fixes that improve stability  
+- Bug fixes that improve stability
 - Substantial documentation improvements
 - Testing and feedback on real use cases
 
 **What we're NOT looking for:**
 - Single typo fixes
-- Whitespace changes  
+- Whitespace changes
 - Low-effort PRs for swag hunting
 
 Quality over quantity. If you're here to build something real, we'd love your help.
@@ -133,10 +133,6 @@ Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langc
 docker compose up aegra
 
 # Local development
-docker compose up postgres -d
-python3 scripts/migrate.py upgrade
-python3 run_server.py
-
 # Create new migration
 python3 scripts/migrate.py revision --autogenerate -m "Add new feature"
 ```
@@ -202,24 +198,6 @@ SDK      API    Management      Storage
 - **PostgreSQL**: Durable checkpoints and metadata
 - **Agent Protocol**: Open-source specification for LLM agent APIs
 - **Config-driven**: `aegra.json` for graph definitions
-
-## 📁 Project Structure
-
-```text
-aegra/
-├── aegra.json           # Graph configuration
-├── auth.py              # Authentication setup
-├── graphs/              # Agent definitions
-│   └── react_agent/     # Example ReAct agent
-├── src/agent_server/    # FastAPI application
-│   ├── main.py         # Application entrypoint
-│   ├── core/           # Database & infrastructure
-│   ├── models/         # Pydantic schemas
-│   ├── services/       # Business logic
-│   └── utils/          # Helper functions
-├── tests/              # Test suite
-└── deployments/        # Docker & K8s configs
-```
 
 ## ⚙️ Configuration
 

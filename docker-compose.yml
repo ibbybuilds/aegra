@@ -33,17 +33,14 @@ services:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
-      - ./graphs:/app/graphs:ro
       - ./src:/app/src:ro # for hot reload support of server
-      - ./auth.py:/app/auth.py:ro
       - ./.env:/app/.env:ro
-      - ./alembic:/app/alembic:ro # for migrations
     command: >
       sh -c "
         echo 'Running database migrations...' &&
-        alembic upgrade head &&
+        aegra migrate upgrade &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        aegra serve --host 0.0.0.0 --port $${PORT:-8000}
       "
 
   # Redis (optional - for advanced queuing in future phases)

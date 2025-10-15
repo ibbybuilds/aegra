@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from agent_server.services.langgraph_service import LangGraphService
+from aegra.agent_server.services.langgraph_service import LangGraphService
 
 
 class TestLangGraphServiceRealFiles:
@@ -26,7 +26,7 @@ class TestLangGraphServiceRealFiles:
             config_path.write_text(json.dumps(config_data))
 
             with patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ):
                 service = LangGraphService(str(config_path))
                 await service.initialize()
@@ -47,7 +47,7 @@ class TestLangGraphServiceRealFiles:
             monkeypatch.setenv("AEGRA_CONFIG", str(config_path))
 
             with patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ):
                 service = LangGraphService()
                 await service.initialize()
@@ -69,7 +69,7 @@ class TestLangGraphServiceRealFiles:
             monkeypatch.chdir(temp_dir)
 
             with patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ):
                 service = LangGraphService()
                 await service.initialize()
@@ -95,7 +95,7 @@ class TestLangGraphServiceRealFiles:
         """Test error with missing config file"""
         with (
             patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
             ),
             patch("pathlib.Path.exists", return_value=False),
         ):
@@ -121,7 +121,7 @@ class TestLangGraphServiceDatabase:
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             # Mock database manager methods
             mock_checkpointer = Mock()
@@ -162,7 +162,7 @@ class TestLangGraphServiceDatabase:
             patch.object(
                 service, "_load_graph_from_file", return_value=mock_compiled_graph
             ),
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             mock_checkpointer = Mock()
             mock_store = Mock()
@@ -276,7 +276,7 @@ class TestLangGraphServiceErrorHandling:
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             # Mock database error
             mock_db_manager.get_checkpointer = AsyncMock(
@@ -302,7 +302,7 @@ class TestLangGraphServiceErrorHandling:
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
             mock_db_manager.get_store = AsyncMock(return_value="store")
@@ -324,7 +324,7 @@ class TestLangGraphServiceErrorHandling:
 
             with (
                 patch(
-                    "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                    "aegra.agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
                 ),
                 patch(
                     "pathlib.Path.open",
@@ -357,7 +357,7 @@ class TestLangGraphServiceConcurrency:
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
+            patch("aegra.agent_server.core.database.db_manager") as mock_db_manager,
         ):
             mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
             mock_db_manager.get_store = AsyncMock(return_value="store")

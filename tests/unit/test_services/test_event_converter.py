@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock
 
-from src.agent_server.services.event_converter import EventConverter
+from aegra.agent_server.services.event_converter import EventConverter
 
 
 class TestEventConverter:

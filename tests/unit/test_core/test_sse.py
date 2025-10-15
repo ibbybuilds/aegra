@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 
-from src.agent_server.core.sse import (
+from aegra.agent_server.core.sse import (
     SSEEvent,
     create_cancelled_event,
     create_checkpoints_event,

@@ -323,7 +323,7 @@ class TestCancelRun:
         override_session_dependency(app, Session)
         client = make_client(app)
 
-        with patch("agent_server.api.runs.streaming_service") as mock_streaming:
+        with patch("aegra.agent_server.api.runs.streaming_service") as mock_streaming:
             mock_streaming.cancel_run = AsyncMock()
 
             resp = client.post("/threads/test-thread-123/runs/test-run-123/cancel")

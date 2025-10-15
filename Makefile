@@ -13,7 +13,6 @@ help:
 	@echo "  make test-cov      - Run tests with coverage"
 	@echo "  make ci-check      - Run all CI checks locally"
 	@echo "  make clean         - Clean cache files"
-	@echo "  make run           - Run the server"
 
 install:
 	uv sync --no-dev
@@ -61,6 +60,3 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov 2>/dev/null || true
-
-run:
-	uv run python run_server.py

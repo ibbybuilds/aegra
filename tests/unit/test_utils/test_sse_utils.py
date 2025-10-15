@@ -1,6 +1,6 @@
 """Unit tests for SSE utilities"""
 
-from src.agent_server.utils.sse_utils import extract_event_sequence, generate_event_id
+from aegra.agent_server.utils.sse_utils import extract_event_sequence, generate_event_id
 
 
 class TestGenerateEventId:

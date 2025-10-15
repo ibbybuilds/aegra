@@ -3,7 +3,7 @@
 import pytest
 from starlette.authentication import AuthCredentials, SimpleUser
 
-from src.agent_server.core.auth_ctx import get_auth_ctx, with_auth_ctx
+from aegra.agent_server.core.auth_ctx import get_auth_ctx, with_auth_ctx
 
 
 class TestGetAuthCtx:

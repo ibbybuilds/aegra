@@ -35,10 +35,10 @@ docker compose up aegra
 
 ```bash
 # Start development server with auto-reload
-uv run uvicorn src.agent_server.main:app --reload
+uv run uvicorn aegra.agent_server.main:app --reload
 
 # Start with specific host/port
-uv run uvicorn src.agent_server.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn aegra.agent_server.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Start development database
 docker compose up postgres -d
@@ -121,7 +121,7 @@ Aegra is an **Agent Protocol server** that acts as an HTTP wrapper around **offi
 
 ### Database Manager Pattern
 
-**DatabaseManager** (src/agent_server/core/database.py):
+**DatabaseManager** (src/aegra/agent_server/core/database.py):
 
 - Initializes both SQLAlchemy engine and LangGraph components
 - Handles URL conversion between asyncpg and psycopg formats

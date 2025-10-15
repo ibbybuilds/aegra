@@ -30,9 +30,9 @@ dependencies = [
     "asyncpg>=0.30.0",
     "fastapi>=0.116.1",
     "greenlet>=3.2.3",
-    "langchain-openai>=0.3.28",
-    "langgraph>=0.6.0",
-    "langchain>=0.3.0",
+    "langchain-openai>=1.0.0a4",
+    "langgraph>=1.0.0a3",
+    "langchain>=1.0.0a9",
     "langgraph-checkpoint-postgres>=2.0.23",
     "psycopg[binary]>=3.2.9",
     "pydantic>=2.11.7",
@@ -41,6 +41,10 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "uvicorn>=0.35.0",
     "langfuse>=3.3.4",
+    "deepagents-tfix @ git+https://github.com/luccafrancica/deepagents.git@dev",
+    "langchain-core>=1.0.0a6",
+    "msgspec>=0.19.0",
+    "tavily-python>=0.7.12",
 ]
 
 [project.urls]
@@ -57,6 +61,9 @@ packages = ["src/agent_server"]
 
 [tool.hatch.build.targets.wheel.sources]
 "graphs/react_agent" = "react_agent"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 line-length = 88

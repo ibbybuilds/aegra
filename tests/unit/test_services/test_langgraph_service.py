@@ -573,9 +573,24 @@ class TestLangGraphServiceConfigs:
 
         mock_callbacks = [Mock(), Mock()]
 
-        with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
-            return_value=mock_callbacks,
+        with (
+            patch(
+                "agent_server.services.langgraph_service.get_tracing_callbacks",
+                return_value=mock_callbacks,
+            ),
+            patch(
+                "agent_server.services.langgraph_service.get_tracing_metadata",
+                return_value={
+                    "langfuse_session_id": thread_id,
+                    "langfuse_user_id": "user-123",
+                    "langfuse_tags": [
+                        "aegra_run",
+                        f"run:{run_id}",
+                        f"thread:{thread_id}",
+                        f"user:{mock_user.identity}",
+                    ],
+                },
+            ),
         ):
             result = create_run_config(run_id, thread_id, mock_user)
 

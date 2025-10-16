@@ -49,12 +49,12 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116.1" },
     { name = "greenlet", specifier = ">=3.2.3" },
     { name = "httpx", extras = ["http2"] },
-    { name = "langchain", specifier = ">=1.0.0a9" },
-    { name = "langchain-core", specifier = ">=1.0.0a6" },
-    { name = "langchain-openai", specifier = ">=1.0.0a4" },
+    { name = "langchain", specifier = "==1.0.0a13" },
+    { name = "langchain-core", specifier = "==1.0.0rc1" },
+    { name = "langchain-openai", specifier = "==1.0.0a4" },
     { name = "langfuse", specifier = ">=3.3.4" },
-    { name = "langgraph", specifier = ">=1.0.0a3" },
-    { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.23" },
+    { name = "langgraph", specifier = "==1.0.0a4" },
+    { name = "langgraph-checkpoint-postgres", specifier = "==2.0.25" },
     { name = "msgspec", specifier = ">=0.19.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.9" },
     { name = "pydantic", specifier = ">=2.11.7" },
@@ -707,16 +707,16 @@ wheels = [
 
 [[package]]
 name = "langchain"
-version = "1.0.0a14"
+version = "1.0.0a13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
     { name = "langgraph" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3e/83/06cdd3af3c9559b1ec280e2e93a620c6099ff6cddfd86e4d7b0fc2e45a54/langchain-1.0.0a14.tar.gz", hash = "sha256:264067fac9f38098c8dc69b348a33c2538e309bd4d20424484bd3ea2e138cc76", size = 424408, upload-time = "2025-10-11T01:53:08.641Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/a8/b7345c1d33cff326c78e9ea939fde1b71c3337e8dfc3845aad137557ceac/langchain-1.0.0a13.tar.gz", hash = "sha256:123d8e25f8c931044b0d7a55cdb8295cef41f96436101ce4a4a2faac52e640d3", size = 427967, upload-time = "2025-10-10T14:51:23.382Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/79/79b8d95b3566281e754b5e3955843bebe03fb1389a900dd6c67d4522a617/langchain-1.0.0a14-py3-none-any.whl", hash = "sha256:4a634e3996cbc82309279a6a9002d22bb16eec51629f8706744b85d4ae9e9820", size = 85212, upload-time = "2025-10-11T01:53:07.417Z" },
+    { url = "https://files.pythonhosted.org/packages/38/c9/5cc9c34a3fc2d4de8a3633cf27901860fb868d273378ccaa7b3ae3d0fab2/langchain-1.0.0a13-py3-none-any.whl", hash = "sha256:456e49ec518a79b43307b26c0577b580444ed48a2d5de9bbcd7f8e75f2ac8e8a", size = 90559, upload-time = "2025-10-10T14:51:22.021Z" },
 ]
 
 [[package]]

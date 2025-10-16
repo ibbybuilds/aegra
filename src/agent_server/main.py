@@ -143,6 +143,50 @@ async def root() -> dict[str, str]:
     return {"message": "Aegra", "version": "0.1.0", "status": "running"}
 
 
+@app.get("/debug/versions")
+async def debug_versions() -> dict[str, str]:
+    """Debug endpoint to check exact package versions being used by the running server"""
+    versions = {}
+    
+    try:
+        import langchain
+        versions["langchain"] = getattr(langchain, "__version__", "unknown")
+    except ImportError:
+        versions["langchain"] = "not installed"
+    
+    try:
+        import langchain_core
+        versions["langchain_core"] = getattr(langchain_core, "__version__", "unknown")
+    except ImportError:
+        versions["langchain_core"] = "not installed"
+    
+    try:
+        import langchain_openai
+        versions["langchain_openai"] = getattr(langchain_openai, "__version__", "unknown")
+    except ImportError:
+        versions["langchain_openai"] = "not installed"
+    
+    try:
+        import langgraph
+        versions["langgraph"] = getattr(langgraph, "__version__", "unknown")
+    except ImportError:
+        versions["langgraph"] = "not installed"
+    
+    try:
+        import langgraph_sdk
+        versions["langgraph_sdk"] = getattr(langgraph_sdk, "__version__", "unknown")
+    except ImportError:
+        versions["langgraph_sdk"] = "not installed"
+    
+    try:
+        import langgraph_checkpoint_postgres
+        versions["langgraph_checkpoint_postgres"] = getattr(langgraph_checkpoint_postgres, "__version__", "unknown")
+    except ImportError:
+        versions["langgraph_checkpoint_postgres"] = "not installed"
+    
+    return versions
+
+
 if __name__ == "__main__":
     import os
 

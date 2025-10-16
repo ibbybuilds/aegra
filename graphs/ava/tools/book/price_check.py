@@ -68,7 +68,7 @@ def _extract_additional_charges(additional_charges: Any) -> float:
     return total
 
 @tool(description="Check the price of a given rate ID for a hotel.")
-async def price_check(
+def price_check(
     rate_id: str = None,
     hotel_id: str = None,
     token: str = None,
@@ -115,8 +115,8 @@ async def price_check(
         # Make API request
         auth_headers = get_auth_headers()
         
-        async with httpx.AsyncClient(http2=True) as client:
-            response = await client.get(
+        with httpx.Client(http2=True) as client:
+            response = client.get(
                 f"{tt_baseurl}/api/hotel/{final_hotel_id}/{final_token}/price/{final_rate_id}",
                 headers=auth_headers
             )

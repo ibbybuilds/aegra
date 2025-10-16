@@ -10,7 +10,7 @@ import msgspec
 
 
 @tool(description="Get next hotel slice from cached results using state-based pagination.")
-async def get_next_hotels(
+def get_next_hotels(
     tool_call_id: Annotated[str, InjectedToolCallId] = None,
     hotelSearchKey: Annotated[str, InjectedState("hotelSearchKey")] = None,
     hotelCursor: Annotated[str, InjectedState("hotelCursor")] = "",
@@ -211,7 +211,7 @@ async def get_next_hotels(
 
 
 @tool(description="Get next room option from cached results using state-based pagination.")
-async def get_next_rooms(
+def get_next_rooms(
     tool_call_id: Annotated[str, InjectedToolCallId] = None,
     roomSearchKey: Annotated[str, InjectedState("roomSearchKey")] = None,
     roomCursor: Annotated[str, InjectedState("roomCursor")] = "",

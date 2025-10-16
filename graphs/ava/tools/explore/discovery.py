@@ -9,7 +9,7 @@ from ava.utils.ranking.rank_rooms import rank_rooms
 from ava.utils.jwt import get_auth_headers
 
 @tool(description="Query hotel names to resolve natural-language hotel names to hotel IDs. Takes a query string and city hint, returns hotel information including ID, name, and city.")
-async def query_hotel_name(
+def query_hotel_name(
     query: str,
     cityHint: str,
     tool_call_id: Annotated[str, InjectedToolCallId],
@@ -47,8 +47,8 @@ async def query_hotel_name(
         railway_baseurl = os.getenv("RAILWAY_BASEURL", "https://pinecone-service-local-staging-4870.up.railway.app")
         
         # Make POST request to Pinecone service
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
+        with httpx.Client() as client:
+            response = client.post(
                 f"{railway_baseurl}/search",
                 json=request_body,
                 timeout=30.0
@@ -123,7 +123,7 @@ async def query_hotel_name(
         )
 
 @tool(description="Get geo coordinates for a given location query using Google Places API.")
-async def get_geo_coordinates(
+def get_geo_coordinates(
     query: str,
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Union[Command, str]:
@@ -161,8 +161,8 @@ async def get_geo_coordinates(
         }
         
         # Make POST request to Google Places API
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
+        with httpx.Client() as client:
+            response = client.post(
                 "https://places.googleapis.com/v1/places:searchText",
                 headers=headers,
                 json=request_body,

@@ -1,6 +1,5 @@
 import httpx
 import json
-import asyncio
 import random
 import os
 import time
@@ -13,7 +12,7 @@ from ava.utils.ranking import rank_hotels_typed, rank_hotels
 from ava.utils.jwt import get_auth_headers
 
 @tool(description="Search for hotels with coordinates, dates, occupancy, and filters.")
-async def hotel_search(
+def hotel_search(
     circular_region: dict,
     dates: dict,
     occupancy: dict,
@@ -104,8 +103,8 @@ async def hotel_search(
             "correlationId": "test123"
         }
         
-        async with httpx.AsyncClient(http2=True, headers=init_headers) as client:
-            init_resp = await client.post(f"{techspian_baseurl}/api/hotel/availability/init", json=init_body)
+        with httpx.Client(http2=True, headers=init_headers) as client:
+            init_resp = client.post(f"{techspian_baseurl}/api/hotel/availability/init", json=init_body)
             init_resp.raise_for_status()
             token_data = init_resp.json()
             token = token_data["token"]
@@ -125,9 +124,9 @@ async def hotel_search(
                 auth_headers = get_auth_headers()
                 
                 # Create new client for results API call
-                async with httpx.AsyncClient(http2=True) as results_client:
+                with httpx.Client(http2=True) as results_client:
                     # Make GET request to results endpoint
-                    results_resp = await results_client.get(
+                    results_resp = results_client.get(
                         f"{tt_baseurl}/api/hotel/availability/{token}/results",
                         headers=auth_headers
                     )
@@ -223,7 +222,7 @@ async def hotel_search(
                     if attempt < max_retries - 1:
                         delay = min(base_delay * (2 ** attempt), max_delay)
                         jitter = random.uniform(0.1, 0.3) * delay
-                        await asyncio.sleep(delay + jitter)
+                        time.sleep(delay + jitter)
                     else:
                         # For voice-to-voice, use partial results if available instead of failing
                         if "hotels" in results_data and results_data["hotels"]:
@@ -249,7 +248,7 @@ async def hotel_search(
                     # Token not ready yet, continue polling
                     delay = min(base_delay * (2 ** attempt), max_delay)
                     jitter = random.uniform(0.1, 0.3) * delay
-                    await asyncio.sleep(delay + jitter)
+                    time.sleep(delay + jitter)
                     continue
                 else:
                     raise Exception(f"HTTP error during polling: {e}")
@@ -257,7 +256,7 @@ async def hotel_search(
                 if attempt < max_retries - 1:
                     delay = min(base_delay * (2 ** attempt), max_delay)
                     jitter = random.uniform(0.1, 0.3) * delay
-                    await asyncio.sleep(delay + jitter)
+                    time.sleep(delay + jitter)
                     continue
                 else:
                     raise Exception(f"Failed to get results after {max_retries} attempts: {e}")

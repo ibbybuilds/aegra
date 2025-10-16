@@ -17,7 +17,7 @@ def safe_get_state_value(state: dict, key: str, default=None):
         return default
 
 @tool(description="Get room details for a hotel. Auto-injects dates/occupancy/token from state when available from previous hotel search. Falls back to explicit parameters when needed.")
-async def rooms_and_rates(
+def rooms_and_rates(
     hotelId: str,
     dates: dict = None,
     occupancy: dict = None,
@@ -141,16 +141,16 @@ async def rooms_and_rates(
         # Make API request
         auth_headers = get_auth_headers()
         
-        async with httpx.AsyncClient(http2=True) as client:
+        with httpx.Client(http2=True) as client:
             if use_cached_token:
                 # GET request with cached token
-                results_resp = await client.get(
+                results_resp = client.get(
                     f"{tt_baseurl}{endpoint}",
                     headers=auth_headers
                 )
             else:
                 # POST request with dates/occupancy in correct API format
-                results_resp = await client.post(
+                results_resp = client.post(
                     f"{tt_baseurl}{endpoint}",
                     headers=auth_headers,
                     json=request_body

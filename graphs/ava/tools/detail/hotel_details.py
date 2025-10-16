@@ -7,7 +7,7 @@ from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 
 @tool(description="Get hotel details for a given hotel ID.")
-async def hotel_details(hotelId: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Union[Command, str]:
+def hotel_details(hotelId: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Union[Command, str]:
     """
     Get hotel details for a given hotel ID.
     
@@ -37,8 +37,8 @@ async def hotel_details(hotelId: str, tool_call_id: Annotated[str, InjectedToolC
             "correlationId": "test123"
         }
         
-        async with httpx.AsyncClient(http2=True) as client:
-            results_resp = await client.get(f"{techspian_baseurl}/api/hotelcontent/{hotelId}/detail", headers=auth_headers)
+        with httpx.Client(http2=True) as client:
+            results_resp = client.get(f"{techspian_baseurl}/api/hotelcontent/{hotelId}/detail", headers=auth_headers)
             results_resp.raise_for_status()
             
             # Get the response data

@@ -1,5 +1,5 @@
 import os
-from deepagents import async_create_deep_agent
+from deepagents import create_deep_agent
 from ava.middleware import HotelSearchMiddleware
 from ava.state import HotelSearchState
 from ava.prompts import *
@@ -29,7 +29,7 @@ detail_sub_agent = {
     "model_settings": {
         "model_name": "anthropic:claude-3-5-haiku-20241022",
         "temperature": 0,
-    }
+    },
 }
 
 research_sub_agent = {
@@ -40,14 +40,14 @@ research_sub_agent = {
     "model_settings": {
         "model_name": "anthropic:claude-3-5-haiku-20241022",
         "temperature": 0,
-    }
+    },
 }
 
 # Create the hotel agent with pagination tools available to main agent
-agent = async_create_deep_agent(
+agent = create_deep_agent(
     instructions=agent_instructions,
     tools=[get_next_hotels, get_next_rooms],
     subagents=[explore_sub_agent, research_sub_agent, detail_sub_agent],
     middleware=[HotelSearchMiddleware()],
     context_schema=HotelSearchState,  # Use our custom state schema
-)
+).with_config(recursion_limit=1000)

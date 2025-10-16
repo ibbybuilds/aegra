@@ -7,7 +7,7 @@ from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 
 @tool(description="Answer a question about company policies.")
-async def policy_qa(policy_question: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Union[Command, str]:
+def policy_qa(policy_question: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Union[Command, str]:
     """
     Answer a question about company policies.
 
@@ -40,8 +40,8 @@ async def policy_qa(policy_question: str, tool_call_id: Annotated[str, InjectedT
             "indexName": "semantic-search"
         }
         
-        async with httpx.AsyncClient(http2=True) as client:
-            results_resp = await client.post(f"{railway_baseurl}/search", headers=auth_headers, json=request_body)
+        with httpx.Client(http2=True) as client:
+            results_resp = client.post(f"{railway_baseurl}/search", headers=auth_headers, json=request_body)
             results_resp.raise_for_status()
             
             # Get the response data

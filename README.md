@@ -34,13 +34,13 @@ Aegra is participating in Hacktoberfest! We welcome **meaningful contributions**
 
 **What we're looking for:**
 - Feature development and enhancements
-- Bug fixes that improve stability  
+- Bug fixes that improve stability
 - Substantial documentation improvements
 - Testing and feedback on real use cases
 
 **What we're NOT looking for:**
 - Single typo fixes
-- Whitespace changes  
+- Whitespace changes
 - Low-effort PRs for swag hunting
 
 Quality over quantity. If you're here to build something real, we'd love your help.
@@ -107,17 +107,17 @@ docker compose up aegra
 
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:2024/health
 
 # Interactive API docs
-open http://localhost:8000/docs
+open http://localhost:2024/docs
 ```
 
 You now have a self-hosted LangGraph Platform alternative running locally.
 
 ## 💬 Agent Chat UI Compatible
 
-Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui). Simply set `NEXT_PUBLIC_API_URL=http://localhost:8000` and `NEXT_PUBLIC_ASSISTANT_ID=agent` in your Agent Chat UI environment to connect to your Aegra backend.
+Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui). Simply set `NEXT_PUBLIC_API_URL=http://localhost:2024` and `NEXT_PUBLIC_ASSISTANT_ID=agent` in your Agent Chat UI environment to connect to your Aegra backend.
 
 ## 👨‍💻 For Developers
 
@@ -133,12 +133,7 @@ Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langc
 docker compose up aegra
 
 # Local development
-docker compose up postgres -d
-python3 scripts/migrate.py upgrade
-python3 run_server.py
-
-# Create new migration
-python3 scripts/migrate.py revision --autogenerate -m "Add new feature"
+aegra migrate upgrade
 ```
 
 ## 🧪 Try the Example Agent
@@ -151,7 +146,7 @@ from langgraph_sdk import get_client
 
 async def main():
     # Connect to your self-hosted Aegra instance
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2024")
 
     # Create assistant (same API as LangGraph Platform)
     assistant = await client.assistants.create(
@@ -203,24 +198,6 @@ SDK      API    Management      Storage
 - **Agent Protocol**: Open-source specification for LLM agent APIs
 - **Config-driven**: `aegra.json` for graph definitions
 
-## 📁 Project Structure
-
-```text
-aegra/
-├── aegra.json           # Graph configuration
-├── auth.py              # Authentication setup
-├── graphs/              # Agent definitions
-│   └── react_agent/     # Example ReAct agent
-├── src/agent_server/    # FastAPI application
-│   ├── main.py         # Application entrypoint
-│   ├── core/           # Database & infrastructure
-│   ├── models/         # Pydantic schemas
-│   ├── services/       # Business logic
-│   └── utils/          # Helper functions
-├── tests/              # Test suite
-└── deployments/        # Docker & K8s configs
-```
-
 ## ⚙️ Configuration
 
 ### Environment Variables
@@ -240,7 +217,7 @@ AUTH_TYPE=noop  # noop, custom
 
 # Server
 HOST=0.0.0.0
-PORT=8000
+PORT=2024
 DEBUG=true
 
 # LLM Providers

@@ -87,7 +87,7 @@ pytest -v
 
 ### Run with coverage
 ```bash
-pytest --cov=src/agent_server --cov-report=html
+pytest --cov=src/aegra/agent_server --cov-report=html
 ```
 
 ## Test Markers
@@ -121,7 +121,7 @@ from tests.fixtures.clients import create_test_app, make_client
 ```python
 # tests/unit/test_utils/test_sse_utils.py
 import pytest
-from src.agent_server.utils import generate_event_id
+from aegra.agent_server.utils import generate_event_id
 
 @pytest.mark.unit
 def test_generate_event_id():

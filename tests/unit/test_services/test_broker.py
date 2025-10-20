@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from src.agent_server.services.broker import BrokerManager, RunBroker
+from aegra.agent_server.services.broker import BrokerManager, RunBroker
 
 
 class TestRunBroker:

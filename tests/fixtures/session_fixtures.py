@@ -69,7 +69,7 @@ def create_session_fixture(session_class: type = BasicSession, **kwargs):
 
 def override_session_dependency(app, session_class: type = BasicSession, **kwargs):
     """Override the session dependency with a mock session"""
-    from agent_server.core.orm import get_session as core_get_session
+    from aegra.agent_server.core.orm import get_session as core_get_session
 
     def session_factory():
         return session_class(**kwargs)

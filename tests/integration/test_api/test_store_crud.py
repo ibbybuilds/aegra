@@ -12,7 +12,7 @@ def client(mock_store):
     app = create_test_app(include_runs=False, include_threads=False)
 
     # Import and mount store router
-    from agent_server.api import store as store_module
+    from aegra.agent_server.api import store as store_module
 
     app.include_router(store_module.router)
 
@@ -21,7 +21,7 @@ def client(mock_store):
         return mock_store
 
     # Patch at module level
-    import agent_server.core.database as db_module
+    import aegra.agent_server.core.database as db_module
 
     db_module.db_manager.get_store = mock_get_store
 

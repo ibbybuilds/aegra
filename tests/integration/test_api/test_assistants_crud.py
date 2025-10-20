@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_server.services.assistant_service import get_assistant_service
+from aegra.agent_server.services.assistant_service import get_assistant_service
 from tests.fixtures.clients import create_test_app, make_client
 from tests.fixtures.test_helpers import make_assistant
 
@@ -13,7 +13,7 @@ def client(mock_assistant_service):
     app = create_test_app(include_runs=False, include_threads=False)
 
     # Import and mount assistants router
-    from agent_server.api import assistants as assistants_module
+    from aegra.agent_server.api import assistants as assistants_module
 
     app.include_router(assistants_module.router)
 

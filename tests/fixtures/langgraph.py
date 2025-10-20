@@ -80,7 +80,7 @@ def patch_langgraph_service(
     """
     fake = MockLangGraphService(agent=agent, graph=graph)
     return patch(
-        "agent_server.services.langgraph_service.get_langgraph_service",
+        "aegra.agent_server.services.langgraph_service.get_langgraph_service",
         autospec=True,
         return_value=fake,
     )

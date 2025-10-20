@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.agent_server.core.sse import SSEEvent
-from src.agent_server.services.event_store import EventStore
+from aegra.agent_server.core.sse import SSEEvent
+from aegra.agent_server.services.event_store import EventStore
 
 
 @pytest.fixture(scope="session")
@@ -127,7 +127,7 @@ def event_store(clean_event_store_tables):
             return result
 
     with patch(
-        "src.agent_server.services.event_store.db_manager.get_engine",
+        "aegra.agent_server.services.event_store.db_manager.get_engine",
         return_value=AsyncEngineWrapper(sync_engine),
     ):
         yield EventStore()

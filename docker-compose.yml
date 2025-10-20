@@ -22,28 +22,25 @@ services:
       context: .
       dockerfile: deployments/docker/Dockerfile
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "${PORT:-2024}:${PORT:-2024}"
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra
       - AUTH_TYPE=noop
       - DEBUG=true
-      - PORT=${PORT:-8000}
+      - PORT=${PORT:-2024}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
-      - ./graphs:/app/graphs:ro
       - ./src:/app/src:ro # for hot reload support of server
-      - ./auth.py:/app/auth.py:ro
       - ./.env:/app/.env:ro
-      - ./alembic:/app/alembic:ro # for migrations
     command: >
       sh -c "
         echo 'Running database migrations...' &&
-        alembic upgrade head &&
+        aegra migrate upgrade &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        aegra serve --host 0.0.0.0 --port $${PORT:-2024}
       "
 
   # Redis (optional - for advanced queuing in future phases)

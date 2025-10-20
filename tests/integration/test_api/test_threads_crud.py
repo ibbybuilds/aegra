@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_server.core.orm import get_session as core_get_session
+from aegra.agent_server.core.orm import get_session as core_get_session
 from tests.fixtures.clients import create_test_app, make_client
 from tests.fixtures.database import DummySessionBase, override_get_session_dep
 from tests.fixtures.session_fixtures import BasicSession, override_session_dependency

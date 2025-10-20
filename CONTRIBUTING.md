@@ -62,7 +62,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for clear an
 ### Scope (Optional)
 
 Use scope to specify which part of the codebase is affected:
-- `api`, `auth`, `graph`, `db`, `middleware`, `tests`, `docs`, `ci`
+- `cli`, `api`, `auth`, `graph`, `db`, `middleware`, `tests`, `docs`, `ci`
 
 ### Examples
 

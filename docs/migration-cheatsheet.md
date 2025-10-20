@@ -9,28 +9,6 @@ source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 ```
 
-## 🚀 Essential Commands
-
-```bash
-# Apply all pending migrations
-python3 scripts/migrate.py upgrade
-
-# Create new migration
-python3 scripts/migrate.py revision --autogenerate -m "Description"
-
-# Rollback last migration
-python3 scripts/migrate.py downgrade
-
-# Show migration history
-python3 scripts/migrate.py history
-
-# Show current version
-python3 scripts/migrate.py current
-
-# Reset database (⚠️ DESTRUCTIVE)
-python3 scripts/migrate.py reset
-```
-
 ## 🛠️ Daily Workflow
 
 **Docker (Recommended):**
@@ -45,12 +23,12 @@ docker compose up aegra
 ```bash
 # Start development
 docker compose up postgres -d
-python3 scripts/migrate.py upgrade
-python3 run_server.py
+aegra migrate upgrade
+aegra dev
 
 # Make database changes
-python3 scripts/migrate.py revision --autogenerate -m "Add new feature"
-python3 scripts/migrate.py upgrade
+aegra migrate revision "Add new feature"
+aegra migrate upgrade
 ```
 
 ## 🔍 Quick Troubleshooting
@@ -58,9 +36,8 @@ python3 scripts/migrate.py upgrade
 | Problem                   | Solution                              |
 | ------------------------- | ------------------------------------- |
 | Can't connect to database | `docker compose up postgres -d`       |
-| Migration fails           | `python3 scripts/migrate.py current`  |
-| Permission denied         | `chmod +x scripts/migrate.py`         |
-| Database broken           | `python3 scripts/migrate.py reset` ⚠️ |
+| Migration fails           | `aegra migrate current`               |
+| Database broken           | `aegra migrate reset` ⚠️              |
 
 ## 📚 Need More Help?
 

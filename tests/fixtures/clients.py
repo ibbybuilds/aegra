@@ -23,12 +23,12 @@ def create_test_app(include_runs: bool = True, include_threads: bool = True) -> 
     install_dummy_user_middleware(app)
 
     if include_threads:
-        from agent_server.api import threads as threads_module
+        from aegra.agent_server.api import threads as threads_module
 
         app.include_router(threads_module.router)
 
     if include_runs:
-        from agent_server.api import runs as runs_module
+        from aegra.agent_server.api import runs as runs_module
 
         app.include_router(runs_module.router)
 

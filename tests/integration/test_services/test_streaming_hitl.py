@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from agent_server.services.event_converter import EventConverter
-from agent_server.services.streaming_service import StreamingService
+from aegra.agent_server.services.event_converter import EventConverter
+from aegra.agent_server.services.streaming_service import StreamingService
 
 
 class TestStreamingInterruptProcessing:

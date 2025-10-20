@@ -31,16 +31,18 @@ dependencies = [
     "fastapi>=0.116.1",
     "greenlet>=3.2.3",
     "langchain-openai>=0.3.28",
-    "langgraph>=0.6.0",
+    "langgraph>=0.6.10",
     "langchain>=0.3.0",
     "langgraph-checkpoint-postgres>=2.0.23",
     "psycopg[binary]>=3.2.9",
-    "pydantic>=2.11.7",
+    "pydantic>=2.12.1",
     "pyjwt>=2.10.1",
     "python-dotenv>=1.1.1",
     "sqlalchemy>=2.0.0",
     "uvicorn>=0.35.0",
     "langfuse>=3.3.4",
+    "click>=8.2.1",
+    "testcontainers>=4.13.2",
 ]
 
 [project.urls]
@@ -50,13 +52,11 @@ Documentation = "https://github.com/ibbybuilds/aegra#readme"
 "Bug Tracker" = "https://github.com/ibbybuilds/aegra/issues"
 "Feature Requests" = "https://github.com/ibbybuilds/aegra/issues"
 
-
+[project.scripts]
+aegra = "aegra.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_server"]
-
-[tool.hatch.build.targets.wheel.sources]
-"graphs/react_agent" = "react_agent"
+packages = ["src/aegra"]
 
 [tool.ruff]
 line-length = 88
@@ -91,7 +91,7 @@ ignore = [
     "ARG",   # unused arguments in tests are common
     "S101",  # assert statements are expected in tests
 ]
-"alembic/**/*.py" = [
+"*/alembic/**/*.py" = [
     "ERA",   # commented code in migrations is intentional
 ]
 
@@ -119,12 +119,12 @@ markers = [
 ]
 
 [tool.bandit]
-exclude_dirs = ["tests", ".venv", "alembic"]
+exclude_dirs = ["tests", ".venv", "src/aegra/cli/alembic"]
 skips = ["B101"]
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["*/tests/*", "*/__pycache__/*", "*/alembic/*"]
+omit = ["tests/*", "*/__pycache__/*", "*/alembic/*"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -146,7 +146,7 @@ directory = "htmlcov"
 [dependency-groups]
 dev = [
     "ruff>=0.8.4",
-    "langgraph-sdk==0.2.4",
+    "langgraph-sdk==0.2.9",
     "mypy>=1.17.1",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",

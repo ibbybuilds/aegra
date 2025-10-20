@@ -9,7 +9,7 @@ from starlette.authentication import AuthCredentials, AuthenticationError
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 
-from agent_server.core.auth_middleware import (
+from aegra.agent_server.core.auth_middleware import (
     LangGraphAuthBackend,
     LangGraphUser,
     get_auth_backend,
@@ -311,7 +311,7 @@ class TestLangGraphAuthBackend:
         backend.auth_instance = mock_auth_instance
 
         # Mock the Auth.exceptions.HTTPException to be the same as our exception
-        with patch("agent_server.core.auth_middleware.Auth") as mock_auth:
+        with patch("aegra.agent_server.core.auth_middleware.Auth") as mock_auth:
             mock_auth.exceptions.HTTPException = Exception
 
             mock_conn = Mock(spec=HTTPConnection)

@@ -9,10 +9,10 @@ from unittest.mock import Mock
 import pytest
 from fastapi import HTTPException
 
-from agent_server.core.orm import Assistant as AssistantORM
-from agent_server.core.orm import AssistantVersion as AssistantVersionORM
-from agent_server.models import Assistant, AssistantCreate, AssistantUpdate
-from agent_server.services.assistant_service import AssistantService
+from aegra.agent_server.core.orm import Assistant as AssistantORM
+from aegra.agent_server.core.orm import AssistantVersion as AssistantVersionORM
+from aegra.agent_server.models import Assistant, AssistantCreate, AssistantUpdate
+from aegra.agent_server.services.assistant_service import AssistantService
 from tests.fixtures.database import DummySessionBase
 
 
@@ -249,7 +249,7 @@ class TestAssistantServiceDatabase:
         assistant_service.session.scalar.return_value = assistant
 
         # Mock version query results with proper ORM objects
-        from agent_server.core.orm import AssistantVersion as AssistantVersionORM
+        from aegra.agent_server.core.orm import AssistantVersion as AssistantVersionORM
 
         version1 = AssistantVersionORM(
             assistant_id=assistant.assistant_id,
@@ -299,7 +299,7 @@ class TestAssistantServiceDatabase:
         assistant = await assistant_service.create_assistant(create_request, "user-123")
 
         # Mock scalar calls: assistant, version, updated assistant
-        from agent_server.core.orm import AssistantVersion as AssistantVersionORM
+        from aegra.agent_server.core.orm import AssistantVersion as AssistantVersionORM
 
         version_obj = AssistantVersionORM(
             assistant_id=assistant.assistant_id,

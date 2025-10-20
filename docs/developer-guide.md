@@ -44,7 +44,7 @@ source .venv/bin/activate  # Mac/Linux
 docker compose up aegra
 ```
 
-🎉 **You're ready to develop!** Visit http://localhost:8000/docs to see the API.
+🎉 **You're ready to develop!** Visit http://localhost:2024/docs to see the API.
 
 ## ✨ Code Quality & Standards
 

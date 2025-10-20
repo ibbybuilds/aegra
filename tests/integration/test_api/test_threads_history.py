@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_server.core.orm import (
+from aegra.agent_server.core.orm import (
     get_session as core_get_session,  # for dependency override
 )
 

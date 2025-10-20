@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_server.models import Assistant, Run, Thread
+from aegra.agent_server.models import Assistant, Run, Thread
 
 
 def make_assistant(

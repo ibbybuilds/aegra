@@ -2,7 +2,7 @@ import click
 
 from aegra.cli.dockerfile import dockerfile
 from aegra.cli.migrate import migrate
-from aegra.cli.server import dev, serve
+from aegra.cli.server import serve
 
 
 @click.group()
@@ -14,7 +14,6 @@ def cli():
 
 
 cli.add_command(serve)
-cli.add_command(dev)
 cli.add_command(migrate)
 cli.add_command(dockerfile)
 

@@ -38,7 +38,7 @@ docker compose up aegra
 uv run uvicorn aegra.agent_server.main:app --reload
 
 # Start with specific host/port
-uv run uvicorn aegra.agent_server.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn aegra.agent_server.main:app --host 0.0.0.0 --port 2024 --reload
 
 # Start development database
 docker compose up postgres -d
@@ -60,7 +60,7 @@ uv run pytest -v --asyncio-mode=auto
 uv run pytest --cov=src --cov-report=html
 
 # Health check endpoint test
-curl http://localhost:8000/health
+curl http://localhost:2024/health
 ```
 
 ### Database Management

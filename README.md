@@ -107,17 +107,17 @@ docker compose up aegra
 
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:2024/health
 
 # Interactive API docs
-open http://localhost:8000/docs
+open http://localhost:2024/docs
 ```
 
 You now have a self-hosted LangGraph Platform alternative running locally.
 
 ## 💬 Agent Chat UI Compatible
 
-Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui). Simply set `NEXT_PUBLIC_API_URL=http://localhost:8000` and `NEXT_PUBLIC_ASSISTANT_ID=agent` in your Agent Chat UI environment to connect to your Aegra backend.
+Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui). Simply set `NEXT_PUBLIC_API_URL=http://localhost:2024` and `NEXT_PUBLIC_ASSISTANT_ID=agent` in your Agent Chat UI environment to connect to your Aegra backend.
 
 ## 👨‍💻 For Developers
 
@@ -133,8 +133,7 @@ Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langc
 docker compose up aegra
 
 # Local development
-# Create new migration
-python3 scripts/migrate.py revision --autogenerate -m "Add new feature"
+aegra migrate upgrade
 ```
 
 ## 🧪 Try the Example Agent
@@ -147,7 +146,7 @@ from langgraph_sdk import get_client
 
 async def main():
     # Connect to your self-hosted Aegra instance
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2024")
 
     # Create assistant (same API as LangGraph Platform)
     assistant = await client.assistants.create(
@@ -218,7 +217,7 @@ AUTH_TYPE=noop  # noop, custom
 
 # Server
 HOST=0.0.0.0
-PORT=8000
+PORT=2024
 DEBUG=true
 
 # LLM Providers

@@ -6,6 +6,7 @@ import click
 import uvicorn
 from alembic import command as alembic_command
 from dotenv import load_dotenv
+from testcontainers.postgres import PostgresContainer
 
 from aegra.cli.migrate import load_alembic_config
 
@@ -34,57 +35,41 @@ def configure_logging(level: str = "DEBUG"):
 
 
 @click.command()
-@click.option("--port", type=int, default=None, help="Port to run the server on")
-def serve(port):
+@click.option("--port", type=int, default=2024, help="Port to run the server on")
+@click.option("--host", type=str, default="127.0.0.1", help="Host to run the server on")
+@click.option("--dev", is_flag=True, help="Development mode")
+def serve(port, host, dev):
     """Start the server"""
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+
     os.environ.setdefault("AUTH_TYPE", "noop")
     os.environ.setdefault(
         "DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/aegra"
     )
-    click.echo(f"🔐 Auth Type: {os.getenv('AUTH_TYPE')}")
-    click.echo(f"🗄️  Database: {os.getenv('DATABASE_URL')}")
 
-    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+    host = os.getenv("HOST", host)
+    port = int(os.getenv("PORT", port))
 
-    port = int(os.getenv("PORT", "2024") if port is None else port)
+    if dev:
+        postgres = PostgresContainer("postgres:17", driver="asyncpg")
+        postgres.start()
+        os.environ["DATABASE_URL"] = postgres.get_connection_url()
+        alembic_command.upgrade(load_alembic_config(), "head")
+
+    click.echo("🚀 Starting Aegra...")
+    click.echo(f"Auth Type: {os.getenv('AUTH_TYPE')}")
+    click.echo(f"Database: {os.getenv('DATABASE_URL')}")
+    click.echo(f"Server will be available at: http://{host}:{port}")
+    click.echo(f"API docs will be available at: http://{host}:{port}/docs")
+    click.echo("Test with: python test_sdk_integration.py")
 
     uvicorn.run(
         "aegra.agent_server.main:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
-        reload=False,
+        reload=dev,
         log_level=os.getenv("UVICORN_LOG_LEVEL", "debug"),
     )
 
-
-@click.command()
-@click.option("--port", type=int, default=2024, help="Port to run the server on")
-@click.option("--no-reload", is_flag=True, help="Disable auto-reload on code changes")
-def dev(port, no_reload):
-    """Development server"""
-    from testcontainers.postgres import PostgresContainer
-
-    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
-
-    port = int(port)
-    reload = not no_reload
-
-    click.echo("🚀 Starting Aegra...")
-    click.echo(f"📍 Server will be available at: http://localhost:{port}")
-    click.echo(f"📊 API docs will be available at: http://localhost:{port}/docs")
-    click.echo("🧪 Test with: python test_sdk_integration.py")
-
-    with PostgresContainer("postgres:17", driver="asyncpg") as postgres:
-        os.environ["DATABASE_URL"] = postgres.get_connection_url()
-        os.environ["AUTH_TYPE"] = "noop"
-
-        # Apply migrations
-        alembic_command.upgrade(load_alembic_config(), "head")
-
-        uvicorn.run(
-            "aegra.agent_server.main:app",
-            host="127.0.0.1",
-            port=port,
-            reload=reload,
-            log_level=os.getenv("UVICORN_LOG_LEVEL", "debug"),
-        )
+    if dev:
+        postgres.stop()

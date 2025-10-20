@@ -22,12 +22,12 @@ services:
       context: .
       dockerfile: deployments/docker/Dockerfile
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "${PORT:-2024}:${PORT:-2024}"
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra
       - AUTH_TYPE=noop
       - DEBUG=true
-      - PORT=${PORT:-8000}
+      - PORT=${PORT:-2024}
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,7 +40,7 @@ services:
         echo 'Running database migrations...' &&
         aegra migrate upgrade &&
         echo 'Starting Aegra server...' &&
-        aegra serve --host 0.0.0.0 --port $${PORT:-8000}
+        aegra serve --host 0.0.0.0 --port $${PORT:-2024}
       "
 
   # Redis (optional - for advanced queuing in future phases)

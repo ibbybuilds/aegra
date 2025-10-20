@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.agent_server.core.sse import SSEEvent
-from src.agent_server.services.event_store import EventStore, store_sse_event
+from aegra.agent_server.core.sse import SSEEvent
+from aegra.agent_server.services.event_store import EventStore, store_sse_event
 
 
 class TestEventStore:
@@ -43,7 +43,7 @@ class TestEventStore:
         )
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -77,7 +77,7 @@ class TestEventStore:
     ):
         """Test sequence extraction from various event ID formats"""
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -111,7 +111,7 @@ class TestEventStore:
 
         # Simulate database error
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.side_effect = SQLAlchemyError(
                 "Database connection failed"
@@ -147,7 +147,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(return_value=mock_result)
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -179,7 +179,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(return_value=mock_result)
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -200,7 +200,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(return_value=mock_result)
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -246,7 +246,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(return_value=mock_result)
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -273,7 +273,7 @@ class TestEventStore:
         run_id = "test-run-123"
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -308,7 +308,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(side_effect=[mock_range_result, mock_last_result])
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -333,7 +333,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(return_value=mock_result)
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -362,7 +362,7 @@ class TestEventStore:
         mock_conn.execute = AsyncMock(side_effect=[mock_range_result, mock_last_result])
 
         with patch(
-            "src.agent_server.services.event_store.db_manager"
+            "aegra.agent_server.services.event_store.db_manager"
         ) as mock_db_manager:
             mock_db_manager.get_engine.return_value.begin.return_value.__aenter__ = (
                 AsyncMock(return_value=mock_conn)
@@ -412,7 +412,7 @@ class TestEventStore:
         with (
             patch.object(event_store, "CLEANUP_INTERVAL", 0.01),
             patch(
-                "src.agent_server.services.event_store.db_manager"
+                "aegra.agent_server.services.event_store.db_manager"
             ) as mock_db_manager,
         ):
             mock_db_manager.get_engine.return_value = mock_engine
@@ -427,9 +427,9 @@ class TestEventStore:
             await event_store.stop_cleanup_task()
 
         # Verify cleanup was attempted (connection was used)
-        assert mock_conn.execute.called, (
-            "Cleanup loop did not attempt to execute cleanup SQL"
-        )
+        assert (
+            mock_conn.execute.called
+        ), "Cleanup loop did not attempt to execute cleanup SQL"
 
 
 class TestStoreSSEEvent:
@@ -446,7 +446,7 @@ class TestStoreSSEEvent:
         mock_event_store.store_event = AsyncMock()
 
         with patch(
-            "src.agent_server.services.event_store.event_store", mock_event_store
+            "aegra.agent_server.services.event_store.event_store", mock_event_store
         ):
             run_id = "test-run-123"
             event_id = f"{run_id}_event_1"
@@ -477,7 +477,7 @@ class TestStoreSSEEvent:
     async def test_store_sse_event_json_serialization(self):
         """Test that complex objects are properly JSON serialized"""
         with patch(
-            "src.agent_server.services.event_store.event_store"
+            "aegra.agent_server.services.event_store.event_store"
         ) as mock_event_store:
             mock_event_store.store_event = AsyncMock()
 
@@ -505,7 +505,7 @@ class TestStoreSSEEvent:
     async def test_store_sse_event_serialization_fallback(self):
         """Test fallback behavior when JSON serialization fails"""
         with patch(
-            "src.agent_server.services.event_store.event_store"
+            "aegra.agent_server.services.event_store.event_store"
         ) as mock_event_store:
             mock_event_store.store_event = AsyncMock()
 

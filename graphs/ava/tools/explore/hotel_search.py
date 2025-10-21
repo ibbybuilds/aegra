@@ -7,6 +7,7 @@ from typing import Annotated, Union, Dict, List, Any
 from langchain_core.tools import tool, InjectedToolCallId
 from langgraph.types import Command
 from langchain_core.messages import ToolMessage
+from langgraph.config import get_stream_writer
 from ava.utils.parsers import decode_hotels
 from ava.utils.ranking import rank_hotels_typed, rank_hotels
 from ava.utils.jwt import get_auth_headers
@@ -93,6 +94,9 @@ def hotel_search(
         if not tt_baseurl:
             raise ValueError("TT_BASEURL environment variable is required")
         
+        # Initialize streaming
+        stream_writer = get_stream_writer()
+        
         # Step 1: Initialize search and get token
         
         # Headers for init API
@@ -117,6 +121,8 @@ def hotel_search(
         # Store the last response for processing partial results
         last_results_data = None
         last_results_resp = None
+        
+        stream_writer({"type": "text", "text": "Im checking hotel availability..."})
         
         for attempt in range(max_retries):
             try:
@@ -220,6 +226,14 @@ def hotel_search(
                 else:
                     # Still processing, wait with exponential backoff + jitter
                     if attempt < max_retries - 1:
+                        # Provide progress updates based on attempt number
+                        if attempt == 1:
+                            stream_writer({"type": "text", "text": "Still searching for the best hotels..."})
+                        elif attempt == 3:
+                            stream_writer({"type": "text", "text": "Almost there, just a moment more..."})
+                        elif attempt == 5:
+                            stream_writer({"type": "text", "text": "Just one more second..."})
+                        
                         delay = min(base_delay * (2 ** attempt), max_delay)
                         jitter = random.uniform(0.1, 0.3) * delay
                         time.sleep(delay + jitter)

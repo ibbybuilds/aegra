@@ -2,6 +2,7 @@ import os
 from langchain_core.tools import tool
 from tavily import TavilyClient
 from dotenv import load_dotenv
+from langgraph.config import get_stream_writer
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,6 +20,9 @@ def internet_search(
 ):
     """Run a web search"""
     # Direct synchronous call to Tavily
+
+    stream_writer = get_stream_writer()
+    stream_writer({"type": "text", "text": f"I am searching the internet for: {query}"})
     search_docs = tavily_client.search(
         query,
         max_results=max_results,

@@ -56,6 +56,8 @@ def configure_logging(level: str = "DEBUG"):
     # Ensure our package/module loggers are at least at the configured level
     logging.getLogger("agent_server").setLevel(log_level)
     logging.getLogger("src.agent_server").setLevel(log_level)
+    logging.getLogger("src.agent_server.utils.context_parser").setLevel(log_level)
+    logging.getLogger("src.agent_server.api.runs").setLevel(log_level)
     logging.getLogger("aegra").setLevel(log_level)
     logging.getLogger("uvicorn.error").setLevel(log_level)
     logging.getLogger("uvicorn.access").setLevel(log_level)
@@ -71,6 +73,8 @@ def main():
     print("🚀 Starting Aegra...")
     print(f"📍 Server will be available at: http://localhost:{port}")
     print(f"📊 API docs will be available at: http://localhost:{port}/docs")
+    print(f"📝 Log level: {os.getenv('LOG_LEVEL', 'INFO')}")
+    print("🎯 Context logging enabled for AVA agent")
     print("🧪 Test with: python test_sdk_integration.py")
 
     uvicorn.run(

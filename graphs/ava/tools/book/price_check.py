@@ -8,6 +8,13 @@ from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 from ava.utils.jwt import get_auth_headers
 
+def safe_get_state_value(state: dict, key: str, default=None):
+    """Safely get a value from state, returning default if key doesn't exist"""
+    try:
+        return state.get(key, default)
+    except (KeyError, AttributeError):
+        return default
+
 def _sum_taxes(taxes_field: Any) -> float:
     """
     Support list-of-objects [{'amount': ...}, ...] or numeric or None.
@@ -73,18 +80,16 @@ def price_check(
     hotel_id: str = None,
     token: str = None,
     tool_call_id: Annotated[str, InjectedToolCallId] = None,
-    # State injection parameters (fallback)
-    state_hotel_id: Annotated[str, InjectedState("hotelId")] = None,
-    state_token: Annotated[str, InjectedState("hotelToken")] = None,
+    # State injection parameters (fallback) - using safe injection
+    state: Annotated[dict, InjectedState] = None,
     ) -> Union[Command, str]:
     """
     Check the price of a given rate ID for a hotel.
 
     Args:
         rate_id: Rate ID to check the price for
-        hotel_id: Hotel ID (can be explicit or auto-injected from state)
+        hotel_id: Hotel ID (explicit parameter, falls back to roomParams.hotelId if not provided)
         token: API token (can be explicit or auto-injected from state)
-        quoted_price: The price quoted when room was presented to the user
         tool_call_id: Tool call ID for tracking
     
     Returns:
@@ -93,8 +98,18 @@ def price_check(
     try:
         # Use explicit parameters or fallback to state injection
         final_rate_id = rate_id
-        final_hotel_id = hotel_id or state_hotel_id
-        final_token = token or state_token
+        
+        # Safely extract state values
+        final_token = token
+        if not final_token:
+            final_token = safe_get_state_value(state, "hotelToken")
+        
+        # Get hotel_id with proper fallback logic
+        final_hotel_id = hotel_id
+        if not final_hotel_id:
+            room_params = safe_get_state_value(state, "roomParams")
+            if room_params and isinstance(room_params, dict):
+                final_hotel_id = room_params.get("hotelId")
         
         # Validate inputs
         if not final_rate_id or not final_rate_id.strip():
@@ -108,16 +123,18 @@ def price_check(
             
         # Get base URL from environment variable
         tt_baseurl = os.getenv("TT_BASEURL")
+        techspian_baseurl = os.getenv("TECHSPIAN_BASEURL")
         
         if not tt_baseurl:
             raise ValueError("TT_BASEURL environment variable is required")
-        
+        if not techspian_baseurl:
+            raise ValueError("TECHSPIAN_BASEURL environment variable is required")
         # Make API request
         auth_headers = get_auth_headers()
         
         with httpx.Client(http2=True) as client:
             response = client.get(
-                f"{tt_baseurl}/api/hotel/{final_hotel_id}/{final_token}/price/{final_rate_id}",
+                f"{techspian_baseurl}/api/hotel/{final_hotel_id}/{final_token}/price/{final_rate_id}",
                 headers=auth_headers
             )
             
@@ -206,11 +223,24 @@ def price_check(
             )
             
     except Exception as e:
+        # Safely get values for error response
+        error_rate_id = rate_id
+        error_hotel_id = hotel_id
+        
+        # Try to get the processed values if they exist
+        try:
+            if 'final_rate_id' in locals() and final_rate_id:
+                error_rate_id = final_rate_id
+            if 'final_hotel_id' in locals() and final_hotel_id:
+                error_hotel_id = final_hotel_id
+        except:
+            pass  # Use original values if anything goes wrong
+        
         error_response = {
             "ok": False,
             "error": str(e),
-            "rate_id": final_rate_id if 'final_rate_id' in locals() else rate_id,
-            "hotel_id": final_hotel_id if 'final_hotel_id' in locals() else hotel_id
+            "rate_id": error_rate_id,
+            "hotel_id": error_hotel_id
         }
         
         return Command(

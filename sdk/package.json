@@ -1,0 +1,56 @@
+{
+  "name": "@aegra/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Aegra - Self-hosted LangGraph Platform Alternative",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "bun test",
+    "lint": "eslint src",
+    "format": "prettier --write src",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "aegra",
+    "langgraph",
+    "agent",
+    "ai",
+    "llm",
+    "sdk",
+    "typescript"
+  ],
+  "author": "Aegra Contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ibbybuilds/aegra.git",
+    "directory": "sdk"
+  },
+  "dependencies": {
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "prettier": "^3.0.0",
+    "eslint": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.0"
+  }
+}

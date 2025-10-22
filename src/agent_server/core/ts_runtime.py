@@ -64,10 +64,9 @@ class TypeScriptRuntime:
 
         TypeScript graphs use the same PostgreSQL checkpointer as Python graphs.
         """
-        # Convert asyncpg URL to standard PostgreSQL URL for langgraph-checkpoint-postgres
-        from ..core.database import db_manager
-
-        asyncpg_url = db_manager.database_url
+        # Get the database URL from environment
+        import os
+        asyncpg_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/aegra")
 
         # Convert postgresql+asyncpg:// to postgresql://
         if asyncpg_url.startswith("postgresql+asyncpg://"):

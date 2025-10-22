@@ -224,6 +224,13 @@ class LangGraphService:
                 ):
                     yield event
 
+            async def astream(self, input_data: dict, config: dict = None):
+                """Async stream method (required by LangGraph SDK compatibility)."""
+                if config is None:
+                    config = {}
+                async for event in self.stream(input_data, config):
+                    yield event
+
         wrapper = TypeScriptGraphWrapper(graph_id, graph_info, self._ts_runtime)
 
         # Cache the wrapper

@@ -5,6 +5,7 @@ These tests require Node.js or Bun to be installed.
 
 import pytest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 from src.agent_server.services.langgraph_service import LangGraphService
 
 
@@ -26,7 +27,10 @@ class TestTypeScriptGraphLoading:
         }""")
 
         service = LangGraphService(str(config_file))
-        await service.initialize()
+
+        # Mock database initialization to test only graph detection
+        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+            await service.initialize()
 
         # Check registry
         graphs = service.list_graphs()
@@ -43,7 +47,10 @@ class TestTypeScriptGraphLoading:
         }""")
 
         service = LangGraphService(str(config_file))
-        await service.initialize()
+
+        # Mock database initialization
+        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+            await service.initialize()
 
         graph_info = service._graph_registry["ts_agent"]
         assert graph_info["type"] == "typescript"
@@ -64,7 +71,10 @@ class TestMixedGraphSupport:
         }""")
 
         service = LangGraphService(str(config_file))
-        await service.initialize()
+
+        # Mock database initialization
+        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+            await service.initialize()
 
         # Both should be registered
         graphs = service._graph_registry
@@ -91,7 +101,10 @@ class TestTypeScriptGraphExecution:
     async def test_typescript_graph_wrapper_creation(self):
         """Should create TypeScript graph wrapper."""
         service = LangGraphService("aegra.json")
-        await service.initialize()
+
+        # Mock database initialization
+        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+            await service.initialize()
 
         if "ts_agent" not in service._graph_registry:
             pytest.skip("ts_agent not configured in aegra.json")
@@ -106,7 +119,10 @@ class TestTypeScriptGraphExecution:
     async def test_typescript_runtime_initialization(self):
         """Should initialize TypeScript runtime on demand."""
         service = LangGraphService("aegra.json")
-        await service.initialize()
+
+        # Mock database initialization
+        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+            await service.initialize()
 
         if "ts_agent" not in service._graph_registry:
             pytest.skip("ts_agent not configured")

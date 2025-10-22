@@ -190,14 +190,8 @@ class TypeScriptRuntime:
         Returns:
             Path to the wrapper script
         """
-        # For now, return a placeholder path
-        # TODO: Implement the actual wrapper script
-        # This will be a separate TypeScript/JavaScript file that:
-        # - Uses @langchain/langgraph to load and execute the graph
-        # - Connects to PostgreSQL using the provided URL
-        # - Streams execution events as JSON lines
-
-        wrapper_path = Path(__file__).parent / "ts_graph_wrapper.js"
+        # Use the TypeScript wrapper - Bun can run .ts files directly
+        wrapper_path = Path(__file__).parent / "ts_graph_wrapper.ts"
         if not wrapper_path.exists():
             raise RuntimeError(
                 f"TypeScript graph wrapper not found: {wrapper_path}. "

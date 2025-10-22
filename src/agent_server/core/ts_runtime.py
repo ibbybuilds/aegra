@@ -46,18 +46,37 @@ class TypeScriptRuntime:
         Yields:
             Graph execution events
         """
+        # Filter config to only include JSON-serializable values
+        # Remove callbacks and other non-serializable objects
+        serializable_config = {
+            k: v for k, v in config.items()
+            if k not in ['callbacks', 'tags', 'metadata'] and self._is_json_serializable(v)
+        }
+
+        # Keep configurable dict if present
+        if 'configurable' in config:
+            serializable_config['configurable'] = config['configurable']
+
         # Prepare execution context
         execution_context = {
             "graph_path": str(Path(graph_path).resolve()),
             "export_name": export_name,
             "input": input_data,
-            "config": config,
+            "config": serializable_config,
             "database_url": await self._get_database_url(),
         }
 
         # Execute via Node.js wrapper
         async for event in self._run_node_process(graph_id, execution_context):
             yield event
+
+    def _is_json_serializable(self, obj: Any) -> bool:
+        """Check if an object is JSON serializable."""
+        try:
+            json.dumps(obj)
+            return True
+        except (TypeError, ValueError):
+            return False
 
     async def _get_database_url(self) -> str:
         """Get PostgreSQL connection URL for TypeScript graphs.

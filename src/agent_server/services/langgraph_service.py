@@ -224,10 +224,14 @@ class LangGraphService:
                 ):
                     yield event
 
-            async def astream(self, input_data: dict, config: dict = None):
+            async def astream(self, input_data: dict, config: dict = None, **kwargs):
                 """Async stream method (required by LangGraph SDK compatibility)."""
                 if config is None:
                     config = {}
+                # Merge any additional kwargs into config
+                for key, value in kwargs.items():
+                    if key not in config:
+                        config[key] = value
                 async for event in self.stream(input_data, config):
                     yield event
 

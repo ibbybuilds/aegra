@@ -2,6 +2,8 @@
   "graphs": {
     "agent": "./graphs/react_agent/graph.py:graph",
     "agent_hitl": "./graphs/react_agent_hitl/graph.py:graph",
-    "subgraph_agent": "./graphs/subgraph_agent/graph.py:graph"
-  }
+    "subgraph_agent": "./graphs/subgraph_agent/graph.py:graph",
+    "ts_agent": "./graphs/ts_example_agent/graph.ts:graph"
+  },
+  "node_version": "20"
 }

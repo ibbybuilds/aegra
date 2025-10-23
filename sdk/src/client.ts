@@ -107,13 +107,13 @@ export class AegraClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const error: APIError = await response.json().catch(() => ({
+        const error = await response.json().catch(() => ({
           error: response.statusText,
-        }));
+        })) as APIError;
         throw new Error(error.error || `HTTP ${response.status}`);
       }
 
-      return await response.json();
+      return (await response.json()) as T;
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === "AbortError") {
@@ -183,9 +183,9 @@ export class AegraClient {
     });
 
     if (!response.ok) {
-      const error: APIError = await response.json().catch(() => ({
+      const error = await response.json().catch(() => ({
         error: response.statusText,
-      }));
+      })) as APIError;
       throw new Error(error.error || `HTTP ${response.status}`);
     }
 
@@ -197,6 +197,7 @@ export class AegraClient {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let currentEvent: string | null = null;
 
     try {
       while (true) {
@@ -210,15 +211,24 @@ export class AegraClient {
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
+          if (line.startsWith("event: ")) {
+            // Extract event type from SSE format
+            currentEvent = line.slice(7);
+          } else if (line.startsWith("data: ")) {
             const data = line.slice(6);
             if (data === "[DONE]") {
               return;
             }
 
             try {
-              const event: StreamEvent = JSON.parse(data);
+              const parsedData = JSON.parse(data);
+              // Combine SSE event type with data payload
+              const event: StreamEvent = {
+                event: currentEvent as any,
+                data: parsedData,
+              };
               yield event;
+              currentEvent = null; // Reset for next event
             } catch (e) {
               console.error("Failed to parse SSE data:", data);
             }

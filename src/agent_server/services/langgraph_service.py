@@ -151,7 +151,9 @@ class LangGraphService:
         graph_info = self._graph_registry[graph_id]
 
         # Handle TypeScript graphs differently
-        if graph_info["type"] == "typescript":
+        # Default to "python" if type not specified (for backwards compatibility)
+        graph_type = graph_info.get("type", "python")
+        if graph_type == "typescript":
             # TypeScript graphs are handled via the runtime manager
             # We return a wrapper that will be executed by the runtime
             return await self._get_typescript_graph(graph_id, graph_info)

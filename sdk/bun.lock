@@ -11,8 +11,6 @@
         "@types/node": "^24.9.1",
         "eslint": "^9.38.0",
         "prettier": "^3.6.2",
-      },
-      "peerDependencies": {
         "typescript": "^5.9.3",
       },
     },

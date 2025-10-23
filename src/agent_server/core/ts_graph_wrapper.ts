@@ -77,17 +77,10 @@ async function executeGraph(context: ExecutionContext): Promise<void> {
     const stream = await compiledGraph.stream(context.input, context.config);
 
     for await (const event of stream) {
-      streamEvent({
-        type: "event",
-        data: event,
-      });
+      // Stream events directly without wrapping
+      // This matches LangGraph's native Python streaming format
+      streamEvent(event);
     }
-
-    // Send completion event
-    streamEvent({
-      type: "complete",
-      data: { status: "success" },
-    });
   } catch (error: any) {
     // Send error event
     streamEvent({

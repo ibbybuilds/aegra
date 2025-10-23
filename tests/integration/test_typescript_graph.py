@@ -138,9 +138,11 @@ class TestTypeScriptGraphExecution:
         if "ts_agent" not in service._graph_registry:
             pytest.skip("ts_agent not configured")
 
-        # Runtime should be None initially
-        assert service._ts_runtime is None
-
-        # Getting TS graph should initialize runtime
-        _ = await service.get_graph("ts_agent")
+        # Runtime should be initialized during service.initialize() if TS graphs present
         assert service._ts_runtime is not None
+        assert service._ts_runtime._runtime_cmd is not None
+
+        # Getting TS graph should return a wrapper
+        graph = await service.get_graph("ts_agent")
+        assert hasattr(graph, "is_typescript")
+        assert graph.is_typescript is True

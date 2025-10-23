@@ -81,14 +81,24 @@ async function executeGraph(context: ExecutionContext): Promise<void> {
       // This matches LangGraph's native Python streaming format
       streamEvent(event);
     }
-  } catch (error: any) {
-    // Send error event
+  } catch (error: unknown) {
+    // Structured error handling
+    const errorData =
+      error instanceof Error
+        ? {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+          }
+        : {
+            message: String(error),
+            name: "UnknownError",
+          };
+
+    // Send error in consistent format
     streamEvent({
       type: "error",
-      data: {
-        message: error.message,
-        stack: error.stack,
-      },
+      error: errorData,
     });
     process.exit(1);
   }

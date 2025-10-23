@@ -4,15 +4,17 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import uuid5
 
 from langgraph.graph import StateGraph
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
 from ..core.config import is_node_graph
-from ..core.ts_runtime import get_ts_runtime
 from ..observability.langfuse_integration import get_tracing_callbacks
+
+if TYPE_CHECKING:
+    from ..core.ts_runtime import TypeScriptRuntime
 
 State = TypeVar("State")
 
@@ -26,7 +28,8 @@ class LangGraphService:
         self.config: dict[str, Any] | None = None
         self._graph_registry: dict[str, Any] = {}
         self._graph_cache: dict[str, Any] = {}
-        self._ts_runtime = None  # Lazy-loaded TypeScript runtime
+        self._ts_runtime: TypeScriptRuntime | None = None
+        self._has_typescript_graphs = False
 
     async def initialize(self):
         """Load configuration file and setup graph registry.
@@ -67,6 +70,14 @@ class LangGraphService:
         # Load graph registry from config
         self._load_graph_registry()
 
+        # Initialize TypeScript runtime if needed
+        if self._has_typescript_graphs:
+            from ..core.ts_runtime import TypeScriptRuntime
+
+            node_version = self.config.get("node_version", "20")
+            self._ts_runtime = TypeScriptRuntime(node_version)
+            await self._ts_runtime.initialize()
+
         # Pre-register assistants for each graph using deterministic UUIDs so
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
@@ -92,6 +103,7 @@ class LangGraphService:
             }
 
             if graph_type == "typescript":
+                self._has_typescript_graphs = True
                 print(f"📘 Detected TypeScript graph: {graph_id}")
 
     async def _ensure_default_assistants(self) -> None:
@@ -151,8 +163,8 @@ class LangGraphService:
         graph_info = self._graph_registry[graph_id]
 
         # Handle TypeScript graphs differently
-        # Default to "python" if type not specified (for backwards compatibility)
-        graph_type = graph_info.get("type", "python")
+        # Graph type defaults to "python" if not explicitly specified in registry
+        graph_type = graph_info["type"]
         if graph_type == "typescript":
             # TypeScript graphs are handled via the runtime manager
             # We return a wrapper that will be executed by the runtime
@@ -202,10 +214,11 @@ class LangGraphService:
         a marker object that the execution logic can recognize and route to the
         TypeScript runtime manager.
         """
-        # Lazy-load TypeScript runtime
         if self._ts_runtime is None:
-            node_version = self.config.get("node_version", "20")
-            self._ts_runtime = get_ts_runtime(node_version)
+            raise RuntimeError(
+                "TypeScript runtime not initialized. This should not happen if "
+                "TypeScript graphs were detected during service initialization."
+            )
 
         # Create a wrapper that signals this is a TypeScript graph
         class TypeScriptGraphWrapper:

@@ -195,7 +195,11 @@ class TestLangGraphServiceGraphs:
         """Test successful graph retrieval"""
         service = LangGraphService()
         service._graph_registry = {
-            "test_graph": {"file_path": "test.py", "export_name": "graph"}
+            "test_graph": {
+                "file_path": "test.py",
+                "export_name": "graph",
+                "type": "python",
+            }
         }
 
         mock_graph = Mock()
@@ -253,7 +257,11 @@ class TestLangGraphServiceGraphs:
         """Test force reload bypasses cache"""
         service = LangGraphService()
         service._graph_registry = {
-            "test_graph": {"file_path": "test.py", "export_name": "graph"}
+            "test_graph": {
+                "file_path": "test.py",
+                "export_name": "graph",
+                "type": "python",
+            }
         }
 
         cached_graph = Mock()

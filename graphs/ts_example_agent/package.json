@@ -1,0 +1,21 @@
+{
+  "name": "ts-example-agent",
+  "version": "0.1.0",
+  "description": "Example TypeScript LangGraph agent for Aegra",
+  "type": "module",
+  "main": "graph.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "bun run graph.ts"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.0.1",
+    "@langchain/langgraph": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^24.9.1",
+    "typescript": "^5.9.3"
+  }
+}

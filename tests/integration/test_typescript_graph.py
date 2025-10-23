@@ -3,11 +3,12 @@
 These tests require Node.js or Bun to be installed.
 """
 
-import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
-from src.agent_server.services.langgraph_service import LangGraphService
 
+import pytest
+
+from src.agent_server.services.langgraph_service import LangGraphService
 
 pytestmark = pytest.mark.asyncio
 
@@ -29,7 +30,9 @@ class TestTypeScriptGraphLoading:
         service = LangGraphService(str(config_file))
 
         # Mock database initialization to test only graph detection
-        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+        with patch.object(
+            service, "_ensure_default_assistants", new_callable=AsyncMock
+        ):
             await service.initialize()
 
         # Check registry
@@ -49,7 +52,9 @@ class TestTypeScriptGraphLoading:
         service = LangGraphService(str(config_file))
 
         # Mock database initialization
-        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+        with patch.object(
+            service, "_ensure_default_assistants", new_callable=AsyncMock
+        ):
             await service.initialize()
 
         graph_info = service._graph_registry["ts_agent"]
@@ -73,7 +78,9 @@ class TestMixedGraphSupport:
         service = LangGraphService(str(config_file))
 
         # Mock database initialization
-        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+        with patch.object(
+            service, "_ensure_default_assistants", new_callable=AsyncMock
+        ):
             await service.initialize()
 
         # Both should be registered
@@ -88,7 +95,7 @@ class TestMixedGraphSupport:
 
 @pytest.mark.skipif(
     not Path("graphs/ts_example_agent/graph.ts").exists(),
-    reason="TypeScript example graph not found"
+    reason="TypeScript example graph not found",
 )
 class TestTypeScriptGraphExecution:
     """Test actual TypeScript graph execution.
@@ -103,7 +110,9 @@ class TestTypeScriptGraphExecution:
         service = LangGraphService("aegra.json")
 
         # Mock database initialization
-        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+        with patch.object(
+            service, "_ensure_default_assistants", new_callable=AsyncMock
+        ):
             await service.initialize()
 
         if "ts_agent" not in service._graph_registry:
@@ -121,7 +130,9 @@ class TestTypeScriptGraphExecution:
         service = LangGraphService("aegra.json")
 
         # Mock database initialization
-        with patch.object(service, '_ensure_default_assistants', new_callable=AsyncMock):
+        with patch.object(
+            service, "_ensure_default_assistants", new_callable=AsyncMock
+        ):
             await service.initialize()
 
         if "ts_agent" not in service._graph_registry:
@@ -131,5 +142,5 @@ class TestTypeScriptGraphExecution:
         assert service._ts_runtime is None
 
         # Getting TS graph should initialize runtime
-        graph = await service.get_graph("ts_agent")
+        _ = await service.get_graph("ts_agent")
         assert service._ts_runtime is not None

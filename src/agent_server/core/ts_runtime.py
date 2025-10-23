@@ -5,13 +5,12 @@ providing IPC communication and lifecycle management.
 """
 
 import asyncio
+import contextlib
 import json
-import subprocess
+import subprocess  # noqa: S404
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
-import sys
-
-from ..core.database import db_manager
+from typing import Any
 
 
 class TypeScriptRuntime:
@@ -49,13 +48,15 @@ class TypeScriptRuntime:
         # Filter config to only include JSON-serializable values
         # Remove callbacks and other non-serializable objects
         serializable_config = {
-            k: v for k, v in config.items()
-            if k not in ['callbacks', 'tags', 'metadata'] and self._is_json_serializable(v)
+            k: v
+            for k, v in config.items()
+            if k not in ["callbacks", "tags", "metadata"]
+            and self._is_json_serializable(v)
         }
 
         # Keep configurable dict if present
-        if 'configurable' in config:
-            serializable_config['configurable'] = config['configurable']
+        if "configurable" in config:
+            serializable_config["configurable"] = config["configurable"]
 
         # Prepare execution context
         execution_context = {
@@ -85,7 +86,10 @@ class TypeScriptRuntime:
         """
         # Get the database URL from environment
         import os
-        asyncpg_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/aegra")
+
+        asyncpg_url = os.getenv(
+            "DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/aegra"
+        )
 
         # Convert postgresql+asyncpg:// to postgresql://
         if asyncpg_url.startswith("postgresql+asyncpg://"):
@@ -96,7 +100,7 @@ class TypeScriptRuntime:
         return postgres_url
 
     async def _run_node_process(
-        self, graph_id: str, context: dict[str, Any]
+        self, _graph_id: str, context: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
         """Run Node.js process and handle IPC communication.
 
@@ -112,9 +116,8 @@ class TypeScriptRuntime:
 
         # Write context to temporary file for IPC
         import tempfile
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(context, f)
             context_file = f.name
 
@@ -137,7 +140,7 @@ class TypeScriptRuntime:
                     try:
                         event = json.loads(line.decode().strip())
                         yield event
-                    except json.JSONDecodeError as e:
+                    except json.JSONDecodeError:
                         # Log non-JSON output (debugging info, etc.)
                         print(f"Non-JSON output from TS graph: {line.decode().strip()}")
                         continue
@@ -153,10 +156,8 @@ class TypeScriptRuntime:
 
         finally:
             # Cleanup temporary file
-            try:
+            with contextlib.suppress(Exception):
                 Path(context_file).unlink()
-            except Exception:
-                pass
 
     async def _get_runtime_command(self) -> list[str]:
         """Determine which JavaScript runtime to use (bun or node).
@@ -170,7 +171,8 @@ class TypeScriptRuntime:
         # Prefer bun if available
         try:
             result = await asyncio.create_subprocess_exec(
-                "bun", "--version",
+                "bun",
+                "--version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -183,7 +185,8 @@ class TypeScriptRuntime:
         # Fall back to node
         try:
             result = await asyncio.create_subprocess_exec(
-                "node", "--version",
+                "node",
+                "--version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -226,10 +229,8 @@ class TypeScriptRuntime:
                 process.wait(timeout=5)
             except Exception as e:
                 print(f"Error terminating process for graph {graph_id}: {e}")
-                try:
+                with contextlib.suppress(Exception):
                     process.kill()
-                except Exception:
-                    pass
 
         self._process_pool.clear()
 

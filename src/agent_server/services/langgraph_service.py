@@ -10,9 +10,9 @@ from uuid import uuid5
 from langgraph.graph import StateGraph
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
-from ..observability.langfuse_integration import get_tracing_callbacks
 from ..core.config import is_node_graph
 from ..core.ts_runtime import get_ts_runtime
+from ..observability.langfuse_integration import get_tracing_callbacks
 
 State = TypeVar("State")
 

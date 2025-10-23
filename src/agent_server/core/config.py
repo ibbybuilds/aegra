@@ -5,7 +5,6 @@ inspired by LangGraph CLI's configuration handling.
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,14 +25,14 @@ def is_node_graph(graph_spec: str) -> bool:
     """
     # Extract file path from spec (format: "path/to/file.ext:export_name")
     file_path = graph_spec.split(":")[0] if ":" in graph_spec else graph_spec
-    file_ext = os.path.splitext(file_path)[1]
+    file_ext = Path(file_path).suffix
 
     # TypeScript/JavaScript extensions
     return file_ext in [
-        ".ts",   # TypeScript
+        ".ts",  # TypeScript
         ".mts",  # TypeScript module
         ".cts",  # TypeScript CommonJS
-        ".js",   # JavaScript
+        ".js",  # JavaScript
         ".mjs",  # JavaScript module
         ".cjs",  # JavaScript CommonJS
     ]
@@ -111,7 +110,7 @@ class AegraConfig:
         if not graphs:
             raise ValueError("No graphs found in configuration")
 
-        for graph_id, graph_spec in graphs.items():
+        for _graph_id, graph_spec in graphs.items():
             if is_node_graph(graph_spec):
                 self._has_node_graphs = True
             else:
@@ -124,7 +123,9 @@ class AegraConfig:
         elif self._has_node_graphs and not node_version:
             # Auto-set default if TypeScript graphs are present
             self.config["node_version"] = DEFAULT_NODE_VERSION
-            print(f"ℹ️  No node_version specified, using default: {DEFAULT_NODE_VERSION}")
+            print(
+                f"ℹ️  No node_version specified, using default: {DEFAULT_NODE_VERSION}"
+            )
 
     def has_node_graphs(self) -> bool:
         """Check if configuration contains TypeScript/JavaScript graphs."""

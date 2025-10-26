@@ -56,10 +56,15 @@ COPY src/ ./src/
 
 EXPOSE 8000
 
+# Add a small entrypoint that attempts migrations then starts the app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Run as non-root
 USER app
 
-# Leave default CMD empty so docker-compose command can run migrations then start uvicorn
-# CMD ["uvicorn", "src.agent_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Entrypoint will attempt to run alembic (best-effort) then exec the CMD below
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["uvicorn", "src.agent_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 

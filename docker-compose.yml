@@ -16,6 +16,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis cache for performance optimization on remote databases
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # Aegra Server
   aegra:
     build:
@@ -25,11 +38,15 @@ services:
       - "${PORT:-8000}:${PORT:-8000}"
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra
+      - REDIS_URL=redis://redis:6379/0
+      - CACHE_ENABLED=true
       - AUTH_TYPE=noop
       - DEBUG=true
       - PORT=${PORT:-8000}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
@@ -45,16 +62,6 @@ services:
         echo 'Starting Aegra server...' &&
         uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
       "
-
-  # Redis (optional - for advanced queuing in future phases)
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    profiles:
-      - redis
 
 volumes:
   postgres_data:

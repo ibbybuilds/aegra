@@ -33,14 +33,16 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 Aegra is participating in Hacktoberfest! We welcome **meaningful contributions**.
 
 **What we're looking for:**
+
 - Feature development and enhancements
-- Bug fixes that improve stability  
+- Bug fixes that improve stability
 - Substantial documentation improvements
 - Testing and feedback on real use cases
 
 **What we're NOT looking for:**
+
 - Single typo fixes
-- Whitespace changes  
+- Whitespace changes
 - Low-effort PRs for swag hunting
 
 Quality over quantity. If you're here to build something real, we'd love your help.
@@ -235,6 +237,10 @@ cp .env.example .env
 # Database
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
 
+# Streaming transport (optional)
+REDIS_URL=redis://localhost:6379/0
+STREAMING_BROKER=auto  # auto, redis, memory
+
 # Authentication (extensible)
 AUTH_TYPE=noop  # noop, custom
 
@@ -289,6 +295,13 @@ OPENAI_API_KEY=sk-...
 - Extensible architecture
 - **📚 [Developer Guide](docs/developer-guide.md)** - Complete setup, migrations, and development workflow
 - **⚡ [Migration Cheatsheet](docs/migration-cheatsheet.md)** - Quick reference for common commands
+
+## 🧪 Streaming Diagnostics
+
+- Use Redis by setting `REDIS_URL` and `STREAMING_BROKER=redis` in your `.env`
+- Benchmark streaming latency with `uv run python test_sdk_integration.py --prompt "ping"`
+- Pass `--print-chunks` to inspect raw events from the LangGraph SDK client
+- Compare `first_chunk_latency` and `mean_delta` metrics to isolate remote DB slowness
 
 ## Star History
 

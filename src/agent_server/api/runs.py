@@ -824,20 +824,16 @@ async def execute_run_async(
                 event_counter += 1
                 event_id = f"{run_id}_event_{event_counter}"
 
-                # Forward to broker for live consumers
+                # Forward to broker for live consumers (non-blocking)
                 await streaming_service.put_to_broker(
                     run_id,
                     event_id,
                     raw_event,
                     only_interrupt_updates=only_interrupt_updates,
                 )
-                # Store for replay
-                await streaming_service.store_event_from_raw(
-                    run_id,
-                    event_id,
-                    raw_event,
-                    only_interrupt_updates=only_interrupt_updates,
-                )
+                # NOTE: Event persistence removed from hot path to eliminate remote DB latency.
+                # Events stream via Redis/in-memory broker; replay can be added later via
+                # background batching if needed.
 
                 # Check for interrupt in this event
                 event_data = None

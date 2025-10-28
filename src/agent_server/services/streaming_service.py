@@ -21,6 +21,8 @@ class StreamingService:
     def __init__(self):
         self.event_counters: dict[str, int] = {}
         self.event_converter = EventConverter()
+        self._store_locks: dict[str, asyncio.Lock] = {}
+        self._store_tasks: dict[str, set[asyncio.Task[Any]]] = {}
 
     def _process_interrupt_updates(
         self, raw_event: Any, only_interrupt_updates: bool
@@ -54,8 +56,9 @@ class StreamingService:
             if idx > current:
                 self.event_counters[run_id] = idx
                 return idx
-        except Exception:
-            pass  # Ignore format issues
+        except (ValueError, IndexError, AttributeError):  # noqa: S110
+            # Ignore malformed event_id format
+            pass
         return self.event_counters.get(run_id, 0)
 
     async def put_to_broker(
@@ -105,42 +108,67 @@ class StreamingService:
             stream_mode_label = "values"
             event_payload = processed_event
 
-        # Store based on stream mode
+        # Store based on stream mode (deferred to background tasks)
         if stream_mode_label == "messages":
-            await store_sse_event(
-                run_id,
-                event_id,
-                "messages",
-                {
-                    "type": "messages_stream",
-                    "message_chunk": event_payload[0]
-                    if isinstance(event_payload, tuple) and len(event_payload) >= 1
-                    else event_payload,
-                    "metadata": event_payload[1]
-                    if isinstance(event_payload, tuple) and len(event_payload) >= 2
-                    else None,
-                    "node_path": node_path,
-                },
-            )
+            store_payload = {
+                "type": "messages_stream",
+                "message_chunk": event_payload[0]
+                if isinstance(event_payload, tuple) and len(event_payload) >= 1
+                else event_payload,
+                "metadata": event_payload[1]
+                if isinstance(event_payload, tuple) and len(event_payload) >= 2
+                else None,
+                "node_path": node_path,
+            }
+            self._schedule_store_event(run_id, event_id, "messages", store_payload)
         elif stream_mode_label == "values" or stream_mode_label == "updates":
-            await store_sse_event(
-                run_id,
-                event_id,
-                "values",
-                {"type": "execution_values", "chunk": event_payload},
-            )
+            store_payload = {
+                "type": "execution_values",
+                "chunk": event_payload,
+            }
+            self._schedule_store_event(run_id, event_id, "values", store_payload)
         elif stream_mode_label == "end":
-            await store_sse_event(
-                run_id,
-                event_id,
-                "end",
-                {
-                    "type": "run_complete",
-                    "status": event_payload.get("status", "completed"),
-                    "final_output": event_payload.get("final_output"),
-                },
-            )
+            store_payload = {
+                "type": "run_complete",
+                "status": event_payload.get("status", "completed"),
+                "final_output": event_payload.get("final_output"),
+            }
+            self._schedule_store_event(run_id, event_id, "end", store_payload)
         # Add other stream modes as needed
+
+    def _schedule_store_event(
+        self,
+        run_id: str,
+        event_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Schedule asynchronous persistence for an SSE event."""
+
+        lock = self._store_locks.setdefault(run_id, asyncio.Lock())
+        task_set = self._store_tasks.setdefault(run_id, set())
+
+        async def runner() -> None:
+            async with lock:
+                await store_sse_event(run_id, event_id, event_type, payload)
+
+        task = asyncio.create_task(runner(), name=f"store-event-{run_id}")
+        task_set.add(task)
+
+        def _finalize(t: asyncio.Task[Any]) -> None:
+            task_set.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                logger.error(
+                    "Error persisting streaming event %s for run %s: %s",
+                    event_id,
+                    run_id,
+                    exc,
+                )
+
+        task.add_done_callback(_finalize)
 
     async def signal_run_cancelled(self, run_id: str):
         """Signal that a run was cancelled"""
@@ -153,6 +181,7 @@ class StreamingService:
             await broker.put(event_id, ("end", {"status": "cancelled"}))
 
         broker_manager.cleanup_broker(run_id)
+        await self._drain_store_tasks(run_id)
 
     async def signal_run_error(self, run_id: str, error_message: str):
         """Signal that a run encountered an error"""
@@ -167,6 +196,7 @@ class StreamingService:
             )
 
         broker_manager.cleanup_broker(run_id)
+        await self._drain_store_tasks(run_id)
 
     def _extract_event_sequence(self, event_id: str) -> int:
         """Extract numeric sequence from event_id format: {run_id}_event_{sequence}"""
@@ -306,10 +336,30 @@ class StreamingService:
     async def cleanup_run(self, run_id: str):
         """Clean up streaming resources for a run"""
         broker_manager.cleanup_broker(run_id)
+        await self._drain_store_tasks(run_id)
 
     def _stored_event_to_sse(self, run_id: str, ev) -> str | None:
         """Convert stored event object to SSE string"""
         return self.event_converter.convert_stored_to_sse(ev, run_id)
+
+    async def _drain_store_tasks(self, run_id: str) -> None:
+        """Wait for any pending store tasks for the run and release locks."""
+
+        tasks = self._store_tasks.pop(run_id, None)
+        self._store_locks.pop(run_id, None)
+        if not tasks:
+            return
+
+        pending = [task for task in tasks if not task.done()]
+        if not pending:
+            return
+
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(
+                    "Error while flushing stored events for run %s: %s", run_id, result
+                )
 
 
 # Global streaming service instance

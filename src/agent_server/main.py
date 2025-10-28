@@ -34,8 +34,10 @@ from .api.threads import router as threads_router
 from .core.auth_middleware import get_auth_backend, on_auth_error
 from .core.database import db_manager
 from .core.health import router as health_router
+from .core.redis import redis_manager
 from .middleware import DoubleEncodedJSONMiddleware
 from .models.errors import AgentProtocolError, get_error_type
+from .services.broker import broker_manager
 
 # Task management for run cancellation
 active_runs: dict[str, asyncio.Task] = {}
@@ -49,6 +51,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 
+    # Initialize Redis (optional) before services that depend on broker
+    await redis_manager.initialize()
+
     # Initialize LangGraph service
     from .services.langgraph_service import get_langgraph_service
 
@@ -59,6 +64,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from .services.event_store import event_store
 
     await event_store.start_cleanup_task()
+    await broker_manager.start_cleanup_task()
+    broker_manager.validate_configuration()
 
     yield
 
@@ -69,6 +76,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     # Stop event store cleanup task
     await event_store.stop_cleanup_task()
+    await broker_manager.stop_cleanup_task()
+
+    # Close Redis connection if configured
+    await redis_manager.close()
 
     await db_manager.close()
 

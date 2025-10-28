@@ -216,15 +216,12 @@ class TestGetTracingCallbacks:
                 for record in caplog.records
             )
 
-    def test_multiple_calls_return_new_handlers(self, monkeypatch):
-        """Test that multiple calls to get_tracing_callbacks return new handler instances"""
+    def test_multiple_calls_return_same_handlers(self, monkeypatch):
+        """Test that multiple calls to get_tracing_callbacks return the same handler instances"""
         monkeypatch.setenv("LANGFUSE_LOGGING", "true")
 
-        mock_handler_1 = MagicMock()
-        mock_handler_2 = MagicMock()
-        mock_callback_handler_class = MagicMock(
-            side_effect=[mock_handler_1, mock_handler_2]
-        )
+        mock_handler = MagicMock()
+        mock_callback_handler_class = MagicMock(return_value=mock_handler)
 
         with patch.dict(
             "sys.modules",
@@ -241,8 +238,8 @@ class TestGetTracingCallbacks:
 
             assert len(callbacks_1) == 1
             assert len(callbacks_2) == 1
-            assert callbacks_1[0] == mock_handler_1
-            assert callbacks_2[0] == mock_handler_2
+            # With the new system, the same provider instance is reused
+            assert callbacks_1[0] == callbacks_2[0]
 
     def test_callbacks_list_is_mutable(self, monkeypatch):
         """Test that returned callbacks list is mutable and can be extended"""
@@ -315,9 +312,15 @@ class TestGetTracingCallbacks:
 
     def test_env_var_case_insensitive(self, monkeypatch):
         """Test that environment variable value is case-insensitive"""
+        from src.agent_server.observability.base import get_observability_manager
+
         test_cases = ["true", "True", "TRUE", "TrUe"]
 
         for value in test_cases:
+            # Clear the manager for each iteration since we're reloading the module
+            manager = get_observability_manager()
+            manager._providers.clear()
+
             monkeypatch.setenv("LANGFUSE_LOGGING", value)
 
             mock_handler = MagicMock()
@@ -335,3 +338,110 @@ class TestGetTracingCallbacks:
                 callbacks = langfuse_module.get_tracing_callbacks()
 
                 assert len(callbacks) == 1, f"Failed for value: {value}"
+
+
+class TestLangfuseProvider:
+    """Test the LangfuseProvider class"""
+
+    def test_langfuse_provider_implements_interface(self, monkeypatch):
+        """Test that LangfuseProvider implements the ObservabilityProvider interface"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "true")
+
+        langfuse_module = reload_langfuse_module()
+        provider = langfuse_module.LangfuseProvider()
+
+        from src.agent_server.observability.base import ObservabilityProvider
+
+        assert isinstance(provider, ObservabilityProvider)
+
+    def test_langfuse_provider_enabled_when_env_true(self, monkeypatch):
+        """Test that LangfuseProvider is enabled when LANGFUSE_LOGGING is true"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "true")
+
+        langfuse_module = reload_langfuse_module()
+        provider = langfuse_module.LangfuseProvider()
+
+        assert provider.is_enabled() is True
+
+    def test_langfuse_provider_disabled_when_env_false(self, monkeypatch):
+        """Test that LangfuseProvider is disabled when LANGFUSE_LOGGING is false"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "false")
+
+        langfuse_module = reload_langfuse_module()
+        provider = langfuse_module.LangfuseProvider()
+
+        assert provider.is_enabled() is False
+
+    def test_langfuse_provider_get_metadata_with_user(self, monkeypatch):
+        """Test that LangfuseProvider returns correct metadata with user"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "true")
+
+        langfuse_module = reload_langfuse_module()
+        provider = langfuse_module.LangfuseProvider()
+
+        metadata = provider.get_metadata("run123", "thread456", "user789")
+
+        expected = {
+            "langfuse_session_id": "thread456",
+            "langfuse_user_id": "user789",
+            "langfuse_tags": [
+                "aegra_run",
+                "run:run123",
+                "thread:thread456",
+                "user:user789",
+            ],
+        }
+        assert metadata == expected
+
+    def test_langfuse_provider_get_metadata_without_user(self, monkeypatch):
+        """Test that LangfuseProvider returns correct metadata without user"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "true")
+
+        langfuse_module = reload_langfuse_module()
+        provider = langfuse_module.LangfuseProvider()
+
+        metadata = provider.get_metadata("run123", "thread456", None)
+
+        expected = {
+            "langfuse_session_id": "thread456",
+            "langfuse_tags": [
+                "aegra_run",
+                "run:run123",
+                "thread:thread456",
+            ],
+        }
+        assert metadata == expected
+
+    def test_langfuse_provider_get_callbacks_when_enabled(self, monkeypatch):
+        """Test that LangfuseProvider returns callbacks when enabled"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "true")
+
+        mock_handler = MagicMock()
+        mock_callback_handler_class = MagicMock(return_value=mock_handler)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "langfuse.langchain": MagicMock(
+                    CallbackHandler=mock_callback_handler_class
+                )
+            },
+        ):
+            langfuse_module = reload_langfuse_module()
+            provider = langfuse_module.LangfuseProvider()
+
+            callbacks = provider.get_callbacks()
+
+            assert len(callbacks) == 1
+            assert callbacks[0] == mock_handler
+
+    def test_langfuse_provider_get_callbacks_when_disabled(self, monkeypatch):
+        """Test that LangfuseProvider returns empty callbacks when disabled"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "false")
+
+        langfuse_module = reload_langfuse_module()
+        provider = langfuse_module.LangfuseProvider()
+
+        callbacks = provider.get_callbacks()
+
+        assert callbacks == []

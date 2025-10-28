@@ -10,7 +10,7 @@ from uuid import uuid5
 from langgraph.graph import StateGraph
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
-from ..observability.langfuse_integration import get_tracing_callbacks
+from ..observability.base import get_tracing_callbacks, get_tracing_metadata
 
 State = TypeVar("State")
 
@@ -307,23 +307,11 @@ def create_run_config(
         # Combine existing callbacks with new tracing callbacks to be non-destructive
         cfg["callbacks"] = existing_callbacks + tracing_callbacks
 
-        # Add metadata for Langfuse
-        cfg.setdefault("metadata", {})
-        cfg["metadata"]["langfuse_session_id"] = thread_id
-        if user:
-            cfg["metadata"]["langfuse_user_id"] = user.identity
-            cfg["metadata"]["langfuse_tags"] = [
-                "aegra_run",
-                f"run:{run_id}",
-                f"thread:{thread_id}",
-                f"user:{user.identity}",
-            ]
-        else:
-            cfg["metadata"]["langfuse_tags"] = [
-                "aegra_run",
-                f"run:{run_id}",
-                f"thread:{thread_id}",
-            ]
+    # Add metadata from all observability providers (independent of callbacks)
+    cfg.setdefault("metadata", {})
+    user_identity = user.identity if user else None
+    observability_metadata = get_tracing_metadata(run_id, thread_id, user_identity)
+    cfg["metadata"].update(observability_metadata)
 
     # Apply checkpoint parameters if provided
     if checkpoint and isinstance(checkpoint, dict):

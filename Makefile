@@ -20,16 +20,16 @@ install:
 
 dev-install:
 	uv sync
-	@uv run pre-commit install
-	@uv run pre-commit install --hook-type commit-msg
+	@python -m pre_commit install
+	@python -m pre_commit install --hook-type commit-msg
 	@echo ""
 	@echo "✅ Dependencies installed!"
 	@echo "✅ Git hooks installed!"
 	@echo "🚀 You're ready to develop!"
 
 setup-hooks:
-	uv run pre-commit install
-	uv run pre-commit install --hook-type commit-msg
+	python -m pre_commit install
+	python -m pre_commit install --hook-type commit-msg
 	@echo ""
 	@echo "✅ Git hooks reinstalled!"
 	@echo "📝 Your commits will now be checked automatically"
@@ -42,16 +42,16 @@ lint:
 	uv run ruff check .
 
 type-check:
-	uv run mypy src/
+	python -m mypy src/
 
 security:
-	uv run bandit -c pyproject.toml -r src/
+	python -m bandit -c pyproject.toml -r src/
 
 test:
-	uv run pytest
+	python -m pytest
 
 test-cov:
-	uv run pytest --cov=src --cov-report=html --cov-report=term
+	python -m pytest --cov=src --cov-report=html --cov-report=term
 
 ci-check: format lint type-check security test
 	@echo ""

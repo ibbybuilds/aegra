@@ -110,6 +110,7 @@ async def create_run(
     request: RunCreate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(None),
 ) -> Run:
     """Create and execute a new run (persisted)."""
 
@@ -144,7 +145,14 @@ async def create_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config
-    context = request.context
+    context = request.context or {}
+
+    # Extract token and user_id from Authorization header and inject into context
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1]
+        context["user_token"] = token
+        # Extract user_id from the authenticated user context
+        context["user_id"] = user.identity
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -236,6 +244,7 @@ async def create_and_stream_run(
     request: RunCreate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(None),
 ) -> StreamingResponse:
     """Create a new run and stream its execution - persisted + SSE."""
 
@@ -267,7 +276,14 @@ async def create_and_stream_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config
-    context = request.context
+    context = request.context or {}
+
+    # Extract token and user_id from Authorization header and inject into context
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1]
+        context["user_token"] = token
+        # Extract user_id from the authenticated user context
+        context["user_id"] = user.identity
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,

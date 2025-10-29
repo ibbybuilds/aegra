@@ -70,6 +70,18 @@ class LangGraphAuthBackend(AuthenticationBackend):
     Starlette's AuthenticationMiddleware.
     """
 
+    # Public endpoints that don't require authentication
+    PUBLIC_PATHS = {
+        "/",
+        "/info",
+        "/health",
+        "/ready",
+        "/live",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+    }
+
     def __init__(self) -> None:
         self.auth_instance = self._load_auth_instance()
 
@@ -118,6 +130,18 @@ class LangGraphAuthBackend(AuthenticationBackend):
         Raises:
             AuthenticationError: If authentication fails
         """
+        # Skip authentication for CORS preflight requests
+        request_method = conn.scope.get("method", "")
+        if request_method == "OPTIONS":
+            logger.debug("Skipping authentication for OPTIONS request")
+            return None
+
+        # Skip authentication for public endpoints
+        request_path = conn.scope.get("path", "")
+        if request_path in self.PUBLIC_PATHS:
+            logger.debug(f"Skipping authentication for public path: {request_path}")
+            return None
+
         if self.auth_instance is None:
             logger.warning("No auth instance available, skipping authentication")
             return None

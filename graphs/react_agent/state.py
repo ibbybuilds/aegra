@@ -11,6 +11,23 @@ from langgraph.graph import add_messages
 from langgraph.managed import IsLastStep
 
 
+def merge_tool_counts(existing: dict[str, int], new: dict[str, int]) -> dict[str, int]:
+    """Merge tool call counts by taking the maximum value for each tool.
+
+    This ensures that when state updates happen, we preserve the highest count
+    seen for each tool, preventing the counter from resetting.
+    """
+    if not existing:
+        return new
+    if not new:
+        return existing
+
+    merged = existing.copy()
+    for tool_name, count in new.items():
+        merged[tool_name] = max(merged.get(tool_name, 0), count)
+    return merged
+
+
 @dataclass
 class InputState:
     """Defines the input state for the agent, representing a narrower interface to the outside world.
@@ -51,4 +68,14 @@ class State(InputState):
 
     This is a 'managed' variable, controlled by the state machine rather than user code.
     It is set to 'True' when the step count reaches recursion_limit - 1.
+    """
+
+    tool_call_counts: Annotated[dict[str, int], merge_tool_counts] = field(
+        default_factory=dict
+    )
+    """
+    Tracks the number of times each tool has been called in this run.
+
+    Used to enforce limits on expensive or data-heavy tools like get_student_ai_mentor_onboarding.
+    The merge_tool_counts reducer ensures counts are preserved across state updates.
     """

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -31,7 +31,7 @@ class RedisManager:
 
     def __init__(self) -> None:
         self._redis_url = os.getenv("REDIS_URL")
-        self._client: Optional[Redis] = None
+        self._client: Redis | None = None
         self._available = False
         self._init_lock = asyncio.Lock()
 

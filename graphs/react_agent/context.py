@@ -36,6 +36,27 @@ class Context:
         },
     )
 
+    user_token: str | None = field(
+        default=None,
+        metadata={
+            "description": "JWT access token for authenticating with external LMS API."
+        },
+    )
+
+    user_id: str | None = field(
+        default=None,
+        metadata={
+            "description": "User ID extracted from JWT token for memory namespacing."
+        },
+    )
+
+    lms_api_url: str = field(
+        default="https://dedatahub-api.vercel.app",
+        metadata={
+            "description": "Base URL for the LMS API to fetch student information."
+        },
+    )
+
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
         for f in fields(self):

@@ -18,7 +18,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..core.redis import redis_manager
 from ..core.serializers import GeneralSerializer
@@ -407,7 +407,7 @@ class RedisBrokerManager(BaseBrokerManager):
 class HybridBrokerManager(BaseBrokerManager):
     def __init__(self) -> None:
         self._memory_backend = InMemoryBrokerManager()
-        self._redis_backend: Optional[RedisBrokerManager] = None
+        self._redis_backend: RedisBrokerManager | None = None
         self._redis_enabled_logged = False
         raw_mode = os.getenv("STREAMING_BROKER", "auto")
         mode = raw_mode.strip().lower()

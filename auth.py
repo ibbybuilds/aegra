@@ -46,12 +46,23 @@ if AUTH_TYPE == "noop":
 elif AUTH_TYPE == "custom":
     logger.info("Using custom authentication")
 
+    import jwt
+    from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
+    # Get JWT secret from environment
+    JWT_SECRET = os.getenv("LMS_JWT_SECRET")
+    if not JWT_SECRET:
+        raise ValueError(
+            "LMS_JWT_SECRET environment variable is required for custom auth"
+        )
+
     @auth.authenticate
     async def authenticate(headers: dict[str, str]) -> Auth.types.MinimalUserDict:
         """
-        Custom authentication handler.
+        Custom authentication handler using JWT token validation.
 
-        Modify this function to integrate with your authentication service.
+        Decodes JWT tokens sent from the frontend and validates them
+        using the LMS_JWT_SECRET.
         """
         # Extract authorization header
         authorization = (
@@ -71,30 +82,56 @@ elif AUTH_TYPE == "custom":
                 status_code=401, detail="Authorization header required"
             )
 
-        # Development token for testing
-        if authorization == "Bearer dev-token":
+        # Extract token from Bearer format
+        if not authorization.startswith("Bearer "):
+            raise Auth.exceptions.HTTPException(
+                status_code=401,
+                detail="Invalid authorization format. Expected 'Bearer <token>'",
+            )
+
+        token = authorization.split("Bearer ", 1)[1]
+
+        try:
+            # Decode and validate JWT token
+            payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+
+            # Extract user information from token payload
+            user_id = payload.get("userId") or payload.get("id")
+            email = payload.get("email")
+            name = payload.get("name")
+            role = payload.get("role")
+
+            if not user_id:
+                raise Auth.exceptions.HTTPException(
+                    status_code=401, detail="Invalid token: missing user ID"
+                )
+
+            logger.info(f"Successfully authenticated user: {user_id} ({email})")
+
             return {
-                "identity": "dev-user",
-                "display_name": "Development User",
-                "email": "dev@example.com",
-                "permissions": ["admin"],
-                "org_id": "dev-org",
+                "identity": str(user_id),
+                "display_name": name or email or f"User {user_id}",
+                "email": email,
+                "role": role,
+                "permissions": [role] if role else [],
                 "is_authenticated": True,
             }
 
-        # Example: Simple API key validation (replace with your logic)
-        if authorization.startswith("Bearer "):
-            # TODO: Replace with your auth service integration
-            logger.warning("Invalid token")
+        except ExpiredSignatureError:
+            logger.warning("Token has expired")
+            raise Auth.exceptions.HTTPException(
+                status_code=401, detail="Token has expired"
+            ) from None
+        except InvalidTokenError as e:
+            logger.warning(f"Invalid token: {e}")
             raise Auth.exceptions.HTTPException(
                 status_code=401, detail="Invalid authentication token"
-            )
-
-        # Reject requests without proper format
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="Invalid authorization format. Expected 'Bearer <token>'",
-        )
+            ) from e
+        except Exception as e:
+            logger.error(f"Token validation error: {e}", exc_info=True)
+            raise Auth.exceptions.HTTPException(
+                status_code=401, detail="Authentication failed"
+            ) from e
 
     @auth.on
     async def authorize(

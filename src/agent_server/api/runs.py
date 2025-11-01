@@ -23,6 +23,7 @@ from ..core.orm import _get_session_maker, get_session
 from ..core.serializers import GeneralSerializer
 from ..core.sse import create_end_event, get_sse_headers
 from ..models import Run, RunCreate, RunStatus, User
+from ..services.activity_service import ActivityService
 from ..services.langgraph_service import create_run_config, get_langgraph_service
 from ..services.streaming_service import streaming_service
 from ..utils.assistants import resolve_assistant_id
@@ -191,6 +192,22 @@ async def create_run(
         error_message=None,
     )
     session.add(run_orm)
+    await session.commit()
+
+    # Log activity: run started
+    await ActivityService.log_activity(
+        session=session,
+        user_id=user.identity,
+        action_type="run_started",
+        assistant_id=resolved_assistant_id,
+        thread_id=thread_id,
+        run_id=run_id,
+        action_status="success",
+        details={
+            "input_keys": list(request.input.keys()) if request.input else [],
+            "stream": request.stream,
+        },
+    )
     await session.commit()
 
     # Build response from ORM -> Pydantic
@@ -879,6 +896,19 @@ async def execute_run_async(
                 )
             await set_thread_status(session, thread_id, "interrupted")
 
+            # Log activity: run interrupted
+            await ActivityService.log_activity(
+                session=session,
+                user_id=user.identity,
+                action_type="run_interrupted",
+                assistant_id=None,
+                thread_id=thread_id,
+                run_id=run_id,
+                action_status="interrupted",
+                details={"event_counter": event_counter},
+            )
+            await session.commit()
+
         else:
             # Update with results
             await update_run_status(
@@ -891,6 +921,19 @@ async def execute_run_async(
                 )
             await set_thread_status(session, thread_id, "idle")
 
+            # Log activity: run completed
+            await ActivityService.log_activity(
+                session=session,
+                user_id=user.identity,
+                action_type="run_completed",
+                assistant_id=None,
+                thread_id=thread_id,
+                run_id=run_id,
+                action_status="success",
+                details={"event_counter": event_counter},
+            )
+            await session.commit()
+
     except asyncio.CancelledError:
         # Store empty output to avoid JSON serialization issues
         await update_run_status(run_id, "cancelled", output={}, session=session)
@@ -899,6 +942,19 @@ async def execute_run_async(
                 f"No database session available to update thread {thread_id} status"
             ) from None
         await set_thread_status(session, thread_id, "idle")
+
+        # Log activity: run cancelled
+        await ActivityService.log_activity(
+            session=session,
+            user_id=user.identity,
+            action_type="run_cancelled",
+            assistant_id=None,
+            thread_id=thread_id,
+            run_id=run_id,
+            action_status="cancelled",
+        )
+        await session.commit()
+
         # Signal cancellation to broker
         await streaming_service.signal_run_cancelled(run_id)
         raise
@@ -912,6 +968,20 @@ async def execute_run_async(
                 f"No database session available to update thread {thread_id} status"
             ) from None
         await set_thread_status(session, thread_id, "idle")
+
+        # Log activity: run failed
+        await ActivityService.log_activity(
+            session=session,
+            user_id=user.identity,
+            action_type="run_failed",
+            assistant_id=None,
+            thread_id=thread_id,
+            run_id=run_id,
+            action_status="failed",
+            details={"error": str(e)},
+        )
+        await session.commit()
+
         # Signal error to broker
         await streaming_service.signal_run_error(run_id, str(e))
         raise

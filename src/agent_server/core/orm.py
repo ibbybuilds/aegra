@@ -172,6 +172,43 @@ class RunEvent(Base):
     )
 
 
+class ActivityLog(Base):
+    """Activity log for tracking student/user interactions with the AI system"""
+
+    __tablename__ = "activity_log"
+
+    activity_id: Mapped[str] = mapped_column(
+        Text, primary_key=True, server_default=text("uuid_generate_v4()::text")
+    )
+    user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    assistant_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    thread_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_type: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )  # e.g., "prompt", "query", "run_started", "run_completed", "run_failed"
+    action_status: Mapped[str] = mapped_column(
+        Text, server_default=text("'success'")
+    )  # "success", "failed", "interrupted"
+    details: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata_json", JSONB, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )
+
+    # Indexes for performance and common queries
+    __table_args__ = (
+        Index("idx_activity_log_user", "user_id"),
+        Index("idx_activity_log_user_created", "user_id", "created_at"),
+        Index("idx_activity_log_assistant", "assistant_id"),
+        Index("idx_activity_log_thread", "thread_id"),
+        Index("idx_activity_log_action_type", "action_type"),
+        Index("idx_activity_log_created", "created_at"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Session factory
 # ---------------------------------------------------------------------------

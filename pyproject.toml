@@ -44,6 +44,7 @@ dependencies = [
     "uvicorn>=0.35.0",
     "langfuse>=3.3.4",
     "httpx>=0.28.1",
+    "pgvector>=0.3.0",
 ]
 
 [project.urls]

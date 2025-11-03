@@ -23,6 +23,27 @@ from react_agent.memory import get_user_memory, save_user_memory, search_user_me
 
 logger = logging.getLogger(__name__)
 
+# Import RAG course retriever
+try:
+    import sys
+    from pathlib import Path
+
+    # Add src to path if needed
+    project_root = Path(__file__).parent.parent.parent
+    src_path = project_root / "src"
+    if src_path.exists() and str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
+    from agent_server.tools.rag import CourseRetriever
+
+    RAG_AVAILABLE = True
+    logger.info("RAG course search module loaded successfully")
+except ImportError as e:
+    RAG_AVAILABLE = False
+    logger.warning(
+        f"RAG CourseRetriever not available: {e}. Course search will be disabled."
+    )
+
 
 async def search(query: str) -> dict[str, Any]:
     """Search the web for general information and current events.
@@ -369,6 +390,84 @@ async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
         return {"error": "Unexpected error", "message": str(e)}
 
 
+async def search_course_content(
+    query: str,
+    course_id: str | None = None,
+    max_results: int = 5,
+) -> dict[str, Any]:
+    """Search for relevant course content using semantic similarity.
+
+    This tool searches through indexed course materials, lessons, and descriptions
+    to find the most relevant information based on your query. Use this when:
+    - Students ask about specific course topics or concepts
+    - Looking for explanations from course materials
+    - Finding relevant lessons or modules
+    - Retrieving course-specific information
+
+    Args:
+        query: The search query (e.g., "What is machine learning?", "SQL joins tutorial")
+        course_id: Optional course ID to search within a specific course
+        max_results: Maximum number of results to return (default: 5)
+
+    Returns:
+        A dict containing:
+        - query: The original search query
+        - results: List of relevant course content chunks with:
+            - content: The relevant text content
+            - title: Title of the lesson/material
+            - course_id: ID of the course
+            - content_type: Type (lesson, material, course_description)
+            - metadata: Additional context (level, module, etc.)
+        - error: Error message if search fails
+    """
+    if not RAG_AVAILABLE:
+        logger.error("RAG system not available")
+        return {
+            "query": query,
+            "results": [],
+            "error": "Course search is not available. RAG system not initialized.",
+        }
+
+    try:
+        logger.info(f"Searching course content for: {query}")
+        if course_id:
+            logger.info(f"Filtering by course_id: {course_id}")
+
+        # Initialize retriever
+        retriever = CourseRetriever()
+
+        # Perform semantic search
+        results = await retriever.search(
+            query=query,
+            course_id=course_id,
+            k=max_results,
+        )
+
+        if not results:
+            logger.info(f"No course content found for query: {query}")
+            return {
+                "query": query,
+                "results": [],
+                "message": "No relevant course content found. The course may not be indexed yet.",
+            }
+
+        logger.info(f"Found {len(results)} relevant course content chunks")
+        return {
+            "query": query,
+            "results": results,
+            "total_results": len(results),
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching course content: {str(e)}", exc_info=True)
+        return {
+            "query": query,
+            "results": [],
+            "error": f"Course search failed: {str(e)}",
+        }
+
+
+# Build tools list dynamically based on availability
 TOOLS: list[Callable[..., Any]] = [
     search,
     extract_webpage_content,
@@ -379,3 +478,8 @@ TOOLS: list[Callable[..., Any]] = [
     save_user_memory,
     search_user_memories,
 ]
+
+# Add RAG tool if available
+if RAG_AVAILABLE:
+    TOOLS.append(search_course_content)
+    logger.info("RAG course search tool enabled")

@@ -14,6 +14,9 @@ from alembic import context
 # Import your SQLAlchemy models here
 from src.agent_server.core.orm import Base
 
+# Import RAG models to ensure they're registered with Base
+from src.agent_server.tools.rag.models import CourseChunk, IndexingStatus  # noqa: F401
+
 # Load environment variables from a .env file if present
 load_dotenv()
 

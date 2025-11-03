@@ -32,7 +32,7 @@ class LangGraphSerializer(Serializer):
                     "error": getattr(task, "error", None),
                     "interrupts": [],
                     "checkpoint": None,
-                    "state": None,
+                    "state": getattr(task, "state", None),
                     "result": getattr(task, "result", None),
                 }
 

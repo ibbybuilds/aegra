@@ -31,7 +31,7 @@ class ThreadStateService:
             # Extract tasks and interrupts using serializer
             tasks = self.serializer.extract_tasks_from_snapshot(snapshot)
 
-            # # Recursively serialize tasks' state (which might be subgraphs)
+            # Recursively serialize tasks' state (which might be subgraphs)
             if subgraphs:
                 for task in tasks:
                     if "state" in task and task["state"] is not None:

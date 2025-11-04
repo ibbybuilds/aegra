@@ -213,8 +213,7 @@ async def get_thread_state(
         try:
             agent = agent.with_config(config)
             # NOTE: LangGraph only exposes subgraph checkpoints while the run is
-            # interrupted. Completed runs will return parent state even when
-            # subgraphs=True. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
+            # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
             state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
         except HTTPException:
             raise
@@ -311,9 +310,6 @@ async def get_thread_state_at_checkpoint(
         # Fetch state at checkpoint
         try:
             agent = agent.with_config(config)
-            # NOTE: LangGraph only exposes subgraph checkpoints while the run is
-            # interrupted. Completed runs will return parent state even when
-            # subgraphs=True. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
             state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
         except Exception as e:
             logger.exception(

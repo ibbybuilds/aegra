@@ -6,12 +6,13 @@ Works with a chat model with tool calling support.
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 
 from react_agent.context import Context
+from react_agent.file_processor import process_multimodal_content
 from react_agent.state import InputState, State
 from react_agent.tools import TOOLS
 from react_agent.utils import load_chat_model
@@ -41,11 +42,23 @@ async def call_model(
         system_time=datetime.now(tz=UTC).isoformat()
     )
 
+    # Process messages to extract file content from multimodal messages
+    processed_messages = []
+    for msg in state.messages:
+        if isinstance(msg, HumanMessage) and isinstance(msg.content, list):
+            # Extract text from multimodal content (files, images, etc.)
+            text_content = process_multimodal_content(msg.content)
+            # Create new message with processed content
+            processed_msg = HumanMessage(content=text_content, id=msg.id)
+            processed_messages.append(processed_msg)
+        else:
+            processed_messages.append(msg)
+
     # Get the model's response
     response = cast(
         "AIMessage",
         await model.ainvoke(
-            [{"role": "system", "content": system_message}, *state.messages]
+            [{"role": "system", "content": system_message}, *processed_messages]
         ),
     )
 

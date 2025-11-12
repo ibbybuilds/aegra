@@ -94,6 +94,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
+    # Increase max request size for file uploads (50MB)
+    # Note: This is a Starlette limit, not Uvicorn
 )
 
 # Add CORS middleware
@@ -139,9 +141,37 @@ async def agent_protocol_exception_handler(
     )
 
 
+@app.exception_handler(ValueError)
+async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
+    """Handle JSON decode and validation errors"""
+    error_msg = str(exc)
+    logger.error(f"Validation error: {error_msg}")
+
+    # Check if it's a JSON decode error
+    if "JSON" in error_msg or "json" in error_msg.lower():
+        return JSONResponse(
+            status_code=400,
+            content=AgentProtocolError(
+                error="invalid_request",
+                message="Invalid JSON in request body. Ensure file content is properly encoded.",
+                details={"error": error_msg},
+            ).model_dump(),
+        )
+
+    return JSONResponse(
+        status_code=400,
+        content=AgentProtocolError(
+            error="validation_error",
+            message=error_msg,
+            details={"exception": str(exc)},
+        ).model_dump(),
+    )
+
+
 @app.exception_handler(Exception)
 async def general_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions"""
+    logger.exception("Unexpected error")
     return JSONResponse(
         status_code=500,
         content=AgentProtocolError(

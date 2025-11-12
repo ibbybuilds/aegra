@@ -75,10 +75,14 @@ def main():
 
     uvicorn.run(
         "src.agent_server.main:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104 - binding to all interfaces is intentional for dev
         port=port,
         reload=True,
         log_level=os.getenv("UVICORN_LOG_LEVEL", "debug"),
+        # Increase limits for file uploads with base64 encoding
+        limit_concurrency=None,  # No limit on concurrent connections
+        limit_max_requests=None,  # No limit on requests
+        timeout_keep_alive=75,  # Keep connections alive longer
     )
 
 

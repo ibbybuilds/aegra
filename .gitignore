@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# Node.js/npm
+.npm-cache/
+
 # Virtual environments
 .venv
 

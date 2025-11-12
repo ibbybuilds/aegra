@@ -30,6 +30,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "fastapi>=0.116.1",
     "greenlet>=3.2.3",
+    "langchain-anthropic>=0.3.0",
     "langchain-openai>=0.3.28",
     "langchain-tavily>=0.2.0",
     "langchain-core>=0.3.0",

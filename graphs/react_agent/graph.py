@@ -43,16 +43,26 @@ async def call_model(
     )
 
     # Process messages to extract file content from multimodal messages
+    # Only process the last message if it contains files to avoid re-processing
     processed_messages = []
-    for msg in state.messages:
-        if isinstance(msg, HumanMessage) and isinstance(msg.content, list):
-            # Extract text from multimodal content (files, images, etc.)
-            text_content = process_multimodal_content(msg.content)
-            # Create new message with processed content
-            processed_msg = HumanMessage(content=text_content, id=msg.id)
-            processed_messages.append(processed_msg)
-        else:
-            processed_messages.append(msg)
+    messages_to_process = state.messages
+
+    # Check if last message needs processing (has multimodal content)
+    if (
+        messages_to_process
+        and isinstance(messages_to_process[-1], HumanMessage)
+        and isinstance(messages_to_process[-1].content, list)
+    ):
+        # Process only the new message with files
+        last_msg = messages_to_process[-1]
+        text_content = process_multimodal_content(last_msg.content)
+        processed_last = HumanMessage(content=text_content, id=last_msg.id)
+
+        # Use all previous messages as-is, only replace the last one
+        processed_messages = messages_to_process[:-1] + [processed_last]
+    else:
+        # No file processing needed
+        processed_messages = messages_to_process
 
     # Get the model's response
     response = cast(

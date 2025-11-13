@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command, Send
 from sqlalchemy import delete, select, update
@@ -26,6 +26,7 @@ from ..models import Run, RunCreate, RunStatus, User
 from ..services.langgraph_service import create_run_config, get_langgraph_service
 from ..services.streaming_service import streaming_service
 from ..utils.assistants import resolve_assistant_id
+from ..utils.headers import extract_configurable_headers
 from ..utils.run_utils import (
     _filter_context_by_schema,
     _merge_jsonb,
@@ -127,14 +128,15 @@ async def _validate_resume_command(
 @router.post("/threads/{thread_id}/runs", response_model=Run)
 async def create_run(
     thread_id: str,
-    request: RunCreate,
+    payload: RunCreate,
+    http_request: Request,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Run:
     """Create and execute a new run (persisted)."""
 
     # Validate resume command requirements early
-    await _validate_resume_command(session, thread_id, request.command)
+    await _validate_resume_command(session, thread_id, payload.command)
 
     run_id = str(uuid4())
 
@@ -150,13 +152,18 @@ async def create_run(
     # Validate assistant exists and get its graph_id. If a graph_id was provided
     # instead of an assistant UUID, map it deterministically and fall back to the
     # default assistant created at startup.
-    requested_id = str(request.assistant_id)
+    requested_id = str(payload.assistant_id)
     available_graphs = langgraph_service.list_graphs()
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
-    config = request.config
-    context = request.context
+    config = payload.config
+    context = payload.context
     configurable = config.get("configurable", {})
+
+    header_cfg = extract_configurable_headers(http_request.headers)
+    if header_cfg:
+        config.setdefault("configurable", {})
+        config["configurable"].update(header_cfg)
 
     if config.get("configurable") and context:
         raise HTTPException(
@@ -175,7 +182,7 @@ async def create_run(
     )
     assistant = await session.scalar(assistant_stmt)
     if not assistant:
-        raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
+        raise HTTPException(404, f"Assistant '{payload.assistant_id}' not found")
 
     config = _merge_jsonb(assistant.config, config)
     context = _merge_jsonb(assistant.context, context)
@@ -200,7 +207,7 @@ async def create_run(
         thread_id=thread_id,
         assistant_id=resolved_assistant_id,
         status="pending",
-        input=request.input or {},
+        input=payload.input or {},
         config=config,
         context=context,
         user_id=user.identity,
@@ -218,7 +225,7 @@ async def create_run(
         thread_id=thread_id,
         assistant_id=resolved_assistant_id,
         status="pending",
-        input=request.input or {},
+        input=payload.input or {},
         config=config,
         context=context,
         user_id=user.identity,
@@ -235,18 +242,18 @@ async def create_run(
             run_id,
             thread_id,
             assistant.graph_id,
-            request.input or {},
+            payload.input or {},
             user,
             config,
             context,
-            request.stream_mode,
+            payload.stream_mode,
             None,  # Don't pass session to avoid conflicts
-            request.checkpoint,
-            request.command,
-            request.interrupt_before,
-            request.interrupt_after,
-            request.multitask_strategy,
-            request.stream_subgraphs,
+            payload.checkpoint,
+            payload.command,
+            payload.interrupt_before,
+            payload.interrupt_after,
+            payload.multitask_strategy,
+            payload.stream_subgraphs,
         )
     )
     logger.info(

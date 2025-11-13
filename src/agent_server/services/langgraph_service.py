@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import os
 from pathlib import Path
 from typing import Any, TypeVar
 from uuid import uuid5
@@ -13,6 +12,7 @@ from langgraph.pregel import Pregel
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
 from ..observability.base import get_tracing_callbacks, get_tracing_metadata
+from ..utils.config_loader import load_project_config
 
 State = TypeVar("State")
 logger = structlog.get_logger(__name__)
@@ -38,33 +38,7 @@ class LangGraphService:
         3) aegra.json in CWD
         4) langgraph.json in CWD (fallback)
         """
-        # 1) Env var override
-        env_path = os.getenv("AEGRA_CONFIG")
-        resolved_path: Path
-        if env_path:
-            resolved_path = Path(env_path)
-        # 2) Provided path if exists
-        elif self.config_path and Path(self.config_path).exists():
-            resolved_path = Path(self.config_path)
-        # 3) aegra.json if present
-        elif Path("aegra.json").exists():
-            resolved_path = Path("aegra.json")
-        # 4) fallback to langgraph.json
-        else:
-            resolved_path = Path("langgraph.json")
-
-        if not resolved_path.exists():
-            raise ValueError(
-                "Configuration file not found. Expected one of: "
-                "AEGRA_CONFIG path, ./aegra.json, or ./langgraph.json"
-            )
-
-        # Persist selected path and its parent directory for later reference
-        self.config_path = resolved_path
-        self.config_dir = self.config_path.parent.resolve()
-
-        with self.config_path.open() as f:
-            self.config = json.load(f)
+        self._load_config()
 
         # Load graph registry from config
         self._load_graph_registry()
@@ -72,6 +46,14 @@ class LangGraphService:
         # Pre-register assistants for each graph using deterministic UUIDs so
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
+
+    def _load_config(self) -> None:
+        """Synchronously load project config and remember resolved path."""
+
+        config_data, resolved_path = load_project_config(str(self.config_path))
+        self.config = config_data
+        self.config_path = resolved_path
+        self.config_dir = resolved_path.parent.resolve()
 
     def _load_graph_registry(self):
         """Load graph definitions from aegra.json"""

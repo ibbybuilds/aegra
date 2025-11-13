@@ -40,6 +40,7 @@ from .observability.base import get_observability_manager
 from .observability.langfuse_integration import _langfuse_provider
 from .services.event_store import event_store
 from .services.langgraph_service import get_langgraph_service
+from .utils.http_app import apply_mount_prefix, attach_custom_http_app
 from .utils.setup_logging import setup_logging
 
 # Task management for run cancellation
@@ -80,7 +81,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 # Create FastAPI application
-app = FastAPI(
+core_app = FastAPI(
     title="Aegra",
     description="Aegra: Production-ready Agent Protocol server built on LangGraph",
     version="0.1.0",
@@ -89,11 +90,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(StructLogMiddleware)
-app.add_middleware(CorrelationIdMiddleware)
+core_app.add_middleware(StructLogMiddleware)
+core_app.add_middleware(CorrelationIdMiddleware)
 
 # Add CORS middleware
-app.add_middleware(
+core_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure appropriately for production
     allow_credentials=True,
@@ -102,23 +103,23 @@ app.add_middleware(
 )
 
 # Add middleware to handle double-encoded JSON from frontend
-app.add_middleware(DoubleEncodedJSONMiddleware)
+core_app.add_middleware(DoubleEncodedJSONMiddleware)
 
 # Add authentication middleware (must be added after CORS)
-app.add_middleware(
+core_app.add_middleware(
     AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
 )
 
 # Include routers
-app.include_router(health_router, prefix="", tags=["Health"])
-app.include_router(assistants_router, prefix="", tags=["Assistants"])
-app.include_router(threads_router, prefix="", tags=["Threads"])
-app.include_router(runs_router, prefix="", tags=["Runs"])
-app.include_router(store_router, prefix="", tags=["Store"])
+core_app.include_router(health_router, prefix="", tags=["Health"])
+core_app.include_router(assistants_router, prefix="", tags=["Assistants"])
+core_app.include_router(threads_router, prefix="", tags=["Threads"])
+core_app.include_router(runs_router, prefix="", tags=["Runs"])
+core_app.include_router(store_router, prefix="", tags=["Store"])
 
 
 # Error handling
-@app.exception_handler(HTTPException)
+@core_app.exception_handler(HTTPException)
 async def agent_protocol_exception_handler(
     _request: Request, exc: HTTPException
 ) -> JSONResponse:
@@ -133,7 +134,7 @@ async def agent_protocol_exception_handler(
     )
 
 
-@app.exception_handler(Exception)
+@core_app.exception_handler(Exception)
 async def general_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions"""
     return JSONResponse(
@@ -146,10 +147,17 @@ async def general_exception_handler(_request: Request, exc: Exception) -> JSONRe
     )
 
 
-@app.get("/")
+@core_app.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint"""
     return {"message": "Aegra", "version": "0.1.0", "status": "running"}
+
+
+# Attach any custom FastAPI app defined in langgraph.json/http.app
+core_app = attach_custom_http_app(core_app)
+
+# Optionally expose everything under a mount prefix
+app = apply_mount_prefix(core_app)
 
 
 if __name__ == "__main__":

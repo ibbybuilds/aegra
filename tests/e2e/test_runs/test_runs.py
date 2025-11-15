@@ -61,11 +61,10 @@ async def test_runs_crud_and_join_e2e():
     assert got["thread_id"] == thread_id
     assert got["assistant_id"] == assistant_id
     assert got["status"] in (
-        "completed",
-        "failed",
-        "cancelled",
+        "success",
+        "error",
+        "interrupted",
         "running",
-        "streaming",
         "pending",
     )
 
@@ -138,12 +137,12 @@ async def test_runs_cancel_e2e():
     # Cancel the run
     patched = await client.runs.cancel(thread_id, run_id)
     elog("Runs.cancel", patched)
-    assert patched["status"] in ("cancelled", "interrupted")
+    assert patched["status"] == "interrupted"
 
     # Verify final state
     got = await client.runs.get(thread_id, run_id)
     elog("Runs.get(post-cancel)", got)
-    assert got["status"] in ("cancelled", "interrupted", "failed", "completed")
+    assert got["status"] in ("interrupted", "error", "success")
 
 
 @pytest.mark.e2e
@@ -219,7 +218,7 @@ async def test_runs_wait_stateful_e2e():
     last_run = runs_list[0]
     assert last_run["thread_id"] == thread_id
     assert last_run["assistant_id"] == assistant_id
-    assert last_run["status"] in ("completed", "interrupted"), (
+    assert last_run["status"] in ("success", "interrupted"), (
         f"Expected completed or interrupted, got {last_run['status']}"
     )
 
@@ -281,7 +280,7 @@ async def test_runs_wait_with_interrupts_e2e():
         runs_list = await client.runs.list(thread_id)
         assert len(runs_list) > 0
         last_run = runs_list[0]
-        # Status can be interrupted or completed depending on graph structure
-        assert last_run["status"] in ("interrupted", "completed"), (
-            f"Expected interrupted or completed status, got {last_run['status']}"
+        # Status can be interrupted or success depending on graph structure
+        assert last_run["status"] in ("interrupted", "success"), (
+            f"Expected interrupted or success status, got {last_run['status']}"
         )

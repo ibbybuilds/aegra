@@ -27,7 +27,7 @@ async def test_latest_state_simple_agent_e2e():
     runs_list = await client.runs.list(thread_id)
     assert runs_list, "Expected run to be created"
     run_info = runs_list[0]
-    assert run_info["status"] in ("completed", "interrupted")
+    assert run_info["status"] in ("success", "interrupted")
 
     latest_state = await client.threads.get_state(thread_id=thread_id)
     elog("Threads.get_state latest", latest_state)

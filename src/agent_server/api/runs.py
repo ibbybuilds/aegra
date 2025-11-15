@@ -31,6 +31,7 @@ from ..utils.run_utils import (
     _merge_jsonb,
     _should_skip_event,
 )
+from ..utils.status_compat import validate_run_status
 
 router = APIRouter()
 
@@ -336,7 +337,7 @@ async def create_and_stream_run(
         run_id=run_id,
         thread_id=thread_id,
         assistant_id=resolved_assistant_id,
-        status="streaming",
+        status="running",
         input=request.input or {},
         config=config,
         context=context,
@@ -354,7 +355,7 @@ async def create_and_stream_run(
         run_id=run_id,
         thread_id=thread_id,
         assistant_id=resolved_assistant_id,
-        status="streaming",
+        status="running",
         input=request.input or {},
         config=config,
         context=context,
@@ -503,24 +504,14 @@ async def update_run(
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     # Handle interruption/cancellation
+    # Validate status conforms to API specification
+    validated_status = validate_run_status(request.status)
 
-    if request.status == "cancelled":
+    if validated_status == "interrupted":
         logger.info(
-            f"[update_run] cancelling run_id={run_id} user={user.identity} thread_id={thread_id}"
+            f"[update_run] cancelling/interrupting run_id={run_id} user={user.identity} thread_id={thread_id}"
         )
-        await streaming_service.cancel_run(run_id)
-        logger.info(f"[update_run] set DB status=cancelled run_id={run_id}")
-        await session.execute(
-            update(RunORM)
-            .where(RunORM.run_id == str(run_id))
-            .values(status="cancelled", updated_at=datetime.now(UTC))
-        )
-        await session.commit()
-        logger.info(f"[update_run] commit done (cancelled) run_id={run_id}")
-    elif request.status == "interrupted":
-        logger.info(
-            f"[update_run] interrupt run_id={run_id} user={user.identity} thread_id={thread_id}"
-        )
+        # Handle interruption - use interrupt_run for cooperative interruption
         await streaming_service.interrupt_run(run_id)
         logger.info(f"[update_run] set DB status=interrupted run_id={run_id}")
         await session.execute(
@@ -561,7 +552,9 @@ async def join_run(
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     # If already completed, return output immediately
-    if run_orm.status in ["completed", "failed", "cancelled"]:
+    # Check if run is in a terminal state
+    terminal_states = ["success", "error", "interrupted"]
+    if run_orm.status in terminal_states:
         # Refresh to ensure we have the latest data
         await session.refresh(run_orm)
         output = getattr(run_orm, "output", None) or {}
@@ -727,18 +720,16 @@ async def wait_for_run(
     await session.refresh(run_orm)
 
     # Return output based on final status
-    if run_orm.status == "completed":
+    if run_orm.status == "success":
         return run_orm.output or {}
-    elif run_orm.status == "failed":
-        # For failed runs, still return output if available, but log the error
+    elif run_orm.status == "error":
+        # For error runs, still return output if available, but log the error
         logger.error(
             f"[wait_for_run] run failed run_id={run_id} error={run_orm.error_message}"
         )
         return run_orm.output or {}
     elif run_orm.status == "interrupted":
         # Return partial output for interrupted runs
-        return run_orm.output or {}
-    elif run_orm.status == "cancelled":
         return run_orm.output or {}
     else:
         # Still pending/running after timeout
@@ -773,7 +764,8 @@ async def stream_run(
         f"[stream_run] status={run_orm.status} user={user.identity} thread_id={thread_id} run_id={run_id}"
     )
     # If already terminal, emit a final end event
-    if run_orm.status in ["completed", "failed", "cancelled"]:
+    terminal_states = ["success", "error", "interrupted"]
+    if run_orm.status in terminal_states:
 
         async def generate_final() -> AsyncIterator[str]:
             yield create_end_event()
@@ -864,11 +856,11 @@ async def cancel_run_endpoint(
             f"[cancel_run] cancel run_id={run_id} user={user.identity} thread_id={thread_id}"
         )
         await streaming_service.cancel_run(run_id)
-        # Persist status as cancelled
+        # Persist status as interrupted
         await session.execute(
             update(RunORM)
             .where(RunORM.run_id == str(run_id))
-            .values(status="cancelled", updated_at=datetime.now(UTC))
+            .values(status="interrupted", updated_at=datetime.now(UTC))
         )
         await session.commit()
 
@@ -1059,9 +1051,9 @@ async def execute_run_async(
             await set_thread_status(session, thread_id, "interrupted")
 
         else:
-            # Update with results
+            # Update with results - use standard status
             await update_run_status(
-                run_id, "completed", output=final_output or {}, session=session
+                run_id, "success", output=final_output or {}, session=session
             )
             # Mark thread back to idle
             if not session:
@@ -1071,8 +1063,8 @@ async def execute_run_async(
             await set_thread_status(session, thread_id, "idle")
 
     except asyncio.CancelledError:
-        # Store empty output to avoid JSON serialization issues
-        await update_run_status(run_id, "cancelled", output={}, session=session)
+        # Store empty output to avoid JSON serialization issues - use standard status
+        await update_run_status(run_id, "interrupted", output={}, session=session)
         if not session:
             raise RuntimeError(
                 f"No database session available to update thread {thread_id} status"
@@ -1082,9 +1074,9 @@ async def execute_run_async(
         await streaming_service.signal_run_cancelled(run_id)
         raise
     except Exception as e:
-        # Store empty output to avoid JSON serialization issues
+        # Store empty output to avoid JSON serialization issues - use standard status
         await update_run_status(
-            run_id, "failed", output={}, error=str(e), session=session
+            run_id, "error", output={}, error=str(e), session=session
         )
         if not session:
             raise RuntimeError(
@@ -1108,14 +1100,20 @@ async def update_run_status(
     error: str | None = None,
     session: AsyncSession | None = None,
 ) -> None:
-    """Update run status in database (persisted). If session not provided, opens a short-lived session."""
+    """Update run status in database (persisted). If session not provided, opens a short-lived session.
+
+    Status is validated to ensure it conforms to API specification.
+    """
+    # Validate status conforms to API specification
+    validated_status = validate_run_status(status)
+
     owns_session = False
     if session is None:
         maker = _get_session_maker()
         session = maker()  # type: ignore[assignment]
         owns_session = True
     try:
-        values = {"status": status, "updated_at": datetime.now(UTC)}
+        values = {"status": validated_status, "updated_at": datetime.now(UTC)}
         if output is not None:
             # Serialize output to ensure JSON compatibility
             try:
@@ -1129,7 +1127,9 @@ async def update_run_status(
                 }
         if error is not None:
             values["error_message"] = error
-        logger.info(f"[update_run_status] updating DB run_id={run_id} status={status}")
+        logger.info(
+            f"[update_run_status] updating DB run_id={run_id} status={validated_status}"
+        )
         await session.execute(
             update(RunORM).where(RunORM.run_id == str(run_id)).values(**values)
         )  # type: ignore[arg-type]
@@ -1173,14 +1173,14 @@ async def delete_run(
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     # If active and not forcing, reject deletion
-    if run_orm.status in ["pending", "running", "streaming"] and not force:
+    if run_orm.status in ["pending", "running"] and not force:
         raise HTTPException(
             status_code=409,
             detail="Run is active. Retry with force=1 to cancel and delete.",
         )
 
     # If forcing and active, cancel first
-    if force and run_orm.status in ["pending", "running", "streaming"]:
+    if force and run_orm.status in ["pending", "running"]:
         logger.info(f"[delete_run] force-cancelling active run run_id={run_id}")
         await streaming_service.cancel_run(run_id)
         # Best-effort: wait for bg task to settle

@@ -74,11 +74,18 @@ def map_command_to_langgraph(cmd: dict[str, Any]) -> Command:
 
 
 async def set_thread_status(session: AsyncSession, thread_id: str, status: str) -> None:
-    """Update the status column of a thread."""
+    """Update the status column of a thread.
+
+    Status is validated to ensure it conforms to API specification.
+    """
+    # Validate status conforms to API specification
+    from ..utils.status_compat import validate_thread_status
+
+    validated_status = validate_thread_status(status)
     await session.execute(
         update(ThreadORM)
         .where(ThreadORM.thread_id == thread_id)
-        .values(status=status, updated_at=datetime.now(UTC))
+        .values(status=validated_status, updated_at=datetime.now(UTC))
     )
     await session.commit()
 
@@ -1083,7 +1090,8 @@ async def execute_run_async(
             raise RuntimeError(
                 f"No database session available to update thread {thread_id} status"
             ) from None
-        await set_thread_status(session, thread_id, "idle")
+        # Set thread status to "error" when run fails (matches API specification)
+        await set_thread_status(session, thread_id, "error")
         # Signal error to broker
         await streaming_service.signal_run_error(run_id, str(e))
         raise

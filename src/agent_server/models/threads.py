@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from ..utils.status_compat import validate_thread_status
 
 
 class ThreadCreate(BaseModel):
@@ -16,13 +18,24 @@ class ThreadCreate(BaseModel):
 
 
 class Thread(BaseModel):
-    """Thread entity model"""
+    """Thread entity model
+
+    Status values: idle, busy, interrupted, error
+    """
 
     thread_id: str
-    status: str = "idle"
+    status: str = "idle"  # Valid values: idle, busy, interrupted, error
     metadata: dict[str, Any] = Field(default_factory=dict)
     user_id: str
     created_at: datetime
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Validate status conforms to API specification."""
+        if not isinstance(v, str):
+            raise ValueError(f"Status must be a string, got {type(v)}")
+        return validate_thread_status(v)
 
     class Config:
         from_attributes = True
@@ -39,10 +52,20 @@ class ThreadSearchRequest(BaseModel):
     """Request model for thread search"""
 
     metadata: dict[str, Any] | None = Field(None, description="Metadata filters")
-    status: str | None = Field(None, description="Thread status filter")
+    status: str | None = Field(
+        None, description="Thread status filter (idle, busy, interrupted, error)"
+    )
     limit: int | None = Field(20, le=100, ge=1, description="Maximum results")
     offset: int | None = Field(0, ge=0, description="Results offset")
     order_by: str | None = Field("created_at DESC", description="Sort order")
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        """Validate status filter conforms to API specification."""
+        if v is not None:
+            return validate_thread_status(v)
+        return v
 
 
 class ThreadSearchResponse(BaseModel):

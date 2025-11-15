@@ -248,7 +248,7 @@ class TestSearchThreads:
                 "thread-1", status="idle", metadata={"env": "prod", "team": "alpha"}
             ),
             _thread_row(
-                "thread-2", status="active", metadata={"env": "dev", "team": "beta"}
+                "thread-2", status="busy", metadata={"env": "dev", "team": "beta"}
             ),
             _thread_row(
                 "thread-3", status="idle", metadata={"env": "prod", "team": "beta"}

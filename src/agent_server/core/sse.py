@@ -117,8 +117,11 @@ def create_debug_event(debug_data: dict[str, Any], event_id: str | None = None) 
 
 
 def create_end_event(event_id: str | None = None) -> str:
-    """Create end event - signals completion of stream"""
-    return format_sse_message("end", {"status": "completed"}, event_id)
+    """Create end event - signals completion of stream
+
+    Uses standard status: "success" instead of "completed"
+    """
+    return format_sse_message("end", {"status": "success"}, event_id)
 
 
 def create_error_event(error: str, event_id: str | None = None) -> str:
@@ -218,7 +221,7 @@ def create_start_event(run_id: str, event_counter: int) -> str:
         data={
             "type": "run_start",
             "run_id": run_id,
-            "status": "streaming",
+            "status": "running",
             "timestamp": datetime.now(UTC).isoformat(),
         },
     )
@@ -240,13 +243,16 @@ def create_chunk_event(
 
 
 def create_complete_event(run_id: str, event_counter: int, final_output: Any) -> str:
-    """Legacy complete event - deprecated, use create_end_event instead"""
+    """Legacy complete event - deprecated, use create_end_event instead
+
+    Note: Uses legacy "completed" status for backward compatibility with old clients.
+    """
     return format_sse_event(
         id=f"{run_id}_event_{event_counter}",
         event="complete",
         data={
             "type": "run_complete",
-            "status": "completed",
+            "status": "success",  # Use standard status
             "final_output": final_output,
             "timestamp": datetime.now(UTC).isoformat(),
         },
@@ -254,13 +260,16 @@ def create_complete_event(run_id: str, event_counter: int, final_output: Any) ->
 
 
 def create_cancelled_event(run_id: str, event_counter: int) -> str:
-    """Legacy cancelled event - deprecated"""
+    """Legacy cancelled event - deprecated
+
+    Note: Uses "interrupted" status instead of legacy "cancelled"
+    """
     return format_sse_event(
         id=f"{run_id}_event_{event_counter}",
         event="cancelled",
         data={
             "type": "run_cancelled",
-            "status": "cancelled",
+            "status": "interrupted",  # Use standard status instead of legacy "cancelled"
             "timestamp": datetime.now(UTC).isoformat(),
         },
     )

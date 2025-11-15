@@ -137,7 +137,7 @@ class StreamingService:
                 "end",
                 {
                     "type": "run_complete",
-                    "status": event_payload.get("status", "completed"),
+                    "status": event_payload.get("status", "success"),
                     "final_output": event_payload.get("final_output"),
                 },
             )
@@ -151,7 +151,7 @@ class StreamingService:
 
         broker = broker_manager.get_or_create_broker(run_id)
         if broker:
-            await broker.put(event_id, ("end", {"status": "cancelled"}))
+            await broker.put(event_id, ("end", {"status": "interrupted"}))
 
         broker_manager.cleanup_broker(run_id)
 
@@ -164,7 +164,7 @@ class StreamingService:
         broker = broker_manager.get_or_create_broker(run_id)
         if broker:
             await broker.put(
-                event_id, ("end", {"status": "failed", "error": error_message})
+                event_id, ("end", {"status": "error", "error": error_message})
             )
 
         broker_manager.cleanup_broker(run_id)
@@ -231,10 +231,7 @@ class StreamingService:
         broker = broker_manager.get_or_create_broker(run_id)
 
         # If run finished and broker is done, nothing to stream
-        if (
-            run.status in ["completed", "failed", "cancelled", "interrupted"]
-            and broker.is_finished()
-        ):
+        if run.status in ["success", "error", "interrupted"] and broker.is_finished():
             return
 
         # Stream live events
@@ -278,10 +275,10 @@ class StreamingService:
             return False
 
     async def cancel_run(self, run_id: str) -> bool:
-        """Cancel a pending or running execution"""
+        """Cancel a pending or running execution - uses standard status"""
         try:
             await self.signal_run_cancelled(run_id)
-            await self._update_run_status(run_id, "cancelled")
+            await self._update_run_status(run_id, "interrupted")  # Standard status
             return True
         except Exception as e:
             logger.error(f"Error cancelling run {run_id}: {e}")

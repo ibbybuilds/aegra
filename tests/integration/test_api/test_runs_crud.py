@@ -132,7 +132,7 @@ class TestGetRun:
         """Test getting an existing run"""
         app = create_test_app(include_runs=True, include_threads=False)
 
-        run = _run_row(status="completed")
+        run = _run_row(status="success")
 
         class Session(DummySessionBase):
             async def scalar(self, _stmt):
@@ -147,7 +147,7 @@ class TestGetRun:
         data = resp.json()
         assert data["run_id"] == "test-run-123"
         assert data["thread_id"] == "test-thread-123"
-        assert data["status"] == "completed"
+        assert data["status"] == "success"
 
     def test_get_run_not_found(self):
         """Test getting a non-existent run"""
@@ -173,7 +173,7 @@ class TestListRuns:
         app = create_test_app(include_runs=True, include_threads=False)
 
         runs = [
-            _run_row("run-1", status="completed"),
+            _run_row("run-1", status="success"),
             _run_row("run-2", status="running"),
             _run_row("run-3", status="pending"),
         ]
@@ -372,7 +372,7 @@ class TestDeleteRun:
         """Test successfully deleting a completed run"""
         app = create_test_app(include_runs=True, include_threads=False)
 
-        run = _run_row(status="completed")
+        run = _run_row(status="success")
 
         class Session(DummySessionBase):
             async def scalar(self, _stmt):
@@ -414,7 +414,7 @@ class TestJoinRun:
         """Test joining an already completed run"""
         app = create_test_app(include_runs=True, include_threads=False)
 
-        run = _run_row(status="completed")
+        run = _run_row(status="success")
 
         class Session(DummySessionBase):
             async def scalar(self, _stmt):
@@ -481,8 +481,8 @@ class TestRunStatuses:
         app = create_test_app(include_runs=True, include_threads=False)
 
         runs = [
-            _run_row("run-1", status="completed"),
-            _run_row("run-2", status="completed"),
+            _run_row("run-1", status="success"),
+            _run_row("run-2", status="success"),
         ]
 
         class Session(DummySessionBase):

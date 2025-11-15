@@ -211,7 +211,7 @@ class TestCreateEndEvent:
         result = create_end_event()
 
         assert "event: end\n" in result
-        assert "completed" in result
+        assert "success" in result
 
 
 class TestCreateErrorEvent:
@@ -392,14 +392,14 @@ class TestLegacyEventFunctions:
         result = create_complete_event("run-123", 3, {"result": "success"})
 
         assert "event: complete\n" in result
-        assert "completed" in result
+        assert "success" in result  # Updated to use standard status
 
     def test_create_cancelled_event(self):
         """Test legacy cancelled event"""
         result = create_cancelled_event("run-123", 4)
 
         assert "event: cancelled\n" in result
-        assert "cancelled" in result
+        assert "interrupted" in result  # Updated to use standard status
 
     def test_create_interrupted_event(self):
         """Test legacy interrupted event"""

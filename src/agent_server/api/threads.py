@@ -267,6 +267,9 @@ async def get_thread_state_at_checkpoint(
     thread_id: str,
     checkpoint_id: str,
     subgraphs: bool | None = Query(False, description="Include states from subgraphs"),
+    checkpoint_ns: str | None = Query(
+        None, description="Checkpoint namespace to scope lookup"
+    ),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -306,11 +309,15 @@ async def get_thread_state_at_checkpoint(
         # Build config with user context and thread_id
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
         config["configurable"]["checkpoint_id"] = checkpoint_id
+        if checkpoint_ns:
+            config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
         # Fetch state at checkpoint
         try:
             agent = agent.with_config(config)
-            state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
+            state_snapshot = await agent.aget_state(
+                config, subgraphs=subgraphs or False
+            )
         except Exception as e:
             logger.exception(
                 "Failed to retrieve state at checkpoint '%s' for thread '%s'",
@@ -332,6 +339,7 @@ async def get_thread_state_at_checkpoint(
         thread_checkpoint = thread_state_service.convert_snapshot_to_thread_state(
             state_snapshot,
             thread_id,
+            subgraphs=subgraphs or False,
         )
 
         return thread_checkpoint
@@ -354,12 +362,30 @@ async def get_thread_state_at_checkpoint_post(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get thread state at a specific checkpoint (POST method - for SDK compatibility)"""
-    # Reuse GET logic by calling the function directly
+    """Get thread state at a specific checkpoint (POST method - for SDK compatibility)
+
+    Supports full checkpoint configuration including:
+    - checkpoint_id: Specific checkpoint ID (required)
+    - checkpoint_ns: Checkpoint namespace for scoping (optional)
+    - subgraphs: Include subgraph states (optional)
+    """
     checkpoint = request.checkpoint
+    if not checkpoint.checkpoint_id:
+        raise HTTPException(
+            400, "checkpoint_id is required in checkpoint configuration"
+        )
+
     subgraphs = request.subgraphs
+    checkpoint_ns = checkpoint.checkpoint_ns if checkpoint.checkpoint_ns else None
+
+    # Reuse GET logic by calling the function directly
     output = await get_thread_state_at_checkpoint(
-        thread_id, checkpoint.checkpoint_id, subgraphs, user, session
+        thread_id,
+        checkpoint.checkpoint_id,
+        subgraphs,
+        checkpoint_ns,
+        user,
+        session,
     )
     return output
 

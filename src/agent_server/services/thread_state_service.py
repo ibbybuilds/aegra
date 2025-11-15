@@ -18,7 +18,7 @@ class ThreadStateService:
         self.serializer = LangGraphSerializer()
 
     def convert_snapshot_to_thread_state(
-        self, snapshot: Any, thread_id: str
+        self, snapshot: Any, thread_id: str, subgraphs: bool = False
     ) -> ThreadState:
         """Convert a LangGraph snapshot to ThreadState format"""
         try:
@@ -30,6 +30,21 @@ class ThreadStateService:
 
             # Extract tasks and interrupts using serializer
             tasks = self.serializer.extract_tasks_from_snapshot(snapshot)
+
+            # Recursively serialize tasks' state (which might be subgraphs)
+            if subgraphs:
+                for task in tasks:
+                    if "state" in task and task["state"] is not None:
+                        try:
+                            task["state"] = self.convert_snapshot_to_thread_state(
+                                task["state"], thread_id, subgraphs=True
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to serialize subgraph state for task {task.get('id')}: {e}"
+                            )
+                            task["state"] = None
+
             interrupts = self.serializer.extract_interrupts_from_snapshot(snapshot)
 
             # Create checkpoint objects

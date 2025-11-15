@@ -167,6 +167,101 @@ async def get_thread(
     )
 
 
+@router.get("/threads/{thread_id}/state", response_model=ThreadState)
+async def get_thread_state(
+    thread_id: str,
+    subgraphs: bool = Query(False, description="Include states from subgraphs"),
+    checkpoint_ns: str | None = Query(
+        None, description="Checkpoint namespace to scope lookup"
+    ),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get state for a thread (i.e. latest checkpoint)"""
+    try:
+        stmt = select(ThreadORM).where(
+            ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
+        )
+        thread = await session.scalar(stmt)
+        if not thread:
+            raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+        thread_metadata = thread.metadata_json or {}
+        graph_id = thread_metadata.get("graph_id")
+        if not graph_id:
+            logger.info("state GET: no graph_id set for thread %s", thread_id)
+            raise HTTPException(404, f"Thread '{thread_id}' has no associated graph")
+
+        from ..services.langgraph_service import (
+            create_thread_config,
+            get_langgraph_service,
+        )
+
+        langgraph_service = get_langgraph_service()
+        try:
+            agent = await langgraph_service.get_graph(graph_id)
+        except Exception as e:
+            logger.exception("Failed to load graph '%s' for state retrieval", graph_id)
+            raise HTTPException(
+                500, f"Failed to load graph '{graph_id}': {str(e)}"
+            ) from e
+
+        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        if checkpoint_ns:
+            config["configurable"]["checkpoint_ns"] = checkpoint_ns
+
+        try:
+            agent = agent.with_config(config)
+            # NOTE: LangGraph only exposes subgraph checkpoints while the run is
+            # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
+            state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(
+                "Failed to retrieve latest state for thread '%s'", thread_id
+            )
+            raise HTTPException(
+                500, f"Failed to retrieve thread state: {str(e)}"
+            ) from e
+
+        if not state_snapshot:
+            logger.info(
+                "state GET: no checkpoint found for thread %s (checkpoint_ns=%s)",
+                thread_id,
+                checkpoint_ns,
+            )
+            raise HTTPException(404, f"No state found for thread '{thread_id}'")
+
+        try:
+            thread_state = thread_state_service.convert_snapshot_to_thread_state(
+                state_snapshot, thread_id, subgraphs=subgraphs
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to convert latest state for thread '%s'", thread_id
+            )
+            raise HTTPException(500, f"Failed to convert thread state: {str(e)}") from e
+
+        logger.debug(
+            "state GET: thread_id=%s checkpoint_id=%s subgraphs=%s checkpoint_ns=%s",
+            thread_id,
+            thread_state.checkpoint.checkpoint_id,
+            subgraphs,
+            checkpoint_ns,
+        )
+
+        return thread_state
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Unexpected error retrieving latest state for thread '%s'", thread_id
+        )
+        raise HTTPException(500, f"Error retrieving thread state: {str(e)}") from e
+
+
 @router.get("/threads/{thread_id}/state/{checkpoint_id}", response_model=ThreadState)
 async def get_thread_state_at_checkpoint(
     thread_id: str,

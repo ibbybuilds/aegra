@@ -311,6 +311,42 @@ class TestSearchThreads:
         assert isinstance(data, list)
 
 
+class TestThreadGetState:
+    """Test GET /threads/{thread_id}/state endpoint"""
+
+    def test_get_latest_state_thread_not_found(self):
+        """Thread lookup should 404 when record is missing."""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return None
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        resp = client.get("/threads/missing/state")
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+    def test_get_latest_state_no_graph_id(self):
+        """Threads without graph metadata should 404 for state lookup."""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        thread = _thread_row("test-123", metadata={})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        resp = client.get("/threads/test-123/state")
+        assert resp.status_code == 404
+        assert "no associated graph" in resp.json()["detail"].lower()
+
+
 class TestThreadStateCheckpoint:
     """Test GET /threads/{thread_id}/state/{checkpoint_id} endpoint"""
 

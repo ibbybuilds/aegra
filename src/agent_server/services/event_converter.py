@@ -91,16 +91,19 @@ class EventConverter:
                     # Subgraphs format: (namespace, mode, chunk)
                     namespace, mode, chunk = raw_event
                     # Normalize namespace to list format
-                    if namespace is None:
+                    if namespace is None or (
+                        isinstance(namespace, (list, tuple)) and not namespace
+                    ):
+                        # Handle None or empty tuple/list - no namespace prefix
                         namespace_list = None
                     elif isinstance(namespace, (list, tuple)):
                         # Convert tuple/list to list of strings
-                        namespace_list = (
-                            [str(item) for item in namespace] if namespace else None
-                        )
+                        namespace_list = [str(item) for item in namespace]
                     elif isinstance(namespace, str):
-                        namespace_list = [namespace]
+                        # Handle string namespace (shouldn't happen but be safe)
+                        namespace_list = [namespace] if namespace else None
                     else:
+                        # Fallback - shouldn't reach here
                         namespace_list = [str(namespace)]
                     return mode, chunk, namespace_list
                 else:

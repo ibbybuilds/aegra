@@ -10,6 +10,10 @@ def _get_langgraph_node(chunk: Any) -> str:
     if isinstance(chunk, tuple) and len(chunk) >= 2:
         event_type, payload = chunk[0], chunk[1]
 
+        # Handle namespaced event types (e.g., "messages|subagent")
+        if isinstance(event_type, str) and "|" in event_type:
+            event_type = event_type.split("|")[0]  # Extract base event type
+
         # For messages events, look in the message metadata
         if event_type == "messages" and isinstance(payload, list):
             for message in payload:
@@ -23,6 +27,20 @@ def _get_langgraph_node(chunk: Any) -> str:
     # Handle non-tuple chunks (direct objects)
     elif isinstance(chunk, dict) and "langgraph_node" in chunk:
         return chunk["langgraph_node"]
+
+    # Handle SSE chunk objects with event attribute
+    if hasattr(chunk, "event"):
+        event_type = chunk.event
+        if isinstance(event_type, str) and "|" in event_type:
+            event_type = event_type.split("|")[0]
+        if hasattr(chunk, "data"):
+            data = chunk.data
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "langgraph_node" in item:
+                        return item["langgraph_node"]
+            elif isinstance(data, dict) and "langgraph_node" in data:
+                return data["langgraph_node"]
 
     return None
 

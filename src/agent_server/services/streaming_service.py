@@ -17,7 +17,7 @@ logger = structlog.getLogger(__name__)
 
 
 class StreamingService:
-    """Service to handle SSE streaming orchestration with LangGraph compatibility"""
+    """Service to handle SSE streaming orchestration"""
 
     def __init__(self):
         self.event_counters: dict[str, int] = {}
@@ -26,26 +26,46 @@ class StreamingService:
     def _process_interrupt_updates(
         self, raw_event: Any, only_interrupt_updates: bool
     ) -> tuple[Any, bool]:
-        """Process interrupt updates logic - returns (processed_event, should_skip)"""
-        if (
-            isinstance(raw_event, tuple)
-            and len(raw_event) >= 2
-            and raw_event[0] == "updates"
-            and only_interrupt_updates
-        ):
-            # User didn't request updates - only process interrupt updates
+        """
+        Process interrupt updates logic - returns (processed_event, should_skip).
+
+        Behavior:
+        - Non-interrupt updates are silently dropped when only_interrupt_updates=True
+        - Interrupt updates are converted to values events
+        - Preserves namespace in 3-tuple format when subgraphs=True
+        """
+        if not isinstance(raw_event, tuple) or len(raw_event) < 2:
+            return raw_event, False
+
+        mode = raw_event[0]
+
+        # Handle updates events
+        if mode == "updates" and only_interrupt_updates:
+            # Extract chunk (handles both 2-tuple and 3-tuple formats)
+            if len(raw_event) == 2:
+                chunk = raw_event[1]
+                namespace = None
+            else:
+                # 3-tuple: (namespace, "updates", chunk) when subgraphs=True
+                namespace, _, chunk = raw_event
+
+            # Check if this is an interrupt update
             if (
-                isinstance(raw_event[1], dict)
-                and "__interrupt__" in raw_event[1]
-                and len(raw_event[1].get("__interrupt__", [])) > 0
+                isinstance(chunk, dict)
+                and "__interrupt__" in chunk
+                and len(chunk.get("__interrupt__", [])) > 0
             ):
                 # Convert interrupt updates to values events
-                return ("values", raw_event[1]), False
+                if namespace is not None:
+                    return (namespace, "values", chunk), False
+                else:
+                    return ("values", chunk), False
             else:
                 # Skip non-interrupt updates when not requested
                 return raw_event, True
-        else:
-            return raw_event, False
+
+        # Non-updates events pass through unchanged
+        return raw_event, False
 
     def _next_event_counter(self, run_id: str, event_id: str) -> int:
         """Update and return the next event counter for a run"""

@@ -982,6 +982,9 @@ async def execute_run_async(
 
         only_interrupt_updates = not user_requested_updates
 
+        # Set subgraphs flag on event converter for namespace extraction
+        streaming_service.event_converter.set_subgraphs(subgraphs)
+
         # Filter context parameters based on context schema if available
         if context:
             try:
@@ -1004,41 +1007,61 @@ async def execute_run_async(
                 if _should_skip_event(raw_event):
                     continue
 
+                # Filter updates events BEFORE processing
+                # This ensures incomplete updates don't affect final_output tracking
+                processed_event, should_skip = (
+                    streaming_service._process_interrupt_updates(
+                        raw_event, only_interrupt_updates
+                    )
+                )
+                if should_skip:
+                    # Skip non-interrupt updates when not requested
+                    continue
+
                 event_counter += 1
                 event_id = f"{run_id}_event_{event_counter}"
 
-                # Forward to broker for live consumers
+                # Forward to broker for live consumers (use processed event)
                 await streaming_service.put_to_broker(
                     run_id,
                     event_id,
-                    raw_event,
+                    processed_event,
                     only_interrupt_updates=only_interrupt_updates,
                 )
-                # Store for replay
+                # Store for replay (use processed event)
                 await streaming_service.store_event_from_raw(
                     run_id,
                     event_id,
-                    raw_event,
+                    processed_event,
                     only_interrupt_updates=only_interrupt_updates,
                 )
 
-                # Check for interrupt in this event
+                # Check for interrupt in the processed event
                 event_data = None
-                if isinstance(raw_event, tuple) and len(raw_event) >= 2:
-                    event_data = raw_event[1]
-                elif not isinstance(raw_event, tuple):
-                    event_data = raw_event
+                if isinstance(processed_event, tuple) and len(processed_event) >= 2:
+                    event_data = processed_event[1]
+                elif not isinstance(processed_event, tuple):
+                    event_data = processed_event
 
                 if isinstance(event_data, dict) and "__interrupt__" in event_data:
                     has_interrupt = True
 
-                # Track final output
-                if isinstance(raw_event, tuple):
-                    if len(raw_event) >= 2 and raw_event[0] == "values":
-                        final_output = raw_event[1]
-                elif not isinstance(raw_event, tuple):
+                # Track final output - only from actual values events, not converted updates
+                # This ensures we capture complete state, not intermediate updates
+                if isinstance(processed_event, tuple):
+                    if len(processed_event) == 2:
+                        # 2-tuple: (mode, chunk)
+                        mode, chunk = processed_event
+                        if mode == "values":
+                            final_output = chunk
+                    elif len(processed_event) == 3:
+                        # 3-tuple: (namespace, mode, chunk) when subgraphs=True
+                        namespace, mode, chunk = processed_event
+                        if mode == "values":
+                            final_output = chunk
+                elif not isinstance(processed_event, tuple):
                     # Non-tuple events are values mode
-                    final_output = raw_event
+                    final_output = processed_event
 
         if has_interrupt:
             await update_run_status(

@@ -45,7 +45,7 @@ def _merge_lifespans(base_app: FastAPI, user_app: FastAPI) -> None:
         return
 
     @asynccontextmanager
-    async def combined(app):
+    async def combined(app: FastAPI):
         if base_lifespan:
             async with base_lifespan(app):
                 async with user_lifespan(app):

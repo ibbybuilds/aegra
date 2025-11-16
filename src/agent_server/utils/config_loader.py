@@ -1,4 +1,4 @@
-"""Shared helpers for loading aegra/langgraph configuration files."""
+"""Shared helpers for loading aegra/LangGraph configuration files."""
 
 from __future__ import annotations
 

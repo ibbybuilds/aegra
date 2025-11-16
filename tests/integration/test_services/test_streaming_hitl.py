@@ -131,22 +131,33 @@ class TestEventConverter:
         assert "event: values" in sse_event
 
     def test_parse_raw_event_tuple_formats(self, event_converter):
-        """Test parsing different tuple formats from LangGraph."""
+        """Test parsing different tuple formats."""
         # Test 2-tuple format
         raw_event = ("values", {"test": "data"})
-        stream_mode, payload = event_converter._parse_raw_event(raw_event)
+        stream_mode, payload, namespace = event_converter._parse_raw_event(raw_event)
         assert stream_mode == "values"
         assert payload == {"test": "data"}
+        assert namespace is None
 
-        # Test 3-tuple format (with node_path)
+        # Test 3-tuple format (legacy node_path)
+        event_converter.set_subgraphs(False)
         raw_event = ("node_path", "values", {"test": "data"})
-        stream_mode, payload = event_converter._parse_raw_event(raw_event)
+        stream_mode, payload, namespace = event_converter._parse_raw_event(raw_event)
         assert stream_mode == "values"
         assert payload == {"test": "data"}
+        assert namespace is None
+
+        # Test 3-tuple format (subgraphs with namespace)
+        event_converter.set_subgraphs(True)
+        raw_event = (["subagent"], "messages", {"test": "data"})
+        stream_mode, payload, namespace = event_converter._parse_raw_event(raw_event)
+        assert stream_mode == "messages"
+        assert payload == {"test": "data"}
+        assert namespace == ["subagent"]
 
         # Test non-tuple format
         raw_event = {"test": "data"}
-        stream_mode, payload = event_converter._parse_raw_event(raw_event)
+        stream_mode, payload, namespace = event_converter._parse_raw_event(raw_event)
         assert stream_mode == "values"  # Default
         assert payload == {"test": "data"}
 

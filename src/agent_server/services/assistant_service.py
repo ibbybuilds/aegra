@@ -231,9 +231,11 @@ class AssistantService:
         return to_pydantic(assistant_orm)
 
     async def list_assistants(self, user_identity: str) -> list[Assistant]:
-        """List user's assistants"""
-        # Filter assistants by user
-        stmt = select(AssistantORM).where(AssistantORM.user_id == user_identity)
+        """List user's assistants and system assistants"""
+        # Include both user's assistants and system assistants (like search_assistants does)
+        stmt = select(AssistantORM).where(
+            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system")
+        )
         result = await self.session.scalars(stmt)
         user_assistants = [to_pydantic(a) for a in result.all()]
         return user_assistants
@@ -280,7 +282,10 @@ class AssistantService:
         user_identity: str,
     ) -> int:
         """Count assistants with filters"""
-        stmt = select(func.count()).where(AssistantORM.user_id == user_identity)
+        # Include both user's assistants and system assistants (like search_assistants does)
+        stmt = select(func.count()).where(
+            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system")
+        )
 
         if request.name:
             stmt = stmt.where(AssistantORM.name.ilike(f"%{request.name}%"))

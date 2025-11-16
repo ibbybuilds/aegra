@@ -37,18 +37,18 @@ class StreamingService:
         if not isinstance(raw_event, tuple) or len(raw_event) < 2:
             return raw_event, False
 
-        mode = raw_event[0]
+        # Extract mode and chunk based on tuple length
+        if len(raw_event) == 2:
+            # 2-tuple: (mode, chunk)
+            mode = raw_event[0]
+            chunk = raw_event[1]
+            namespace = None
+        else:
+            # 3-tuple: (namespace, mode, chunk) when subgraphs=True
+            namespace, mode, chunk = raw_event
 
         # Handle updates events
         if mode == "updates" and only_interrupt_updates:
-            # Extract chunk (handles both 2-tuple and 3-tuple formats)
-            if len(raw_event) == 2:
-                chunk = raw_event[1]
-                namespace = None
-            else:
-                # 3-tuple: (namespace, "updates", chunk) when subgraphs=True
-                namespace, _, chunk = raw_event
-
             # Check if this is an interrupt update
             if (
                 isinstance(chunk, dict)

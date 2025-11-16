@@ -133,14 +133,20 @@ class EventConverter:
             event_type = stream_mode
 
         # Handle updates events - convert interrupt updates to values
+        # Note: This path should rarely be reached as updates are filtered
+        # in _process_interrupt_updates before reaching the converter
         if stream_mode == "updates":
             if isinstance(payload, dict) and "__interrupt__" in payload:
                 # Convert interrupt updates to values events
                 if self.subgraphs and namespace:
                     event_type = f"values|{'|'.join(namespace)}"
+                    # Use format_sse_message directly to support namespace prefixing
+                    from ..core.sse import format_sse_message
+
+                    return format_sse_message(event_type, payload, event_id)
                 else:
                     event_type = "values"
-                return create_values_event(payload, event_id)
+                    return create_values_event(payload, event_id)
             else:
                 # Non-interrupt updates should be filtered out (not reach here if filtering works)
                 return create_updates_event(payload, event_id)

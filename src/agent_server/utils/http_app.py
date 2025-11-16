@@ -60,7 +60,7 @@ def _merge_lifespans(base_app: FastAPI, user_app: FastAPI) -> None:
 def _merge_fastapi_apps(base_app: FastAPI, user_app: FastAPI) -> None:
     """Merge routes/middleware/handlers from user_app into base_app."""
 
-    # Include user routes first so existing Agent Protocol routes take precedence if overlapping.
+    # Include user routes first so user routes take precedence if overlapping with Agent Protocol routes.
     base_app.router.routes = user_app.router.routes + base_app.router.routes
 
     for middleware in getattr(user_app, "user_middleware", []) or []:

@@ -93,6 +93,7 @@ async def test_latest_state_with_subgraphs_e2e():
     thread_id = thread["thread_id"]
     elog("Created thread", thread)
 
+    # Use graph_id directly - should be auto-created from aegra.json
     await client.runs.wait(
         thread_id=thread_id,
         assistant_id="subgraph_hitl_agent",

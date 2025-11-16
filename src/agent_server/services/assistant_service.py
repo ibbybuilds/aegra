@@ -282,7 +282,10 @@ class AssistantService:
         user_identity: str,
     ) -> int:
         """Count assistants with filters"""
-        stmt = select(func.count()).where(AssistantORM.user_id == user_identity)
+        # Include both user's assistants and system assistants (like search_assistants does)
+        stmt = select(func.count()).where(
+            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system")
+        )
 
         if request.name:
             stmt = stmt.where(AssistantORM.name.ilike(f"%{request.name}%"))

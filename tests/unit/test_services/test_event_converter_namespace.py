@@ -40,6 +40,26 @@ class TestEventConverterNamespace:
         assert payload == {"content": "hello"}
         assert namespace == ["agent1"]
 
+    def test_parse_raw_event_3_tuple_tuple_namespace(self):
+        """Test parsing 3-tuple with tuple namespace (converted to list)"""
+        self.converter.set_subgraphs(True)
+        raw_event = (("subgraph_agent:uuid",), "messages", {"content": "hello"})
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
+
+        assert stream_mode == "messages"
+        assert payload == {"content": "hello"}
+        assert namespace == ["subgraph_agent:uuid"]
+
+    def test_parse_raw_event_3_tuple_empty_tuple_namespace(self):
+        """Test parsing 3-tuple with empty tuple namespace"""
+        self.converter.set_subgraphs(True)
+        raw_event = ((), "messages", {"content": "hello"})
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
+
+        assert stream_mode == "messages"
+        assert payload == {"content": "hello"}
+        assert namespace is None
+
     def test_parse_raw_event_3_tuple_non_string_namespace(self):
         """Test parsing 3-tuple with non-string namespace (converted to list)"""
         self.converter.set_subgraphs(True)

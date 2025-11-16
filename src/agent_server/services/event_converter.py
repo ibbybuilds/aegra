@@ -93,8 +93,11 @@ class EventConverter:
                     # Normalize namespace to list format
                     if namespace is None:
                         namespace_list = None
-                    elif isinstance(namespace, list):
-                        namespace_list = namespace
+                    elif isinstance(namespace, (list, tuple)):
+                        # Convert tuple/list to list of strings
+                        namespace_list = (
+                            [str(item) for item in namespace] if namespace else None
+                        )
                     elif isinstance(namespace, str):
                         namespace_list = [namespace]
                     else:

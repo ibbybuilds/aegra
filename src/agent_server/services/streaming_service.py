@@ -64,8 +64,8 @@ class StreamingService:
                 # Skip non-interrupt updates when not requested
                 return raw_event, True
 
-        # Non-updates events pass through unchanged
-        return raw_event, False
+            # Non-updates events pass through unchanged
+            return raw_event, False
 
     def _next_event_counter(self, run_id: str, event_id: str) -> int:
         """Update and return the next event counter for a run"""
@@ -141,6 +141,49 @@ class StreamingService:
                     if isinstance(event_payload, tuple) and len(event_payload) >= 2
                     else None,
                     "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "messages/partial":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "messages/partial",
+                {
+                    "type": "messages_partial",
+                    "messages": event_payload,
+                    "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "messages/complete":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "messages/complete",
+                {
+                    "type": "messages_complete",
+                    "messages": event_payload,
+                    "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "messages/metadata":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "messages/metadata",
+                {
+                    "type": "messages_metadata",
+                    "metadata": event_payload,
+                    "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "events":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "events",
+                {
+                    "type": "langchain_event",
+                    "event": event_payload,
                 },
             )
         elif stream_mode_label == "values" or stream_mode_label == "updates":

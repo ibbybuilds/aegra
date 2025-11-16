@@ -968,22 +968,43 @@ async def execute_run_async(
 
         # Prepare stream modes for execution
         if stream_mode is None:
-            final_stream_modes = DEFAULT_STREAM_MODES.copy()
+            original_stream_modes = DEFAULT_STREAM_MODES.copy()
         elif isinstance(stream_mode, str):
-            final_stream_modes = [stream_mode]
+            original_stream_modes = [stream_mode]
         else:
-            final_stream_modes = stream_mode.copy()
+            original_stream_modes = stream_mode.copy()
+
+        # Detect if we should use astream_events (for CopilotKit/AG-UI)
+        use_astream_events = "events" in original_stream_modes
+        use_messages_tuple = "messages-tuple" in original_stream_modes
+
+        # Prepare stream modes for graph execution
+        # Remove "events" from stream_modes_set (it's handled separately)
+        stream_modes_set = set(original_stream_modes)
+        if use_astream_events:
+            stream_modes_set.discard("events")
+
+        # Convert messages-tuple to messages for astream_events
+        # (but keep track of original for format handling)
+        if "messages-tuple" in stream_modes_set:
+            stream_modes_set.discard("messages-tuple")
+            stream_modes_set.add("messages")
 
         # Ensure interrupt events are captured by including updates mode
         # Track whether updates was explicitly requested by user
-        user_requested_updates = "updates" in final_stream_modes
+        user_requested_updates = "updates" in stream_modes_set
         if not user_requested_updates:
-            final_stream_modes.append("updates")
+            stream_modes_set.add("updates")
 
         only_interrupt_updates = not user_requested_updates
+        final_stream_modes = list(stream_modes_set)
 
         # Set subgraphs flag on event converter for namespace extraction
         streaming_service.event_converter.set_subgraphs(subgraphs)
+
+        # Message accumulation state (for Studio format)
+        # Only accumulate when using processed messages format (not messages-tuple)
+        messages_state: dict[str, Any] = {} if not use_messages_tuple else {}
 
         # Filter context parameters based on context schema if available
         if context:
@@ -996,72 +1017,257 @@ async def execute_run_async(
                 )
 
         async with with_auth_ctx(user, []):
-            async for raw_event in graph.astream(
-                execution_input,
-                config=run_config,
-                context=context,
-                subgraphs=subgraphs,
-                stream_mode=final_stream_modes,
-            ):
-                # Skip events that contain langsmith:nostream tag
-                if _should_skip_event(raw_event):
-                    continue
+            # Dual-path streaming: use astream_events for CopilotKit/AG-UI, astream otherwise
+            if use_astream_events:
+                # Use astream_events for v2 event format (CopilotKit/AG-UI)
+                async for event in graph.astream_events(
+                    execution_input,
+                    config=run_config,
+                    version="v2",
+                    stream_mode=final_stream_modes,
+                    context=context,
+                    subgraphs=subgraphs,
+                ):
+                    # Filter hidden events
+                    if event.get("tags") and "langsmith:hidden" in event.get(
+                        "tags", []
+                    ):
+                        continue
 
-                # Filter updates events BEFORE processing
-                # This ensures incomplete updates don't affect final_output tracking
-                processed_event, should_skip = (
-                    streaming_service._process_interrupt_updates(
-                        raw_event, only_interrupt_updates
+                    event_counter += 1
+                    event_id = f"{run_id}_event_{event_counter}"
+
+                    # Handle on_chain_stream events (wrapped astream events)
+                    if (
+                        event.get("event") == "on_chain_stream"
+                        and event.get("run_id") == run_id
+                    ):
+                        chunk_data = event.get("data", {}).get("chunk")
+                        if chunk_data is None:
+                            continue
+
+                        # Extract namespace and mode based on subgraphs setting
+                        if (
+                            subgraphs
+                            and isinstance(chunk_data, tuple)
+                            and len(chunk_data) == 3
+                        ):
+                            namespace, mode, chunk = chunk_data
+                        elif isinstance(chunk_data, tuple) and len(chunk_data) == 2:
+                            mode, chunk = chunk_data
+                            namespace = None
+                        else:
+                            # Non-tuple format
+                            mode = "values"
+                            chunk = chunk_data
+                            namespace = None
+
+                        # Handle messages format with accumulation for Studio
+                        if mode == "messages" and not use_messages_tuple:
+                            # Processed format with accumulation (Studio)
+                            try:
+                                from langchain_core.messages import (
+                                    BaseMessageChunk,
+                                    convert_to_messages,
+                                )
+                                from langchain_core.messages.utils import (
+                                    message_chunk_to_message,
+                                )
+
+                                msg_, meta = (
+                                    chunk if isinstance(chunk, tuple) else (chunk, {})
+                                )
+                                if isinstance(msg_, dict):
+                                    msg = convert_to_messages([msg_])[0]
+                                else:
+                                    msg = msg_
+
+                                msg_id = getattr(msg, "id", None) or str(uuid4())
+                                if not hasattr(msg, "id"):
+                                    msg.id = msg_id
+
+                                # Accumulate messages
+                                if msg_id in messages_state:
+                                    messages_state[msg_id] += msg
+                                else:
+                                    messages_state[msg_id] = msg
+                                    # Send metadata event first
+                                    await streaming_service.put_to_broker(
+                                        run_id,
+                                        event_id,
+                                        (
+                                            "messages/metadata",
+                                            {msg_id: {"metadata": meta}},
+                                        ),
+                                        only_interrupt_updates=only_interrupt_updates,
+                                    )
+                                    await streaming_service.store_event_from_raw(
+                                        run_id,
+                                        event_id,
+                                        (
+                                            "messages/metadata",
+                                            {msg_id: {"metadata": meta}},
+                                        ),
+                                        only_interrupt_updates=only_interrupt_updates,
+                                    )
+
+                                # Send partial/complete event
+                                event_type = (
+                                    "messages/partial"
+                                    if isinstance(msg, BaseMessageChunk)
+                                    else "messages/complete"
+                                )
+                                accumulated_msg = message_chunk_to_message(
+                                    messages_state[msg_id]
+                                )
+                                processed_event = (event_type, [accumulated_msg])
+                            except ImportError:
+                                # Fallback if langchain_core not available
+                                processed_event = ("messages", chunk)
+                        elif mode == "messages" and use_messages_tuple:
+                            # Raw tuple format (Agent Chat UI)
+                            processed_event = ("messages", chunk)
+                        else:
+                            # Other modes (values, debug, updates)
+                            if namespace is not None:
+                                processed_event = (namespace, mode, chunk)
+                            else:
+                                processed_event = (mode, chunk)
+
+                        # Filter updates events
+                        processed_event, should_skip = (
+                            streaming_service._process_interrupt_updates(
+                                processed_event, only_interrupt_updates
+                            )
+                        )
+                        if should_skip:
+                            continue
+
+                        # Forward to broker and store
+                        await streaming_service.put_to_broker(
+                            run_id,
+                            event_id,
+                            processed_event,
+                            only_interrupt_updates=only_interrupt_updates,
+                        )
+                        await streaming_service.store_event_from_raw(
+                            run_id,
+                            event_id,
+                            processed_event,
+                            only_interrupt_updates=only_interrupt_updates,
+                        )
+
+                        # Check for interrupt
+                        event_data = (
+                            processed_event[1]
+                            if isinstance(processed_event, tuple)
+                            and len(processed_event) >= 2
+                            else processed_event
+                        )
+                        if (
+                            isinstance(event_data, dict)
+                            and "__interrupt__" in event_data
+                        ):
+                            has_interrupt = True
+
+                        # Track final output
+                        if isinstance(processed_event, tuple):
+                            if len(processed_event) == 2:
+                                mode_check, chunk_check = processed_event
+                                if mode_check == "values":
+                                    final_output = chunk_check
+                            elif len(processed_event) == 3:
+                                namespace_check, mode_check, chunk_check = (
+                                    processed_event
+                                )
+                                if mode_check == "values":
+                                    final_output = chunk_check
+                        elif not isinstance(processed_event, tuple):
+                            final_output = processed_event
+
+                    # Pass through raw events for "events" mode (CopilotKit)
+                    elif "events" in original_stream_modes:
+                        await streaming_service.put_to_broker(
+                            run_id,
+                            event_id,
+                            ("events", event),
+                            only_interrupt_updates=only_interrupt_updates,
+                        )
+                        await streaming_service.store_event_from_raw(
+                            run_id,
+                            event_id,
+                            ("events", event),
+                            only_interrupt_updates=only_interrupt_updates,
+                        )
+
+            else:
+                # Existing astream implementation (backward compatible)
+                async for raw_event in graph.astream(
+                    execution_input,
+                    config=run_config,
+                    context=context,
+                    subgraphs=subgraphs,
+                    stream_mode=final_stream_modes,
+                ):
+                    # Skip events that contain langsmith:nostream tag
+                    if _should_skip_event(raw_event):
+                        continue
+
+                    # Filter updates events BEFORE processing
+                    # This ensures incomplete updates don't affect final_output tracking
+                    processed_event, should_skip = (
+                        streaming_service._process_interrupt_updates(
+                            raw_event, only_interrupt_updates
+                        )
                     )
-                )
-                if should_skip:
-                    # Skip non-interrupt updates when not requested
-                    continue
+                    if should_skip:
+                        # Skip non-interrupt updates when not requested
+                        continue
 
-                event_counter += 1
-                event_id = f"{run_id}_event_{event_counter}"
+                    event_counter += 1
+                    event_id = f"{run_id}_event_{event_counter}"
 
-                # Forward to broker for live consumers (use processed event)
-                await streaming_service.put_to_broker(
-                    run_id,
-                    event_id,
-                    processed_event,
-                    only_interrupt_updates=only_interrupt_updates,
-                )
-                # Store for replay (use processed event)
-                await streaming_service.store_event_from_raw(
-                    run_id,
-                    event_id,
-                    processed_event,
-                    only_interrupt_updates=only_interrupt_updates,
-                )
+                    # Forward to broker for live consumers (use processed event)
+                    await streaming_service.put_to_broker(
+                        run_id,
+                        event_id,
+                        processed_event,
+                        only_interrupt_updates=only_interrupt_updates,
+                    )
+                    # Store for replay (use processed event)
+                    await streaming_service.store_event_from_raw(
+                        run_id,
+                        event_id,
+                        processed_event,
+                        only_interrupt_updates=only_interrupt_updates,
+                    )
 
-                # Check for interrupt in the processed event
-                event_data = None
-                if isinstance(processed_event, tuple) and len(processed_event) >= 2:
-                    event_data = processed_event[1]
-                elif not isinstance(processed_event, tuple):
-                    event_data = processed_event
+                    # Check for interrupt in the processed event
+                    event_data = None
+                    if isinstance(processed_event, tuple) and len(processed_event) >= 2:
+                        event_data = processed_event[1]
+                    elif not isinstance(processed_event, tuple):
+                        event_data = processed_event
 
-                if isinstance(event_data, dict) and "__interrupt__" in event_data:
-                    has_interrupt = True
+                    if isinstance(event_data, dict) and "__interrupt__" in event_data:
+                        has_interrupt = True
 
-                # Track final output - only from actual values events, not converted updates
-                # This ensures we capture complete state, not intermediate updates
-                if isinstance(processed_event, tuple):
-                    if len(processed_event) == 2:
-                        # 2-tuple: (mode, chunk)
-                        mode, chunk = processed_event
-                        if mode == "values":
-                            final_output = chunk
-                    elif len(processed_event) == 3:
-                        # 3-tuple: (namespace, mode, chunk) when subgraphs=True
-                        namespace, mode, chunk = processed_event
-                        if mode == "values":
-                            final_output = chunk
-                elif not isinstance(processed_event, tuple):
-                    # Non-tuple events are values mode
-                    final_output = processed_event
+                    # Track final output - only from actual values events, not converted updates
+                    # This ensures we capture complete state, not intermediate updates
+                    if isinstance(processed_event, tuple):
+                        if len(processed_event) == 2:
+                            # 2-tuple: (mode, chunk)
+                            mode, chunk = processed_event
+                            if mode == "values":
+                                final_output = chunk
+                        elif len(processed_event) == 3:
+                            # 3-tuple: (namespace, mode, chunk) when subgraphs=True
+                            namespace, mode, chunk = processed_event
+                            if mode == "values":
+                                final_output = chunk
+                    elif not isinstance(processed_event, tuple):
+                        # Non-tuple events are values mode
+                        final_output = processed_event
 
         if has_interrupt:
             await update_run_status(

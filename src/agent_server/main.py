@@ -102,7 +102,8 @@ app.add_middleware(
 )
 
 # Add middleware to handle double-encoded JSON from frontend
-app.add_middleware(DoubleEncodedJSONMiddleware)
+if os.getenv("DISABLE_DOUBLE_ENCODED_JSON_MIDDLEWARE", "false").lower() != "true":
+    app.add_middleware(DoubleEncodedJSONMiddleware)
 
 # Add authentication middleware (must be added after CORS)
 app.add_middleware(

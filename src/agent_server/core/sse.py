@@ -68,18 +68,6 @@ def create_metadata_event(
     return format_sse_message("metadata", data, event_id)
 
 
-def create_values_event(chunk_data: dict[str, Any], event_id: str | None = None) -> str:
-    """Create values event"""
-    return format_sse_message("values", chunk_data, event_id)
-
-
-def create_updates_event(
-    updates_data: dict[str, Any], event_id: str | None = None
-) -> str:
-    """Create updates event"""
-    return format_sse_message("updates", updates_data, event_id)
-
-
 def create_debug_event(debug_data: dict[str, Any], event_id: str | None = None) -> str:
     """Create debug event with checkpoint fields for LangSmith Studio compatibility"""
 
@@ -130,47 +118,6 @@ def create_error_event(error: str, event_id: str | None = None) -> str:
     return format_sse_message("error", data, event_id)
 
 
-def create_events_event(event_data: dict[str, Any], event_id: str | None = None) -> str:
-    """Create events stream mode event"""
-    return format_sse_message("events", event_data, event_id)
-
-
-def create_state_event(state_data: dict[str, Any], event_id: str | None = None) -> str:
-    """Create state event"""
-    return format_sse_message("state", state_data, event_id)
-
-
-def create_logs_event(logs_data: dict[str, Any], event_id: str | None = None) -> str:
-    """Create logs event"""
-    return format_sse_message("logs", logs_data, event_id)
-
-
-def create_tasks_event(tasks_data: dict[str, Any], event_id: str | None = None) -> str:
-    """Create tasks event"""
-    return format_sse_message("tasks", tasks_data, event_id)
-
-
-def create_subgraphs_event(
-    subgraphs_data: dict[str, Any], event_id: str | None = None
-) -> str:
-    """Create subgraphs event"""
-    return format_sse_message("subgraphs", subgraphs_data, event_id)
-
-
-def create_checkpoints_event(
-    checkpoints_data: dict[str, Any], event_id: str | None = None
-) -> str:
-    """Create checkpoints event"""
-    return format_sse_message("checkpoints", checkpoints_data, event_id)
-
-
-def create_custom_event(
-    custom_data: dict[str, Any], event_id: str | None = None
-) -> str:
-    """Create custom event"""
-    return format_sse_message("custom", custom_data, event_id)
-
-
 def create_messages_event(
     messages_data: Any, event_type: str = "messages", event_id: str | None = None
 ) -> str:
@@ -186,10 +133,10 @@ def create_messages_event(
         return format_sse_message(event_type, messages_data, event_id)
 
 
-# Legacy compatibility functions (deprecated)
+# Legacy compatibility - used by event_store.py
 @dataclass
 class SSEEvent:
-    """Legacy SSE Event data structure - deprecated"""
+    """SSE Event data structure for event storage"""
 
     id: str
     event: str
@@ -201,88 +148,12 @@ class SSEEvent:
             self.timestamp = datetime.now(UTC)
 
     def format(self) -> str:
-        """Format as proper SSE event - deprecated"""
+        """Format as proper SSE event"""
         json_data = json.dumps(self.data, default=str)
         return f"id: {self.id}\nevent: {self.event}\ndata: {json_data}\n\n"
 
 
 def format_sse_event(id: str, event: str, data: dict[str, Any]) -> str:
-    """Legacy format function - deprecated"""
+    """Format SSE event (used by event_store)"""
     json_data = json.dumps(data, default=str)
     return f"id: {id}\nevent: {event}\ndata: {json_data}\n\n"
-
-
-# Legacy event creation functions - deprecated but kept for compatibility
-def create_start_event(run_id: str, event_counter: int) -> str:
-    """Legacy start event - deprecated, use create_metadata_event instead"""
-    return format_sse_event(
-        id=f"{run_id}_event_{event_counter}",
-        event="start",
-        data={
-            "type": "run_start",
-            "run_id": run_id,
-            "status": "running",
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-    )
-
-
-def create_chunk_event(
-    run_id: str, event_counter: int, chunk_data: dict[str, Any]
-) -> str:
-    """Legacy chunk event - deprecated, use create_values_event instead"""
-    return format_sse_event(
-        id=f"{run_id}_event_{event_counter}",
-        event="chunk",
-        data={
-            "type": "execution_chunk",
-            "chunk": chunk_data,
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-    )
-
-
-def create_complete_event(run_id: str, event_counter: int, final_output: Any) -> str:
-    """Legacy complete event - deprecated, use create_end_event instead
-
-    Note: Uses legacy "completed" status for backward compatibility with old clients.
-    """
-    return format_sse_event(
-        id=f"{run_id}_event_{event_counter}",
-        event="complete",
-        data={
-            "type": "run_complete",
-            "status": "success",  # Use standard status
-            "final_output": final_output,
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-    )
-
-
-def create_cancelled_event(run_id: str, event_counter: int) -> str:
-    """Legacy cancelled event - deprecated
-
-    Note: Uses "interrupted" status instead of legacy "cancelled"
-    """
-    return format_sse_event(
-        id=f"{run_id}_event_{event_counter}",
-        event="cancelled",
-        data={
-            "type": "run_cancelled",
-            "status": "interrupted",  # Use standard status instead of legacy "cancelled"
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-    )
-
-
-def create_interrupted_event(run_id: str, event_counter: int) -> str:
-    """Legacy interrupted event - deprecated"""
-    return format_sse_event(
-        id=f"{run_id}_event_{event_counter}",
-        event="interrupted",
-        data={
-            "type": "run_interrupted",
-            "status": "interrupted",
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-    )

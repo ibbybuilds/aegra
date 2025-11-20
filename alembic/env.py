@@ -38,7 +38,11 @@ target_metadata = Base.metadata
 
 def get_url():
     """Get database URL from environment or config."""
-    return os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+    url = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+    # Ensure URL uses asyncpg driver (Railway provides postgresql://, we need postgresql+asyncpg://)
+    if url and url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:

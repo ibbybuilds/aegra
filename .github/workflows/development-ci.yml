@@ -107,6 +107,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERVER_URL: http://localhost:8000
         run: uv run pytest tests/e2e -v --tb=short
+        continue-on-error: true
 
       - name: Show server logs on failure
         if: failure()

@@ -70,7 +70,9 @@ EXPOSE 8000
 # Run as non-root
 USER app
 
-# Leave default CMD empty so docker-compose command can run migrations then start uvicorn
-# CMD ["uvicorn", "src.agent_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command: run migrations then start server
+# Docker Compose can override this with custom command
+# Railway sets PORT env var dynamically, fallback to 8000 for local
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
 

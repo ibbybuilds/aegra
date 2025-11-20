@@ -15,11 +15,21 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # Builder stage
 # -----------------------------
 FROM base AS builder
+
+# Accept GitHub token as build argument for private dependencies
+ARG GH_PAT
+ENV GH_PAT=${GH_PAT}
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     git \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure git to use token for private repos if provided
+RUN if [ -n "$GH_PAT" ]; then \
+        git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"; \
+    fi
 
 # Copy project metadata and source
 COPY pyproject.toml ./

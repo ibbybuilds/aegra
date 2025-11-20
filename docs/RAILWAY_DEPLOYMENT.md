@@ -75,6 +75,29 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 Add any additional environment variables required by your `ava-core` package.
 
+### GitHub Token for Private Dependencies
+
+**REQUIRED**: Since `ava-core` is a private repository, you need to provide a GitHub token:
+
+1. Use the same Personal Access Token you created for GitHub Actions:
+   - If you haven't created one yet, go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Click "Generate new token (classic)"
+   - Name: `aegra-ci-cd` (or similar)
+   - Select scope: `repo` (Full control of private repositories)
+   - Generate and copy the token
+
+2. Add to Railway environment variables:
+   ```
+   GH_PAT=ghp_your_token_here
+   ```
+
+3. Update Railway Build Settings:
+   - Go to service settings → **"Settings"** → **"Build"**
+   - Add build argument: `GH_PAT=$GH_PAT`
+   - This passes the environment variable to Docker build
+
+**Note**: The Dockerfile uses this token during the build phase to clone private dependencies. The token is not included in the final image. You can use the same token for both GitHub Actions and Railway.
+
 ## Step 5: Configure Health Check
 
 1. In service settings, go to **"Health Check"**

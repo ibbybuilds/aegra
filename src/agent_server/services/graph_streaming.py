@@ -145,7 +145,6 @@ async def stream_graph_events(
             )
 
     # Initialize streaming state
-    checkpoint: CheckpointPayload | None = None
     messages: dict[str, BaseMessageChunk] = {}
 
     # Choose streaming method based on mode and graph type
@@ -166,8 +165,10 @@ async def stream_graph_events(
             graph.astream_events(
                 input_data,
                 config,
+                context=context,
                 version="v2",
                 stream_mode=list(stream_modes_set),
+                subgraphs=subgraphs,
                 **kwargs,
             )
         ) as stream:
@@ -244,7 +245,7 @@ async def stream_graph_events(
 
                     # Update checkpoint state for debug tracking
                     if mode == "debug" and chunk.get("type") == "checkpoint":
-                        checkpoint = _normalize_checkpoint_payload(chunk.get("payload"))
+                        _normalize_checkpoint_payload(chunk.get("payload"))
 
                 # Pass through raw events if "events" mode requested
                 elif "events" in stream_mode:
@@ -252,8 +253,6 @@ async def stream_graph_events(
 
     else:
         # Use astream for standard streaming
-        kwargs = {"context": context} if context else {}
-
         if output_keys is None:
             output_keys = getattr(graph, "output_channels", None)
 
@@ -261,9 +260,10 @@ async def stream_graph_events(
             graph.astream(
                 input_data,
                 config,
+                context=context,
                 stream_mode=list(stream_modes_set),
                 output_keys=output_keys,
-                **kwargs,
+                subgraphs=subgraphs,
             )
         ) as stream:
             async for event in stream:
@@ -287,7 +287,6 @@ async def stream_graph_events(
                     subgraphs=subgraphs,
                     stream_mode=stream_mode,
                     messages=messages,
-                    checkpoint=checkpoint,
                     only_interrupt_updates=only_interrupt_updates,
                     on_checkpoint=on_checkpoint,
                     on_task_result=on_task_result,
@@ -299,7 +298,7 @@ async def stream_graph_events(
 
                 # Update checkpoint state for debug tracking
                 if mode == "debug" and chunk.get("type") == "checkpoint":
-                    checkpoint = _normalize_checkpoint_payload(chunk.get("payload"))
+                    _normalize_checkpoint_payload(chunk.get("payload"))
 
 
 def _process_stream_event(

@@ -907,18 +907,6 @@ async def execute_run_async(
         maker = _get_session_maker()
         session = maker()
 
-    # Normalize stream_mode once here for all callers/endpoints.
-    # Accept "messages-tuple" as an alias of "messages".
-    def _normalize_mode(mode: str | None) -> str | None:
-        return (
-            "messages" if isinstance(mode, str) and mode == "messages-tuple" else mode
-        )
-
-    if isinstance(stream_mode, list):
-        stream_mode = [_normalize_mode(m) for m in stream_mode]
-    else:
-        stream_mode = _normalize_mode(stream_mode)
-
     try:
         # Update status
         await update_run_status(run_id, "running", session=session)
@@ -951,11 +939,7 @@ async def execute_run_async(
         # Determine input for execution (either input_data or command)
         if command is not None:
             # When command is provided, it replaces input entirely
-            if isinstance(command, dict):
-                execution_input = map_command_to_langgraph(command)
-            else:
-                # Direct resume value (backward compatibility)
-                execution_input = Command(resume=command)
+            execution_input = map_command_to_langgraph(command)
         else:
             # No command, use regular input
             execution_input = input_data

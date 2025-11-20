@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 
-from ..core.sse import create_error_event, create_metadata_event
+from ..core.sse import create_error_event
 from ..models import Run
 from ..utils import extract_event_sequence, generate_event_id
 from .broker import broker_manager
@@ -194,12 +194,6 @@ class StreamingService:
         """Stream run execution with unified producer-consumer pattern"""
         run_id = run.run_id
         try:
-            # Send metadata event first (sequence 0, not stored)
-            if not last_event_id:
-                event_id = generate_event_id(run_id, 0)
-                metadata_event = create_metadata_event(run_id, event_id)
-                yield metadata_event
-
             # Replay stored events first
             last_sent_sequence = 0
             if last_event_id:

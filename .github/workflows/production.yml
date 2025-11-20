@@ -56,13 +56,7 @@ jobs:
         continue-on-error: true
 
       - name: Run unit tests with coverage
-        run: uv run pytest --cov=src --cov-report=xml --cov-report=term --ignore=tests/e2e
-
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+        run: uv run pytest --cov=src --cov-report=term --ignore=tests/e2e
 
       - name: Create aegra.json config for E2E tests
         run: |

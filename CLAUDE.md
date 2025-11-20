@@ -312,7 +312,6 @@ Aegra uses GitHub Actions for continuous integration and deployment automation:
 - Security scan (Bandit, non-blocking)
 - Type checking (MyPy, non-blocking)
 - Unit tests with coverage (excludes E2E tests)
-- Coverage upload to Codecov
 
 **Duration**: ~2-3 minutes (fast feedback loop)
 
@@ -378,11 +377,6 @@ Configure these secrets in your GitHub repository settings (Settings → Secrets
 | Secret | Description |
 |--------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key for LLM calls in E2E tests |
-
-### For Code Coverage (All workflows)
-| Secret | Description |
-|--------|-------------|
-| `CODECOV_TOKEN` | Codecov API token for coverage reporting |
 
 ### Auto-provided
 | Secret | Description |

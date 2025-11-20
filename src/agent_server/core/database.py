@@ -17,9 +17,13 @@ class DatabaseManager:
         self._checkpointer_cm: Any = None  # holds the contextmanager so we can close it
         self._store: AsyncPostgresStore | None = None
         self._store_cm: Any = None
-        self._database_url = os.getenv(
+        database_url = os.getenv(
             "DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/aegra"
         )
+        # Ensure URL uses asyncpg driver (Railway provides postgresql://, we need postgresql+asyncpg://)
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        self._database_url = database_url
 
     async def initialize(self) -> None:
         """Initialize database connections and LangGraph components"""

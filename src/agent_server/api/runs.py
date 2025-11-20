@@ -82,24 +82,56 @@ async def set_thread_status(session: AsyncSession, thread_id: str, status: str) 
     from ..utils.status_compat import validate_thread_status
 
     validated_status = validate_thread_status(status)
-    await session.execute(
+    result = await session.execute(
         update(ThreadORM)
         .where(ThreadORM.thread_id == thread_id)
         .values(status=validated_status, updated_at=datetime.now(UTC))
     )
     await session.commit()
 
+    # Verify thread was updated (matching row exists)
+    if result.rowcount == 0:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
 
 async def update_thread_metadata(
-    session: AsyncSession, thread_id: str, assistant_id: str, graph_id: str
+    session: AsyncSession,
+    thread_id: str,
+    assistant_id: str,
+    graph_id: str,
+    user_id: str | None = None,
 ) -> None:
-    """Update thread metadata with assistant and graph information (dialect agnostic)."""
+    """Update thread metadata with assistant and graph information (dialect agnostic).
+
+    If thread doesn't exist, auto-creates it.
+    """
     # Read-modify-write to avoid DB-specific JSON concat operators
     thread = await session.scalar(
         select(ThreadORM).where(ThreadORM.thread_id == thread_id)
     )
+
     if not thread:
-        raise HTTPException(404, f"Thread '{thread_id}' not found for metadata update")
+        # Auto-create thread if it doesn't exist
+        if not user_id:
+            raise HTTPException(400, "Cannot auto-create thread: user_id is required")
+
+        metadata = {
+            "owner": user_id,
+            "assistant_id": str(assistant_id),
+            "graph_id": graph_id,
+            "thread_name": "",
+        }
+
+        thread_orm = ThreadORM(
+            thread_id=thread_id,
+            status="idle",
+            metadata_json=metadata,
+            user_id=user_id,
+        )
+        session.add(thread_orm)
+        await session.commit()
+        return
+
     md = dict(getattr(thread, "metadata_json", {}) or {})
     md.update(
         {
@@ -195,10 +227,11 @@ async def create_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    await set_thread_status(session, thread_id, "busy")
+    # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
     )
+    await set_thread_status(session, thread_id, "busy")
 
     # Persist run record via ORM model in core.orm (Run table)
     now = datetime.now(UTC)
@@ -325,10 +358,11 @@ async def create_and_stream_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    await set_thread_status(session, thread_id, "busy")
+    # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
     )
+    await set_thread_status(session, thread_id, "busy")
 
     # Persist run record
     now = datetime.now(UTC)
@@ -643,10 +677,11 @@ async def wait_for_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    await set_thread_status(session, thread_id, "busy")
+    # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
     )
+    await set_thread_status(session, thread_id, "busy")
 
     # Persist run record
     now = datetime.now(UTC)

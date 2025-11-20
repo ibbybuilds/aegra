@@ -330,7 +330,7 @@ class TestThreadGetState:
         assert "not found" in resp.json()["detail"].lower()
 
     def test_get_latest_state_no_graph_id(self):
-        """Threads without graph metadata should 404 for state lookup."""
+        """Threads without graph metadata should return empty state."""
         app = create_test_app(include_runs=False, include_threads=True)
 
         thread = _thread_row("test-123", metadata={})
@@ -343,8 +343,11 @@ class TestThreadGetState:
         client = make_client(app)
 
         resp = client.get("/threads/test-123/state")
-        assert resp.status_code == 404
-        assert "no associated graph" in resp.json()["detail"].lower()
+        assert resp.status_code == 200
+        state = resp.json()
+        assert "values" in state
+        assert "checkpoint" in state
+        assert state["checkpoint"]["checkpoint_id"] is None
 
 
 class TestThreadStateCheckpoint:

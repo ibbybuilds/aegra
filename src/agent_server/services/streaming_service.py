@@ -270,6 +270,81 @@ class StreamingService:
         """Convert a raw event from broker to SSE format"""
         return self.event_converter.convert_raw_to_sse(event_id, raw_event)
 
+    def _process_interrupt_updates(
+        self, raw_event: Any, only_interrupt_updates: bool
+    ) -> tuple[Any, bool]:
+        """Process interrupt updates events.
+
+        When only_interrupt_updates=True:
+        - Converts "updates" events with "__interrupt__" to "values" events
+        - Skips "updates" events without "__interrupt__"
+        - Passes through non-updates events unchanged
+
+        When only_interrupt_updates=False:
+        - Passes through all events unchanged
+
+        Args:
+            raw_event: Event tuple (mode, chunk) or (namespace, mode, chunk)
+            only_interrupt_updates: Whether to filter for interrupt updates only
+
+        Returns:
+            Tuple of (processed_event, should_skip)
+        """
+        # If not in interrupt-only mode, pass through unchanged
+        if not only_interrupt_updates:
+            return raw_event, False
+
+        # Handle non-tuple events
+        if not isinstance(raw_event, tuple):
+            return raw_event, False
+
+        # Handle invalid tuple lengths
+        if len(raw_event) < 2:
+            return raw_event, False
+
+        # Handle 3-tuple format: (namespace, mode, chunk)
+        if len(raw_event) == 3:
+            namespace, mode, chunk = raw_event
+            if mode != "updates":
+                return raw_event, False
+
+            # Check if this update contains interrupt data
+            has_interrupt_data = (
+                isinstance(chunk, dict)
+                and "__interrupt__" in chunk
+                and len(chunk.get("__interrupt__", [])) > 0
+            )
+
+            if has_interrupt_data:
+                # Convert to values event
+                return (namespace, "values", chunk), False
+            else:
+                # Skip non-interrupt updates
+                return raw_event, True
+
+        # Handle 2-tuple format: (mode, chunk)
+        if len(raw_event) == 2:
+            mode, chunk = raw_event
+            if mode != "updates":
+                return raw_event, False
+
+            # Check if this update contains interrupt data
+            has_interrupt_data = (
+                isinstance(chunk, dict)
+                and "__interrupt__" in chunk
+                and len(chunk.get("__interrupt__", [])) > 0
+            )
+
+            if has_interrupt_data:
+                # Convert to values event
+                return ("values", chunk), False
+            else:
+                # Skip non-interrupt updates
+                return raw_event, True
+
+        # Invalid tuple length, pass through
+        return raw_event, False
+
     async def interrupt_run(self, run_id: str) -> bool:
         """Interrupt a running execution"""
         try:

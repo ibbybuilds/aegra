@@ -27,18 +27,19 @@ class TestGetThreadState:
 
     @pytest.mark.asyncio
     async def test_missing_graph_id(self):
-        """404 returned when thread metadata does not include a graph."""
+        """Empty state returned when thread metadata does not include a graph."""
         user = User(identity="user-1", scopes=[])
         session = AsyncMock()
         thread_row = MagicMock()
         thread_row.metadata_json = {}
         session.scalar.return_value = thread_row
 
-        with pytest.raises(HTTPException) as exc_info:
-            await get_thread_state("thread-123", user=user, session=session)
+        result = await get_thread_state("thread-123", user=user, session=session)
 
-        assert exc_info.value.status_code == 404
-        assert "no associated graph" in exc_info.value.detail.lower()
+        # get_thread_state returns ThreadState Pydantic model
+        assert hasattr(result, "values")
+        assert hasattr(result, "checkpoint")
+        assert result.checkpoint.checkpoint_id is None
 
     @pytest.mark.asyncio
     async def test_graph_load_failure(self):

@@ -129,6 +129,8 @@ class EventConverter:
                 # Convert interrupt updates to values events
                 if self.subgraphs and namespace:
                     event_type = f"values|{'|'.join(namespace)}"
+                else:
+                    event_type = "values"
                 return format_sse_message(event_type, payload, event_id)
             else:
                 # Non-interrupt updates (pass through as-is)

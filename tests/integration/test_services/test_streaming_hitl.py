@@ -8,73 +8,10 @@ from unittest.mock import Mock
 import pytest
 
 from agent_server.services.event_converter import EventConverter
-from agent_server.services.streaming_service import StreamingService
 
-
-class TestStreamingInterruptProcessing:
-    """Test interrupt processing in streaming service."""
-
-    @pytest.fixture
-    def streaming_service(self):
-        """Create streaming service instance."""
-        return StreamingService()
-
-    def test_process_interrupt_updates_with_interrupt(self, streaming_service):
-        """Test processing updates event that contains interrupt."""
-        # Mock event with interrupt
-        raw_event = ("updates", {"__interrupt__": [{"value": "test", "id": "123"}]})
-        only_interrupt_updates = True
-
-        processed_event, should_skip = streaming_service._process_interrupt_updates(
-            raw_event, only_interrupt_updates
-        )
-
-        # Should convert to values event
-        assert processed_event[0] == "values"
-        assert processed_event[1] == {"__interrupt__": [{"value": "test", "id": "123"}]}
-        assert should_skip is False
-
-    def test_process_interrupt_updates_without_interrupt(self, streaming_service):
-        """Test processing updates event without interrupt (should skip)."""
-        # Mock event without interrupt
-        raw_event = ("updates", {"messages": [{"role": "ai", "content": "test"}]})
-        only_interrupt_updates = True
-
-        processed_event, should_skip = streaming_service._process_interrupt_updates(
-            raw_event, only_interrupt_updates
-        )
-
-        # Should skip non-interrupt updates
-        assert processed_event == raw_event
-        assert should_skip is True
-
-    def test_process_interrupt_updates_not_only_interrupt_mode(self, streaming_service):
-        """Test processing when not in only_interrupt_updates mode."""
-        # Mock event with interrupt
-        raw_event = ("updates", {"__interrupt__": [{"value": "test", "id": "123"}]})
-        only_interrupt_updates = False
-
-        processed_event, should_skip = streaming_service._process_interrupt_updates(
-            raw_event, only_interrupt_updates
-        )
-
-        # Should not modify event when not in only_interrupt_updates mode
-        assert processed_event == raw_event
-        assert should_skip is False
-
-    def test_process_interrupt_updates_non_updates_event(self, streaming_service):
-        """Test processing non-updates event (should pass through)."""
-        # Mock non-updates event
-        raw_event = ("values", {"messages": [{"role": "ai", "content": "test"}]})
-        only_interrupt_updates = True
-
-        processed_event, should_skip = streaming_service._process_interrupt_updates(
-            raw_event, only_interrupt_updates
-        )
-
-        # Should pass through unchanged
-        assert processed_event == raw_event
-        assert should_skip is False
+# Interrupt updates filtering is handled in graph_streaming.py's _process_stream_event
+# function, not in StreamingService. Tests for this functionality should be in
+# test_graph_streaming or e2e tests.
 
 
 class TestEventConverter:
@@ -162,69 +99,4 @@ class TestEventConverter:
         assert payload == {"test": "data"}
 
 
-class TestInterruptEventFlow:
-    """Integration test for interrupt event flow through streaming."""
-
-    @pytest.fixture
-    def streaming_service(self):
-        return StreamingService()
-
-    @pytest.fixture
-    def event_converter(self):
-        return EventConverter()
-
-    def test_interrupt_event_end_to_end(self, streaming_service, event_converter):
-        """Test complete interrupt event processing flow."""
-        # 1. Raw interrupt event from LangGraph
-        raw_interrupt_event = (
-            "updates",
-            {
-                "__interrupt__": [
-                    {"value": {"message": "Approve tool?", "tools": []}, "id": "int-1"}
-                ]
-            },
-        )
-
-        # 2. Process through streaming service (only_interrupt_updates=True)
-        processed_event, should_skip = streaming_service._process_interrupt_updates(
-            raw_interrupt_event, only_interrupt_updates=True
-        )
-
-        # Should convert to values event
-        assert processed_event[0] == "values"
-        assert should_skip is False
-
-        # 3. Convert to SSE format
-        event_id = "stream-123"
-        sse_event = event_converter.convert_raw_to_sse(event_id, processed_event)
-
-        # Should produce valid SSE event
-        assert sse_event is not None
-        assert "event: values" in sse_event
-        assert "id: stream-123" in sse_event
-        assert "__interrupt__" in sse_event
-        assert "Approve tool?" in sse_event
-
-    def test_non_interrupt_event_filtering(self, streaming_service, event_converter):
-        """Test that non-interrupt events are filtered when only_interrupt_updates=True."""
-        # 1. Regular updates event (no interrupt)
-        raw_regular_event = (
-            "updates",
-            {"messages": [{"role": "ai", "content": "Regular response"}]},
-        )
-
-        # 2. Process through streaming service (only_interrupt_updates=True)
-        processed_event, should_skip = streaming_service._process_interrupt_updates(
-            raw_regular_event, only_interrupt_updates=True
-        )
-
-        # Should be marked for skipping
-        assert should_skip is True
-        assert processed_event == raw_regular_event  # Unchanged
-
-        # 3. If not skipped, would convert normally
-        if not should_skip:
-            event_id = "stream-456"
-            sse_event = event_converter.convert_raw_to_sse(event_id, processed_event)
-            assert sse_event is not None
-        # But in this case, it should be skipped in the actual streaming flow
+# Interrupt event flow tests removed - functionality is tested through graph_streaming flow

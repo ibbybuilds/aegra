@@ -1,0 +1,202 @@
+name: Production Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: aegra
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Check formatting with ruff
+        run: uv run ruff format --check .
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+
+      - name: Security check with bandit
+        run: uv run bandit -c pyproject.toml -r src/
+        continue-on-error: true
+
+      - name: Type check with mypy
+        run: uv run mypy src/
+        continue-on-error: true
+
+      - name: Run unit tests with coverage
+        run: uv run pytest --cov=src --cov-report=xml --cov-report=term --ignore=tests/e2e
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Create aegra.json config for E2E tests
+        run: |
+          cat > aegra.json << 'EOF'
+          {
+            "graphs": {
+              "agent": "./graphs/react_agent/__init__.py:graph",
+              "agent_hitl": "./graphs/react_agent_hitl/__init__.py:graph",
+              "subgraph_agent": "./graphs/subgraph_agent/__init__.py:graph"
+            },
+            "env": ".env"
+          }
+          EOF
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
+        run: uv run alembic upgrade head
+
+      - name: Start Aegra server in background
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AUTH_TYPE: noop
+          PORT: 8000
+        run: |
+          uv run python run_server.py > server.log 2>&1 &
+          echo $! > server.pid
+          echo "Waiting for server to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Server is ready!"
+              exit 0
+            fi
+            echo "Attempt $i/30: Server not ready yet..."
+            sleep 2
+          done
+          echo "Server failed to start. Logs:"
+          cat server.log
+          exit 1
+
+      - name: Run E2E tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SERVER_URL: http://localhost:8000
+        run: uv run pytest tests/e2e -v --tb=short
+
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Logs ==="
+          cat server.log || echo "No server logs found"
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for GCR
+        run: |
+          gcloud auth configure-docker ${{ secrets.GCR_REGISTRY }} --quiet
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        run: |
+          # Get git SHA (short)
+          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
+
+          # Get current timestamp
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+          # Base image name
+          IMAGE_BASE="${{ secrets.GCR_REGISTRY }}/aegra"
+
+          # Default tags
+          TAGS="${IMAGE_BASE}:sha-${SHA_SHORT},${IMAGE_BASE}:latest,${IMAGE_BASE}:${TIMESTAMP}"
+
+          # If this is a tag push (version tag), add semver tag
+          if [[ ${{ github.ref }} =~ ^refs/tags/v ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            TAGS="${TAGS},${IMAGE_BASE}:${VERSION}"
+          fi
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployments/docker/Dockerfile.production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+      - name: Output image information
+        run: |
+          echo "## Production Image Built and Pushed 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ secrets.GCR_REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Available Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Git SHA:** \`${{ steps.meta.outputs.sha_short }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Update your Kubernetes deployment to use the new image" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify deployment health checks pass" >> $GITHUB_STEP_SUMMARY
+          echo "3. Monitor logs and metrics" >> $GITHUB_STEP_SUMMARY

@@ -1,11 +1,13 @@
-name: E2E Tests
+name: Development CI
 
 on:
   push:
-    branches: [main]
+    branches: [development]
+  pull_request:
+    branches: [development]
 
 jobs:
-  e2e-tests:
+  lint-and-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,7 +41,30 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Create aegra.json config
+      - name: Check formatting with ruff
+        run: uv run ruff format --check .
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+
+      - name: Security check with bandit
+        run: uv run bandit -c pyproject.toml -r src/
+        continue-on-error: true
+
+      - name: Type check with mypy
+        run: uv run mypy src/
+        continue-on-error: true
+
+      - name: Run unit tests with coverage
+        run: uv run pytest --cov=src --cov-report=xml --cov-report=term --ignore=tests/e2e
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Create aegra.json config for E2E tests
         run: |
           cat > aegra.json << 'EOF'
           {

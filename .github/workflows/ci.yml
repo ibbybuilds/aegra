@@ -1,10 +1,11 @@
-name: CI
+name: CI (Feature Branches)
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches:
+      - '*'
+      - '!development'
+      - '!main'
 
 jobs:
   lint-and-test:

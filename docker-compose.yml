@@ -1,3 +1,19 @@
+# Docker Compose Configuration for LOCAL DEVELOPMENT ONLY
+#
+# This configuration is designed for local development with hot-reload support.
+# For deployment environments, see:
+#
+# - Staging (Railway):
+#   Uses deployments/docker/Dockerfile (same as local dev)
+#   Railway auto-deploys from 'development' branch via GitHub integration
+#   See docs/RAILWAY_DEPLOYMENT.md for setup instructions
+#
+# - Production (GKE):
+#   Uses deployments/docker/Dockerfile.production (optimized for production)
+#   GitHub Actions builds and pushes images from 'main' branch
+#   Manual K8s deployment required (K8s manifests coming soon)
+#   See docs/GKE_DEPLOYMENT.md for setup instructions
+
 services:
   # PostgreSQL database for LangGraph and metadata
   postgres:

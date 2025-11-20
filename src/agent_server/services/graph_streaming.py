@@ -158,9 +158,6 @@ async def stream_graph_events(
 
     # Stream execution using appropriate method
     if use_astream_events:
-        # Use astream_events for remote graphs or when "events" mode is requested
-        kwargs = {"context": context} if context else {}
-
         async with aclosing(
             graph.astream_events(
                 input_data,
@@ -169,7 +166,6 @@ async def stream_graph_events(
                 version="v2",
                 stream_mode=list(stream_modes_set),
                 subgraphs=subgraphs,
-                **kwargs,
             )
         ) as stream:
             async for event in stream:
@@ -246,6 +242,11 @@ async def stream_graph_events(
                     # Update checkpoint state for debug tracking
                     if mode == "debug" and chunk.get("type") == "checkpoint":
                         _normalize_checkpoint_payload(chunk.get("payload"))
+
+                    # Also yield as raw "events" event if "events" mode requested
+                    # This ensures on_chain_stream events are available as raw events
+                    if "events" in stream_mode:
+                        yield "events", event
 
                 # Pass through raw events if "events" mode requested
                 elif "events" in stream_mode:

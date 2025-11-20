@@ -363,6 +363,13 @@ Aegra uses GitHub Actions for continuous integration and deployment automation:
 
 Configure these secrets in your GitHub repository settings (Settings → Secrets and variables → Actions):
 
+### Required for All Workflows
+| Secret | Description | How to Create |
+|--------|-------------|---------------|
+| `GH_PAT` | Personal Access Token for private repo access | GitHub Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token → Select `repo` scope |
+
+**Note**: This token is required because `ava-core` is a private dependency. The token must have `repo` scope to clone private repositories.
+
 ### For Production Workflow (GKE)
 | Secret | Description | Example |
 |--------|-------------|---------|
@@ -377,11 +384,6 @@ Configure these secrets in your GitHub repository settings (Settings → Secrets
 | Secret | Description |
 |--------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key for LLM calls in E2E tests |
-
-### Auto-provided
-| Secret | Description |
-|--------|-------------|
-| `GITHUB_TOKEN` | Automatically provided by GitHub Actions |
 
 ## Docker Contexts
 

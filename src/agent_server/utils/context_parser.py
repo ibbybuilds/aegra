@@ -6,9 +6,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def parse_context_for_graph(
-    graph_id: str, context_dict: dict[str, Any] | None
-) -> Any:
+def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) -> Any:
     """
     Parse context based on the graph type.
 

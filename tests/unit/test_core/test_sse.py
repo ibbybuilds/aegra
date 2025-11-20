@@ -3,27 +3,15 @@
 import json
 from datetime import datetime
 
+import pytest
+
 from src.agent_server.core.sse import (
     SSEEvent,
-    create_cancelled_event,
-    create_checkpoints_event,
-    create_chunk_event,
-    create_complete_event,
-    create_custom_event,
     create_debug_event,
     create_end_event,
     create_error_event,
-    create_events_event,
-    create_interrupted_event,
-    create_logs_event,
     create_messages_event,
     create_metadata_event,
-    create_start_event,
-    create_state_event,
-    create_subgraphs_event,
-    create_tasks_event,
-    create_updates_event,
-    create_values_event,
     format_sse_event,
     format_sse_message,
     get_sse_headers,
@@ -122,27 +110,21 @@ class TestCreateMetadataEvent:
 
 
 class TestCreateValuesEvent:
-    """Test create_values_event function"""
+    """Test create_values_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_values_event function no longer exists")
     def test_create_values_event(self):
         """Test values event creation"""
-        data = {"messages": ["hello"], "context": {}}
-        result = create_values_event(data)
-
-        assert "event: values\n" in result
-        assert "messages" in result
+        pass
 
 
 class TestCreateUpdatesEvent:
-    """Test create_updates_event function"""
+    """Test create_updates_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_updates_event function no longer exists")
     def test_create_updates_event(self):
         """Test updates event creation"""
-        data = {"node": "agent", "updates": {"key": "value"}}
-        result = create_updates_event(data)
-
-        assert "event: updates\n" in result
-        assert "agent" in result
+        pass
 
 
 class TestCreateDebugEvent:
@@ -227,81 +209,66 @@ class TestCreateErrorEvent:
 
 
 class TestCreateEventsEvent:
-    """Test create_events_event function"""
+    """Test create_events_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_events_event function no longer exists")
     def test_create_events_event(self):
         """Test events event creation"""
-        data = {"event_type": "on_chat_model_stream"}
-        result = create_events_event(data)
-
-        assert "event: events\n" in result
-        assert "on_chat_model_stream" in result
+        pass
 
 
 class TestCreateStateEvent:
-    """Test create_state_event function"""
+    """Test create_state_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_state_event function no longer exists")
     def test_create_state_event(self):
         """Test state event creation"""
-        data = {"messages": [], "next": ["node1"]}
-        result = create_state_event(data)
-
-        assert "event: state\n" in result
+        pass
 
 
 class TestCreateLogsEvent:
-    """Test create_logs_event function"""
+    """Test create_logs_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_logs_event function no longer exists")
     def test_create_logs_event(self):
         """Test logs event creation"""
-        data = {"log_level": "info", "message": "test"}
-        result = create_logs_event(data)
-
-        assert "event: logs\n" in result
+        pass
 
 
 class TestCreateTasksEvent:
-    """Test create_tasks_event function"""
+    """Test create_tasks_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_tasks_event function no longer exists")
     def test_create_tasks_event(self):
         """Test tasks event creation"""
-        data = {"tasks": [{"id": "task-1"}]}
-        result = create_tasks_event(data)
-
-        assert "event: tasks\n" in result
+        pass
 
 
 class TestCreateSubgraphsEvent:
-    """Test create_subgraphs_event function"""
+    """Test create_subgraphs_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_subgraphs_event function no longer exists")
     def test_create_subgraphs_event(self):
         """Test subgraphs event creation"""
-        data = {"subgraph_id": "sg-1"}
-        result = create_subgraphs_event(data)
-
-        assert "event: subgraphs\n" in result
+        pass
 
 
 class TestCreateCheckpointsEvent:
-    """Test create_checkpoints_event function"""
+    """Test create_checkpoints_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_checkpoints_event function no longer exists")
     def test_create_checkpoints_event(self):
         """Test checkpoints event creation"""
-        data = {"checkpoint_id": "cp-1"}
-        result = create_checkpoints_event(data)
-
-        assert "event: checkpoints\n" in result
+        pass
 
 
 class TestCreateCustomEvent:
-    """Test create_custom_event function"""
+    """Test create_custom_event function - skipped as function no longer exists"""
 
+    @pytest.mark.skip(reason="create_custom_event function no longer exists")
     def test_create_custom_event(self):
         """Test custom event creation"""
-        data = {"custom_field": "value"}
-        result = create_custom_event(data)
-
-        assert "event: custom\n" in result
+        pass
 
 
 class TestCreateMessagesEvent:
@@ -371,39 +338,4 @@ class TestFormatSSEEvent:
 
 
 class TestLegacyEventFunctions:
-    """Test legacy event creation functions"""
-
-    def test_create_start_event(self):
-        """Test legacy start event"""
-        result = create_start_event("run-123", 1)
-
-        assert "event: start\n" in result
-        assert "run-123" in result
-
-    def test_create_chunk_event(self):
-        """Test legacy chunk event"""
-        result = create_chunk_event("run-123", 2, {"chunk": "data"})
-
-        assert "event: chunk\n" in result
-        assert "chunk" in result
-
-    def test_create_complete_event(self):
-        """Test legacy complete event"""
-        result = create_complete_event("run-123", 3, {"result": "success"})
-
-        assert "event: complete\n" in result
-        assert "success" in result  # Updated to use standard status
-
-    def test_create_cancelled_event(self):
-        """Test legacy cancelled event"""
-        result = create_cancelled_event("run-123", 4)
-
-        assert "event: cancelled\n" in result
-        assert "interrupted" in result  # Updated to use standard status
-
-    def test_create_interrupted_event(self):
-        """Test legacy interrupted event"""
-        result = create_interrupted_event("run-123", 5)
-
-        assert "event: interrupted\n" in result
-        assert "interrupted" in result
+    """Test legacy event creation functions - skipped as functions no longer exist"""

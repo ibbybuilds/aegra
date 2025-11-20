@@ -26,26 +26,25 @@ maintainers = [
     {name = "Muhammad Ibrahim", email = "mibrahim37612@gmail.com"}
 ]
 dependencies = [
+    # AVA-core package - provides: deepagents, httpx, langchain, langchain-core,
+    # langgraph, msgspec, pyjwt, python-dotenv, tavily-python
+    "ava-core @ git+https://github.com/lucca-mrktr/ava-core.git@develop",
+    # Aegra-specific core dependencies
     "alembic>=1.16.4",
     "asyncpg>=0.30.0",
     "fastapi>=0.116.1",
     "greenlet>=3.2.3",
-    "langchain-openai==1.0.0a4",
-    "langgraph==1.0.0a4",
-    "langchain==1.0.0a13",
-    "langgraph-checkpoint-postgres==2.0.25",
     "psycopg[binary]>=3.2.9",
     "pydantic>=2.11.7",
-    "pyjwt>=2.10.1",
-    "python-dotenv>=1.1.1",
+    "langfuse>=3.3.4",
     "sqlalchemy>=2.0.0",
     "uvicorn>=0.35.0",
-    "langfuse>=3.3.4",
-    "deepagents-tfix @ git+https://github.com/luccafrancica/deepagents.git@dev",
-    "langchain-core==1.0.0rc1",
-    "msgspec>=0.19.0",
-    "tavily-python>=0.7.12",
-    "httpx[http2]",
+    # LangChain/LangGraph extensions not provided by ava-core
+    "langchain-anthropic>=1.0.3",
+    "langchain-openai>=1.0.3",
+    "langgraph-checkpoint>=3.0.1",
+    "langgraph-checkpoint-postgres>=3.0.1",
+    "langgraph-prebuilt>=1.0.2",
 ]
 
 [project.urls]

@@ -772,51 +772,11 @@ async def execute_run_async(
         await update_run_status(run_id, "running", session=session)
         print(f"[execute_run_async] Run status updated")
 
-        # Parse context first
-        print(f"[execute_run_async] About to parse context: graph_id={graph_id}, context={context}")
-        try:
-            parsed_context = parse_context_for_graph(graph_id, context)
-            print(f"[execute_run_async] Context parsing successful, type: {type(parsed_context)}")
-        except Exception as e:
-            print(f"[execute_run_async] Context parsing failed: {e}")
-            parsed_context = context  # Fallback to raw context
-
         # Get graph and execute
         print(f"[execute_run_async] About to get graph")
         langgraph_service = get_langgraph_service()
-        
-        # For AVA agent, set the runtime context before loading the graph
-        # For AVA agent, create a new instance with the parsed context
-        if graph_id == "ava":
-            print(f"[execute_run_async] Creating AVA agent with context")
-            import sys
-            from pathlib import Path
-            graphs_dir = Path(__file__).parent.parent.parent.parent / "graphs"
-            if str(graphs_dir) not in sys.path:
-                sys.path.insert(0, str(graphs_dir))
-            from ava.graph import create_ava_agent
-            from ava.context import CallContext
-            
-            # Create a new agent instance with the parsed context
-            agent = create_ava_agent(parsed_context)
-            
-            # The agent is already compiled by create_deep_agent, so we can use it directly
-            # But we need to inject our checkpointer and store for persistence
-            from ..core.database import db_manager
-            checkpointer_cm = await db_manager.get_checkpointer()
-            store_cm = await db_manager.get_store()
-            
-            # Try to inject our checkpointer and store if the agent supports it
-            try:
-                graph = agent.copy(update={"checkpointer": checkpointer_cm, "store": store_cm})
-                print(f"[execute_run_async] AVA agent created with injected persistence")
-            except Exception as e:
-                # Fallback: use the agent as-is if injection fails
-                print(f"[execute_run_async] Could not inject persistence, using agent as-is: {e}")
-                graph = agent
-        else:
-            graph = await langgraph_service.get_graph(graph_id)
-            print(f"[execute_run_async] Graph retrieved")
+        graph = await langgraph_service.get_graph(graph_id)
+        print(f"[execute_run_async] Graph retrieved")
 
         run_config = create_run_config(
             run_id, thread_id, user, config or {}, checkpoint
@@ -838,6 +798,17 @@ async def execute_run_async(
 
         # Note: multitask_strategy is handled at the run creation level, not execution level
         # It controls concurrent run behavior, not graph execution behavior
+
+        # Parse context for all graphs (including AVA, which now supports runtime.context)
+        parsed_context = None
+        if context:
+            print(f"[execute_run_async] About to parse context: graph_id={graph_id}, context={context}")
+            try:
+                parsed_context = parse_context_for_graph(graph_id, context)
+                print(f"[execute_run_async] Context parsing successful, type: {type(parsed_context)}")
+            except Exception as e:
+                print(f"[execute_run_async] Context parsing failed: {e}")
+                parsed_context = context  # Fallback to raw context
 
         # Determine input for execution (either input_data or command)
         if command is not None:
@@ -872,8 +843,7 @@ async def execute_run_async(
 
         only_interrupt_updates = not user_requested_updates
 
-        # Context already parsed above
-
+        # Execute graph (context passed via runtime.context for all graphs)
         async with with_auth_ctx(user, []):
             async for raw_event in graph.astream(
                 execution_input,

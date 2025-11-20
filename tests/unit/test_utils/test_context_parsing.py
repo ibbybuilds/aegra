@@ -1,5 +1,5 @@
 """Tests for context parsing."""
-import pytest
+
 from src.agent_server.utils.context_parser import parse_context_for_graph
 
 
@@ -11,10 +11,7 @@ class TestContextParsing:
         context_dict = {
             "call_context": {
                 "type": "property_specific",
-                "property": {
-                    "property_id": "prop_123",
-                    "property_name": "Grand Hotel"
-                }
+                "property": {"property_id": "prop_123", "property_name": "Grand Hotel"},
             }
         }
         result = parse_context_for_graph("ava", context_dict)
@@ -59,7 +56,7 @@ class TestContextParsing:
                     "property_name": "Grand Hotel",
                     "hotel_id": "hotel_456",
                     "location": "Las Vegas, NV",
-                    "features": ["pool", "spa"]
+                    "features": ["pool", "spa"],
                 },
                 "booking": {
                     "destination": "Las Vegas",
@@ -67,28 +64,28 @@ class TestContextParsing:
                     "check_out": "2024-12-18",
                     "rooms": 1,
                     "adults": 2,
-                    "children": 0
+                    "children": 0,
                 },
                 "payment": {
                     "status": "completed",
                     "amount": 299.99,
                     "currency": "USD",
-                    "transaction_id": "txn_789"
+                    "transaction_id": "txn_789",
                 },
                 "abandoned_payment": {
                     "timestamp": "2024-12-10T10:25:00Z",
                     "amount": 150.00,
                     "currency": "USD",
                     "minutes_ago": 5,
-                    "reason": "dropped"
+                    "reason": "dropped",
                 },
                 "session": {
                     "call_reference": "CR123456",
                     "session_legs": [],
-                    "previous_interactions": []
+                    "previous_interactions": [],
                 },
                 "user_phone": "+1234567890",
-                "thread_id": "thread_abc123"
+                "thread_id": "thread_abc123",
             }
         }
         result = parse_context_for_graph("ava", context_dict)

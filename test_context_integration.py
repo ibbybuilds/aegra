@@ -5,13 +5,14 @@ Test script for AVA context integration.
 This script tests the full integration of context passing from
 API request to the AVA agent's dynamic prompt system.
 """
+
 import sys
-sys.path.insert(0, 'graphs')
+
+sys.path.insert(0, "graphs")
+
+from unittest.mock import Mock
 
 from src.agent_server.utils.context_parser import parse_context_for_graph
-from ava.context import CallContext
-from ava.dynamic_prompt import customize_agent_prompt
-from unittest.mock import Mock
 
 
 def test_property_specific_flow():
@@ -29,18 +30,20 @@ def test_property_specific_flow():
                 "property_name": "The Venetian Las Vegas",
                 "hotel_id": "vntian_lv",
                 "location": "3355 S Las Vegas Blvd, Las Vegas, NV 89109",
-                "features": ["Casino", "Grand Canal Shoppes", "Pool Complex", "Spa"]
+                "features": ["Casino", "Grand Canal Shoppes", "Pool Complex", "Spa"],
             },
-            "user_phone": "+1234567890"
+            "user_phone": "+1234567890",
         }
     }
 
     print("\n1. API Request Context:")
     print(f"   Type: {api_request_context['call_context']['type']}")
-    print(f"   Property: {api_request_context['call_context']['property']['property_name']}")
+    print(
+        f"   Property: {api_request_context['call_context']['property']['property_name']}"
+    )
 
     # Step 2: Server parses context
-    parsed_context = parse_context_for_graph('ava', api_request_context)
+    parsed_context = parse_context_for_graph("ava", api_request_context)
     print("\n2. Server Parsed Context:")
     print(f"   Type: {type(parsed_context).__name__}")
     print(f"   Context Type: {parsed_context.type}")
@@ -54,14 +57,11 @@ def test_property_specific_flow():
     mock_request.runtime = mock_runtime
 
     # Note: The decorator transforms the function, so we access the wrapped function
-    from ava.dynamic_prompt import customize_agent_prompt as prompt_middleware
-    # Get the actual function from the middleware wrapper
-    prompt_func = prompt_middleware.__wrapped__ if hasattr(prompt_middleware, '__wrapped__') else customize_agent_prompt
 
     # For testing, let's just verify the context propagation
     print("\n3. Agent Dynamic Prompt Context:")
     print(f"   Context available to agent: {parsed_context.type}")
-    print(f"   Property details accessible: YES")
+    print("   Property details accessible: YES")
     print(f"   Hotel ID for searches: {parsed_context.property.hotel_id}")
 
     print("\n✓ Property-Specific Flow Test PASSED\n")
@@ -77,31 +77,31 @@ def test_payment_return_flow():
     api_request_context = {
         "call_context": {
             "type": "payment_return",
-            "payment": {
-                "status": "success",
-                "amount": 651.67,
-                "currency": "USD"
-            },
-            "thread_id": "thread_abc123"
+            "payment": {"status": "success", "amount": 651.67, "currency": "USD"},
+            "thread_id": "thread_abc123",
         }
     }
 
     print("\n1. API Request Context:")
     print(f"   Type: {api_request_context['call_context']['type']}")
-    print(f"   Payment Status: {api_request_context['call_context']['payment']['status']}")
+    print(
+        f"   Payment Status: {api_request_context['call_context']['payment']['status']}"
+    )
     print(f"   Amount: ${api_request_context['call_context']['payment']['amount']}")
 
     # Step 2: Server parses context
-    parsed_context = parse_context_for_graph('ava', api_request_context)
+    parsed_context = parse_context_for_graph("ava", api_request_context)
     print("\n2. Server Parsed Context:")
     print(f"   Type: {type(parsed_context).__name__}")
     print(f"   Context Type: {parsed_context.type}")
     print(f"   Payment Status: {parsed_context.payment.status}")
-    print(f"   Amount: ${parsed_context.payment.amount} {parsed_context.payment.currency}")
+    print(
+        f"   Amount: ${parsed_context.payment.amount} {parsed_context.payment.currency}"
+    )
 
     print("\n3. Agent Dynamic Prompt Context:")
     print(f"   Context available to agent: {parsed_context.type}")
-    print(f"   Payment details accessible: YES")
+    print("   Payment details accessible: YES")
 
     print("\n✓ Payment Return Flow Test PASSED\n")
 
@@ -116,17 +116,17 @@ def test_general_context_flow():
     api_request_context = None
 
     print("\n1. API Request Context:")
-    print(f"   Context: None (new conversation)")
+    print("   Context: None (new conversation)")
 
     # Step 2: Server parses context (creates default)
-    parsed_context = parse_context_for_graph('ava', api_request_context)
+    parsed_context = parse_context_for_graph("ava", api_request_context)
     print("\n2. Server Parsed Context:")
     print(f"   Type: {type(parsed_context).__name__}")
     print(f"   Context Type: {parsed_context.type}")
 
     print("\n3. Agent Dynamic Prompt Context:")
     print(f"   Context available to agent: {parsed_context.type}")
-    print(f"   Agent will use default behavior")
+    print("   Agent will use default behavior")
 
     print("\n✓ General Context Flow Test PASSED\n")
 
@@ -139,10 +139,7 @@ def test_thread_continuation_flow():
 
     # Step 1: Simulate incoming API request
     api_request_context = {
-        "call_context": {
-            "type": "thread_continuation",
-            "thread_id": "thread_xyz789"
-        }
+        "call_context": {"type": "thread_continuation", "thread_id": "thread_xyz789"}
     }
 
     print("\n1. API Request Context:")
@@ -150,7 +147,7 @@ def test_thread_continuation_flow():
     print(f"   Thread ID: {api_request_context['call_context']['thread_id']}")
 
     # Step 2: Server parses context
-    parsed_context = parse_context_for_graph('ava', api_request_context)
+    parsed_context = parse_context_for_graph("ava", api_request_context)
     print("\n2. Server Parsed Context:")
     print(f"   Type: {type(parsed_context).__name__}")
     print(f"   Context Type: {parsed_context.type}")
@@ -158,7 +155,7 @@ def test_thread_continuation_flow():
 
     print("\n3. Agent Dynamic Prompt Context:")
     print(f"   Context available to agent: {parsed_context.type}")
-    print(f"   Agent aware of conversation history: YES")
+    print("   Agent aware of conversation history: YES")
 
     print("\n✓ Thread Continuation Flow Test PASSED\n")
 
@@ -181,12 +178,15 @@ if __name__ == "__main__":
         print("\nThe AVA agent is now configured to receive and use context")
         print("from the server's /threads/{thread_id}/runs/stream endpoint!")
         print("\nNext steps:")
-        print("  1. Start the server: uv run uvicorn src.agent_server.main:app --reload")
+        print(
+            "  1. Start the server: uv run uvicorn src.agent_server.main:app --reload"
+        )
         print("  2. Test with a real request (see graphs/ava/CONTEXT_USAGE.md)")
         print()
 
     except Exception as e:
         print(f"\n✗ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

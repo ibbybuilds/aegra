@@ -204,7 +204,9 @@ async def create_run(
 
     # Start execution asynchronously
     # Don't pass the session to avoid transaction conflicts
-    logger.info(f"[create_run] About to call execute_run_async with graph_id={assistant.graph_id}, context={context}")
+    logger.info(
+        f"[create_run] About to call execute_run_async with graph_id={assistant.graph_id}, context={context}"
+    )
     task = asyncio.create_task(
         execute_run_async(
             run_id,
@@ -260,7 +262,7 @@ async def create_and_stream_run(
     print(
         f"[create_and_stream_run] scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
     )
-    print(f"[create_and_stream_run] After initial print statement")
+    print("[create_and_stream_run] After initial print statement")
 
     # Validate assistant exists and get its graph_id. Allow passing a graph_id
     # by mapping it to a deterministic assistant ID.
@@ -287,12 +289,12 @@ async def create_and_stream_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    print(f"[create_and_stream_run] About to set thread status and update metadata")
+    print("[create_and_stream_run] About to set thread status and update metadata")
     await set_thread_status(session, thread_id, "busy")
     await update_thread_metadata(
         session, thread_id, assistant.assistant_id, assistant.graph_id
     )
-    print(f"[create_and_stream_run] Thread status and metadata updated")
+    print("[create_and_stream_run] Thread status and metadata updated")
 
     # Persist run record
     now = datetime.now(UTC)
@@ -312,7 +314,7 @@ async def create_and_stream_run(
     )
     session.add(run_orm)
     await session.commit()
-    print(f"[create_and_stream_run] Database commit completed")
+    print("[create_and_stream_run] Database commit completed")
 
     # Build response model for stream context
     run = Run(
@@ -332,8 +334,10 @@ async def create_and_stream_run(
 
     # Start background execution that will populate the broker
     # Don't pass the session to avoid transaction conflicts
-    print(f"[create_and_stream_run] Reached task creation point")
-    print(f"[create_and_stream_run] About to call execute_run_async with graph_id={assistant.graph_id}, context={context}")
+    print("[create_and_stream_run] Reached task creation point")
+    print(
+        f"[create_and_stream_run] About to call execute_run_async with graph_id={assistant.graph_id}, context={context}"
+    )
     try:
         task = asyncio.create_task(
             execute_run_async(
@@ -355,7 +359,9 @@ async def create_and_stream_run(
             )
         )
         print(f"[create_and_stream_run] Task created successfully, task_id={id(task)}")
-        print(f"[create_and_stream_run] Task done: {task.done()}, cancelled: {task.cancelled()}")
+        print(
+            f"[create_and_stream_run] Task done: {task.done()}, cancelled: {task.cancelled()}"
+        )
     except Exception as e:
         print(f"[create_and_stream_run] Failed to create task: {e}")
         raise
@@ -744,14 +750,16 @@ async def execute_run_async(
     _multitask_strategy: str | None = None,
     subgraphs: bool | None = False,
 ) -> None:
-    print(f"[execute_run_async] ENTRY: run_id={run_id}, graph_id={graph_id}, context={context}")
+    print(
+        f"[execute_run_async] ENTRY: run_id={run_id}, graph_id={graph_id}, context={context}"
+    )
     """Execute run asynchronously in background using streaming to capture all events"""  # Use provided session or get a new one
-    print(f"[execute_run_async] About to check session")
+    print("[execute_run_async] About to check session")
     if session is None:
-        print(f"[execute_run_async] Session is None, creating new session")
+        print("[execute_run_async] Session is None, creating new session")
         maker = _get_session_maker()
         session = maker()
-    print(f"[execute_run_async] Session ready")
+    print("[execute_run_async] Session ready")
 
     # Normalize stream_mode once here for all callers/endpoints.
     # Accept "messages-tuple" as an alias of "messages".
@@ -766,17 +774,17 @@ async def execute_run_async(
         stream_mode = _normalize_mode(stream_mode)
 
     try:
-        print(f"[execute_run_async] Starting try block")
+        print("[execute_run_async] Starting try block")
         # Update status
-        print(f"[execute_run_async] About to update run status")
+        print("[execute_run_async] About to update run status")
         await update_run_status(run_id, "running", session=session)
-        print(f"[execute_run_async] Run status updated")
+        print("[execute_run_async] Run status updated")
 
         # Get graph and execute
-        print(f"[execute_run_async] About to get graph")
+        print("[execute_run_async] About to get graph")
         langgraph_service = get_langgraph_service()
         graph = await langgraph_service.get_graph(graph_id)
-        print(f"[execute_run_async] Graph retrieved")
+        print("[execute_run_async] Graph retrieved")
 
         run_config = create_run_config(
             run_id, thread_id, user, config or {}, checkpoint
@@ -802,10 +810,14 @@ async def execute_run_async(
         # Parse context for all graphs (including AVA, which now supports runtime.context)
         parsed_context = None
         if context:
-            print(f"[execute_run_async] About to parse context: graph_id={graph_id}, context={context}")
+            print(
+                f"[execute_run_async] About to parse context: graph_id={graph_id}, context={context}"
+            )
             try:
                 parsed_context = parse_context_for_graph(graph_id, context)
-                print(f"[execute_run_async] Context parsing successful, type: {type(parsed_context)}")
+                print(
+                    f"[execute_run_async] Context parsing successful, type: {type(parsed_context)}"
+                )
             except Exception as e:
                 print(f"[execute_run_async] Context parsing failed: {e}")
                 parsed_context = context  # Fallback to raw context

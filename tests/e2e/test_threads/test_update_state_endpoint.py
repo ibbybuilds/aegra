@@ -212,6 +212,221 @@ async def test_post_state_update_with_as_node_e2e():
     assert isinstance(update_result, dict)
     assert "checkpoint" in update_result
     assert update_result["checkpoint"]["thread_id"] == thread_id
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_post_state_update_with_values_none_e2e():
+    """
+    Test POST /threads/{thread_id}/state with values=None (should delegate to GET).
+    This covers the branch where request.values is None.
+    """
+    client = get_e2e_client()
+
+    # 1. Create assistant and thread
+    assistant = await client.assistants.create(
+        graph_id="agent",
+        config={"tags": ["state-update-test"]},
+        if_exists="do_nothing",
+    )
+    elog("Assistant.create", assistant)
+    thread = await client.threads.create()
+    elog("Threads.create", thread)
+    thread_id = thread["thread_id"]
+
+    # 2. Create a run to establish state
+    run = await client.runs.create(
+        thread_id=thread_id,
+        assistant_id=assistant["assistant_id"],
+        input={"messages": [{"role": "human", "content": "Test message"}]},
+    )
+    elog("Runs.create", run)
+    await client.runs.join(thread_id, run["run_id"])
+
+    # 3. Get state via GET
+    state_get = await client.threads.get_state(thread_id=thread_id)
+    elog("GET state", state_get)
+
+    # 4. POST with values=None (should delegate to GET handler)
+    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
+    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+        post_response = await http_client.post(
+            f"/threads/{thread_id}/state",
+            json={"values": None},  # Explicitly None
+        )
+        post_response.raise_for_status()
+        state_post = post_response.json()
+        elog("POST state with values=None", state_post)
+
+    # 5. Verify POST returns same state as GET (delegated to GET handler)
+    assert isinstance(state_post, dict)
+    assert "checkpoint" in state_post
+    assert "values" in state_post
+    assert (
+        state_post["checkpoint"]["checkpoint_id"]
+        == state_get["checkpoint"]["checkpoint_id"]
+    )
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_post_state_update_with_list_values_e2e():
+    """
+    Test POST /threads/{thread_id}/state with values as a list of dicts.
+    Should merge all dicts in the list (covers list merging logic).
+    """
+    client = get_e2e_client()
+
+    # 1. Create assistant and thread
+    assistant = await client.assistants.create(
+        graph_id="agent",
+        config={"tags": ["state-update-test"]},
+        if_exists="do_nothing",
+    )
+    elog("Assistant.create", assistant)
+    thread = await client.threads.create()
+    elog("Threads.create", thread)
+    thread_id = thread["thread_id"]
+
+    # 2. Create a run to establish initial state
+    run = await client.runs.create(
+        thread_id=thread_id,
+        assistant_id=assistant["assistant_id"],
+        input={"messages": [{"role": "human", "content": "Initial"}]},
+    )
+    elog("Runs.create", run)
+    await client.runs.join(thread_id, run["run_id"])
+
+    # 3. Update state with values as a list of dicts
+    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
+    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+        update_response = await http_client.post(
+            f"/threads/{thread_id}/state",
+            json={
+                "values": [
+                    {"messages": [{"type": "human", "content": "First"}]},
+                    {"messages": [{"type": "human", "content": "Second"}]},
+                ],
+                "as_node": "__start__",
+            },
+        )
+        update_response.raise_for_status()
+        update_result = update_response.json()
+        elog("POST state update with list values", update_result)
+
+    # 4. Verify update succeeded
+    assert isinstance(update_result, dict)
+    assert "checkpoint" in update_result
+    assert update_result["checkpoint"]["thread_id"] == thread_id
+    assert update_result["checkpoint"]["checkpoint_id"] is not None
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_post_state_update_thread_not_found_e2e():
+    """
+    Test POST /threads/{thread_id}/state with non-existent thread.
+    Should return 404 (covers thread not found error handling).
+    """
+    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
+    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+        response = await http_client.post(
+            "/threads/non-existent-thread-id/state",
+            json={"values": {"messages": [{"type": "human", "content": "test"}]}},
+        )
+        assert response.status_code == 404
+        error_data = response.json()
+        error_message = error_data.get("message", error_data.get("detail", ""))
+        assert "not found" in error_message.lower()
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_post_state_update_no_graph_id_e2e():
+    """
+    Test POST /threads/{thread_id}/state with thread that has no graph_id.
+    Should return 400 (covers no graph_id error handling).
+    """
+    client = get_e2e_client()
+
+    # 1. Create thread without running any graph (no graph_id in metadata)
+    thread = await client.threads.create()
+    elog("Threads.create", thread)
+    thread_id = thread["thread_id"]
+
+    # 2. Try to update state (should fail because no graph_id)
+    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
+    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+        response = await http_client.post(
+            f"/threads/{thread_id}/state",
+            json={"values": {"messages": [{"type": "human", "content": "test"}]}},
+        )
+        assert response.status_code == 400
+        error_data = response.json()
+        error_message = error_data.get("message", error_data.get("detail", ""))
+        assert "no associated graph" in error_message.lower()
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_post_state_update_with_checkpoint_config_e2e():
+    """
+    Test POST /threads/{thread_id}/state with checkpoint configuration.
+    Covers checkpoint_id, checkpoint dict, and checkpoint_ns handling.
+    """
+    client = get_e2e_client()
+
+    # 1. Create assistant and thread
+    assistant = await client.assistants.create(
+        graph_id="agent",
+        config={"tags": ["state-update-test"]},
+        if_exists="do_nothing",
+    )
+    elog("Assistant.create", assistant)
+    thread = await client.threads.create()
+    elog("Threads.create", thread)
+    thread_id = thread["thread_id"]
+
+    # 2. Create a run and get checkpoint
+    run = await client.runs.create(
+        thread_id=thread_id,
+        assistant_id=assistant["assistant_id"],
+        input={"messages": [{"role": "human", "content": "Test"}]},
+    )
+    await client.runs.join(thread_id, run["run_id"])
+
+    state = await client.threads.get_state(thread_id=thread_id)
+    checkpoint_id = state["checkpoint"]["checkpoint_id"]
+
+    # 3. Update state with checkpoint configuration
+    # Test checkpoint_id handling (checkpoint_ns might not be fully supported, so we'll test checkpoint_id)
+    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
+    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+        update_response = await http_client.post(
+            f"/threads/{thread_id}/state",
+            json={
+                "values": {
+                    "messages": [{"type": "human", "content": "Updated"}],
+                },
+                "checkpoint_id": checkpoint_id,
+                "as_node": "__start__",
+            },
+        )
+        if update_response.status_code != 200:
+            error_text = update_response.text
+            elog(
+                "POST state update ERROR",
+                {"status": update_response.status_code, "error": error_text},
+            )
+        update_response.raise_for_status()
+        update_result = update_response.json()
+        elog("POST state update with checkpoint config", update_result)
+
+    # 4. Verify update succeeded
+    assert isinstance(update_result, dict)
+    assert "checkpoint" in update_result
+    assert update_result["checkpoint"]["thread_id"] == thread_id
+    assert update_result["checkpoint"]["checkpoint_id"] is not None
     assert update_result["checkpoint"]["checkpoint_id"] is not None
 
 

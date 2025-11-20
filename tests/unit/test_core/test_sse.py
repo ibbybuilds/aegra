@@ -3,8 +3,6 @@
 import json
 from datetime import datetime
 
-import pytest
-
 from src.agent_server.core.sse import (
     SSEEvent,
     create_debug_event,
@@ -109,24 +107,6 @@ class TestCreateMetadataEvent:
         assert '"attempt":3' in result
 
 
-class TestCreateValuesEvent:
-    """Test create_values_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_values_event function no longer exists")
-    def test_create_values_event(self):
-        """Test values event creation"""
-        pass
-
-
-class TestCreateUpdatesEvent:
-    """Test create_updates_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_updates_event function no longer exists")
-    def test_create_updates_event(self):
-        """Test updates event creation"""
-        pass
-
-
 class TestCreateDebugEvent:
     """Test create_debug_event function"""
 
@@ -208,69 +188,6 @@ class TestCreateErrorEvent:
         assert "timestamp" in result
 
 
-class TestCreateEventsEvent:
-    """Test create_events_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_events_event function no longer exists")
-    def test_create_events_event(self):
-        """Test events event creation"""
-        pass
-
-
-class TestCreateStateEvent:
-    """Test create_state_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_state_event function no longer exists")
-    def test_create_state_event(self):
-        """Test state event creation"""
-        pass
-
-
-class TestCreateLogsEvent:
-    """Test create_logs_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_logs_event function no longer exists")
-    def test_create_logs_event(self):
-        """Test logs event creation"""
-        pass
-
-
-class TestCreateTasksEvent:
-    """Test create_tasks_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_tasks_event function no longer exists")
-    def test_create_tasks_event(self):
-        """Test tasks event creation"""
-        pass
-
-
-class TestCreateSubgraphsEvent:
-    """Test create_subgraphs_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_subgraphs_event function no longer exists")
-    def test_create_subgraphs_event(self):
-        """Test subgraphs event creation"""
-        pass
-
-
-class TestCreateCheckpointsEvent:
-    """Test create_checkpoints_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_checkpoints_event function no longer exists")
-    def test_create_checkpoints_event(self):
-        """Test checkpoints event creation"""
-        pass
-
-
-class TestCreateCustomEvent:
-    """Test create_custom_event function - skipped as function no longer exists"""
-
-    @pytest.mark.skip(reason="create_custom_event function no longer exists")
-    def test_create_custom_event(self):
-        """Test custom event creation"""
-        pass
-
-
 class TestCreateMessagesEvent:
     """Test create_messages_event function"""
 
@@ -335,7 +252,3 @@ class TestFormatSSEEvent:
         assert "id: evt-1\n" in result
         assert "event: test\n" in result
         assert "data: " in result
-
-
-class TestLegacyEventFunctions:
-    """Test legacy event creation functions - skipped as functions no longer exist"""

@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-from langchain_tavily import TavilyExtract, TavilySearch
+from langchain_community.tools import BraveSearch
 from langgraph.runtime import get_runtime
 
 from react_agent.context import Context
@@ -45,114 +45,142 @@ except ImportError as e:
     )
 
 
-async def search(query: str) -> dict[str, Any]:
-    """Search the web for general information and current events.
-
-    This function performs a search using the Tavily search engine, which provides
-    comprehensive, accurate, and trusted results. It's particularly useful for
-    answering questions about current events, general knowledge, and research.
+async def brave_search(query: str) -> str:
+    """Search the web for general information and current events using Brave Search.
 
     Args:
         query: The search query string
     """
     runtime = get_runtime(Context)
-    max_results = runtime.context.max_search_results
+    api_key = runtime.context.brave_search_api_key
 
     try:
-        logger.info(f"Searching web for: {query}")
+        logger.info(f"Searching web with Brave for: {query}")
 
-        # Initialize Tavily search with max results from context
-        web_search = TavilySearch(max_results=max_results, topic="general")
+        if api_key:
+            tool = BraveSearch.from_api_key(api_key=api_key, search_kwargs={"count": 3})
+        else:
+            # Fallback to environment variable if not in context
+            tool = BraveSearch.from_search_kwargs(search_kwargs={"count": 3})
 
         # Execute search in thread to avoid blocking
-        search_results = await asyncio.to_thread(web_search.invoke, {"query": query})
+        search_results = await asyncio.to_thread(tool.run, query)
 
-        # Handle different response formats
-        if isinstance(search_results, list):
-            results_list = search_results
-        elif isinstance(search_results, dict):
-            results_list = search_results.get("results", [])
-        else:
-            logger.warning(f"Unexpected response type: {type(search_results)}")
-            return {
-                "query": query,
-                "results": [],
-                "error": f"Unexpected response type: {type(search_results)}",
-            }
-
-        # Process and format results
-        processed_results = {"query": query, "results": []}
-
-        for result in results_list:
-            if isinstance(result, dict):
-                processed_results["results"].append(
-                    {
-                        "title": result.get("title", "No title"),
-                        "url": result.get("url", ""),
-                        "content_preview": result.get("content", ""),
-                    }
-                )
-            else:
-                logger.warning(f"Unexpected result type: {type(result)}")
-
-        logger.info(
-            f"Found {len(processed_results['results'])} search results for '{query}'"
-        )
-        return processed_results
+        return search_results
 
     except Exception as e:
-        logger.error(f"Error in web search: {str(e)}", exc_info=True)
-        return {"query": query, "results": [], "error": f"Search failed: {str(e)}"}
+        logger.error(f"Error in Brave search: {str(e)}", exc_info=True)
+        return f"Search failed: {str(e)}"
 
 
-async def extract_webpage_content(urls: list[str]) -> list[dict[str, Any]]:
-    """Extract full content from webpages for detailed analysis.
+# async def search(query: str) -> dict[str, Any]:
+#     """Search the web for general information and current events.
+#
+#     This function performs a search using the Tavily search engine, which provides
+#     comprehensive, accurate, and trusted results. It's particularly useful for
+#     answering questions about current events, general knowledge, and research.
+#
+#     Args:
+#         query: The search query string
+#     """
+#     runtime = get_runtime(Context)
+#     max_results = runtime.context.max_search_results
+#
+#     try:
+#         logger.info(f"Searching web for: {query}")
+#
+#         # Initialize Tavily search with max results from context
+#         web_search = TavilySearch(max_results=max_results, topic="general")
+#
+#         # Execute search in thread to avoid blocking
+#         search_results = await asyncio.to_thread(web_search.invoke, {"query": query})
+#
+#         # Handle different response formats
+#         if isinstance(search_results, list):
+#             results_list = search_results
+#         elif isinstance(search_results, dict):
+#             results_list = search_results.get("results", [])
+#         else:
+#             logger.warning(f"Unexpected response type: {type(search_results)}")
+#             return {
+#                 "query": query,
+#                 "results": [],
+#                 "error": f"Unexpected response type: {type(search_results)}",
+#             }
+#
+#         # Process and format results
+#         processed_results = {"query": query, "results": []}
+#
+#         for result in results_list:
+#             if isinstance(result, dict):
+#                 processed_results["results"].append(
+#                     {
+#                         "title": result.get("title", "No title"),
+#                         "url": result.get("url", ""),
+#                         "content_preview": result.get("content", ""),
+#                     }
+#                 )
+#             else:
+#                 logger.warning(f"Unexpected result type: {type(result)}")
+#
+#         logger.info(
+#             f"Found {len(processed_results['results'])} search results for '{query}'"
+#         )
+#         return processed_results
+#
+#     except Exception as e:
+#         logger.error(f"Error in web search: {str(e)}", exc_info=True)
+#         return {"query": query, "results": [], "error": f"Search failed: {str(e)}"}
 
-    Use this after the search tool to get complete information from promising results.
-    Extracts the main content, title, and other relevant information from web pages.
 
-    Args:
-        urls: List of URLs to extract content from (max 3 recommended)
-    """
-    try:
-        logger.info(f"Extracting content from {len(urls)} URLs")
-
-        # Initialize Tavily extract
-        web_extract = TavilyExtract()
-
-        # Execute extraction in thread to avoid blocking
-        results = await asyncio.to_thread(web_extract.invoke, {"urls": urls})
-
-        # Extract results from response
-        extracted_results = (
-            results.get("results", []) if isinstance(results, dict) else []
-        )
-
-        # Process results to ensure they have content
-        processed_results = []
-        for result in extracted_results:
-            if isinstance(result, dict):
-                # Tavily uses 'raw_content' not 'content'
-                content = result.get("raw_content", "")
-                processed_results.append(
-                    {
-                        "url": result.get("url", ""),
-                        "title": result.get("title", ""),
-                        "content": content,
-                        "content_length": len(content),
-                    }
-                )
-            else:
-                processed_results.append(result)
-
-        logger.info(
-            f"Successfully extracted content from {len(processed_results)} pages"
-        )
-        return processed_results
-
-    except Exception as e:
-        logger.error(f"Error extracting webpage content: {str(e)}", exc_info=True)
-        return [{"error": f"Extraction failed: {str(e)}"}]
+# async def extract_webpage_content(urls: list[str]) -> list[dict[str, Any]]:
+#     """Extract full content from webpages for detailed analysis.
+#
+#     Use this after the search tool to get complete information from promising results.
+#     Extracts the main content, title, and other relevant information from web pages.
+#
+#     Args:
+#         urls: List of URLs to extract content from (max 3 recommended)
+#     """
+#     try:
+#         logger.info(f"Extracting content from {len(urls)} URLs")
+#
+#         # Initialize Tavily extract
+#         web_extract = TavilyExtract()
+#
+#         # Execute extraction in thread to avoid blocking
+#         results = await asyncio.to_thread(web_extract.invoke, {"urls": urls})
+#
+#         # Extract results from response
+#         extracted_results = (
+#             results.get("results", []) if isinstance(results, dict) else []
+#         )
+#
+#         # Process results to ensure they have content
+#         processed_results = []
+#         for result in extracted_results:
+#             if isinstance(result, dict):
+#                 # Tavily uses 'raw_content' not 'content'
+#                 content = result.get("raw_content", "")
+#                 processed_results.append(
+#                     {
+#                         "url": result.get("url", ""),
+#                         "title": result.get("title", ""),
+#                         "content": content,
+#                         "content_length": len(content),
+#                     }
+#                 )
+#             else:
+#                 processed_results.append(result)
+#
+#         logger.info(
+#             f"Successfully extracted content from {len(processed_results)} pages"
+#         )
+#         return processed_results
+#
+#     except Exception as e:
+#         logger.error(f"Error extracting webpage content: {str(e)}", exc_info=True)
+#         return [{"error": f"Extraction failed: {str(e)}"}]
 
 
 async def get_student_profile() -> dict[str, Any]:
@@ -469,8 +497,9 @@ async def search_course_content(
 
 # Build tools list dynamically based on availability
 TOOLS: list[Callable[..., Any]] = [
-    search,
-    extract_webpage_content,
+    # search,
+    # extract_webpage_content,
+    brave_search,
     get_student_profile,
     get_student_onboarding,
     get_student_ai_mentor_onboarding,

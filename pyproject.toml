@@ -51,6 +51,7 @@ dependencies = [
     "pypdf>=5.1.0",
     "python-docx>=1.1.2",
     "openpyxl>=3.1.5",
+    "langchain-community>=0.3.31",
 ]
 
 [project.urls]
@@ -94,6 +95,7 @@ ignore = [
     "UP038", # use X | Y in isinstance (causes issues in some contexts)
     "TC002", # type-checking imports cause issues with SQLAlchemy, Pydantic, etc.
     "TC003", # type-checking imports cause issues with SQLAlchemy, Pydantic, etc.
+    "ERA001", # eradicate commented-out code (allow for reference/documentation)
 ]
 
 [tool.ruff.lint.per-file-ignores]

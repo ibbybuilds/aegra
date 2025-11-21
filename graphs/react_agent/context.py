@@ -58,6 +58,11 @@ class Context:
         },
     )
 
+    brave_search_api_key: str | None = field(
+        default=None,
+        metadata={"description": "The API key for Brave Search."},
+    )
+
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
         for f in fields(self):

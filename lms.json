@@ -126,6 +126,25 @@
         }
       }
     },
+    "/api/v1/admin/{adminId}": {
+      "delete": {
+        "summary": "Delete an admin account",
+        "tags": ["Admin"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adminId",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Admin deleted successfully" },
+          "404": { "description": "Admin not found" }
+        }
+      }
+    },
     "/api/v1/ai-mentor/onboarding/status": {
       "get": {
         "summary": "Get AI Mentor onboarding status for the current user",
@@ -1531,6 +1550,129 @@
         }
       }
     },
+    "/api/v1/enrollment/active": {
+      "get": {
+        "summary": "Get all active enrollments for the logged-in student",
+        "tags": ["Blackboard"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "List of active course enrollments for the authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Active enrollments fetched successfully"
+                    },
+                    "count": { "type": "integer", "example": 2 },
+                    "enrollments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": {
+                            "type": "string",
+                            "example": "67001b3f4b1e22f92bc18c9d"
+                          },
+                          "course": {
+                            "type": "object",
+                            "properties": {
+                              "_id": {
+                                "type": "string",
+                                "example": "66f9ea5b38c02ad8e0b0a4ff"
+                              },
+                              "title": {
+                                "type": "string",
+                                "example": "Data Engineering Mastery"
+                              },
+                              "track": {
+                                "type": "string",
+                                "example": "data-engineering"
+                              },
+                              "levelCount": { "type": "integer", "example": 3 },
+                              "moduleCount": {
+                                "type": "integer",
+                                "example": 12
+                              },
+                              "thumbnail": {
+                                "type": "string",
+                                "example": "https://res.cloudinary.com/dedatahub/courses/thumbnail.jpg"
+                              }
+                            }
+                          },
+                          "subscription": {
+                            "type": "object",
+                            "properties": {
+                              "_id": {
+                                "type": "string",
+                                "example": "67001b4f4b1e22f92bc18ca0"
+                              },
+                              "planType": {
+                                "type": "string",
+                                "enum": ["track", "ai-mentor"],
+                                "example": "track"
+                              },
+                              "activeState": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "track-only",
+                                  "track+ai-mentor",
+                                  "ai-mentor-only"
+                                ],
+                                "example": "track+ai-mentor"
+                              },
+                              "startDate": {
+                                "type": "string",
+                                "example": "2025-09-01T00:00:00.000Z"
+                              },
+                              "endDate": {
+                                "type": "string",
+                                "example": "2025-12-01T00:00:00.000Z"
+                              },
+                              "aiMentorAddOn": {
+                                "type": "object",
+                                "properties": {
+                                  "active": {
+                                    "type": "boolean",
+                                    "example": true
+                                  },
+                                  "addedAt": {
+                                    "type": "string",
+                                    "example": "2025-09-01T00:00:00.000Z"
+                                  },
+                                  "expiresAt": {
+                                    "type": "string",
+                                    "example": "2025-12-01T00:00:00.000Z"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "aiMentorActive": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "enrolledAt": {
+                            "type": "string",
+                            "example": "2025-09-01T00:00:00.000Z"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "No active enrollments found" },
+          "500": { "description": "Failed to fetch active enrollments" }
+        }
+      }
+    },
     "/api/v1/enrollment/{courseId}/structure": {
       "get": {
         "summary": "Get structured view of student's course progress",
@@ -2055,6 +2197,78 @@
           },
           "403": { "description": "Unauthorized access" },
           "404": { "description": "Enrollment not found" }
+        }
+      }
+    },
+    "/api/v1/contact": {
+      "post": {
+        "summary": "Submit a new contact message",
+        "tags": ["Contact"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "message"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "phoneNumber": { "type": "string" },
+                  "areaOfInterest": { "type": "string" },
+                  "message": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Message submitted successfully" },
+          "400": { "description": "Validation error" },
+          "500": { "description": "Internal server error" }
+        }
+      },
+      "get": {
+        "summary": "Get all contact messages (Admin only)",
+        "tags": ["Contact"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "List of contact messages" } }
+      }
+    },
+    "/api/v1/contact/{id}": {
+      "get": {
+        "summary": "Get a single contact message by ID (Admin only)",
+        "tags": ["Contact"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Contact ID"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Contact details" },
+          "404": { "description": "Contact not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a contact message (Admin only)",
+        "tags": ["Contact"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Contact message ID"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Contact deleted" },
+          "404": { "description": "Contact not found" }
         }
       }
     },
@@ -4291,6 +4505,34 @@
         }
       }
     },
+    "/api/v1/subscription/sub-stats": {
+      "get": {
+        "summary": "Get student subscription overview",
+        "tags": ["Subscriptions"],
+        "security": [{ "bearerAuth": [] }],
+        "description": "Returns total number of students, those subscribed vs unsubscribed, and a breakdown by subscription type: - `courseOnly`: Students with active course subscription only   - `aiMentorOnly`: Students subscribed to AI Mentor only   - `trackWithAiMentor`: Students with active course + AI Mentor  \n",
+        "responses": {
+          "200": {
+            "description": "Student subscription stats retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "totalStudents": 520,
+                  "subscribed": 410,
+                  "unsubscribed": 110,
+                  "byType": {
+                    "courseOnly": 230,
+                    "aiMentorOnly": 60,
+                    "trackWithAiMentor": 120
+                  }
+                }
+              }
+            }
+          },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
     "/api/hello": {
       "get": {
         "summary": "Returns a hello message",
@@ -4669,10 +4911,48 @@
           "500": { "description": "Server error" }
         }
       }
+    },
+    "/api/v1/user/signup/stats": {
+      "get": {
+        "summary": "Get student signup trends",
+        "tags": ["Users"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": { "type": "string", "format": "date" }
+          }
+        ],
+        "description": "Returns signup trends for students grouped by day, week, month, and year. Each group includes a count of how many students signed up during that period.\n",
+        "responses": {
+          "200": {
+            "description": "Signup trends retrieved successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "daily": [
+                    { "_id": "2025-10-21", "count": 10 },
+                    { "_id": "2025-10-22", "count": 15 }
+                  ],
+                  "weekly": [{ "_id": 43, "count": 60 }],
+                  "monthly": [{ "_id": "2025-10", "count": 240 }],
+                  "yearly": [{ "_id": "2025", "count": 1200 }]
+                }
+              }
+            }
+          },
+          "500": { "description": "Internal server error" }
+        }
+      }
     }
   },
   "tags": [
     { "name": "Blackboard", "description": "Student blackboard management" },
+    {
+      "name": "Contact",
+      "description": "Manage contact messages and inquiries"
+    },
     { "name": "Subscriptions", "description": "User subscription management" }
   ]
 }

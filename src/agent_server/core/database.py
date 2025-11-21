@@ -22,7 +22,9 @@ class DatabaseManager:
         )
         # Ensure URL uses asyncpg driver (Railway provides postgresql://, we need postgresql+asyncpg://)
         if database_url.startswith("postgresql://"):
-            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            database_url = database_url.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
         self._database_url = database_url
 
     async def initialize(self) -> None:

@@ -79,7 +79,7 @@ def main():
 
     uvicorn.run(
         "src.agent_server.main:app",
-        host="::",
+        host="::",  # IPv6 dual-stack (works on macOS/Ubuntu for local dev)
         port=port,
         reload=True,
         log_level=os.getenv("UVICORN_LOG_LEVEL", "debug"),

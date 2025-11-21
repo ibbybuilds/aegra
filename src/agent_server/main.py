@@ -203,4 +203,4 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(app, host="::", port=port)  # nosec B104 - binding to all interfaces (IPv4+IPv6 dual-stack) is intentional
+    uvicorn.run(app, host="::", port=port)  # nosec B104 - IPv6 dual-stack binding (works for local dev)

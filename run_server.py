@@ -79,7 +79,7 @@ def main():
 
     uvicorn.run(
         "src.agent_server.main:app",
-        host="0.0.0.0",
+        host="::",
         port=port,
         reload=True,
         log_level=os.getenv("UVICORN_LOG_LEVEL", "debug"),

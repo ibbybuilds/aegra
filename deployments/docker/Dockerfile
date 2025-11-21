@@ -73,6 +73,7 @@ USER app
 # Default command: run migrations then start server
 # Docker Compose can override this with custom command
 # Railway sets PORT env var dynamically, fallback to 8000 for local
-CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Using :: for dual-stack IPv4/IPv6 support
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host :: --port ${PORT:-8000}"]
 
 

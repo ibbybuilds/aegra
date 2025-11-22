@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RunCreate(BaseModel):
@@ -88,6 +88,25 @@ class Run(BaseModel):
     user_id: str
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def normalize_context(cls, v: Any) -> dict[str, Any] | None:
+        """Ensure context is always a dict or None, never a CallContext object."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        # Convert CallContext or other objects to dict
+        if hasattr(v, "model_dump"):
+            return v.model_dump()
+        if hasattr(v, "__dict__"):
+            return v.__dict__
+        # Fallback: try to convert to dict
+        try:
+            return dict(v) if v else None
+        except (TypeError, ValueError):
+            return None
 
     class Config:
         from_attributes = True

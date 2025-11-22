@@ -25,29 +25,12 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 
 ## 🆕 What's New
 
-- **🤝 Human-in-the-Loop Support**: Interactive agent workflows with approval gates and user intervention points
-- **📊 [Langfuse Integration](docs/langfuse-usage.md)**: Complete observability and tracing for your agent runs with automatic metadata capture
+- **🎨 LangGraph Studio Support**: Full compatibility with LangGraph Studio for visual graph debugging and development
+- **🤖 AG-UI / CopilotKit Support**: Seamless integration with AG-UI and CopilotKit-based clients for enhanced user experiences
+- **⬆️ LangGraph v1.0.0**: Upgraded to LangGraph and LangChain v1.0.0 with latest features and improvements
+- **🤝 Human-in-the-Loop**: Interactive agent workflows with approval gates and user intervention points
+- **📊 [Langfuse Integration](docs/langfuse-usage.md)**: Complete observability and tracing for your agent runs
 
-## 🎃 Hacktoberfest 2025
-
-Aegra is participating in Hacktoberfest! We welcome **meaningful contributions**.
-
-**What we're looking for:**
-- Feature development and enhancements
-- Bug fixes that improve stability
-- Substantial documentation improvements
-- Testing and feedback on real use cases
-
-**What we're NOT looking for:**
-- Single typo fixes
-- Whitespace changes
-- Low-effort PRs for swag hunting
-
-Quality over quantity. If you're here to build something real, we'd love your help.
-
-Check out our [Contributing Guidelines](CONTRIBUTING.md) and [open issues](https://github.com/ibbybuilds/aegra/issues) to get started.
-
----
 
 ## 🔥 Why Aegra vs LangGraph Platform?
 

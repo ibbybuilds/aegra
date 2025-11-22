@@ -119,6 +119,34 @@ class ThreadState(BaseModel):
     )
 
 
+class ThreadStateUpdate(BaseModel):
+    """Request model for updating thread state"""
+
+    values: dict[str, Any] | list[dict[str, Any]] | None = Field(
+        None, description="The values to update the state with"
+    )
+    checkpoint: dict[str, Any] | None = Field(
+        None, description="The checkpoint to update the state of"
+    )
+    checkpoint_id: str | None = Field(
+        None, description="Optional checkpoint ID to update from"
+    )
+    as_node: str | None = Field(
+        None, description="Update the state as if this node had just executed"
+    )
+    # Also support query-like parameters for GET-like behavior via POST
+    subgraphs: bool | None = Field(False, description="Include states from subgraphs")
+    checkpoint_ns: str | None = Field(None, description="Checkpoint namespace")
+
+
+class ThreadStateUpdateResponse(BaseModel):
+    """Response model for thread state update"""
+
+    checkpoint: dict[str, Any] = Field(
+        description="The checkpoint that was created/updated"
+    )
+
+
 class ThreadHistoryRequest(BaseModel):
     """Request model for thread history endpoint"""
 

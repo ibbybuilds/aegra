@@ -23,13 +23,12 @@ from ..core.orm import _get_session_maker, get_session
 from ..core.serializers import GeneralSerializer
 from ..core.sse import create_end_event, get_sse_headers
 from ..models import Run, RunCreate, RunStatus, User
+from ..services.graph_streaming import stream_graph_events
 from ..services.langgraph_service import create_run_config, get_langgraph_service
 from ..services.streaming_service import streaming_service
 from ..utils.assistants import resolve_assistant_id
 from ..utils.run_utils import (
-    _filter_context_by_schema,
     _merge_jsonb,
-    _should_skip_event,
 )
 from ..utils.status_compat import validate_run_status
 
@@ -83,24 +82,56 @@ async def set_thread_status(session: AsyncSession, thread_id: str, status: str) 
     from ..utils.status_compat import validate_thread_status
 
     validated_status = validate_thread_status(status)
-    await session.execute(
+    result = await session.execute(
         update(ThreadORM)
         .where(ThreadORM.thread_id == thread_id)
         .values(status=validated_status, updated_at=datetime.now(UTC))
     )
     await session.commit()
 
+    # Verify thread was updated (matching row exists)
+    if result.rowcount == 0:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
 
 async def update_thread_metadata(
-    session: AsyncSession, thread_id: str, assistant_id: str, graph_id: str
+    session: AsyncSession,
+    thread_id: str,
+    assistant_id: str,
+    graph_id: str,
+    user_id: str | None = None,
 ) -> None:
-    """Update thread metadata with assistant and graph information (dialect agnostic)."""
+    """Update thread metadata with assistant and graph information (dialect agnostic).
+
+    If thread doesn't exist, auto-creates it.
+    """
     # Read-modify-write to avoid DB-specific JSON concat operators
     thread = await session.scalar(
         select(ThreadORM).where(ThreadORM.thread_id == thread_id)
     )
+
     if not thread:
-        raise HTTPException(404, f"Thread '{thread_id}' not found for metadata update")
+        # Auto-create thread if it doesn't exist
+        if not user_id:
+            raise HTTPException(400, "Cannot auto-create thread: user_id is required")
+
+        metadata = {
+            "owner": user_id,
+            "assistant_id": str(assistant_id),
+            "graph_id": graph_id,
+            "thread_name": "",
+        }
+
+        thread_orm = ThreadORM(
+            thread_id=thread_id,
+            status="idle",
+            metadata_json=metadata,
+            user_id=user_id,
+        )
+        session.add(thread_orm)
+        await session.commit()
+        return
+
     md = dict(getattr(thread, "metadata_json", {}) or {})
     md.update(
         {
@@ -196,10 +227,11 @@ async def create_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    await set_thread_status(session, thread_id, "busy")
+    # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
     )
+    await set_thread_status(session, thread_id, "busy")
 
     # Persist run record via ORM model in core.orm (Run table)
     now = datetime.now(UTC)
@@ -326,10 +358,11 @@ async def create_and_stream_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    await set_thread_status(session, thread_id, "busy")
+    # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
     )
+    await set_thread_status(session, thread_id, "busy")
 
     # Persist run record
     now = datetime.now(UTC)
@@ -644,10 +677,11 @@ async def wait_for_run(
         )
 
     # Mark thread as busy and update metadata with assistant/graph info
-    await set_thread_status(session, thread_id, "busy")
+    # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
     )
+    await set_thread_status(session, thread_id, "busy")
 
     # Persist run record
     now = datetime.now(UTC)
@@ -908,18 +942,6 @@ async def execute_run_async(
         maker = _get_session_maker()
         session = maker()
 
-    # Normalize stream_mode once here for all callers/endpoints.
-    # Accept "messages-tuple" as an alias of "messages".
-    def _normalize_mode(mode: str | None) -> str | None:
-        return (
-            "messages" if isinstance(mode, str) and mode == "messages-tuple" else mode
-        )
-
-    if isinstance(stream_mode, list):
-        stream_mode = [_normalize_mode(m) for m in stream_mode]
-    else:
-        stream_mode = _normalize_mode(stream_mode)
-
     try:
         # Update status
         await update_run_status(run_id, "running", session=session)
@@ -951,12 +973,8 @@ async def execute_run_async(
 
         # Determine input for execution (either input_data or command)
         if command is not None:
-            # When command is provided, it replaces input entirely (LangGraph API behavior)
-            if isinstance(command, dict):
-                execution_input = map_command_to_langgraph(command)
-            else:
-                # Direct resume value (backward compatibility)
-                execution_input = Command(resume=command)
+            # When command is provided, it replaces input entirely
+            execution_input = map_command_to_langgraph(command)
         else:
             # No command, use regular input
             execution_input = input_data
@@ -968,100 +986,46 @@ async def execute_run_async(
 
         # Prepare stream modes for execution
         if stream_mode is None:
-            final_stream_modes = DEFAULT_STREAM_MODES.copy()
+            stream_mode_list = DEFAULT_STREAM_MODES.copy()
         elif isinstance(stream_mode, str):
-            final_stream_modes = [stream_mode]
+            stream_mode_list = [stream_mode]
         else:
-            final_stream_modes = stream_mode.copy()
-
-        # Ensure interrupt events are captured by including updates mode
-        # Track whether updates was explicitly requested by user
-        user_requested_updates = "updates" in final_stream_modes
-        if not user_requested_updates:
-            final_stream_modes.append("updates")
-
-        only_interrupt_updates = not user_requested_updates
-
-        # Set subgraphs flag on event converter for namespace extraction
-        streaming_service.event_converter.set_subgraphs(subgraphs)
-
-        # Filter context parameters based on context schema if available
-        if context:
-            try:
-                context_schema = graph.get_context_jsonschema()
-                context = await _filter_context_by_schema(context, context_schema)
-            except Exception as e:
-                await logger.adebug(
-                    f"Failed to get context schema for filtering: {e}", exc_info=e
-                )
+            stream_mode_list = stream_mode.copy()
 
         async with with_auth_ctx(user, []):
-            async for raw_event in graph.astream(
-                execution_input,
+            # Stream events using the graph_streaming service
+            async for event_type, event_data in stream_graph_events(
+                graph=graph,
+                input_data=execution_input,
                 config=run_config,
+                stream_mode=stream_mode_list,
                 context=context,
                 subgraphs=subgraphs,
-                stream_mode=final_stream_modes,
+                on_checkpoint=lambda _: None,  # Can add checkpoint handling if needed
+                on_task_result=lambda _: None,  # Can add task result handling if needed
             ):
-                # Skip events that contain langsmith:nostream tag
-                if _should_skip_event(raw_event):
-                    continue
-
-                # Filter updates events BEFORE processing
-                # This ensures incomplete updates don't affect final_output tracking
-                processed_event, should_skip = (
-                    streaming_service._process_interrupt_updates(
-                        raw_event, only_interrupt_updates
-                    )
-                )
-                if should_skip:
-                    # Skip non-interrupt updates when not requested
-                    continue
-
+                # Increment event counter
                 event_counter += 1
                 event_id = f"{run_id}_event_{event_counter}"
 
-                # Forward to broker for live consumers (use processed event)
-                await streaming_service.put_to_broker(
-                    run_id,
-                    event_id,
-                    processed_event,
-                    only_interrupt_updates=only_interrupt_updates,
-                )
-                # Store for replay (use processed event)
+                # Create event tuple for broker/storage
+                event_tuple = (event_type, event_data)
+
+                # Forward to broker for live consumers (already filtered by graph_streaming)
+                await streaming_service.put_to_broker(run_id, event_id, event_tuple)
+
+                # Store for replay (already filtered by graph_streaming)
                 await streaming_service.store_event_from_raw(
-                    run_id,
-                    event_id,
-                    processed_event,
-                    only_interrupt_updates=only_interrupt_updates,
+                    run_id, event_id, event_tuple
                 )
 
-                # Check for interrupt in the processed event
-                event_data = None
-                if isinstance(processed_event, tuple) and len(processed_event) >= 2:
-                    event_data = processed_event[1]
-                elif not isinstance(processed_event, tuple):
-                    event_data = processed_event
-
+                # Check for interrupt
                 if isinstance(event_data, dict) and "__interrupt__" in event_data:
                     has_interrupt = True
 
-                # Track final output - only from actual values events, not converted updates
-                # This ensures we capture complete state, not intermediate updates
-                if isinstance(processed_event, tuple):
-                    if len(processed_event) == 2:
-                        # 2-tuple: (mode, chunk)
-                        mode, chunk = processed_event
-                        if mode == "values":
-                            final_output = chunk
-                    elif len(processed_event) == 3:
-                        # 3-tuple: (namespace, mode, chunk) when subgraphs=True
-                        namespace, mode, chunk = processed_event
-                        if mode == "values":
-                            final_output = chunk
-                elif not isinstance(processed_event, tuple):
-                    # Non-tuple events are values mode
-                    final_output = processed_event
+                # Track final output from values events (handles both "values" and "values|namespace")
+                if event_type.startswith("values"):
+                    final_output = event_data
 
         if has_interrupt:
             await update_run_status(

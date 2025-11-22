@@ -3,20 +3,12 @@
 from typing import Any
 
 from ..core.sse import (
-    create_checkpoints_event,
-    create_custom_event,
     create_debug_event,
     create_end_event,
     create_error_event,
-    create_events_event,
-    create_logs_event,
     create_messages_event,
     create_metadata_event,
-    create_state_event,
-    create_subgraphs_event,
-    create_tasks_event,
-    create_updates_event,
-    create_values_event,
+    format_sse_message,
 )
 
 
@@ -42,6 +34,7 @@ class EventConverter:
         data = stored_event.data
         event_id = stored_event.id
 
+        # Handle special cases with custom logic
         if event_type == "messages":
             message_chunk = data.get("message_chunk")
             metadata = data.get("metadata")
@@ -51,27 +44,19 @@ class EventConverter:
                 (message_chunk, metadata) if metadata is not None else message_chunk
             )
             return create_messages_event(message_data, event_id=event_id)
-        elif event_type == "values":
-            return create_values_event(data.get("chunk"), event_id)
         elif event_type == "metadata":
             return create_metadata_event(run_id, event_id)
-        elif event_type == "state":
-            return create_state_event(data.get("state"), event_id)
-        elif event_type == "logs":
-            return create_logs_event(data.get("logs"), event_id)
-        elif event_type == "tasks":
-            return create_tasks_event(data.get("tasks"), event_id)
-        elif event_type == "subgraphs":
-            return create_subgraphs_event(data.get("subgraphs"), event_id)
         elif event_type == "debug":
             return create_debug_event(data.get("debug"), event_id)
-        elif event_type == "events":
-            return create_events_event(data.get("event"), event_id)
         elif event_type == "end":
             return create_end_event(event_id)
         elif event_type == "error":
             return create_error_event(data.get("error"), event_id)
-        return None
+        else:
+            # Handle all other event types generically (values, state, logs, tasks, etc.)
+            # Extract payload - try common patterns
+            payload = data.get(event_type) or data.get("chunk") or data
+            return format_sse_message(event_type, payload, event_id)
 
     def _parse_raw_event(self, raw_event: Any) -> tuple[str, Any, list[str] | None]:
         """
@@ -138,53 +123,41 @@ class EventConverter:
         else:
             event_type = stream_mode
 
-        # Handle updates events - convert interrupt updates to values
-        # Note: This path should rarely be reached as updates are filtered
-        # in _process_interrupt_updates before reaching the converter
+        # Handle updates events (rarely reached - updates are filtered in graph_streaming)
         if stream_mode == "updates":
             if isinstance(payload, dict) and "__interrupt__" in payload:
                 # Convert interrupt updates to values events
                 if self.subgraphs and namespace:
                     event_type = f"values|{'|'.join(namespace)}"
-                    # Use format_sse_message directly to support namespace prefixing
-                    from ..core.sse import format_sse_message
-
-                    return format_sse_message(event_type, payload, event_id)
                 else:
                     event_type = "values"
-                    return create_values_event(payload, event_id)
+                return format_sse_message(event_type, payload, event_id)
             else:
-                # Non-interrupt updates should be filtered out (not reach here if filtering works)
-                return create_updates_event(payload, event_id)
+                # Non-interrupt updates (pass through as-is)
+                return format_sse_message(event_type, payload, event_id)
 
-        # Route to appropriate SSE creator based on base stream mode
-        # Pass event_type (with namespace) to SSE creators for proper event naming
-        if stream_mode == "messages" or event_type.startswith("messages"):
+        # Handle specific message event types (Studio compatibility and standard messages)
+        if stream_mode in (
+            "messages/metadata",
+            "messages/partial",
+            "messages/complete",
+        ):
+            # Studio-specific message events - pass through as-is
+            return format_sse_message(stream_mode, payload, event_id)
+        elif stream_mode == "messages" or event_type.startswith("messages"):
             return create_messages_event(
                 payload, event_type=event_type, event_id=event_id
             )
         elif stream_mode == "values" or event_type.startswith("values"):
-            # For values events, we need to use format_sse_message directly to support namespaces
-            from ..core.sse import format_sse_message
-
+            # For values events, use format_sse_message directly to support namespaces
             return format_sse_message(event_type, payload, event_id)
-        elif stream_mode == "state":
-            return create_state_event(payload, event_id)
-        elif stream_mode == "logs":
-            return create_logs_event(payload, event_id)
-        elif stream_mode == "tasks":
-            return create_tasks_event(payload, event_id)
-        elif stream_mode == "subgraphs":
-            return create_subgraphs_event(payload, event_id)
         elif stream_mode == "debug":
             return create_debug_event(payload, event_id)
-        elif stream_mode == "events":
-            return create_events_event(payload, event_id)
-        elif stream_mode == "checkpoints":
-            return create_checkpoints_event(payload, event_id)
-        elif stream_mode == "custom":
-            return create_custom_event(payload, event_id)
         elif stream_mode == "end":
             return create_end_event(event_id)
-
-        return None
+        elif stream_mode == "error":
+            return create_error_event(payload, event_id)
+        else:
+            # Generic handler for all other event types (state, logs, tasks, events, etc.)
+            # This automatically supports any new event types without code changes
+            return format_sse_message(event_type, payload, event_id)

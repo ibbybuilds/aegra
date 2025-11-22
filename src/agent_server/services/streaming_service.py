@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 
-from ..core.sse import create_error_event, create_metadata_event
+from ..core.sse import create_error_event
 from ..models import Run
 from ..utils import extract_event_sequence, generate_event_id
 from .broker import broker_manager
@@ -22,50 +22,6 @@ class StreamingService:
     def __init__(self):
         self.event_counters: dict[str, int] = {}
         self.event_converter = EventConverter()
-
-    def _process_interrupt_updates(
-        self, raw_event: Any, only_interrupt_updates: bool
-    ) -> tuple[Any, bool]:
-        """
-        Process interrupt updates logic - returns (processed_event, should_skip).
-
-        Behavior:
-        - Non-interrupt updates are silently dropped when only_interrupt_updates=True
-        - Interrupt updates are converted to values events
-        - Preserves namespace in 3-tuple format when subgraphs=True
-        """
-        if not isinstance(raw_event, tuple) or len(raw_event) < 2:
-            return raw_event, False
-
-        # Extract mode and chunk based on tuple length
-        if len(raw_event) == 2:
-            # 2-tuple: (mode, chunk)
-            mode = raw_event[0]
-            chunk = raw_event[1]
-            namespace = None
-        else:
-            # 3-tuple: (namespace, mode, chunk) when subgraphs=True
-            namespace, mode, chunk = raw_event
-
-        # Handle updates events
-        if mode == "updates" and only_interrupt_updates:
-            # Check if this is an interrupt update
-            if (
-                isinstance(chunk, dict)
-                and "__interrupt__" in chunk
-                and len(chunk.get("__interrupt__", [])) > 0
-            ):
-                # Convert interrupt updates to values events
-                if namespace is not None:
-                    return (namespace, "values", chunk), False
-                else:
-                    return ("values", chunk), False
-            else:
-                # Skip non-interrupt updates when not requested
-                return raw_event, True
-
-        # Non-updates events pass through unchanged
-        return raw_event, False
 
     def _next_event_counter(self, run_id: str, event_id: str) -> int:
         """Update and return the next event counter for a run"""
@@ -84,33 +40,26 @@ class StreamingService:
         run_id: str,
         event_id: str,
         raw_event: Any,
-        only_interrupt_updates: bool = False,
     ):
-        """Put an event into the run's broker queue for live consumers"""
+        """Put an event into the run's broker queue for live consumers
+
+        Note: Events from graph_streaming are already filtered, so they pass through as-is.
+        """
         broker = broker_manager.get_or_create_broker(run_id)
         self._next_event_counter(run_id, event_id)
-
-        processed_event, should_skip = self._process_interrupt_updates(
-            raw_event, only_interrupt_updates
-        )
-        if should_skip:
-            return
-
-        await broker.put(event_id, processed_event)
+        await broker.put(event_id, raw_event)
 
     async def store_event_from_raw(
         self,
         run_id: str,
         event_id: str,
         raw_event: Any,
-        only_interrupt_updates: bool = False,
     ):
-        """Convert raw event to stored format and store it"""
-        processed_event, should_skip = self._process_interrupt_updates(
-            raw_event, only_interrupt_updates
-        )
-        if should_skip:
-            return
+        """Convert raw event to stored format and store it
+
+        Note: Events from graph_streaming are already filtered, so they pass through as-is.
+        """
+        processed_event = raw_event
 
         # Parse the processed event
         node_path = None
@@ -141,6 +90,49 @@ class StreamingService:
                     if isinstance(event_payload, tuple) and len(event_payload) >= 2
                     else None,
                     "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "messages/partial":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "messages/partial",
+                {
+                    "type": "messages_partial",
+                    "messages": event_payload,
+                    "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "messages/complete":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "messages/complete",
+                {
+                    "type": "messages_complete",
+                    "messages": event_payload,
+                    "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "messages/metadata":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "messages/metadata",
+                {
+                    "type": "messages_metadata",
+                    "metadata": event_payload,
+                    "node_path": node_path,
+                },
+            )
+        elif stream_mode_label == "events":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "events",
+                {
+                    "type": "langchain_event",
+                    "event": event_payload,
                 },
             )
         elif stream_mode_label == "values" or stream_mode_label == "updates":
@@ -202,12 +194,6 @@ class StreamingService:
         """Stream run execution with unified producer-consumer pattern"""
         run_id = run.run_id
         try:
-            # Send metadata event first (sequence 0, not stored)
-            if not last_event_id:
-                event_id = generate_event_id(run_id, 0)
-                metadata_event = create_metadata_event(run_id, event_id)
-                yield metadata_event
-
             # Replay stored events first
             last_sent_sequence = 0
             if last_event_id:

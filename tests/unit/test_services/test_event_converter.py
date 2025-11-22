@@ -97,7 +97,8 @@ class TestEventConverter:
 
     def test_create_sse_event_updates_with_interrupt(self):
         """Test that interrupt updates are converted to values"""
-        payload = {"__interrupt__": True, "data": "test"}
+        # Use a list for __interrupt__ to match the actual condition check
+        payload = {"__interrupt__": [{"node": "test"}], "data": "test"}
         result = self.converter._create_sse_event("updates", payload, "evt-1", None)
 
         # Should be converted to values event
@@ -172,12 +173,15 @@ class TestEventConverter:
         assert "event: end\n" in result
 
     def test_create_sse_event_unknown_mode(self):
-        """Test creating SSE event with unknown mode returns None"""
+        """Test creating SSE event with unknown mode uses generic handler"""
         result = self.converter._create_sse_event(
             "unknown_mode", {"data": "test"}, "evt-1", None
         )
 
-        assert result is None
+        # Unknown modes are handled generically and return formatted event
+        assert result is not None
+        assert "event: unknown_mode\n" in result
+        assert "data: " in result
 
     def test_convert_raw_to_sse_tuple_format(self):
         """Test converting raw event in tuple format"""
@@ -357,7 +361,7 @@ class TestEventConverter:
         assert "Something went wrong" in result
 
     def test_convert_stored_to_sse_unknown_event(self):
-        """Test converting stored event with unknown type returns None"""
+        """Test converting stored event with unknown type uses generic handler"""
         stored_event = Mock()
         stored_event.event = "unknown_event_type"
         stored_event.data = {}
@@ -365,4 +369,7 @@ class TestEventConverter:
 
         result = self.converter.convert_stored_to_sse(stored_event)
 
-        assert result is None
+        # Unknown event types are handled generically and return formatted event
+        assert result is not None
+        assert "event: unknown_event_type\n" in result
+        assert "id: evt-1\n" in result

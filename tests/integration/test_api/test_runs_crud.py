@@ -745,15 +745,17 @@ class TestWaitForRunTimeouts:
 
         # Mock assistant and run
         assistant = _assistant_row()
-        run = _run_row(status="running", output={"partial": "data"})
+        run = _run_row(status="running")
+        run.output = {"partial": "data"}
 
         class Session(DummySessionBase):
             async def scalar(self, stmt):
-                # Rudimentary check to distinguish assistant vs run lookup
-                # In a real app we'd check stmt.table, but here we can infer
-                if "assistant" in str(stmt):
+                stmt_str = str(stmt).lower()
+                if "from assistant" in stmt_str:
                     return assistant
-                return run
+                if "from run" in stmt_str:
+                    return run
+                return None
 
             async def refresh(self, obj):
                 pass
@@ -763,6 +765,12 @@ class TestWaitForRunTimeouts:
 
             async def commit(self):
                 pass
+
+            async def execute(self, stmt):
+                class Result:
+                    rowcount = 1
+
+                return Result()
 
         override_session_dependency(app, Session)
         client = make_client(app)

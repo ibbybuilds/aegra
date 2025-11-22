@@ -692,3 +692,97 @@ class TestWaitForRun:
 
         # Should reject having both configurable and context
         assert resp.status_code == 400
+
+
+class TestCreateRunValidation:
+    """Additional validation tests for create_run."""
+
+    def test_create_run_config_context_conflict(self):
+        """Test create_run rejects both configurable and context."""
+        app = create_test_app(include_runs=True, include_threads=False)
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+                "config": {"configurable": {"key": "value"}},
+                "context": {"key": "value"},
+            },
+        )
+        assert resp.status_code == 400
+        assert "Cannot specify both" in resp.json()["detail"]
+
+    def test_create_run_assistant_not_found(self):
+        """Test create_run with non-existent assistant."""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return None  # Assistant not found
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs",
+            json={
+                "assistant_id": "nonexistent",
+                "input": {"message": "test"},
+            },
+        )
+        assert resp.status_code == 404
+
+
+class TestWaitForRunTimeouts:
+    """Test wait_for_run timeout behavior."""
+
+    def test_wait_for_run_timeout(self):
+        """Test that wait_for_run returns current state on timeout."""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        # Mock assistant and run
+        assistant = _assistant_row()
+        run = _run_row(status="running", output={"partial": "data"})
+
+        class Session(DummySessionBase):
+            async def scalar(self, stmt):
+                # Rudimentary check to distinguish assistant vs run lookup
+                # In a real app we'd check stmt.table, but here we can infer
+                if "assistant" in str(stmt):
+                    return assistant
+                return run
+
+            async def refresh(self, obj):
+                pass
+
+            async def add(self, obj):
+                pass
+
+            async def commit(self):
+                pass
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        # Mock asyncio.wait_for to raise TimeoutError
+        with (
+            patch("asyncio.wait_for", side_effect=TimeoutError),
+            patch("agent_server.api.runs.get_langgraph_service") as mock_service,
+            patch("agent_server.api.runs.execute_run_async"),
+        ):
+            mock_service.return_value.list_graphs.return_value = ["test-graph"]
+
+            resp = client.post(
+                "/threads/test-thread-123/runs/wait",
+                json={
+                    "assistant_id": "test-assistant-123",
+                    "input": {"message": "test"},
+                },
+            )
+
+            assert resp.status_code == 200
+            # Should return output even if timed out (running state)
+            assert resp.json() == {"partial": "data"}

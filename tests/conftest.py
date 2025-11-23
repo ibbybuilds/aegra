@@ -19,7 +19,9 @@ from tests.fixtures.langgraph import (
     FakeAgent,
     FakeGraph,
     FakeSnapshot,
+    make_interrupt,
     make_snapshot,
+    make_task,
     patch_langgraph_service,
 )
 from tests.fixtures.session_fixtures import (
@@ -45,7 +47,9 @@ __all__ = [
     "FakeSnapshot",
     "FakeAgent",
     "FakeGraph",
+    "make_interrupt",
     "make_snapshot",
+    "make_task",
     "patch_langgraph_service",
     "create_test_app",
     "make_client",

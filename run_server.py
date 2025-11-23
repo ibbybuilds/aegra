@@ -13,14 +13,20 @@ import os
 import sys
 from pathlib import Path
 
+import structlog
 import uvicorn
 from dotenv import load_dotenv
+
+from src.agent_server.utils.setup_logging import get_logging_config, setup_logging
 
 # Add graphs directory to Python path so imports can be resolved
 current_dir = Path(__file__).parent
 graphs_dir = current_dir / "graphs"
 if str(graphs_dir) not in sys.path:
     sys.path.insert(0, str(graphs_dir))
+
+setup_logging()
+logger = structlog.get_logger()
 
 
 def setup_environment():
@@ -35,8 +41,8 @@ def setup_environment():
     if not os.getenv("AUTH_TYPE"):
         os.environ["AUTH_TYPE"] = "noop"
 
-    print(f"🔐 Auth Type: {os.getenv('AUTH_TYPE')}")
-    print(f"🗄️  Database: {os.getenv('DATABASE_URL')}")
+    logger.info(f"🔐 Auth Type: {os.getenv('AUTH_TYPE')}")
+    logger.info(f"🗄️  Database: {os.getenv('DATABASE_URL')}")
 
 
 def configure_logging(level: str = "DEBUG"):
@@ -53,14 +59,15 @@ def configure_logging(level: str = "DEBUG"):
         sh.setFormatter(formatter)
         root.addHandler(sh)
 
+    logging.getLogger("uvicorn.error").disabled = True
+    logging.getLogger("uvicorn.access").disabled = True
+
     # Ensure our package/module loggers are at least at the configured level
     logging.getLogger("agent_server").setLevel(log_level)
     logging.getLogger("src.agent_server").setLevel(log_level)
     logging.getLogger("src.agent_server.utils.context_parser").setLevel(log_level)
     logging.getLogger("src.agent_server.api.runs").setLevel(log_level)
     logging.getLogger("aegra").setLevel(log_level)
-    logging.getLogger("uvicorn.error").setLevel(log_level)
-    logging.getLogger("uvicorn.access").setLevel(log_level)
 
 
 def main():
@@ -70,19 +77,18 @@ def main():
 
     port = int(os.getenv("PORT", "8000"))
 
-    print("🚀 Starting Aegra...")
-    print(f"📍 Server will be available at: http://localhost:{port}")
-    print(f"📊 API docs will be available at: http://localhost:{port}/docs")
-    print(f"📝 Log level: {os.getenv('LOG_LEVEL', 'INFO')}")
-    print("🎯 Context logging enabled for AVA agent")
-    print("🧪 Test with: python test_sdk_integration.py")
+    logger.info("🚀 Starting Aegra...")
+    logger.info(f"📍 Server will be available at: http://localhost:{port}")
+    logger.info(f"📊 API docs will be available at: http://localhost:{port}/docs")
+    logger.info("🧪 Test with: python test_sdk_integration.py")
 
     uvicorn.run(
         "src.agent_server.main:app",
-        host="::",  # IPv6 dual-stack (works on macOS/Ubuntu for local dev)
+        host=os.getenv("HOST", "0.0.0.0"),  # nosec B104 - required for Docker
         port=port,
         reload=True,
-        log_level=os.getenv("UVICORN_LOG_LEVEL", "debug"),
+        access_log=False,
+        log_config=get_logging_config(),
     )
 
 

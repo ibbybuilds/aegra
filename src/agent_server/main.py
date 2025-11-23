@@ -20,8 +20,8 @@ if str(graphs_dir) not in sys.path:
     sys.path.insert(0, str(graphs_dir))
 
 # ruff: noqa: E402 - imports below require sys.path modification above
-import logging
-
+import structlog
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,13 +34,19 @@ from .api.threads import router as threads_router
 from .core.auth_middleware import get_auth_backend, on_auth_error
 from .core.database import db_manager
 from .core.health import router as health_router
-from .middleware import DoubleEncodedJSONMiddleware
+from .middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
 from .models.errors import AgentProtocolError, get_error_type
+from .observability.base import get_observability_manager
+from .observability.langfuse_integration import _langfuse_provider
+from .services.event_store import event_store
+from .services.langgraph_service import get_langgraph_service
+from .utils.setup_logging import setup_logging
 
 # Task management for run cancellation
 active_runs: dict[str, asyncio.Task] = {}
 
-logger = logging.getLogger(__name__)
+setup_logging()
+logger = structlog.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -49,15 +55,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 
-    # Initialize LangGraph service
-    from .services.langgraph_service import get_langgraph_service
+    # Initialize observability providers
+    observability_manager = get_observability_manager()
+    observability_manager.register_provider(_langfuse_provider)
 
+    # Initialize LangGraph service
     langgraph_service = get_langgraph_service()
     await langgraph_service.initialize()
 
     # Initialize event store cleanup task
-    from .services.event_store import event_store
-
     await event_store.start_cleanup_task()
 
     yield
@@ -82,6 +88,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+app.add_middleware(StructLogMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

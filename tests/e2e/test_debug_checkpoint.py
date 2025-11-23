@@ -42,7 +42,19 @@ async def test_run_without_input_sees_injected():
     elog("Injecting human message", human_message)
     await client.threads.update_state(
         thread_id=thread_id,
-        values={"messages": [human_message]},
+        values={
+            "messages": [human_message],
+            # Initialize AVA state fields to prevent KeyError
+            "hotelCursor": None,
+            "roomCursor": None,
+            "hotelToken": None,
+            "hotelSearchKey": None,
+            "roomSearchKey": None,
+            "hotelParams": None,
+            "roomParams": None,
+            "location": None,
+            "structured_response": None,
+        },
     )
 
     # 4. Verify message is in state

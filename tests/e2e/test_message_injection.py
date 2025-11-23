@@ -45,9 +45,22 @@ async def test_inject_ai_message_via_state():
 
     # Update state with the new message
     # Note: We're using LangGraph's internal format here
+    # IMPORTANT: Initialize state fields to prevent KeyError if tools are called
     update_response = await client.threads.update_state(
         thread_id=thread_id,
-        values={"messages": [fake_ai_message]},
+        values={
+            "messages": [fake_ai_message],
+            # Initialize AVA state fields
+            "hotelCursor": None,
+            "roomCursor": None,
+            "hotelToken": None,
+            "hotelSearchKey": None,
+            "roomSearchKey": None,
+            "hotelParams": None,
+            "roomParams": None,
+            "location": None,
+            "structured_response": None,
+        },
     )
     elog("Update state response", update_response)
     assert "checkpoint" in update_response
@@ -133,9 +146,26 @@ async def test_agent_sees_injected_messages():
     }
 
     elog("Injecting relay server messages (hotel context)", [hotel_context, relay_greeting])
+
+    # IMPORTANT: Initialize ALL state fields to prevent KeyError when tools are called
+    # The AVA graph expects these fields to exist, even if they're None
+    state_values = {
+        "messages": [hotel_context, relay_greeting],
+        # Tool-related state fields (required for hotel search tools)
+        "hotelCursor": None,
+        "roomCursor": None,
+        "hotelToken": None,
+        "hotelSearchKey": None,
+        "roomSearchKey": None,
+        "hotelParams": None,
+        "roomParams": None,
+        "location": None,
+        "structured_response": None,
+    }
+
     update_response = await client.threads.update_state(
         thread_id=thread_id,
-        values={"messages": [hotel_context, relay_greeting]},
+        values=state_values,
     )
     elog("Update state response", update_response)
 
@@ -241,7 +271,19 @@ async def test_inject_multiple_messages():
     elog("Injecting multiple messages", fake_messages)
     update_response = await client.threads.update_state(
         thread_id=thread_id,
-        values={"messages": fake_messages},
+        values={
+            "messages": fake_messages,
+            # Initialize AVA state fields
+            "hotelCursor": None,
+            "roomCursor": None,
+            "hotelToken": None,
+            "hotelSearchKey": None,
+            "roomSearchKey": None,
+            "hotelParams": None,
+            "roomParams": None,
+            "location": None,
+            "structured_response": None,
+        },
     )
     assert "checkpoint" in update_response
 

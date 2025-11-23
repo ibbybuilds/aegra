@@ -8,13 +8,13 @@ This module provides environment-based authentication switching between:
 Set AUTH_TYPE environment variable to choose authentication mode.
 """
 
-import logging
 import os
 from typing import Any
 
+import structlog
 from langgraph_sdk import Auth
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 # Initialize LangGraph Auth instance
 auth = Auth()

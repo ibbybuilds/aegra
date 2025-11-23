@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import Any, TypeVar
 from uuid import uuid5
 
+import structlog
 from langgraph.graph import StateGraph
+from langgraph.pregel import Pregel
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
-from ..observability.langfuse_integration import get_tracing_callbacks
+from ..observability.base import get_tracing_callbacks, get_tracing_metadata
 
 State = TypeVar("State")
+logger = structlog.get_logger(__name__)
 
 
 class LangGraphService:
@@ -92,6 +95,7 @@ class LangGraphService:
         from sqlalchemy import select
 
         from ..core.orm import Assistant as AssistantORM
+        from ..core.orm import AssistantVersion as AssistantVersionORM
         from ..core.orm import get_session
 
         # Fixed namespace used to derive assistant IDs from graph IDs
@@ -116,15 +120,24 @@ class LangGraphService:
                         graph_id=graph_id,
                         config={},
                         user_id="system",
+                        metadata_dict={"created_by": "system"},
+                    )
+                )
+                session.add(
+                    AssistantVersionORM(
+                        assistant_id=assistant_id,
+                        version=1,
+                        name=graph_id,
+                        description=f"Default assistant for graph '{graph_id}'",
+                        graph_id=graph_id,
+                        metadata_dict={"created_by": "system"},
                     )
                 )
             await session.commit()
         finally:
             await session.close()
 
-    async def get_graph(
-        self, graph_id: str, force_reload: bool = False
-    ) -> StateGraph[Any]:
+    async def get_graph(self, graph_id: str, force_reload: bool = False) -> Pregel:
         """Get a compiled graph by ID with caching and LangGraph integration"""
         if graph_id not in self._graph_registry:
             raise ValueError(f"Graph not found: {graph_id}")
@@ -141,12 +154,14 @@ class LangGraphService:
         # Always ensure graphs are compiled with our Postgres checkpointer for persistence
         from ..core.database import db_manager
 
-        if hasattr(base_graph, "compile"):
+        checkpointer_cm = await db_manager.get_checkpointer()
+        store_cm = await db_manager.get_store()
+
+        if isinstance(base_graph, StateGraph):
             # The module exported an *uncompiled* StateGraph – compile it now with
             # a Postgres checkpointer for durable state.
-            checkpointer_cm = await db_manager.get_checkpointer()
-            store_cm = await db_manager.get_store()
-            print(f"🔧 Compiling graph '{graph_id}' with Postgres persistence")
+
+            logger.info(f"🔧 Compiling graph '{graph_id}' with Postgres persistence")
             compiled_graph = base_graph.compile(
                 checkpointer=checkpointer_cm, store=store_cm
             )
@@ -154,15 +169,13 @@ class LangGraphService:
             # Graph was already compiled by the module.  Create a shallow copy
             # that injects our Postgres checkpointer *unless* the author already
             # set one.
-            checkpointer_cm = await db_manager.get_checkpointer()
             try:
-                store_cm = await db_manager.get_store()
                 compiled_graph = base_graph.copy(
                     update={"checkpointer": checkpointer_cm, "store": store_cm}
                 )
             except Exception:
                 # Fallback: property may be immutably set; run as-is with warning
-                print(
+                logger.warning(
                     f"⚠️  Pre-compiled graph '{graph_id}' does not support checkpointer injection; running without persistence"
                 )
                 compiled_graph = base_graph
@@ -307,23 +320,11 @@ def create_run_config(
         # Combine existing callbacks with new tracing callbacks to be non-destructive
         cfg["callbacks"] = existing_callbacks + tracing_callbacks
 
-        # Add metadata for Langfuse
-        cfg.setdefault("metadata", {})
-        cfg["metadata"]["langfuse_session_id"] = thread_id
-        if user:
-            cfg["metadata"]["langfuse_user_id"] = user.identity
-            cfg["metadata"]["langfuse_tags"] = [
-                "aegra_run",
-                f"run:{run_id}",
-                f"thread:{thread_id}",
-                f"user:{user.identity}",
-            ]
-        else:
-            cfg["metadata"]["langfuse_tags"] = [
-                "aegra_run",
-                f"run:{run_id}",
-                f"thread:{thread_id}",
-            ]
+    # Add metadata from all observability providers (independent of callbacks)
+    cfg.setdefault("metadata", {})
+    user_identity = user.identity if user else None
+    observability_metadata = get_tracing_metadata(run_id, thread_id, user_identity)
+    cfg["metadata"].update(observability_metadata)
 
     # Apply checkpoint parameters if provided
     if checkpoint and isinstance(checkpoint, dict):

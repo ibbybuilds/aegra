@@ -6,12 +6,12 @@ using Starlette's AuthenticationMiddleware.
 """
 
 import importlib.util
-import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
+import structlog
 from langgraph_sdk import Auth
 from langgraph_sdk.auth.types import MinimalUserDict
 from starlette.authentication import (
@@ -25,7 +25,7 @@ from starlette.responses import JSONResponse
 
 from ..models.errors import AgentProtocolError
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class LangGraphUser(BaseUser):

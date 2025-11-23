@@ -62,19 +62,6 @@ jobs:
       - name: Run unit tests with coverage
         run: uv run pytest --cov=src --cov-report=term --ignore=tests/e2e
 
-      - name: Create aegra.json config for E2E tests
-        run: |
-          cat > aegra.json << 'EOF'
-          {
-            "graphs": {
-              "agent": "./graphs/react_agent/__init__.py:graph",
-              "agent_hitl": "./graphs/react_agent_hitl/__init__.py:graph",
-              "subgraph_agent": "./graphs/subgraph_agent/__init__.py:graph"
-            },
-            "env": ".env"
-          }
-          EOF
-
       - name: Run database migrations
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra

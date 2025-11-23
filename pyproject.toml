@@ -31,13 +31,15 @@ dependencies = [
     "ava-core @ git+https://github.com/lucca-mrktr/ava-core.git@develop",
     # Aegra-specific core dependencies
     "alembic>=1.16.4",
+    "asgi-correlation-id>=4.3.4",
     "asyncpg>=0.30.0",
     "fastapi>=0.116.1",
     "greenlet>=3.2.3",
+    "langfuse>=3.3.4",
     "psycopg[binary]>=3.2.9",
     "pydantic>=2.11.7",
-    "langfuse>=3.3.4",
     "sqlalchemy>=2.0.0",
+    "structlog>=25.4.0",
     "uvicorn>=0.35.0",
     # LangChain/LangGraph extensions not provided by ava-core
     "langchain-anthropic>=1.0.3",

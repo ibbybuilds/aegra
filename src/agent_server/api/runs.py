@@ -998,6 +998,35 @@ async def execute_run_async(
             # No command, use regular input
             execution_input = input_data
 
+        # MERGE MESSAGES: If input contains messages and checkpoint has existing messages,
+        # prepend existing messages to preserve conversation history.
+        # This enables injecting relay messages before a run starts.
+        if (
+            isinstance(execution_input, dict)
+            and "messages" in execution_input
+            and execution_input["messages"]
+        ):
+            try:
+                # Load current state to get existing messages
+                current_state = await graph.aget_state(run_config)
+                existing_messages = current_state.values.get("messages", [])
+
+                if existing_messages:
+                    # Prepend existing messages to new ones (preserves history)
+                    logger.info(
+                        f"[execute_run_async] Merging {len(existing_messages)} existing messages "
+                        f"with {len(execution_input['messages'])} new messages for run {run_id}"
+                    )
+                    execution_input["messages"] = (
+                        existing_messages + execution_input["messages"]
+                    )
+            except Exception as e:
+                # If merge fails, continue with original input (non-breaking)
+                logger.warning(
+                    f"[execute_run_async] Failed to merge messages for run {run_id}: {e}. "
+                    "Continuing with input as-is."
+                )
+
         # Execute using streaming to capture events for later replay
         event_counter = 0
         final_output = None

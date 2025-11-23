@@ -61,14 +61,12 @@ async def create_thread(
 
     # Build metadata with required fields
     metadata = request.metadata or {}
-    metadata.update(
-        {
-            "owner": user.identity,
-            "assistant_id": None,  # Will be set when first run is created
-            "graph_id": None,  # Will be set when first run is created
-            "thread_name": "",  # User can update this later
-        }
-    )
+    # SECURITY: Always overwrite owner (don't trust user input)
+    metadata["owner"] = user.identity
+    # Allow user to set these, but will be overwritten on first run
+    metadata.setdefault("assistant_id", None)
+    metadata.setdefault("graph_id", None)
+    metadata.setdefault("thread_name", "")
 
     thread_orm = ThreadORM(
         thread_id=thread_id,

@@ -101,11 +101,15 @@ async def update_thread_metadata(
     assistant_id: str,
     graph_id: str,
     user_id: str | None = None,
+    input_data: dict[str, Any] | None = None,
 ) -> None:
     """Update thread metadata with assistant and graph information (dialect agnostic).
 
     If thread doesn't exist, auto-creates it.
+    Also generates an AI-powered title from the first user message if not already set.
     """
+    from ..services.title_generator import maybe_generate_title_for_thread
+
     # Read-modify-write to avoid DB-specific JSON concat operators
     thread = await session.scalar(
         select(ThreadORM).where(ThreadORM.thread_id == thread_id)
@@ -116,11 +120,23 @@ async def update_thread_metadata(
         if not user_id:
             raise HTTPException(400, "Cannot auto-create thread: user_id is required")
 
+        # Generate title from first message if available
+        thread_name = ""
+        if input_data:
+            try:
+                generated_title = await maybe_generate_title_for_thread(
+                    input_data, None
+                )
+                if generated_title:
+                    thread_name = generated_title
+            except Exception as e:
+                logger.warning("Failed to generate title for new thread", error=str(e))
+
         metadata = {
             "owner": user_id,
             "assistant_id": str(assistant_id),
             "graph_id": graph_id,
-            "thread_name": "",
+            "thread_name": thread_name,
         }
 
         thread_orm = ThreadORM(
@@ -134,6 +150,19 @@ async def update_thread_metadata(
         return
 
     md = dict(getattr(thread, "metadata_json", {}) or {})
+    current_title = md.get("thread_name", "")
+
+    # Generate title if not already set and input_data is provided
+    if input_data and not current_title:
+        try:
+            generated_title = await maybe_generate_title_for_thread(
+                input_data, current_title
+            )
+            if generated_title:
+                md["thread_name"] = generated_title
+        except Exception as e:
+            logger.warning("Failed to generate title for existing thread", error=str(e))
+
     md.update(
         {
             "assistant_id": str(assistant_id),
@@ -224,8 +253,14 @@ async def create_run(
 
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
+    # Also generates AI-powered title from first user message
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
+        session,
+        thread_id,
+        assistant.assistant_id,
+        assistant.graph_id,
+        user.identity,
+        input_data=request.input,
     )
     await set_thread_status(session, thread_id, "busy")
 
@@ -366,8 +401,14 @@ async def create_and_stream_run(
 
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
+    # Also generates AI-powered title from first user message
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
+        session,
+        thread_id,
+        assistant.assistant_id,
+        assistant.graph_id,
+        user.identity,
+        input_data=request.input,
     )
     await set_thread_status(session, thread_id, "busy")
 
@@ -685,8 +726,14 @@ async def wait_for_run(
 
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
+    # Also generates AI-powered title from first user message
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
+        session,
+        thread_id,
+        assistant.assistant_id,
+        assistant.graph_id,
+        user.identity,
+        input_data=request.input,
     )
     await set_thread_status(session, thread_id, "busy")
 

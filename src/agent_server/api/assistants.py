@@ -27,7 +27,7 @@ from ..services.assistant_service import AssistantService, get_assistant_service
 router = APIRouter()
 
 
-@router.post("/assistants", response_model=Assistant)
+@router.post("/assistants", response_model=Assistant, response_model_by_alias=False)
 async def create_assistant(
     request: AssistantCreate,
     user: User = Depends(get_current_user),
@@ -37,7 +37,7 @@ async def create_assistant(
     return await service.create_assistant(request, user.identity)
 
 
-@router.get("/assistants", response_model=AssistantList)
+@router.get("/assistants", response_model=AssistantList, response_model_by_alias=False)
 async def list_assistants(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
@@ -47,7 +47,9 @@ async def list_assistants(
     return AssistantList(assistants=assistants, total=len(assistants))
 
 
-@router.post("/assistants/search", response_model=list[Assistant])
+@router.post(
+    "/assistants/search", response_model=list[Assistant], response_model_by_alias=False
+)
 async def search_assistants(
     request: AssistantSearchRequest,
     user: User = Depends(get_current_user),
@@ -67,7 +69,11 @@ async def count_assistants(
     return await service.count_assistants(request, user.identity)
 
 
-@router.get("/assistants/{assistant_id}", response_model=Assistant)
+@router.get(
+    "/assistants/{assistant_id}",
+    response_model=Assistant,
+    response_model_by_alias=False,
+)
 async def get_assistant(
     assistant_id: str,
     user: User = Depends(get_current_user),
@@ -77,7 +83,11 @@ async def get_assistant(
     return await service.get_assistant(assistant_id, user.identity)
 
 
-@router.patch("/assistants/{assistant_id}", response_model=Assistant)
+@router.patch(
+    "/assistants/{assistant_id}",
+    response_model=Assistant,
+    response_model_by_alias=False,
+)
 async def update_assistant(
     assistant_id: str,
     request: AssistantUpdate,
@@ -98,7 +108,11 @@ async def delete_assistant(
     return await service.delete_assistant(assistant_id, user.identity)
 
 
-@router.post("/assistants/{assistant_id}/latest", response_model=Assistant)
+@router.post(
+    "/assistants/{assistant_id}/latest",
+    response_model=Assistant,
+    response_model_by_alias=False,
+)
 async def set_assistant_latest(
     assistant_id: str,
     version: int = Body(
@@ -111,7 +125,11 @@ async def set_assistant_latest(
     return await service.set_assistant_latest(assistant_id, version, user.identity)
 
 
-@router.post("/assistants/{assistant_id}/versions", response_model=list[Assistant])
+@router.post(
+    "/assistants/{assistant_id}/versions",
+    response_model=list[Assistant],
+    response_model_by_alias=False,
+)
 async def list_assistant_versions(
     assistant_id: str,
     user: User = Depends(get_current_user),

@@ -30,6 +30,22 @@ class Context:
         },
     )
 
+    enable_thinking: bool = field(
+        default=True,
+        metadata={
+            "description": "Enable extended thinking (reasoning) for Claude models. "
+            "When enabled, the AI will show its reasoning process."
+        },
+    )
+
+    thinking_budget: int = field(
+        default=10000,
+        metadata={
+            "description": "Token budget for extended thinking (min 1024, max 128000). "
+            "Higher values allow more thorough reasoning but cost more."
+        },
+    )
+
     max_search_results: int = field(
         default=10,
         metadata={

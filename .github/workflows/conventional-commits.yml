@@ -29,7 +29,7 @@ jobs:
             ci
             build
           requireScope: false
-          subjectPattern: ^[a-z].+$
+          subjectPattern: ^[a-zA-Z].+$
           subjectPatternError: |
             The subject "{subject}" found in the PR title "{title}"
-            must start with a lowercase letter and be descriptive.
+            must start with a letter and be descriptive.

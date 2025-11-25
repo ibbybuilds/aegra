@@ -3,9 +3,12 @@
 import os
 from typing import Any
 
+import structlog
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+logger = structlog.get_logger(__name__)
 
 
 class DatabaseManager:
@@ -23,15 +26,36 @@ class DatabaseManager:
 
     async def initialize(self) -> None:
         """Initialize database connections and LangGraph components"""
+        # Check if this is a Neon (or other cloud) PostgreSQL that requires SSL
+        is_cloud_postgres = (
+            "neon.tech" in self._database_url or "supabase" in self._database_url
+        )
+
         # SQLAlchemy for our minimal Agent Protocol metadata tables
+        # Using pool_pre_ping=True to handle stale/reset connections (important for Neon serverless)
+        # For asyncpg, SSL is enabled via connect_args, not URL parameter
+        connect_args = {"ssl": True} if is_cloud_postgres else {}
+
         self.engine = create_async_engine(
             self._database_url,
             echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
+            pool_pre_ping=True,  # Check connection health before use
+            pool_size=5,  # Conservative pool size for serverless
+            max_overflow=10,  # Allow extra connections under load
+            pool_recycle=300,  # Recycle connections every 5 minutes
+            connect_args=connect_args,
         )
 
         # Convert asyncpg URL to psycopg format for LangGraph
         # LangGraph packages require psycopg format, not asyncpg
         dsn = self._database_url.replace("postgresql+asyncpg://", "postgresql://")
+
+        # For psycopg (LangGraph), add sslmode=require for cloud PostgreSQL
+        if is_cloud_postgres:
+            if "?" in dsn:
+                dsn += "&sslmode=require"
+            else:
+                dsn += "?sslmode=require"
 
         # Store connection string for creating LangGraph components on demand
         self._langgraph_dsn = dsn
@@ -42,7 +66,7 @@ class DatabaseManager:
         # Note: Database schema is now managed by Alembic migrations
         # Run 'alembic upgrade head' to apply migrations
 
-        print("✅ Database and LangGraph components initialized")
+        logger.info("✅ Database and LangGraph components initialized")
 
     async def close(self) -> None:
         """Close database connections"""
@@ -60,7 +84,7 @@ class DatabaseManager:
             self._store_cm = None
             self._store = None
 
-        print("✅ Database connections closed")
+        logger.info("✅ Database connections closed")
 
     async def get_checkpointer(self) -> AsyncPostgresSaver:
         """Return a live AsyncPostgresSaver.

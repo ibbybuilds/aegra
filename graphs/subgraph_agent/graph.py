@@ -28,10 +28,12 @@ async def no_stream(
     Returns:
         dict: A dictionary containing the model's response message.
     """
-    # Initialize the model with the langsmith:nostream tag
-    model = load_chat_model(runtime.context.model).with_config(
-        config={"tags": ["langsmith:nostream"]}
-    )
+    # Initialize the model with the langsmith:nostream tag and optional thinking
+    model = load_chat_model(
+        runtime.context.model,
+        enable_thinking=runtime.context.enable_thinking,
+        thinking_budget=runtime.context.thinking_budget,
+    ).with_config(config={"tags": ["langsmith:nostream"]})
 
     # Format the system prompt
     system_message = runtime.context.system_prompt.format(

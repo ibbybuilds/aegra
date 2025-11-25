@@ -17,11 +17,31 @@ def get_message_text(msg: BaseMessage) -> str:
         return "".join(txts).strip()
 
 
-def load_chat_model(fully_specified_name: str) -> BaseChatModel:
+def load_chat_model(
+    fully_specified_name: str,
+    enable_thinking: bool = False,
+    thinking_budget: int = 10000,
+) -> BaseChatModel:
     """Load a chat model from a fully specified name.
 
     Args:
         fully_specified_name (str): String in the format 'provider/model'.
+        enable_thinking (bool): Whether to enable extended thinking for supported models.
+        thinking_budget (int): Token budget for thinking (min 1024, max 128000).
     """
     provider, model = fully_specified_name.split("/", maxsplit=1)
+
+    # Extended thinking for Anthropic Claude models
+    if enable_thinking and provider == "anthropic":
+        # Pass thinking as explicit parameter, not in model_kwargs
+        return init_chat_model(
+            model,
+            model_provider=provider,
+            max_tokens=16000,
+            thinking={
+                "type": "enabled",
+                "budget_tokens": max(1024, min(thinking_budget, 128000)),
+            },
+        )
+
     return init_chat_model(model, model_provider=provider)

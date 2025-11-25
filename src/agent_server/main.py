@@ -57,6 +57,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 
+    # Initialize Redis if configured
+    await redis_manager.initialize()
+
     # Initialize LangGraph service
     langgraph_service = get_langgraph_service()
     await langgraph_service.initialize()

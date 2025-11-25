@@ -34,8 +34,13 @@ async def call_model(
     Returns:
         dict: A dictionary containing the model's response message.
     """
-    # Initialize the model with tool binding. Change the model or add more tools here.
-    model = load_chat_model(runtime.context.model).bind_tools(TOOLS)
+    # Initialize the model with tool binding and optional thinking.
+    # Change the model or add more tools here.
+    model = load_chat_model(
+        runtime.context.model,
+        enable_thinking=runtime.context.enable_thinking,
+        thinking_budget=runtime.context.thinking_budget,
+    ).bind_tools(TOOLS)
 
     # Format the system prompt. Customize this to change the agent's behavior.
     system_message = runtime.context.system_prompt.format(

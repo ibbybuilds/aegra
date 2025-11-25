@@ -132,7 +132,7 @@ class TestGetRun:
         """Test getting an existing run"""
         app = create_test_app(include_runs=True, include_threads=False)
 
-        run = _run_row(status="completed")
+        run = _run_row(status="success")
 
         class Session(DummySessionBase):
             async def scalar(self, _stmt):
@@ -147,7 +147,7 @@ class TestGetRun:
         data = resp.json()
         assert data["run_id"] == "test-run-123"
         assert data["thread_id"] == "test-thread-123"
-        assert data["status"] == "completed"
+        assert data["status"] == "success"
 
     def test_get_run_not_found(self):
         """Test getting a non-existent run"""
@@ -173,7 +173,7 @@ class TestListRuns:
         app = create_test_app(include_runs=True, include_threads=False)
 
         runs = [
-            _run_row("run-1", status="completed"),
+            _run_row("run-1", status="success"),
             _run_row("run-2", status="running"),
             _run_row("run-3", status="pending"),
         ]
@@ -372,7 +372,7 @@ class TestDeleteRun:
         """Test successfully deleting a completed run"""
         app = create_test_app(include_runs=True, include_threads=False)
 
-        run = _run_row(status="completed")
+        run = _run_row(status="success")
 
         class Session(DummySessionBase):
             async def scalar(self, _stmt):
@@ -414,7 +414,7 @@ class TestJoinRun:
         """Test joining an already completed run"""
         app = create_test_app(include_runs=True, include_threads=False)
 
-        run = _run_row(status="completed")
+        run = _run_row(status="success")
 
         class Session(DummySessionBase):
             async def scalar(self, _stmt):
@@ -481,8 +481,8 @@ class TestRunStatuses:
         app = create_test_app(include_runs=True, include_threads=False)
 
         runs = [
-            _run_row("run-1", status="completed"),
-            _run_row("run-2", status="completed"),
+            _run_row("run-1", status="success"),
+            _run_row("run-2", status="success"),
         ]
 
         class Session(DummySessionBase):
@@ -501,3 +501,296 @@ class TestRunStatuses:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
+
+
+class TestWaitForRun:
+    """Test POST /threads/{thread_id}/runs/wait"""
+
+    def test_wait_for_run_validation_no_input(self):
+        """Test that wait endpoint requires input or command"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={"assistant_id": "asst-123"},
+        )
+
+        # Should get validation error (422) for missing input/command
+        assert resp.status_code == 422
+
+    def test_wait_for_run_thread_not_found(self):
+        """Test wait endpoint with non-existent thread"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                # Return None for thread lookup
+                return None
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/nonexistent/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+            },
+        )
+
+        # Should get 404 when thread doesn't exist
+        assert resp.status_code == 404
+
+    def test_wait_for_run_assistant_not_found(self):
+        """Test wait endpoint with non-existent assistant"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                # Return None for assistant lookup (thread validation is skipped in wait endpoint)
+                return None
+
+            async def execute(self, _stmt):
+                pass
+
+            async def commit(self):
+                pass
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "nonexistent-asst",
+                "input": {"message": "test"},
+            },
+        )
+
+        # Should get 404 when assistant doesn't exist
+        assert resp.status_code == 404
+
+    def test_wait_for_run_with_interrupt_before(self):
+        """Test wait endpoint accepts interrupt_before parameter"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+                "interrupt_before": ["node1", "node2"],
+            },
+        )
+
+        # Should accept the parameter (may fail later in execution, but not validation)
+        assert resp.status_code != 422
+
+    def test_wait_for_run_with_stream_subgraphs(self):
+        """Test wait endpoint accepts stream_subgraphs parameter"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+                "stream_subgraphs": True,
+            },
+        )
+
+        # Should accept the parameter
+        assert resp.status_code != 422
+
+    def test_wait_for_run_with_command(self):
+        """Test wait endpoint with command instead of input"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "command": {"resume": "value"},
+            },
+        )
+
+        # Should accept command parameter
+        assert resp.status_code != 422
+
+    def test_wait_for_run_cannot_have_both_input_and_command(self):
+        """Test wait endpoint rejects both input and command"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+                "command": {"resume": "value"},
+            },
+        )
+
+        # Should reject having both
+        assert resp.status_code == 422
+
+    def test_wait_for_run_resume_requires_interrupted_thread(self):
+        """Test wait endpoint with resume command requires interrupted thread"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        # Thread is idle, not interrupted
+        thread = _thread_row(status="idle")
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "command": {"resume": "value"},
+            },
+        )
+
+        # Should fail because thread is not interrupted
+        assert resp.status_code == 400
+
+    def test_wait_for_run_with_config_and_context_conflict(self):
+        """Test wait endpoint rejects both configurable and context"""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs/wait",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+                "config": {"configurable": {"key": "value"}},
+                "context": {"key": "value"},
+            },
+        )
+
+        # Should reject having both configurable and context
+        assert resp.status_code == 400
+
+
+class TestCreateRunValidation:
+    """Additional validation tests for create_run."""
+
+    def test_create_run_config_context_conflict(self):
+        """Test create_run rejects both configurable and context."""
+        app = create_test_app(include_runs=True, include_threads=False)
+        override_session_dependency(app, BasicSession)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs",
+            json={
+                "assistant_id": "asst-123",
+                "input": {"message": "test"},
+                "config": {"configurable": {"key": "value"}},
+                "context": {"key": "value"},
+            },
+        )
+        assert resp.status_code == 400
+        assert "Cannot specify both" in resp.json()["detail"]
+
+    def test_create_run_assistant_not_found(self):
+        """Test create_run with non-existent assistant."""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return None  # Assistant not found
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        resp = client.post(
+            "/threads/test-thread-123/runs",
+            json={
+                "assistant_id": "nonexistent",
+                "input": {"message": "test"},
+            },
+        )
+        assert resp.status_code == 404
+
+
+class TestWaitForRunTimeouts:
+    """Test wait_for_run timeout behavior."""
+
+    def test_wait_for_run_timeout(self):
+        """Test that wait_for_run returns current state on timeout."""
+        app = create_test_app(include_runs=True, include_threads=False)
+
+        # Mock assistant and run
+        assistant = _assistant_row()
+        run = _run_row(status="running")
+        run.output = {"partial": "data"}
+
+        class Session(DummySessionBase):
+            async def scalar(self, stmt):
+                stmt_str = str(stmt).lower()
+                if "from assistant" in stmt_str:
+                    return assistant
+                if "from run" in stmt_str:
+                    return run
+                return None
+
+            async def refresh(self, obj):
+                pass
+
+            async def add(self, obj):
+                pass
+
+            async def commit(self):
+                pass
+
+            async def execute(self, stmt):
+                class Result:
+                    rowcount = 1
+
+                return Result()
+
+        override_session_dependency(app, Session)
+        client = make_client(app)
+
+        # Mock asyncio.wait_for to raise TimeoutError
+        with (
+            patch("asyncio.wait_for", side_effect=TimeoutError),
+            patch("agent_server.api.runs.get_langgraph_service") as mock_service,
+            patch("agent_server.api.runs.execute_run_async"),
+        ):
+            mock_service.return_value.list_graphs.return_value = ["test-graph"]
+
+            resp = client.post(
+                "/threads/test-thread-123/runs/wait",
+                json={
+                    "assistant_id": "test-assistant-123",
+                    "input": {"message": "test"},
+                },
+            )
+
+            assert resp.status_code == 200
+            # Should return output even if timed out (running state)
+            assert resp.json() == {"partial": "data"}

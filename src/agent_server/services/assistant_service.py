@@ -54,7 +54,7 @@ def _state_jsonschema(graph) -> dict | None:
     """Extract state schema from graph channels"""
     from typing import Any
 
-    from langgraph._internal._pydantic import create_model
+    from langchain_core.runnables.utils import create_model
 
     fields: dict = {}
     for k in graph.stream_channels_list:
@@ -231,9 +231,11 @@ class AssistantService:
         return to_pydantic(assistant_orm)
 
     async def list_assistants(self, user_identity: str) -> list[Assistant]:
-        """List user's assistants"""
-        # Filter assistants by user
-        stmt = select(AssistantORM).where(AssistantORM.user_id == user_identity)
+        """List user's assistants and system assistants"""
+        # Include both user's assistants and system assistants (like search_assistants does)
+        stmt = select(AssistantORM).where(
+            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system")
+        )
         result = await self.session.scalars(stmt)
         user_assistants = [to_pydantic(a) for a in result.all()]
         return user_assistants
@@ -245,7 +247,9 @@ class AssistantService:
     ) -> list[Assistant]:
         """Search assistants with filters"""
         # Start with user's assistants
-        stmt = select(AssistantORM).where(AssistantORM.user_id == user_identity)
+        stmt = select(AssistantORM).where(
+            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system")
+        )
 
         # Apply filters
         if request.name:
@@ -278,7 +282,10 @@ class AssistantService:
         user_identity: str,
     ) -> int:
         """Count assistants with filters"""
-        stmt = select(func.count()).where(AssistantORM.user_id == user_identity)
+        # Include both user's assistants and system assistants (like search_assistants does)
+        stmt = select(func.count()).where(
+            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system")
+        )
 
         if request.name:
             stmt = stmt.where(AssistantORM.name.ilike(f"%{request.name}%"))
@@ -449,7 +456,9 @@ class AssistantService:
         """List all versions of an assistant"""
         stmt = select(AssistantORM).where(
             AssistantORM.assistant_id == assistant_id,
-            AssistantORM.user_id == user_identity,
+            or_(
+                AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"
+            ),
         )
         assistant = await self.session.scalar(stmt)
         if not assistant:
@@ -474,14 +483,14 @@ class AssistantService:
                 assistant_id=assistant_id,
                 name=v.name,
                 description=v.description,
-                config=v.config,
-                context=v.context,
+                config=v.config or {},
+                context=v.context or {},
                 graph_id=v.graph_id,
                 user_id=user_identity,
                 version=v.version,
                 created_at=v.created_at,
                 updated_at=v.created_at,
-                metadata_dict=v.metadata_dict,
+                metadata_dict=v.metadata_dict or {},
             )
             for v in versions
         ]

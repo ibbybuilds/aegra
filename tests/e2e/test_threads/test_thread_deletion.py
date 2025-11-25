@@ -42,7 +42,7 @@ async def test_thread_deletion_with_active_runs():
     runs_list = await client.runs.list(thread_id)
     assert len(runs_list) >= 1
     active_run = next(r for r in runs_list if r["run_id"] == run_id)
-    assert active_run["status"] in ["pending", "running", "streaming"]
+    assert active_run["status"] in ["pending", "running"]
 
     # 4. Delete thread via SDK - should work seamlessly
     await client.threads.delete(thread_id)
@@ -94,7 +94,7 @@ async def test_thread_deletion_with_completed_runs():
 
     # 4. Verify run is completed
     completed_run = await client.runs.get(thread_id, run_id)
-    assert completed_run["status"] in ("completed", "failed")
+    assert completed_run["status"] in ("success", "error")
     elog("Run status verified", {"status": completed_run["status"]})
 
     # 5. Delete thread via SDK - should work fine

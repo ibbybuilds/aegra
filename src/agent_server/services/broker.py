@@ -15,10 +15,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import logging
 import os
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..core.redis import redis_manager
 from ..core.serializers import GeneralSerializer
@@ -33,7 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing helper
     from redis.asyncio import Redis
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------

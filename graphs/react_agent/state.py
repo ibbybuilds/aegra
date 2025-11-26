@@ -76,6 +76,6 @@ class State(InputState):
     """
     Tracks the number of times each tool has been called in this run.
 
-    Used to enforce limits on expensive or data-heavy tools like get_student_ai_mentor_onboarding.
+    Used to enforce limits on expensive or data-heavy tools like get_student_ai_career_advisor_onboarding.
     The merge_tool_counts reducer ensures counts are preserved across state updates.
     """

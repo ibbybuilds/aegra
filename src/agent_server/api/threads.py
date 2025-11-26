@@ -369,7 +369,7 @@ async def update_thread_state(
                             merged.update(item)
                     update_values = merged
                 else:
-                    update_values = update_values[0] if update_values else None
+                    update_values = update_values[0] if update_values else {}
 
             # Update the state using aupdate_state
             # aupdate_state signature: aupdate_state(config, values, as_node=None)

@@ -12,6 +12,7 @@ Cache Strategy:
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -32,8 +33,8 @@ LEARNING_TRACK_CACHE_TTL = 3600
 _memory_cache: dict[str, tuple[str | None, float]] = {}
 _cache_lock = asyncio.Lock()
 
-# LMS API URL
-LMS_API_URL = "https://dedatahub-api.vercel.app"
+# LMS API URL from environment variable
+LMS_API_URL = os.getenv("LMS_URL", "https://dedatahub-api.vercel.app")
 
 
 def _get_cache_key(user_id: str) -> str:

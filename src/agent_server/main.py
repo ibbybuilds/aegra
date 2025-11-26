@@ -99,6 +99,53 @@ app = FastAPI(
     # Note: This is a Starlette limit, not Uvicorn
 )
 
+# Define security scheme for Bearer token authentication
+from fastapi.openapi.utils import get_openapi
+
+# Paths that don't require authentication (no padlock)
+PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/health/",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/live",
+    "/info",
+    "/ready",
+}
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Add security scheme
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your JWT token",
+        }
+    }
+    # Apply security to each path individually (skip public paths)
+    for path, methods in openapi_schema.get("paths", {}).items():
+        if path not in PUBLIC_PATHS:
+            for method in methods.values():
+                if isinstance(method, dict):
+                    method["security"] = [{"BearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
 app.add_middleware(StructLogMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 

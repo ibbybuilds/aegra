@@ -29,6 +29,9 @@ dependencies = [
     # AVA-core package - provides: deepagents, httpx, langchain, langchain-core,
     # langgraph, msgspec, pyjwt, python-dotenv, tavily-python
     "ava-core @ git+https://github.com/lucca-mrktr/ava-core.git@develop",
+    # h2 package for HTTP/2 support (required by ava-core tools that use httpx with http2=True)
+    # httpx is already provided by ava-core, we just need the h2 extra
+    "h2>=4.0.0",
     # Aegra-specific core dependencies
     "alembic>=1.16.4",
     "asgi-correlation-id>=4.3.4",

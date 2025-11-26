@@ -19,9 +19,7 @@ async def test_inject_ai_message_via_state():
     client = get_e2e_client()
 
     # 1. Create a thread with graph_id in metadata (required for state updates)
-    thread = await client.threads.create(
-        metadata={"graph_id": "ava"}
-    )
+    thread = await client.threads.create(metadata={"graph_id": "ava"})
     elog("Threads.create response", thread)
     assert "thread_id" in thread
     thread_id = thread["thread_id"]
@@ -112,9 +110,7 @@ async def test_agent_sees_injected_messages():
     elog("Assistant.create response", assistant)
 
     # 2. Create thread with graph_id
-    thread = await client.threads.create(
-        metadata={"graph_id": "ava"}
-    )
+    thread = await client.threads.create(metadata={"graph_id": "ava"})
     elog("Threads.create response", thread)
     thread_id = thread["thread_id"]
 
@@ -145,7 +141,10 @@ async def test_agent_sees_injected_messages():
         "id": "relay_greeting_001",
     }
 
-    elog("Injecting relay server messages (hotel context)", [hotel_context, relay_greeting])
+    elog(
+        "Injecting relay server messages (hotel context)",
+        [hotel_context, relay_greeting],
+    )
 
     # IMPORTANT: Initialize ALL state fields to prevent KeyError when tools are called
     # The AVA graph expects these fields to exist, even if they're None
@@ -185,7 +184,7 @@ async def test_agent_sees_injected_messages():
             "messages": [
                 {
                     "role": "human",
-                    "content": "What time is check-in?"  # References injected hotel context
+                    "content": "What time is check-in?",  # References injected hotel context
                 }
             ]
         },
@@ -233,7 +232,10 @@ async def test_agent_sees_injected_messages():
         elog("✅ Agent successfully saw and used injected hotel context!", None)
     else:
         elog("❌ Agent may not have seen injected hotel context", None)
-        elog("This means message injection doesn't work for the voice relay use case", None)
+        elog(
+            "This means message injection doesn't work for the voice relay use case",
+            None,
+        )
 
     assert has_checkin_info, (
         "Agent should have seen the injected hotel context and mentioned check-in time (16:00/4 PM)"
@@ -249,9 +251,7 @@ async def test_inject_multiple_messages():
     client = get_e2e_client()
 
     # 1. Create thread with graph_id
-    thread = await client.threads.create(
-        metadata={"graph_id": "ava"}
-    )
+    thread = await client.threads.create(metadata={"graph_id": "ava"})
     thread_id = thread["thread_id"]
 
     # 2. Inject multiple messages at once

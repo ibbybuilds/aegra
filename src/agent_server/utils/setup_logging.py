@@ -105,6 +105,13 @@ def setup_logging():
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
+    # Ensure httpx logs all HTTP requests at INFO level (useful for debugging API calls)
+    # httpx uses its own logger, not urllib3
+    httpx_logger = logging.getLogger("httpx")
+    httpx_logger.setLevel(logging.INFO)
+    # Ensure it propagates to root logger
+    httpx_logger.propagate = True
+
     # Configure structlog to route its logs through the standard logging
     # system that we just configured.
     structlog.configure(

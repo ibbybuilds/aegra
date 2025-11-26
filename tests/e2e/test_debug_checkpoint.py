@@ -26,9 +26,7 @@ async def test_run_without_input_sees_injected():
     elog("Assistant created", assistant)
 
     # 2. Create thread
-    thread = await client.threads.create(
-        metadata={"graph_id": "ava"}
-    )
+    thread = await client.threads.create(metadata={"graph_id": "ava"})
     thread_id = thread["thread_id"]
     elog("Thread created", thread)
 

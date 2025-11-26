@@ -1,7 +1,7 @@
 """migrate_run_status_to_standard_values
 
 Revision ID: d042a0ca1cb5
-Revises: aee821a02fc8
+Revises: e9f805444530
 Create Date: 2025-11-15 15:24:15.221101
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "d042a0ca1cb5"
-down_revision = "aee821a02fc8"
+down_revision = "e9f805444530"
 branch_labels = None
 depends_on = None
 

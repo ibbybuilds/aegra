@@ -94,7 +94,7 @@ async def call_model(
 
 # Tool call limits per tool per run
 TOOL_CALL_LIMITS = {
-    "get_student_ai_mentor_onboarding": 1,  # Limit this expensive tool to 1 call per run
+    "get_student_ai_career_advisor_onboarding": 1,  # Limit this expensive tool to 1 call per run
 }
 
 
@@ -102,7 +102,7 @@ async def call_tools_with_limit(state: State) -> dict:
     """
     Execute tools while enforcing per-run call limits.
 
-    Some tools (like get_student_ai_mentor_onboarding) return large amounts of data
+    Some tools (like get_student_ai_career_advisor_onboarding) return large amounts of data
     and should only be called once per conversation run to avoid:
     - Excessive API calls
     - Token bloat

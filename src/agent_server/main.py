@@ -29,6 +29,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 
 from .api.activity_logs import router as activity_logs_router
 from .api.assistants import router as assistants_router
+from .api.career_advisors import router as career_advisors_router
 from .api.management import router as management_router
 from .api.runs import router as runs_router
 from .api.store import router as store_router
@@ -98,6 +99,53 @@ app = FastAPI(
     # Note: This is a Starlette limit, not Uvicorn
 )
 
+# Define security scheme for Bearer token authentication
+from fastapi.openapi.utils import get_openapi
+
+# Paths that don't require authentication (no padlock)
+PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/health/",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/live",
+    "/info",
+    "/ready",
+}
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Add security scheme
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your JWT token",
+        }
+    }
+    # Apply security to each path individually (skip public paths)
+    for path, methods in openapi_schema.get("paths", {}).items():
+        if path not in PUBLIC_PATHS:
+            for method in methods.values():
+                if isinstance(method, dict):
+                    method["security"] = [{"BearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
 app.add_middleware(StructLogMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 
@@ -126,6 +174,7 @@ app.include_router(runs_router, prefix="", tags=["Runs"])
 app.include_router(store_router, prefix="", tags=["Store"])
 app.include_router(activity_logs_router, prefix="", tags=["Activity Logs"])
 app.include_router(management_router, prefix="", tags=["Management"])
+app.include_router(career_advisors_router, prefix="", tags=["Career Advisors"])
 
 
 # Error handling

@@ -330,10 +330,10 @@ async def get_student_onboarding() -> dict[str, Any]:
         return {"error": "Unexpected error", "message": str(e)}
 
 
-async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
-    """Get the student's comprehensive AI mentor onboarding information from the LMS.
+async def get_student_ai_career_advisor_onboarding() -> dict[str, Any]:
+    """Get the student's comprehensive AI career advisor onboarding information from the LMS.
 
-    Retrieves detailed onboarding data collected through the AI mentor setup flow,
+    Retrieves detailed onboarding data collected through the AI career advisor setup flow,
     including:
     - Professional situation and experience (s1: situation, weeklyTime, learningStyle)
     - Employment details (s2: employmentStatus, roleTitle, industry, yearsExperience, etc.)
@@ -342,7 +342,7 @@ async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
     - Skills assessment and profiles (s5: LinkedIn, GitHub, confidentSkills, needHelpAreas)
     - Job search status (s6: appsSubmitted, interviews, biggestChallenge)
     - Learning track specialization (s_track: analytics, dataScience, dataEngineering, aiEngineering)
-    - Mentoring preferences (s7: feedbackStyle, availability, motivators, riskTolerance)
+    - Career guidance preferences (s7: feedbackStyle, availability, motivators, riskTolerance)
     - Transformational outcomes (s8: transformationalOutcome, otherNotes)
     """
     runtime = get_runtime(Context)
@@ -353,19 +353,21 @@ async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
         logger.error("No user token available in context")
         return {
             "error": "Authentication required",
-            "message": "Unable to fetch AI mentor onboarding without authentication token",
+            "message": "Unable to fetch AI career advisor onboarding without authentication token",
         }
 
     # Get LMS API URL from context
     lms_url = runtime.context.lms_api_url
-    mentor_endpoint = f"{lms_url}/api/v1/ai-mentor/onboarding/me"
+    career_advisor_endpoint = f"{lms_url}/api/v1/ai-mentor/onboarding/me"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            logger.info(f"Fetching AI mentor onboarding from {mentor_endpoint}")
+            logger.info(
+                f"Fetching AI career advisor onboarding from {career_advisor_endpoint}"
+            )
 
             response = await client.get(
-                mentor_endpoint,
+                career_advisor_endpoint,
                 headers={"accept": "*/*", "Authorization": f"Bearer {token}"},
             )
 
@@ -376,7 +378,7 @@ async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
             onboarding_data = data.get("onboarding", {})
 
             # Structure the response with all onboarding sections
-            mentor_onboarding = {
+            career_advisor_onboarding = {
                 "s1": onboarding_data.get("s1", {}),
                 "s2": onboarding_data.get("s2", {}),
                 "s3": onboarding_data.get("s3", {}),
@@ -392,13 +394,13 @@ async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
             }
 
             logger.info(
-                f"Successfully fetched AI mentor onboarding, completed: {mentor_onboarding.get('completed')}"
+                f"Successfully fetched AI career advisor onboarding, completed: {career_advisor_onboarding.get('completed')}"
             )
-            return mentor_onboarding
+            return career_advisor_onboarding
 
     except httpx.HTTPStatusError as e:
         logger.error(
-            f"HTTP error fetching AI mentor onboarding: {e.response.status_code}"
+            f"HTTP error fetching AI career advisor onboarding: {e.response.status_code}"
         )
         return {
             "error": "API request failed",
@@ -406,14 +408,15 @@ async def get_student_ai_mentor_onboarding() -> dict[str, Any]:
             "message": str(e),
         }
     except httpx.TimeoutException:
-        logger.error("Timeout while fetching AI mentor onboarding")
+        logger.error("Timeout while fetching AI career advisor onboarding")
         return {
             "error": "Request timeout",
             "message": "The LMS API took too long to respond",
         }
     except Exception as e:
         logger.error(
-            f"Unexpected error fetching AI mentor onboarding: {e}", exc_info=True
+            f"Unexpected error fetching AI career advisor onboarding: {e}",
+            exc_info=True,
         )
         return {"error": "Unexpected error", "message": str(e)}
 
@@ -502,7 +505,7 @@ TOOLS: list[Callable[..., Any]] = [
     brave_search,
     get_student_profile,
     get_student_onboarding,
-    get_student_ai_mentor_onboarding,
+    get_student_ai_career_advisor_onboarding,
     get_user_memory,
     save_user_memory,
     search_user_memories,

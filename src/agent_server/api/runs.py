@@ -24,6 +24,7 @@ from ..core.serializers import GeneralSerializer
 from ..core.sse import create_end_event, get_sse_headers
 from ..models import Run, RunCreate, RunStatus, User
 from ..services.activity_service import ActivityService
+from ..services.advisor_cache import get_cached_advisor
 from ..services.graph_streaming import stream_graph_events
 from ..services.langgraph_service import create_run_config, get_langgraph_service
 from ..services.streaming_service import streaming_service
@@ -234,6 +235,12 @@ async def create_run(
         # Extract user_id from the authenticated user context
         context["user_id"] = user.identity
 
+        # Fetch advisor with caching (Redis + in-memory)
+        advisor, learning_track = await get_cached_advisor(user.identity, token)
+        context["advisor"] = advisor
+        if learning_track:
+            context["learning_track"] = learning_track
+
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
     )
@@ -381,6 +388,12 @@ async def create_and_stream_run(
         context["user_token"] = token
         # Extract user_id from the authenticated user context
         context["user_id"] = user.identity
+
+        # Fetch advisor with caching (Redis + in-memory)
+        advisor, learning_track = await get_cached_advisor(user.identity, token)
+        context["advisor"] = advisor
+        if learning_track:
+            context["learning_track"] = learning_track
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -667,6 +680,7 @@ async def wait_for_run(
     request: RunCreate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(None),
 ) -> dict[str, Any]:
     """Create a run, execute it, and wait for completion (Agent Protocol).
 
@@ -706,6 +720,19 @@ async def wait_for_run(
         config["configurable"] = configurable
     else:
         context = configurable.copy()
+
+    # Extract token and user_id from Authorization header and inject into context
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1]
+        context["user_token"] = token
+        # Extract user_id from the authenticated user context
+        context["user_id"] = user.identity
+
+        # Fetch advisor with caching (Redis + in-memory)
+        advisor, learning_track = await get_cached_advisor(user.identity, token)
+        context["advisor"] = advisor
+        if learning_track:
+            context["learning_track"] = learning_track
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,

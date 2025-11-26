@@ -29,6 +29,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 
 from .api.activity_logs import router as activity_logs_router
 from .api.assistants import router as assistants_router
+from .api.career_advisors import router as career_advisors_router
 from .api.management import router as management_router
 from .api.runs import router as runs_router
 from .api.store import router as store_router
@@ -126,6 +127,7 @@ app.include_router(runs_router, prefix="", tags=["Runs"])
 app.include_router(store_router, prefix="", tags=["Store"])
 app.include_router(activity_logs_router, prefix="", tags=["Activity Logs"])
 app.include_router(management_router, prefix="", tags=["Management"])
+app.include_router(career_advisors_router, prefix="", tags=["Career Advisors"])
 
 
 # Error handling

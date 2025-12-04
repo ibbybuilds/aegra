@@ -43,19 +43,30 @@ async def test_inject_ai_message_via_state():
 
     # Update state with the new message
     # Note: We're using LangGraph's internal format here
-    # IMPORTANT: Initialize state fields to prevent KeyError if tools are called
+    # IMPORTANT: Initialize VFS state fields to prevent KeyError when tools are called
+    # All fields use proper types (dicts for VFS, lists for keys)
     update_response = await client.threads.update_state(
         thread_id=thread_id,
         values={
             "messages": [fake_ai_message],
-            # Initialize AVA state fields
-            "hotelCursor": None,
-            "roomCursor": None,
-            "hotelToken": None,
-            "hotelSearchKey": None,
-            "roomSearchKey": None,
-            "hotelParams": None,
-            "roomParams": None,
+            # VFS state fields (multi-value for parallel tool call support)
+            # Hotel search state
+            "hotelSearchKeys": [],
+            "hotelMeta": {},
+            "hotelCursors": {},
+            "hotelParams": {},
+            # Room search state
+            "roomSearchKeys": [],
+            "roomMeta": {},
+            "roomCursors": {},
+            "roomParams": {},
+            # Token management (auto-populated by tools, initialize as empty)
+            "searchKeyToToken": {},
+            "hotelIdToSearchKey": {},
+            "rateKeyToToken": {},
+            # Other state fields
+            "rateKeyToHotelId": {},
+            "priceCheckResults": {},
             "location": None,
             "structured_response": None,
         },
@@ -146,18 +157,28 @@ async def test_agent_sees_injected_messages():
         [hotel_context, relay_greeting],
     )
 
-    # IMPORTANT: Initialize ALL state fields to prevent KeyError when tools are called
-    # The AVA graph expects these fields to exist, even if they're None
+    # IMPORTANT: Initialize VFS state fields to prevent KeyError when tools are called
+    # All fields use proper types (dicts for VFS, lists for keys)
     state_values = {
         "messages": [hotel_context, relay_greeting],
-        # Tool-related state fields (required for hotel search tools)
-        "hotelCursor": None,
-        "roomCursor": None,
-        "hotelToken": None,
-        "hotelSearchKey": None,
-        "roomSearchKey": None,
-        "hotelParams": None,
-        "roomParams": None,
+        # VFS state fields (multi-value for parallel tool call support)
+        # Hotel search state
+        "hotelSearchKeys": [],
+        "hotelMeta": {},
+        "hotelCursors": {},
+        "hotelParams": {},
+        # Room search state
+        "roomSearchKeys": [],
+        "roomMeta": {},
+        "roomCursors": {},
+        "roomParams": {},
+        # Token management (auto-populated by tools, initialize as empty)
+        "searchKeyToToken": {},
+        "hotelIdToSearchKey": {},
+        "rateKeyToToken": {},
+        # Other state fields
+        "rateKeyToHotelId": {},
+        "priceCheckResults": {},
         "location": None,
         "structured_response": None,
     }
@@ -273,14 +294,24 @@ async def test_inject_multiple_messages():
         thread_id=thread_id,
         values={
             "messages": fake_messages,
-            # Initialize AVA state fields
-            "hotelCursor": None,
-            "roomCursor": None,
-            "hotelToken": None,
-            "hotelSearchKey": None,
-            "roomSearchKey": None,
-            "hotelParams": None,
-            "roomParams": None,
+            # VFS state fields (multi-value for parallel tool call support)
+            # Hotel search state
+            "hotelSearchKeys": [],
+            "hotelMeta": {},
+            "hotelCursors": {},
+            "hotelParams": {},
+            # Room search state
+            "roomSearchKeys": [],
+            "roomMeta": {},
+            "roomCursors": {},
+            "roomParams": {},
+            # Token management (auto-populated by tools, initialize as empty)
+            "searchKeyToToken": {},
+            "hotelIdToSearchKey": {},
+            "rateKeyToToken": {},
+            # Other state fields
+            "rateKeyToHotelId": {},
+            "priceCheckResults": {},
             "location": None,
             "structured_response": None,
         },

@@ -42,14 +42,24 @@ async def test_run_without_input_sees_injected():
         thread_id=thread_id,
         values={
             "messages": [human_message],
-            # Initialize AVA state fields to prevent KeyError
-            "hotelCursor": None,
-            "roomCursor": None,
-            "hotelToken": None,
-            "hotelSearchKey": None,
-            "roomSearchKey": None,
-            "hotelParams": None,
-            "roomParams": None,
+            # VFS state fields (multi-value for parallel tool call support)
+            # Hotel search state
+            "hotelSearchKeys": [],
+            "hotelMeta": {},
+            "hotelCursors": {},
+            "hotelParams": {},
+            # Room search state
+            "roomSearchKeys": [],
+            "roomMeta": {},
+            "roomCursors": {},
+            "roomParams": {},
+            # Token management (auto-populated by tools, initialize as empty)
+            "searchKeyToToken": {},
+            "hotelIdToSearchKey": {},
+            "rateKeyToToken": {},
+            # Other state fields
+            "rateKeyToHotelId": {},
+            "priceCheckResults": {},
             "location": None,
             "structured_response": None,
         },

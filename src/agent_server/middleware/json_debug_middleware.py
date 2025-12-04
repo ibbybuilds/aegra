@@ -24,22 +24,26 @@ def find_non_ascii_chars(text: str) -> list[dict[str, Any]]:
     non_ascii = []
     for i, char in enumerate(text):
         if ord(char) > 127:  # Non-ASCII
-            non_ascii.append({
-                "position": i,
-                "character": char,
-                "ord": ord(char),
-                "hex": hex(ord(char)),
-                "context_before": text[max(0, i - 10):i],
-                "context_after": text[i + 1:min(len(text), i + 11)]
-            })
+            non_ascii.append(
+                {
+                    "position": i,
+                    "character": char,
+                    "ord": ord(char),
+                    "hex": hex(ord(char)),
+                    "context_before": text[max(0, i - 10) : i],
+                    "context_after": text[i + 1 : min(len(text), i + 11)],
+                }
+            )
     return non_ascii
 
 
-def get_context_around_position(text: str, position: int, context_size: int = 100) -> tuple[str, str, str]:
+def get_context_around_position(
+    text: str, position: int, context_size: int = 100
+) -> tuple[str, str, str]:
     """Get context before, at, and after a specific position."""
-    before = text[max(0, position - context_size):position]
+    before = text[max(0, position - context_size) : position]
     at_pos = text[position] if position < len(text) else ""
-    after = text[position + 1:min(len(text), position + context_size + 1)]
+    after = text[position + 1 : min(len(text), position + context_size + 1)]
     return before, at_pos, after
 
 
@@ -58,11 +62,13 @@ def scan_dict_for_non_ascii(data: Any, path: str = "") -> list[dict[str, Any]]:
     elif isinstance(data, str):
         non_ascii = find_non_ascii_chars(data)
         if non_ascii:
-            results.append({
-                "path": path,
-                "value": data[:100] + "..." if len(data) > 100 else data,
-                "non_ascii_chars": non_ascii
-            })
+            results.append(
+                {
+                    "path": path,
+                    "value": data[:100] + "..." if len(data) > 100 else data,
+                    "non_ascii_chars": non_ascii,
+                }
+            )
 
     return results
 
@@ -97,10 +103,11 @@ class JSONDebugMiddleware:
         content_type = headers.get(b"content-type", b"").decode("latin1")
 
         # Only monitor POST/PUT/PATCH with JSON content on specific paths
-        if (method in ["POST", "PUT", "PATCH"]
+        if (
+            method in ["POST", "PUT", "PATCH"]
             and "json" in content_type.lower()
-            and self.should_monitor(path)):
-
+            and self.should_monitor(path)
+        ):
             body_parts = []
             has_logged_error = False
 
@@ -135,7 +142,9 @@ class JSONDebugMiddleware:
                                     error_reason=e.reason,
                                     error_start=e.start,
                                     error_end=e.end,
-                                    problematic_bytes=raw_body[max(0, e.start - 20):e.end + 20].hex(),
+                                    problematic_bytes=raw_body[
+                                        max(0, e.start - 20) : e.end + 20
+                                    ].hex(),
                                     content_type=content_type,
                                 )
                                 has_logged_error = True
@@ -165,7 +174,9 @@ class JSONDebugMiddleware:
                                 )
 
                                 # Step 4: Scan parsed data for non-ASCII
-                                non_ascii_in_parsed = scan_dict_for_non_ascii(parsed_data)
+                                non_ascii_in_parsed = scan_dict_for_non_ascii(
+                                    parsed_data
+                                )
                                 if non_ascii_in_parsed:
                                     logger.info(
                                         "[JSON_DEBUG] Found non-ASCII in parsed data",
@@ -175,7 +186,9 @@ class JSONDebugMiddleware:
 
                                 # Step 5: Optional round-trip validation
                                 try:
-                                    reserialized = json.dumps(parsed_data, ensure_ascii=False)
+                                    reserialized = json.dumps(
+                                        parsed_data, ensure_ascii=False
+                                    )
                                     if reserialized != decoded_body:
                                         logger.warning(
                                             "[JSON_DEBUG] Round-trip JSON differs from original",
@@ -192,8 +205,10 @@ class JSONDebugMiddleware:
 
                             except json.JSONDecodeError as e:
                                 # This is what we're looking for! Log comprehensive error details
-                                before_context, at_char, after_context = get_context_around_position(
-                                    decoded_body, e.pos, context_size=300
+                                before_context, at_char, after_context = (
+                                    get_context_around_position(
+                                        decoded_body, e.pos, context_size=300
+                                    )
                                 )
 
                                 logger.error(
@@ -225,14 +240,21 @@ class JSONDebugMiddleware:
                                 )
 
                                 # Log a visual representation with marker
-                                context_with_marker = before_context + "[ERROR HERE]" + at_char + after_context
+                                context_with_marker = (
+                                    before_context
+                                    + "[ERROR HERE]"
+                                    + at_char
+                                    + after_context
+                                )
                                 logger.error(
                                     f"[JSON_DEBUG] Visual context:\n{context_with_marker}",
                                 )
 
                                 # Log preceding and following 50 characters for immediate context
-                                preceding_50 = decoded_body[max(0, e.pos - 50):e.pos]
-                                following_50 = decoded_body[e.pos + 1:min(len(decoded_body), e.pos + 51)]
+                                preceding_50 = decoded_body[max(0, e.pos - 50) : e.pos]
+                                following_50 = decoded_body[
+                                    e.pos + 1 : min(len(decoded_body), e.pos + 51)
+                                ]
                                 logger.error(
                                     "[JSON_DEBUG] Immediate context (±50 chars)",
                                     preceding_50_chars=preceding_50,
@@ -248,7 +270,9 @@ class JSONDebugMiddleware:
                                 # Also log the section around the error (±500 chars) for easier analysis
                                 error_section_start = max(0, e.pos - 500)
                                 error_section_end = min(len(decoded_body), e.pos + 500)
-                                error_section = decoded_body[error_section_start:error_section_end]
+                                error_section = decoded_body[
+                                    error_section_start:error_section_end
+                                ]
                                 logger.error(
                                     "[JSON_DEBUG] Section around error (±500 chars)",
                                     error_section=error_section,

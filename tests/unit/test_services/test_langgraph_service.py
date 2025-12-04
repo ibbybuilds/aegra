@@ -294,11 +294,11 @@ class TestLangGraphServiceGraphs:
 
     @pytest.mark.asyncio
     async def test_load_graph_from_file_success(self):
-        """Test successful graph loading from file"""
+        """Test successful graph loading from file (non-callable graph object)"""
         service = LangGraphService()
 
         mock_module = Mock()
-        mock_graph = Mock()
+        mock_graph = object()  # Simple non-callable object
         mock_module.test_graph = mock_graph
 
         with (
@@ -315,7 +315,37 @@ class TestLangGraphServiceGraphs:
 
             result = await service._load_graph_from_file("test_graph", graph_info)
 
-            assert result == mock_graph
+            assert result is mock_graph
+
+    @pytest.mark.asyncio
+    async def test_load_graph_from_file_async_factory(self):
+        """Test graph loading with async factory function"""
+        service = LangGraphService()
+
+        mock_module = Mock()
+        mock_graph = object()
+
+        # Async factory function
+        async def async_factory():
+            return mock_graph
+
+        mock_module.test_graph = async_factory
+
+        with (
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec") as mock_module_from_spec,
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/test.py")),
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+            mock_module_from_spec.return_value = mock_module
+
+            graph_info = {"file_path": "test.py", "export_name": "test_graph"}
+
+            result = await service._load_graph_from_file("test_graph", graph_info)
+
+            assert result is mock_graph
 
     @pytest.mark.asyncio
     async def test_load_graph_from_file_not_found(self):

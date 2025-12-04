@@ -34,7 +34,7 @@ from .api.threads import router as threads_router
 from .core.auth_middleware import get_auth_backend, on_auth_error
 from .core.database import db_manager
 from .core.health import router as health_router
-from .middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
+from .middleware import DoubleEncodedJSONMiddleware, JSONDebugMiddleware, StructLogMiddleware
 from .models.errors import AgentProtocolError, get_error_type
 from .observability.base import get_observability_manager
 from .observability.langfuse_integration import _langfuse_provider
@@ -100,6 +100,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add JSON debug middleware to log comprehensive parsing errors (must be before DoubleEncodedJSONMiddleware)
+app.add_middleware(JSONDebugMiddleware)
 
 # Add middleware to handle double-encoded JSON from frontend
 app.add_middleware(DoubleEncodedJSONMiddleware)

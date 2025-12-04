@@ -208,6 +208,10 @@ class LangGraphService:
 
         graph = getattr(module, export_name)
 
+        # https://github.com/langchain-ai/langchain-mcp-adapters?tab=readme-ov-file#using-with-langgraph-api-server
+        if callable(graph):
+            graph = await graph()
+
         # The graph should already be compiled in the module
         # If it needs our checkpointer/store, we'll handle that during execution
         return graph

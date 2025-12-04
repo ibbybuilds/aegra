@@ -6,6 +6,7 @@ from typing import Any, Self
 from pydantic import (
     BaseModel,
     Field,
+    field_serializer,
     field_validator,
     model_validator,
 )
@@ -113,14 +114,39 @@ class Run(BaseModel):
             return v
         # Convert CallContext or other objects to dict
         if hasattr(v, "model_dump"):
-            return v.model_dump()
+            return v.model_dump()  # type: ignore[no-any-return]
         if hasattr(v, "__dict__"):
-            return v.__dict__
+            return v.__dict__  # type: ignore[no-any-return]
         # Fallback: try to convert to dict
         try:
             return dict(v) if v else None
         except (TypeError, ValueError):
             return None
+
+    @field_serializer("context")
+    def serialize_context(self, value: Any) -> dict[str, Any] | None:
+        """Ensure context is serialized as a dict or None, never as a CallContext object.
+
+        This serializer handles cases where CallContext objects might leak through
+        from database deserialization or other sources during response serialization.
+        """
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        # Convert CallContext or other objects to dict during serialization
+        if hasattr(value, "model_dump"):
+            return value.model_dump()  # type: ignore[no-any-return]
+        if hasattr(value, "dict"):
+            return value.dict()  # type: ignore[no-any-return]
+        if hasattr(value, "__dict__"):
+            return value.__dict__  # type: ignore[no-any-return]
+        # Fallback: try to convert to dict
+        try:
+            return dict(value) if value else None
+        except (TypeError, ValueError):
+            # Last resort: return empty dict instead of failing
+            return {}
 
     @field_validator("status", mode="before")
     @classmethod

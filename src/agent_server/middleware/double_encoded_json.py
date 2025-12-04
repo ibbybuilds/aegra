@@ -40,12 +40,26 @@ class DoubleEncodedJSONMiddleware:
                         if body:
                             try:
                                 decoded = body.decode("utf-8")
+                                logger.info(
+                                    "[DoubleEncodedJSON] Received body",
+                                    body_length=len(decoded),
+                                    first_200_chars=decoded[:200],
+                                )
                                 parsed = json.loads(decoded)
 
                                 if isinstance(parsed, str):
+                                    logger.warning(
+                                        "[DoubleEncodedJSON] Detected double-encoded JSON, unwrapping"
+                                    )
                                     parsed = json.loads(parsed)
 
                                 new_body = json.dumps(parsed).encode("utf-8")
+                                logger.info(
+                                    "[DoubleEncodedJSON] Sending modified body",
+                                    original_length=len(decoded),
+                                    new_length=len(new_body.decode("utf-8")),
+                                    body_changed=decoded != new_body.decode("utf-8"),
+                                )
 
                                 if (
                                     b"content-type" in headers
@@ -69,7 +83,12 @@ class DoubleEncodedJSONMiddleware:
                                 json.JSONDecodeError,
                                 ValueError,
                                 UnicodeDecodeError,
-                            ):
+                            ) as e:
+                                logger.warning(
+                                    "[DoubleEncodedJSON] Failed to process body, passing through unchanged",
+                                    error_type=type(e).__name__,
+                                    error=str(e),
+                                )
                                 pass
 
                 return message

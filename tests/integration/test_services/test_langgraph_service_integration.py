@@ -120,7 +120,11 @@ class TestLangGraphServiceDatabase:
         """Test graph loading with database integration"""
         service = LangGraphService()
         service._graph_registry = {
-            "db_graph": {"file_path": "./graphs/db.py", "export_name": "graph"}
+            "db_graph": {
+                "file_path": "./graphs/db.py",
+                "export_name": "graph",
+                "type": "python",
+            }
         }
 
         mock_graph = DummyStateGraph()
@@ -156,6 +160,7 @@ class TestLangGraphServiceDatabase:
             "compiled_graph": {
                 "file_path": "./graphs/compiled.py",
                 "export_name": "graph",
+                "type": "python",
             }
         }
 
@@ -276,7 +281,11 @@ class TestLangGraphServiceErrorHandling:
         """Test error handling when database operations fail"""
         service = LangGraphService()
         service._graph_registry = {
-            "error_graph": {"file_path": "./graphs/error.py", "export_name": "graph"}
+            "error_graph": {
+                "file_path": "./graphs/error.py",
+                "export_name": "graph",
+                "type": "python",
+            }
         }
 
         mock_graph = Mock()
@@ -301,6 +310,7 @@ class TestLangGraphServiceErrorHandling:
             "compile_error_graph": {
                 "file_path": "./graphs/compile_error.py",
                 "export_name": "graph",
+                "type": "python",
             }
         }
 
@@ -356,6 +366,7 @@ class TestLangGraphServiceConcurrency:
             "concurrent_graph": {
                 "file_path": "./graphs/concurrent.py",
                 "export_name": "graph",
+                "type": "python",
             }
         }
 

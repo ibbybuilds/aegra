@@ -4,7 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import uuid5
 
 import structlog
@@ -12,7 +12,11 @@ from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
+from ..core.config import is_node_graph
 from ..observability.base import get_tracing_callbacks, get_tracing_metadata
+
+if TYPE_CHECKING:
+    from ..core.ts_runtime import TypeScriptRuntime
 
 State = TypeVar("State")
 logger = structlog.get_logger(__name__)
@@ -27,6 +31,8 @@ class LangGraphService:
         self.config: dict[str, Any] | None = None
         self._graph_registry: dict[str, Any] = {}
         self._graph_cache: dict[str, Any] = {}
+        self._ts_runtime: TypeScriptRuntime | None = None
+        self._has_typescript_graphs = False
 
     async def initialize(self):
         """Load configuration file and setup graph registry.
@@ -67,24 +73,41 @@ class LangGraphService:
         # Load graph registry from config
         self._load_graph_registry()
 
+        # Initialize TypeScript runtime if needed
+        if self._has_typescript_graphs:
+            from ..core.ts_runtime import TypeScriptRuntime
+
+            node_version = self.config.get("node_version", "20")
+            self._ts_runtime = TypeScriptRuntime(node_version)
+            await self._ts_runtime.initialize()
+
         # Pre-register assistants for each graph using deterministic UUIDs so
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
 
     def _load_graph_registry(self):
-        """Load graph definitions from aegra.json"""
+        """Load graph definitions from aegra.json with TypeScript support"""
         graphs_config = self.config.get("graphs", {})
 
         for graph_id, graph_path in graphs_config.items():
-            # Parse path format: "./graphs/weather_agent.py:graph"
+            # Parse path format: "./graphs/weather_agent.py:graph" or "./graphs/agent.ts:graph"
             if ":" not in graph_path:
                 raise ValueError(f"Invalid graph path format: {graph_path}")
 
             file_path, export_name = graph_path.split(":", 1)
+
+            # Detect graph type
+            graph_type = "typescript" if is_node_graph(graph_path) else "python"
+
             self._graph_registry[graph_id] = {
                 "file_path": file_path,
                 "export_name": export_name,
+                "type": graph_type,
             }
+
+            if graph_type == "typescript":
+                self._has_typescript_graphs = True
+                print(f"📘 Detected TypeScript graph: {graph_id}")
 
     async def _ensure_default_assistants(self) -> None:
         """Create a default assistant per graph with deterministic UUID.
@@ -138,7 +161,11 @@ class LangGraphService:
             await session.close()
 
     async def get_graph(self, graph_id: str, force_reload: bool = False) -> Pregel:
-        """Get a compiled graph by ID with caching and LangGraph integration"""
+        """Get a compiled graph by ID with caching and LangGraph integration
+
+        Supports both Python and TypeScript graphs. TypeScript graphs are
+        executed via the TypeScript runtime manager.
+        """
         if graph_id not in self._graph_registry:
             raise ValueError(f"Graph not found: {graph_id}")
 
@@ -148,7 +175,15 @@ class LangGraphService:
 
         graph_info = self._graph_registry[graph_id]
 
-        # Load graph from file
+        # Handle TypeScript graphs differently
+        # Graph type defaults to "python" if not explicitly specified in registry
+        graph_type = graph_info["type"]
+        if graph_type == "typescript":
+            # TypeScript graphs are handled via the runtime manager
+            # We return a wrapper that will be executed by the runtime
+            return await self._get_typescript_graph(graph_id, graph_info)
+
+        # Load Python graph from file
         base_graph = await self._load_graph_from_file(graph_id, graph_info)
 
         # Always ensure graphs are compiled with our Postgres checkpointer for persistence
@@ -185,8 +220,58 @@ class LangGraphService:
 
         return compiled_graph
 
+    async def _get_typescript_graph(self, graph_id: str, graph_info: dict[str, str]):
+        """Get a TypeScript graph wrapper for execution via the TS runtime.
+
+        TypeScript graphs are not loaded directly in Python. Instead, we return
+        a marker object that the execution logic can recognize and route to the
+        TypeScript runtime manager.
+        """
+        if self._ts_runtime is None:
+            raise RuntimeError(
+                "TypeScript runtime not initialized. This should not happen if "
+                "TypeScript graphs were detected during service initialization."
+            )
+
+        # Create a wrapper that signals this is a TypeScript graph
+        class TypeScriptGraphWrapper:
+            def __init__(self, graph_id: str, graph_info: dict, runtime):
+                self.graph_id = graph_id
+                self.graph_info = graph_info
+                self.runtime = runtime
+                self.is_typescript = True
+
+            async def stream(self, input_data: dict, config: dict):
+                """Execute the TypeScript graph via the runtime manager."""
+                async for event in self.runtime.execute_graph(
+                    self.graph_id,
+                    self.graph_info["file_path"],
+                    self.graph_info["export_name"],
+                    input_data,
+                    config,
+                ):
+                    yield event
+
+            async def astream(self, input_data: dict, config: dict = None, **kwargs):
+                """Async stream method (required by LangGraph SDK compatibility)."""
+                if config is None:
+                    config = {}
+                # Merge any additional kwargs into config
+                for key, value in kwargs.items():
+                    if key not in config:
+                        config[key] = value
+                async for event in self.stream(input_data, config):
+                    yield event
+
+        wrapper = TypeScriptGraphWrapper(graph_id, graph_info, self._ts_runtime)
+
+        # Cache the wrapper
+        self._graph_cache[graph_id] = wrapper
+
+        return wrapper
+
     async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]):
-        """Load graph from filesystem"""
+        """Load Python graph from filesystem"""
         file_path = Path(graph_info["file_path"])
         if not file_path.exists():
             raise ValueError(f"Graph file not found: {file_path}")

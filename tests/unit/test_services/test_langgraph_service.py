@@ -195,7 +195,11 @@ class TestLangGraphServiceGraphs:
         """Test successful graph retrieval"""
         service = LangGraphService()
         service._graph_registry = {
-            "test_graph": {"file_path": "test.py", "export_name": "graph"}
+            "test_graph": {
+                "file_path": "test.py",
+                "export_name": "graph",
+                "type": "python",
+            }
         }
         # Create a DummyStateGraph subclass so isinstance check uses compile path
         import agent_server.services.langgraph_service as lgs_module
@@ -259,7 +263,11 @@ class TestLangGraphServiceGraphs:
         """Test force reload bypasses cache"""
         service = LangGraphService()
         service._graph_registry = {
-            "test_graph": {"file_path": "test.py", "export_name": "graph"}
+            "test_graph": {
+                "file_path": "test.py",
+                "export_name": "graph",
+                "type": "python",
+            }
         }
 
         cached_graph = Mock()
@@ -719,7 +727,11 @@ class TestLangGraphServiceConfigs:
 async def test_get_graph_compiles_stategraph(monkeypatch):
     # Prepare service and registry
     service = LangGraphService()
-    service._graph_registry["g1"] = {"file_path": "f", "export_name": "g"}
+    service._graph_registry["g1"] = {
+        "file_path": "f",
+        "export_name": "g",
+        "type": "python",
+    }
 
     # Dummy StateGraph-like object that exposes compile()
     # Create a subclass of the real StateGraph so isinstance checks pass
@@ -758,7 +770,11 @@ async def test_get_graph_compiles_stategraph(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_graph_precompiled_copy(monkeypatch):
     service = LangGraphService()
-    service._graph_registry["g2"] = {"file_path": "f", "export_name": "g"}
+    service._graph_registry["g2"] = {
+        "file_path": "f",
+        "export_name": "g",
+        "type": "python",
+    }
 
     class Precompiled:
         def copy(self, update=None):

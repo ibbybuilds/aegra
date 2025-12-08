@@ -6,8 +6,15 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from langgraph.graph import StateGraph
 
 from agent_server.services.langgraph_service import LangGraphService
+
+
+class DummyStateGraph(StateGraph):
+    def __init__(self):
+        # avoid heavy init
+        pass
 
 
 class TestLangGraphServiceRealFiles:
@@ -120,7 +127,7 @@ class TestLangGraphServiceDatabase:
             }
         }
 
-        mock_graph = Mock()
+        mock_graph = DummyStateGraph()
         mock_compiled_graph = Mock()
 
         with (
@@ -307,7 +314,7 @@ class TestLangGraphServiceErrorHandling:
             }
         }
 
-        mock_graph = Mock()
+        mock_graph = DummyStateGraph()
         mock_graph.compile = Mock(side_effect=Exception("Compilation error"))
 
         with (
@@ -363,7 +370,7 @@ class TestLangGraphServiceConcurrency:
             }
         }
 
-        mock_graph = Mock()
+        mock_graph = DummyStateGraph()
         mock_compiled_graph = Mock()
 
         with (

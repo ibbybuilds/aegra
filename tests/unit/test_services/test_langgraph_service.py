@@ -201,8 +201,14 @@ class TestLangGraphServiceGraphs:
                 "type": "python",
             }
         }
+        # Create a DummyStateGraph subclass so isinstance check uses compile path
+        import agent_server.services.langgraph_service as lgs_module
 
-        mock_graph = Mock()
+        class DummyStateGraph(lgs_module.StateGraph):
+            def __init__(self):
+                pass
+
+        mock_graph = DummyStateGraph()
         mock_compiled_graph = Mock()
 
         with (
@@ -276,7 +282,18 @@ class TestLangGraphServiceGraphs:
         ):
             mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
             mock_db_manager.get_store = AsyncMock(return_value="store")
+            # Make new_graph a StateGraph-like instance to hit compile path
+            import agent_server.services.langgraph_service as lgs_module
+
+            class DummyStateGraph2(lgs_module.StateGraph):
+                def __init__(self):
+                    pass
+
+            new_graph = DummyStateGraph2()
             new_graph.compile = Mock(return_value=new_graph)
+
+            # Patch loader to return our new_graph instance
+            mock_load.return_value = new_graph
 
             result = await service.get_graph("test_graph", force_reload=True)
 
@@ -285,11 +302,11 @@ class TestLangGraphServiceGraphs:
 
     @pytest.mark.asyncio
     async def test_load_graph_from_file_success(self):
-        """Test successful graph loading from file"""
+        """Test successful graph loading from file (non-callable graph object)"""
         service = LangGraphService()
 
         mock_module = Mock()
-        mock_graph = Mock()
+        mock_graph = object()  # Simple non-callable object
         mock_module.test_graph = mock_graph
 
         with (
@@ -306,7 +323,37 @@ class TestLangGraphServiceGraphs:
 
             result = await service._load_graph_from_file("test_graph", graph_info)
 
-            assert result == mock_graph
+            assert result is mock_graph
+
+    @pytest.mark.asyncio
+    async def test_load_graph_from_file_async_factory(self):
+        """Test graph loading with async factory function"""
+        service = LangGraphService()
+
+        mock_module = Mock()
+        mock_graph = object()
+
+        # Async factory function
+        async def async_factory():
+            return mock_graph
+
+        mock_module.test_graph = async_factory
+
+        with (
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec") as mock_module_from_spec,
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/test.py")),
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+            mock_module_from_spec.return_value = mock_module
+
+            graph_info = {"file_path": "test.py", "export_name": "test_graph"}
+
+            result = await service._load_graph_from_file("test_graph", graph_info)
+
+            assert result is mock_graph
 
     @pytest.mark.asyncio
     async def test_load_graph_from_file_not_found(self):
@@ -581,9 +628,24 @@ class TestLangGraphServiceConfigs:
 
         mock_callbacks = [Mock(), Mock()]
 
-        with patch(
-            "agent_server.services.langgraph_service.get_tracing_callbacks",
-            return_value=mock_callbacks,
+        with (
+            patch(
+                "agent_server.services.langgraph_service.get_tracing_callbacks",
+                return_value=mock_callbacks,
+            ),
+            patch(
+                "agent_server.services.langgraph_service.get_tracing_metadata",
+                return_value={
+                    "langfuse_session_id": thread_id,
+                    "langfuse_user_id": "user-123",
+                    "langfuse_tags": [
+                        "aegra_run",
+                        f"run:{run_id}",
+                        f"thread:{thread_id}",
+                        f"user:{mock_user.identity}",
+                    ],
+                },
+            ),
         ):
             result = create_run_config(run_id, thread_id, mock_user)
 
@@ -659,3 +721,80 @@ class TestLangGraphServiceConfigs:
         # Metadata may not exist if no tracing callbacks
         if "metadata" in result:
             assert "langfuse_user_id" not in result["metadata"]
+
+
+@pytest.mark.asyncio
+async def test_get_graph_compiles_stategraph(monkeypatch):
+    # Prepare service and registry
+    service = LangGraphService()
+    service._graph_registry["g1"] = {
+        "file_path": "f",
+        "export_name": "g",
+        "type": "python",
+    }
+
+    # Dummy StateGraph-like object that exposes compile()
+    # Create a subclass of the real StateGraph so isinstance checks pass
+    import agent_server.services.langgraph_service as lgs_module
+
+    class DummyStateGraph(lgs_module.StateGraph):
+        def __init__(self):
+            # Do not call super().__init__ to avoid heavy initialization
+            pass
+
+        def compile(self, checkpointer, store):
+            return f"compiled:{checkpointer}:{store}"
+
+    async def fake_load(self, graph_id, info):
+        return DummyStateGraph()
+
+    monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
+
+    # Provide a fake db_manager with async get_checkpointer/get_store
+    class FakeDBManager:
+        async def get_checkpointer(self):
+            return "cp"
+
+        async def get_store(self):
+            return "store"
+
+    import agent_server.core.database as dbmod
+
+    monkeypatch.setattr(dbmod, "db_manager", FakeDBManager())
+
+    # Call get_graph and verify compile path
+    compiled = await service.get_graph("g1")
+    assert compiled == "compiled:cp:store"
+
+
+@pytest.mark.asyncio
+async def test_get_graph_precompiled_copy(monkeypatch):
+    service = LangGraphService()
+    service._graph_registry["g2"] = {
+        "file_path": "f",
+        "export_name": "g",
+        "type": "python",
+    }
+
+    class Precompiled:
+        def copy(self, update=None):
+            return f"copied:{update.get('checkpointer')}:{update.get('store')}"
+
+    async def fake_load(self, graph_id, info):
+        return Precompiled()
+
+    monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
+
+    class FakeDBManager2:
+        async def get_checkpointer(self):
+            return "cp2"
+
+        async def get_store(self):
+            return "store2"
+
+    import agent_server.core.database as dbmod
+
+    monkeypatch.setattr(dbmod, "db_manager", FakeDBManager2())
+
+    compiled = await service.get_graph("g2")
+    assert compiled == "copied:cp2:store2"

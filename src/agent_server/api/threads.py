@@ -3,11 +3,11 @@
 import asyncio
 import contextlib
 import json
-import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,12 +19,15 @@ from ..core.orm import Thread as ThreadORM
 from ..core.orm import get_session
 from ..models import (
     Thread,
+    ThreadCheckpoint,
     ThreadCheckpointPostRequest,
     ThreadCreate,
     ThreadHistoryRequest,
     ThreadList,
     ThreadSearchRequest,
     ThreadState,
+    ThreadStateUpdate,
+    ThreadStateUpdateResponse,
     User,
 )
 from ..services.streaming_service import streaming_service
@@ -38,7 +41,7 @@ from ..services.thread_state_service import ThreadStateService
 # Use logging.getLogger(__name__) and appropriate levels (debug/info/warning/error).
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 thread_state_service = ThreadStateService()
 
@@ -167,11 +170,282 @@ async def get_thread(
     )
 
 
+@router.get("/threads/{thread_id}/state", response_model=ThreadState)
+async def get_thread_state(
+    thread_id: str,
+    subgraphs: bool = Query(False, description="Include states from subgraphs"),
+    checkpoint_ns: str | None = Query(
+        None, description="Checkpoint namespace to scope lookup"
+    ),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get state for a thread (i.e. latest checkpoint)"""
+    try:
+        stmt = select(ThreadORM).where(
+            ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
+        )
+        thread = await session.scalar(stmt)
+        if not thread:
+            raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+        thread_metadata = thread.metadata_json or {}
+        graph_id = thread_metadata.get("graph_id")
+        if not graph_id:
+            # Return empty state when no graph_id is set
+            # This allows CopilotKit and other clients to query state before first run
+            logger.info(
+                "state GET: no graph_id set for thread %s, returning empty state",
+                thread_id,
+            )
+
+            empty_checkpoint = ThreadCheckpoint(
+                checkpoint_id=None,
+                thread_id=thread_id,
+                checkpoint_ns="",
+            )
+
+            empty_state = ThreadState(
+                values={},
+                next=[],
+                tasks=[],
+                interrupts=[],
+                metadata={},
+                created_at=None,
+                checkpoint=empty_checkpoint,
+                parent_checkpoint=None,
+                checkpoint_id=None,
+                parent_checkpoint_id=None,
+            )
+            return empty_state
+
+        from ..services.langgraph_service import (
+            create_thread_config,
+            get_langgraph_service,
+        )
+
+        langgraph_service = get_langgraph_service()
+        try:
+            agent = await langgraph_service.get_graph(graph_id)
+        except Exception as e:
+            logger.exception("Failed to load graph '%s' for state retrieval", graph_id)
+            raise HTTPException(
+                500, f"Failed to load graph '{graph_id}': {str(e)}"
+            ) from e
+
+        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        if checkpoint_ns:
+            config["configurable"]["checkpoint_ns"] = checkpoint_ns
+
+        try:
+            agent = agent.with_config(config)
+            # NOTE: LangGraph only exposes subgraph checkpoints while the run is
+            # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
+            state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(
+                "Failed to retrieve latest state for thread '%s'", thread_id
+            )
+            raise HTTPException(
+                500, f"Failed to retrieve thread state: {str(e)}"
+            ) from e
+
+        if not state_snapshot:
+            logger.info(
+                "state GET: no checkpoint found for thread %s (checkpoint_ns=%s)",
+                thread_id,
+                checkpoint_ns,
+            )
+            raise HTTPException(404, f"No state found for thread '{thread_id}'")
+
+        try:
+            thread_state = thread_state_service.convert_snapshot_to_thread_state(
+                state_snapshot, thread_id, subgraphs=subgraphs
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to convert latest state for thread '%s'", thread_id
+            )
+            raise HTTPException(500, f"Failed to convert thread state: {str(e)}") from e
+
+        logger.debug(
+            "state GET: thread_id=%s checkpoint_id=%s subgraphs=%s checkpoint_ns=%s",
+            thread_id,
+            thread_state.checkpoint.checkpoint_id,
+            subgraphs,
+            checkpoint_ns,
+        )
+
+        return thread_state
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Unexpected error retrieving latest state for thread '%s'", thread_id
+        )
+        raise HTTPException(500, f"Error retrieving thread state: {str(e)}") from e
+
+
+@router.post("/threads/{thread_id}/state")
+async def update_thread_state(
+    thread_id: str,
+    request: ThreadStateUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Update thread state or get state via POST.
+
+    If 'values' is provided, updates the state. Otherwise, behaves like GET to retrieve state.
+    This supports CopilotKit and other clients that use POST for state queries.
+    """
+    # If no values provided, treat this as a GET-like query via POST
+    # This is what CopilotKit uses when regenerating messages
+    if request.values is None:
+        # Delegate to GET handler logic
+        return await get_thread_state(
+            thread_id=thread_id,
+            subgraphs=request.subgraphs or False,
+            checkpoint_ns=request.checkpoint_ns,
+            user=user,
+            session=session,
+        )
+
+    # Otherwise, update the state
+    try:
+        stmt = select(ThreadORM).where(
+            ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
+        )
+        thread = await session.scalar(stmt)
+        if not thread:
+            raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+        thread_metadata = thread.metadata_json or {}
+        graph_id = thread_metadata.get("graph_id")
+        if not graph_id:
+            raise HTTPException(
+                400,
+                f"Thread '{thread_id}' has no associated graph. Cannot update state.",
+            )
+
+        from ..services.langgraph_service import (
+            create_thread_config,
+            get_langgraph_service,
+        )
+
+        langgraph_service = get_langgraph_service()
+        try:
+            agent = await langgraph_service.get_graph(graph_id)
+        except Exception as e:
+            logger.exception("Failed to load graph '%s' for state update", graph_id)
+            raise HTTPException(
+                500, f"Failed to load graph '{graph_id}': {str(e)}"
+            ) from e
+
+        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+
+        # Apply checkpoint configuration
+        if request.checkpoint_id:
+            config["configurable"]["checkpoint_id"] = request.checkpoint_id
+        if request.checkpoint:
+            config["configurable"].update(request.checkpoint)
+        if request.checkpoint_ns:
+            config["configurable"]["checkpoint_ns"] = request.checkpoint_ns
+
+        try:
+            # Update state using aupdate_state method
+            # This creates a new checkpoint with the updated values
+            agent = agent.with_config(config)
+
+            # Handle values - can be dict or list of dicts
+            update_values = request.values
+            if isinstance(update_values, list):
+                # If it's a list, use the first dict or convert to dict
+                if update_values and isinstance(update_values[0], dict):
+                    # Merge all dicts in the list
+                    merged = {}
+                    for item in update_values:
+                        if isinstance(item, dict):
+                            merged.update(item)
+                    update_values = merged
+                else:
+                    update_values = update_values[0] if update_values else None
+
+            # Update the state using aupdate_state
+            # aupdate_state signature: aupdate_state(config, values, as_node=None)
+            # When as_node is not specified, the graph may try to continue execution,
+            # which can fail if the state doesn't match expected graph flow.
+            # We should always use as_node to prevent unwanted execution.
+            try:
+                # If as_node is not provided, we need to determine a safe node to use
+                # For state updates without as_node, we'll use None which should just update state
+                # without triggering execution, but the graph may still validate the state
+                updated_config = await agent.aupdate_state(
+                    config, update_values, as_node=request.as_node
+                )
+            except Exception as update_error:
+                logger.exception(
+                    "aupdate_state failed for thread %s: %s",
+                    thread_id,
+                    update_error,
+                    exc_info=True,
+                )
+                raise
+
+            # Extract checkpoint info from the updated config
+            # aupdate_state returns the updated config dict
+            if not isinstance(updated_config, dict):
+                logger.error(
+                    "aupdate_state returned non-dict: %s (type: %s)",
+                    updated_config,
+                    type(updated_config),
+                )
+                raise HTTPException(
+                    500,
+                    f"Unexpected return type from aupdate_state: {type(updated_config)}",
+                )
+
+            checkpoint_info = {
+                "checkpoint_id": updated_config.get("configurable", {}).get(
+                    "checkpoint_id"
+                ),
+                "thread_id": thread_id,
+                "checkpoint_ns": updated_config.get("configurable", {}).get(
+                    "checkpoint_ns", ""
+                ),
+            }
+
+            logger.info(
+                "state POST: updated state for thread %s checkpoint_id=%s",
+                thread_id,
+                checkpoint_info.get("checkpoint_id"),
+            )
+
+            return ThreadStateUpdateResponse(checkpoint=checkpoint_info)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to update state for thread '%s'", thread_id)
+            raise HTTPException(500, f"Failed to update thread state: {str(e)}") from e
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error updating state for thread '%s'", thread_id)
+        raise HTTPException(500, f"Error updating thread state: {str(e)}") from e
+
+
 @router.get("/threads/{thread_id}/state/{checkpoint_id}", response_model=ThreadState)
 async def get_thread_state_at_checkpoint(
     thread_id: str,
     checkpoint_id: str,
     subgraphs: bool | None = Query(False, description="Include states from subgraphs"),
+    checkpoint_ns: str | None = Query(
+        None, description="Checkpoint namespace to scope lookup"
+    ),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -211,11 +485,15 @@ async def get_thread_state_at_checkpoint(
         # Build config with user context and thread_id
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
         config["configurable"]["checkpoint_id"] = checkpoint_id
+        if checkpoint_ns:
+            config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
         # Fetch state at checkpoint
         try:
             agent = agent.with_config(config)
-            state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
+            state_snapshot = await agent.aget_state(
+                config, subgraphs=subgraphs or False
+            )
         except Exception as e:
             logger.exception(
                 "Failed to retrieve state at checkpoint '%s' for thread '%s'",
@@ -237,6 +515,7 @@ async def get_thread_state_at_checkpoint(
         thread_checkpoint = thread_state_service.convert_snapshot_to_thread_state(
             state_snapshot,
             thread_id,
+            subgraphs=subgraphs or False,
         )
 
         return thread_checkpoint
@@ -259,12 +538,30 @@ async def get_thread_state_at_checkpoint_post(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get thread state at a specific checkpoint (POST method - for SDK compatibility)"""
-    # Reuse GET logic by calling the function directly
+    """Get thread state at a specific checkpoint (POST method - for SDK compatibility)
+
+    Supports full checkpoint configuration including:
+    - checkpoint_id: Specific checkpoint ID (required)
+    - checkpoint_ns: Checkpoint namespace for scoping (optional)
+    - subgraphs: Include subgraph states (optional)
+    """
     checkpoint = request.checkpoint
+    if not checkpoint.checkpoint_id:
+        raise HTTPException(
+            400, "checkpoint_id is required in checkpoint configuration"
+        )
+
     subgraphs = request.subgraphs
+    checkpoint_ns = checkpoint.checkpoint_ns if checkpoint.checkpoint_ns else None
+
+    # Reuse GET logic by calling the function directly
     output = await get_thread_state_at_checkpoint(
-        thread_id, checkpoint.checkpoint_id, subgraphs, user, session
+        thread_id,
+        checkpoint.checkpoint_id,
+        subgraphs,
+        checkpoint_ns,
+        user,
+        session,
     )
     return output
 
@@ -442,8 +739,6 @@ async def delete_thread(
     Automatically cancels any active runs and deletes the thread.
     CASCADE DELETE automatically removes all run records when thread is deleted.
     """
-    logger = logging.getLogger(__name__)
-
     # Check if thread exists
     stmt = select(ThreadORM).where(
         ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
@@ -456,7 +751,7 @@ async def delete_thread(
     active_runs_stmt = select(RunORM).where(
         RunORM.thread_id == thread_id,
         RunORM.user_id == user.identity,
-        RunORM.status.in_(["pending", "running", "streaming"]),
+        RunORM.status.in_(["pending", "running"]),
     )
     active_runs_list = (await session.scalars(active_runs_stmt)).all()
 

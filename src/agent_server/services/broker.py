@@ -2,13 +2,14 @@
 
 import asyncio
 import contextlib
-import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+import structlog
+
 from .base_broker import BaseBrokerManager, BaseRunBroker
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class RunBroker(BaseRunBroker):

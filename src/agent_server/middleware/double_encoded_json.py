@@ -1,9 +1,9 @@
 import json
-import logging
 
+import structlog
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class DoubleEncodedJSONMiddleware:

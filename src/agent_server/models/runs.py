@@ -3,7 +3,14 @@
 from datetime import datetime
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+from ..utils.status_compat import validate_run_status
 
 
 class RunCreate(BaseModel):
@@ -14,17 +21,15 @@ class RunCreate(BaseModel):
         None,
         description="Input data for the run. Optional when resuming from a checkpoint.",
     )
-    config: dict[str, Any] | None = Field({}, description="LangGraph execution config")
-    context: dict[str, Any] | None = Field(
-        {}, description="LangGraph execution context"
-    )
+    config: dict[str, Any] | None = Field({}, description="Execution config")
+    context: dict[str, Any] | None = Field({}, description="Execution context")
     checkpoint: dict[str, Any] | None = Field(
         None,
         description="Checkpoint configuration (e.g., {'checkpoint_id': '...', 'checkpoint_ns': ''})",
     )
     stream: bool = Field(False, description="Enable streaming response")
     stream_mode: str | list[str] | None = Field(
-        None, description="Requested stream mode(s) as per LangGraph"
+        None, description="Requested stream mode(s)"
     )
     on_disconnect: str | None = Field(
         None,
@@ -56,6 +61,12 @@ class RunCreate(BaseModel):
         description="Whether to include subgraph events in streaming. When True, includes events from all subgraphs. When False (default when None), excludes subgraph events. Defaults to False for backwards compatibility.",
     )
 
+    # Request metadata (top-level in payload)
+    metadata: dict[str, Any] | None = Field(
+        None,
+        description="Request metadata (e.g., from_studio flag)",
+    )
+
     @model_validator(mode="after")
     def validate_input_command_exclusivity(self) -> Self:
         """Ensure input and command are mutually exclusive"""
@@ -74,12 +85,15 @@ class RunCreate(BaseModel):
 
 
 class Run(BaseModel):
-    """Run entity model"""
+    """Run entity model
+
+    Status values: pending, running, error, success, timeout, interrupted
+    """
 
     run_id: str
     thread_id: str
     assistant_id: str
-    status: str = "pending"  # pending, running, completed, failed, cancelled
+    status: str = "pending"  # Valid values: pending, running, error, success, timeout, interrupted
     input: dict[str, Any]
     output: dict[str, Any] | None = None
     error_message: str | None = None
@@ -89,6 +103,14 @@ class Run(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Validate status conforms to API specification."""
+        if not isinstance(v, str):
+            raise ValueError(f"Status must be a string, got {type(v)}")
+        return validate_run_status(v)
+
     class Config:
         from_attributes = True
 
@@ -97,5 +119,6 @@ class RunStatus(BaseModel):
     """Simple run status response"""
 
     run_id: str
-    status: str
+    status: str  # Standard status value
+
     message: str | None = None

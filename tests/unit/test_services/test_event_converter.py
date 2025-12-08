@@ -15,117 +15,173 @@ class TestEventConverter:
     def test_parse_raw_event_tuple_2_elements(self):
         """Test parsing raw event with 2-element tuple"""
         raw_event = ("values", {"key": "value"})
-        stream_mode, payload = self.converter._parse_raw_event(raw_event)
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
 
         assert stream_mode == "values"
         assert payload == {"key": "value"}
+        assert namespace is None
 
-    def test_parse_raw_event_tuple_3_elements(self):
-        """Test parsing raw event with 3-element tuple (ignores node_path)"""
+    def test_parse_raw_event_tuple_3_elements_legacy(self):
+        """Test parsing raw event with 3-element tuple (legacy node_path format)"""
+        self.converter.set_subgraphs(False)  # Legacy mode
         raw_event = ("node_path", "updates", {"data": "test"})
-        stream_mode, payload = self.converter._parse_raw_event(raw_event)
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
 
         assert stream_mode == "updates"
         assert payload == {"data": "test"}
+        assert namespace is None
+
+    def test_parse_raw_event_tuple_3_elements_subgraphs(self):
+        """Test parsing raw event with 3-element tuple (subgraphs format)"""
+        self.converter.set_subgraphs(True)  # Subgraphs mode
+        raw_event = (["subagent"], "messages", {"content": "hello"})
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
+
+        assert stream_mode == "messages"
+        assert payload == {"content": "hello"}
+        assert namespace == ["subagent"]
+
+    def test_parse_raw_event_tuple_3_elements_subgraphs_string_namespace(self):
+        """Test parsing raw event with string namespace (converted to list)"""
+        self.converter.set_subgraphs(True)
+        raw_event = ("subagent", "messages", {"content": "hello"})
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
+
+        assert stream_mode == "messages"
+        assert payload == {"content": "hello"}
+        assert namespace == ["subagent"]
 
     def test_parse_raw_event_non_tuple(self):
         """Test parsing raw event that's not a tuple"""
         raw_event = {"direct": "payload"}
-        stream_mode, payload = self.converter._parse_raw_event(raw_event)
+        stream_mode, payload, namespace = self.converter._parse_raw_event(raw_event)
 
         assert stream_mode == "values"
         assert payload == {"direct": "payload"}
+        assert namespace is None
 
     def test_create_sse_event_messages(self):
         """Test creating messages SSE event"""
         result = self.converter._create_sse_event(
-            "messages", {"content": "hello"}, "evt-1"
+            "messages", {"content": "hello"}, "evt-1", None
         )
 
         assert "event: messages\n" in result
         assert "hello" in result
 
+    def test_create_sse_event_messages_with_namespace(self):
+        """Test creating messages SSE event with namespace prefix"""
+        self.converter.set_subgraphs(True)
+        result = self.converter._create_sse_event(
+            "messages", {"content": "hello"}, "evt-1", ["subagent"]
+        )
+
+        assert "event: messages|subagent\n" in result
+        assert "hello" in result
+
     def test_create_sse_event_values(self):
         """Test creating values SSE event"""
-        result = self.converter._create_sse_event("values", {"state": "data"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "values", {"state": "data"}, "evt-1", None
+        )
 
         assert "event: values\n" in result
 
     def test_create_sse_event_updates(self):
         """Test creating updates SSE event"""
-        result = self.converter._create_sse_event("updates", {"node": "agent"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "updates", {"node": "agent"}, "evt-1", None
+        )
 
         assert "event: updates\n" in result
 
     def test_create_sse_event_updates_with_interrupt(self):
         """Test that interrupt updates are converted to values"""
-        payload = {"__interrupt__": True, "data": "test"}
-        result = self.converter._create_sse_event("updates", payload, "evt-1")
+        # Use a list for __interrupt__ to match the actual condition check
+        payload = {"__interrupt__": [{"node": "test"}], "data": "test"}
+        result = self.converter._create_sse_event("updates", payload, "evt-1", None)
 
         # Should be converted to values event
         assert "event: values\n" in result
 
     def test_create_sse_event_state(self):
         """Test creating state SSE event"""
-        result = self.converter._create_sse_event("state", {"values": {}}, "evt-1")
+        result = self.converter._create_sse_event(
+            "state", {"values": {}}, "evt-1", None
+        )
 
         assert "event: state\n" in result
 
     def test_create_sse_event_logs(self):
         """Test creating logs SSE event"""
-        result = self.converter._create_sse_event("logs", {"level": "info"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "logs", {"level": "info"}, "evt-1", None
+        )
 
         assert "event: logs\n" in result
 
     def test_create_sse_event_tasks(self):
         """Test creating tasks SSE event"""
-        result = self.converter._create_sse_event("tasks", {"tasks": []}, "evt-1")
+        result = self.converter._create_sse_event("tasks", {"tasks": []}, "evt-1", None)
 
         assert "event: tasks\n" in result
 
     def test_create_sse_event_subgraphs(self):
         """Test creating subgraphs SSE event"""
-        result = self.converter._create_sse_event("subgraphs", {"id": "sg-1"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "subgraphs", {"id": "sg-1"}, "evt-1", None
+        )
 
         assert "event: subgraphs\n" in result
 
     def test_create_sse_event_debug(self):
         """Test creating debug SSE event"""
-        result = self.converter._create_sse_event("debug", {"type": "test"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "debug", {"type": "test"}, "evt-1", None
+        )
 
         assert "event: debug\n" in result
 
     def test_create_sse_event_events(self):
         """Test creating events SSE event"""
-        result = self.converter._create_sse_event("events", {"event": "test"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "events", {"event": "test"}, "evt-1", None
+        )
 
         assert "event: events\n" in result
 
     def test_create_sse_event_checkpoints(self):
         """Test creating checkpoints SSE event"""
-        result = self.converter._create_sse_event("checkpoints", {"cp": "1"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "checkpoints", {"cp": "1"}, "evt-1", None
+        )
 
         assert "event: checkpoints\n" in result
 
     def test_create_sse_event_custom(self):
         """Test creating custom SSE event"""
-        result = self.converter._create_sse_event("custom", {"custom": "data"}, "evt-1")
+        result = self.converter._create_sse_event(
+            "custom", {"custom": "data"}, "evt-1", None
+        )
 
         assert "event: custom\n" in result
 
     def test_create_sse_event_end(self):
         """Test creating end SSE event"""
-        result = self.converter._create_sse_event("end", None, "evt-1")
+        result = self.converter._create_sse_event("end", None, "evt-1", None)
 
         assert "event: end\n" in result
 
     def test_create_sse_event_unknown_mode(self):
-        """Test creating SSE event with unknown mode returns None"""
+        """Test creating SSE event with unknown mode uses generic handler"""
         result = self.converter._create_sse_event(
-            "unknown_mode", {"data": "test"}, "evt-1"
+            "unknown_mode", {"data": "test"}, "evt-1", None
         )
 
-        assert result is None
+        # Unknown modes are handled generically and return formatted event
+        assert result is not None
+        assert "event: unknown_mode\n" in result
+        assert "data: " in result
 
     def test_convert_raw_to_sse_tuple_format(self):
         """Test converting raw event in tuple format"""
@@ -305,7 +361,7 @@ class TestEventConverter:
         assert "Something went wrong" in result
 
     def test_convert_stored_to_sse_unknown_event(self):
-        """Test converting stored event with unknown type returns None"""
+        """Test converting stored event with unknown type uses generic handler"""
         stored_event = Mock()
         stored_event.event = "unknown_event_type"
         stored_event.data = {}
@@ -313,4 +369,7 @@ class TestEventConverter:
 
         result = self.converter.convert_stored_to_sse(stored_event)
 
-        assert result is None
+        # Unknown event types are handled generically and return formatted event
+        assert result is not None
+        assert "event: unknown_event_type\n" in result
+        assert "id: evt-1\n" in result

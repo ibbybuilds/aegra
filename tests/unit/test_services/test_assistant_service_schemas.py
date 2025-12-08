@@ -44,7 +44,7 @@ class TestStateJsonSchema:
             def mock_create_model(*args, **kwargs):
                 raise Exception("Schema error")
 
-            mp.setattr("langgraph._internal._pydantic.create_model", mock_create_model)
+            mp.setattr("langchain_core.runnables.utils.create_model", mock_create_model)
 
             # The function doesn't have try-catch, so it will raise the exception
             with pytest.raises(Exception) as exc_info:

@@ -35,7 +35,7 @@ def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) 
         call_context = context_dict["call_context"]
         # Ensure it's a dict (not already a dataclass instance)
         if isinstance(call_context, dict):
-            logger.info(f"[Context Parser] Extracted call_context dict for AVA")
+            logger.info("[Context Parser] Extracted call_context dict for AVA")
             return call_context
         else:
             # If it's already a dataclass, convert to dict
@@ -49,7 +49,7 @@ def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) 
                 return call_context.model_dump()
             else:
                 logger.error(
-                    f"[Context Parser] Unable to convert call_context to dict, passing as-is"
+                    "[Context Parser] Unable to convert call_context to dict, passing as-is"
                 )
                 return call_context
 

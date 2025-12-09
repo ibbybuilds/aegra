@@ -56,6 +56,8 @@ logger = structlog.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context manager for startup/shutdown"""
+    # HTTP request logging disabled (was causing recursion errors)
+
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 

@@ -339,8 +339,8 @@ wheels = [
 
 [[package]]
 name = "ava-core"
-version = "0.1.0a12"
-source = { git = "https://github.com/lucca-mrktr/ava-core.git?rev=develop#06ca7327375b7001edd6600f9890456d665ab766" }
+version = "0.1.0a13"
+source = { git = "https://github.com/lucca-mrktr/ava-core.git?rev=develop#03e8dd90803743bd7a2180304bd749ebbb72708b" }
 dependencies = [
     { name = "deepagents" },
     { name = "httpx", extra = ["http2"] },

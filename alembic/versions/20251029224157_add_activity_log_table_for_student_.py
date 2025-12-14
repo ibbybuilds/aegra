@@ -78,27 +78,18 @@ def upgrade() -> None:
         ["user_id", "created_at"],
         unique=False,
     )
-    op.drop_index(op.f("checkpoints_thread_id_idx"), table_name="checkpoints")
-    op.drop_table("checkpoints")
-    op.drop_table("checkpoint_migrations")
-    op.drop_table("store_migrations")
-    op.drop_index(
-        op.f("checkpoint_writes_thread_id_idx"), table_name="checkpoint_writes"
-    )
-    op.drop_table("checkpoint_writes")
-    op.drop_index(
-        op.f("idx_store_expires_at"),
-        table_name="store",
-        postgresql_where="(expires_at IS NOT NULL)",
-    )
-    op.drop_index(
-        op.f("store_prefix_idx"),
-        table_name="store",
-        postgresql_ops={"prefix": "text_pattern_ops"},
-    )
-    op.drop_table("store")
-    op.drop_index(op.f("checkpoint_blobs_thread_id_idx"), table_name="checkpoint_blobs")
-    op.drop_table("checkpoint_blobs")
+    # Drop old LangGraph checkpoint tables if they exist
+    op.execute("DROP INDEX IF EXISTS checkpoints_thread_id_idx")
+    op.execute("DROP TABLE IF EXISTS checkpoints CASCADE")
+    op.execute("DROP TABLE IF EXISTS checkpoint_migrations CASCADE")
+    op.execute("DROP TABLE IF EXISTS store_migrations CASCADE")
+    op.execute("DROP INDEX IF EXISTS checkpoint_writes_thread_id_idx")
+    op.execute("DROP TABLE IF EXISTS checkpoint_writes CASCADE")
+    op.execute("DROP INDEX IF EXISTS idx_store_expires_at")
+    op.execute("DROP INDEX IF EXISTS store_prefix_idx")
+    op.execute("DROP TABLE IF EXISTS store CASCADE")
+    op.execute("DROP INDEX IF EXISTS checkpoint_blobs_thread_id_idx")
+    op.execute("DROP TABLE IF EXISTS checkpoint_blobs CASCADE")
     # ### end Alembic commands ###
 
 

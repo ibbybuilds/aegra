@@ -186,7 +186,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
             return credentials, user
 
         except Auth.exceptions.HTTPException as e:
-            logger.debug(f"Authentication failed: {e.detail}")
+            logger.warning(f"Authentication failed: {e.detail}")
             raise AuthenticationError(e.detail) from e
 
         except Exception as e:
@@ -222,8 +222,7 @@ def on_auth_error(conn: HTTPConnection, exc: AuthenticationError) -> JSONRespons
     Returns:
         JSON response with Agent Protocol error format
     """
-    # Use debug level to reduce noise from browser/health check requests
-    logger.debug(f"Authentication error for {conn.url}: {exc}")
+    logger.warning(f"Authentication error for {conn.url}: {exc}")
 
     return JSONResponse(
         status_code=401,

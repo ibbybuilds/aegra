@@ -113,6 +113,7 @@ PUBLIC_PATHS = {
     "/live",
     "/info",
     "/ready",
+    "/favicon.ico",
 }
 
 
@@ -237,7 +238,7 @@ async def general_exception_handler(_request: Request, exc: Exception) -> JSONRe
 @app.get("/")
 @app.head("/")
 async def root() -> dict[str, str]:
-    """Root endpoint with HEAD support for health checks"""
+    """Root endpoint - supports GET and HEAD for health checks"""
     return {"message": "Aegra", "version": "0.1.0", "status": "running"}
 
 

@@ -77,7 +77,7 @@ elif AUTH_TYPE == "custom":
             authorization = authorization.decode("utf-8")
 
         if not authorization:
-            logger.warning("Missing Authorization header")
+            logger.debug("Missing Authorization header")
             raise Auth.exceptions.HTTPException(
                 status_code=401, detail="Authorization header required"
             )

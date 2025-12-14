@@ -235,8 +235,9 @@ async def general_exception_handler(_request: Request, exc: Exception) -> JSONRe
 
 
 @app.get("/")
+@app.head("/")
 async def root() -> dict[str, str]:
-    """Root endpoint"""
+    """Root endpoint with HEAD support for health checks"""
     return {"message": "Aegra", "version": "0.1.0", "status": "running"}
 
 

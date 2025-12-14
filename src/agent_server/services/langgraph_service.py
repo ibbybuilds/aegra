@@ -31,28 +31,33 @@ class LangGraphService:
     async def initialize(self):
         """Load configuration file and setup graph registry.
 
+        Uses shared config loading logic to ensure consistency.
         Resolution order:
         1) AEGRA_CONFIG env var (absolute or relative path)
         2) Explicit self.config_path if it exists
         3) aegra.json in CWD
         4) langgraph.json in CWD (fallback)
         """
-        # 1) Env var override
+        from ..config import _resolve_config_path
+
+        # Priority: env var > explicit config_path > shared resolution
+        resolved_path: Path | None = None
+
+        # 1) Check env var first (via shared resolution logic)
+        env_resolved = _resolve_config_path()
+
+        # 2) If env var was set, use it (even if file doesn't exist yet - let error happen later)
         env_path = os.getenv("AEGRA_CONFIG")
-        resolved_path: Path
-        if env_path:
-            resolved_path = Path(env_path)
-        # 2) Provided path if exists
+        if env_path and env_resolved and env_resolved == Path(env_path):
+            resolved_path = env_resolved
+        # 3) Otherwise check explicit config_path (if provided and exists)
         elif self.config_path and Path(self.config_path).exists():
             resolved_path = Path(self.config_path)
-        # 3) aegra.json if present
-        elif Path("aegra.json").exists():
-            resolved_path = Path("aegra.json")
-        # 4) fallback to langgraph.json
+        # 4) Otherwise use shared resolution (fallback to aegra.json/langgraph.json)
         else:
-            resolved_path = Path("langgraph.json")
+            resolved_path = env_resolved
 
-        if not resolved_path.exists():
+        if not resolved_path or not resolved_path.exists():
             raise ValueError(
                 "Configuration file not found. Expected one of: "
                 "AEGRA_CONFIG path, ./aegra.json, or ./langgraph.json"
@@ -239,6 +244,16 @@ class LangGraphService:
         if self.config is None:
             return []
         return self.config.get("dependencies", [])
+
+    def get_http_config(self) -> dict[str, Any] | None:
+        """Get HTTP configuration from loaded config file.
+
+        Returns:
+            HTTP configuration dict or None if not configured
+        """
+        if self.config is None:
+            return None
+        return self.config.get("http")
 
 
 # Global service instance

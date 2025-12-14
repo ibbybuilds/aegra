@@ -25,15 +25,25 @@ from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.routing import Mount, Route
 
 from .api.assistants import router as assistants_router
 from .api.runs import router as runs_router
 from .api.store import router as store_router
 from .api.threads import router as threads_router
+from .config import HttpConfig, load_http_config
+from .core.app_loader import load_custom_app
 from .core.auth_middleware import get_auth_backend, on_auth_error
 from .core.database import db_manager
 from .core.health import router as health_router
+from .core.route_merger import (
+    merge_exception_handlers,
+    merge_lifespans,
+    merge_routes,
+    update_openapi_spec,
+)
 from .middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
 from .models.errors import AgentProtocolError, get_error_type
 from .observability.base import get_observability_manager
@@ -79,46 +89,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await db_manager.close()
 
 
-# Create FastAPI application
-app = FastAPI(
-    title="Aegra",
-    description="Aegra: Production-ready Agent Protocol server built on LangGraph",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
-
-app.add_middleware(StructLogMiddleware)
-app.add_middleware(CorrelationIdMiddleware)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add middleware to handle double-encoded JSON from frontend
-app.add_middleware(DoubleEncodedJSONMiddleware)
-
-# Add authentication middleware (must be added after CORS)
-app.add_middleware(
-    AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
-)
-
-# Include routers
-app.include_router(health_router, prefix="", tags=["Health"])
-app.include_router(assistants_router, prefix="", tags=["Assistants"])
-app.include_router(threads_router, prefix="", tags=["Threads"])
-app.include_router(runs_router, prefix="", tags=["Runs"])
-app.include_router(store_router, prefix="", tags=["Store"])
-
-
-# Error handling
-@app.exception_handler(HTTPException)
+# Define core exception handlers
 async def agent_protocol_exception_handler(
     _request: Request, exc: HTTPException
 ) -> JSONResponse:
@@ -133,7 +104,6 @@ async def agent_protocol_exception_handler(
     )
 
 
-@app.exception_handler(Exception)
 async def general_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions"""
     return JSONResponse(
@@ -146,15 +116,172 @@ async def general_exception_handler(_request: Request, exc: Exception) -> JSONRe
     )
 
 
-@app.get("/")
-async def root() -> dict[str, str]:
+exception_handlers = {
+    HTTPException: agent_protocol_exception_handler,
+    Exception: general_exception_handler,
+}
+
+
+# Define shadowable routes (can be overridden by custom routes)
+async def root_handler() -> dict[str, str]:
     """Root endpoint"""
     return {"message": "Aegra", "version": "0.1.0", "status": "running"}
 
 
-if __name__ == "__main__":
-    import os
+# Extract routes from health router - these are already Starlette-compatible
+health_routes = [route for route in health_router.routes if hasattr(route, "path")]
 
+# Filter routes by path for priority ordering
+unshadowable_health_routes = [
+    route for route in health_routes if route.path in ["/health", "/ready", "/live"]
+]
+shadowable_health_routes = [route for route in health_routes if route.path == "/info"]
+
+shadowable_routes = [
+    Route("/", root_handler, methods=["GET"]),
+] + shadowable_health_routes
+
+# Define unshadowable routes (health endpoints - always accessible)
+unshadowable_routes = unshadowable_health_routes
+
+# Create protected routes mount (core API routes)
+# Extract routes from routers for the mount
+protected_routes = []
+for router in [assistants_router, threads_router, runs_router, store_router]:
+    protected_routes.extend(router.routes)
+
+protected_mount = Mount(
+    "",
+    routes=protected_routes,
+    middleware=[
+        Middleware(
+            AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
+        )
+    ],
+)
+
+# Load HTTP configuration
+http_config: HttpConfig | None = load_http_config()
+
+# Try to load custom app if configured
+user_app = None
+if http_config and http_config.get("app"):
+    try:
+        user_app = load_custom_app(http_config["app"])
+        logger.info("Custom app loaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to load custom app: {e}", exc_info=True)
+        raise
+
+# Create application
+if user_app:
+    # Merge custom app with Aegra routes
+    app = user_app
+
+    # Merge routes with priority order
+    app = merge_routes(
+        user_app=app,
+        unshadowable_routes=unshadowable_routes,
+        shadowable_routes=shadowable_routes,
+        protected_mount=protected_mount,
+    )
+
+    # Merge lifespans
+    app = merge_lifespans(app, lifespan)
+
+    # Merge exception handlers
+    app = merge_exception_handlers(app, exception_handlers)
+
+    # Update OpenAPI spec if FastAPI
+    update_openapi_spec(app)
+
+    # Merge middleware - add Aegra middleware to user app
+    # Note: User's middleware is already in user_app.user_middleware
+    app.add_middleware(StructLogMiddleware)
+    app.add_middleware(CorrelationIdMiddleware)
+
+    # Apply CORS configuration
+    cors_config = http_config.get("cors") if http_config else None
+    if cors_config:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_config.get("allow_origins", ["*"]),
+            allow_credentials=cors_config.get("allow_credentials", True),
+            allow_methods=cors_config.get("allow_methods", ["*"]),
+            allow_headers=cors_config.get("allow_headers", ["*"]),
+            expose_headers=cors_config.get("expose_headers", []),
+            max_age=cors_config.get("max_age", 600),
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    app.add_middleware(DoubleEncodedJSONMiddleware)
+
+    # Apply auth middleware to custom routes if enabled
+    enable_custom_route_auth = (
+        http_config.get("enable_custom_route_auth", False) if http_config else False
+    )
+    if enable_custom_route_auth:
+        app.add_middleware(
+            AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
+        )
+
+else:
+    # Standard Aegra app without custom routes
+    app = FastAPI(
+        title="Aegra",
+        description="Production-ready Agent Protocol server built on LangGraph",
+        version="0.1.0",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(StructLogMiddleware)
+    app.add_middleware(CorrelationIdMiddleware)
+
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Add middleware to handle double-encoded JSON from frontend
+    app.add_middleware(DoubleEncodedJSONMiddleware)
+
+    # Add authentication middleware (must be added after CORS)
+    app.add_middleware(
+        AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
+    )
+
+    # Include routers
+    app.include_router(health_router, prefix="", tags=["Health"])
+    app.include_router(assistants_router, prefix="", tags=["Assistants"])
+    app.include_router(threads_router, prefix="", tags=["Threads"])
+    app.include_router(runs_router, prefix="", tags=["Runs"])
+    app.include_router(store_router, prefix="", tags=["Store"])
+
+    # Add exception handlers
+    for exc_type, handler in exception_handlers.items():
+        app.exception_handler(exc_type)(handler)
+
+    # Add root endpoint
+    @app.get("/")
+    async def root() -> dict[str, str]:
+        """Root endpoint"""
+        return {"message": "Aegra", "version": "0.1.0", "status": "running"}
+
+
+if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", "8000"))

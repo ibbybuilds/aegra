@@ -38,6 +38,8 @@ services:
       - ./auth.py:/app/auth.py:ro
       - ./.env:/app/.env:ro
       - ./alembic:/app/alembic:ro # for migrations
+      # Mount custom route files dynamically (add your custom routes file here)
+      - ./custom_routes_example.py:/app/custom_routes_example.py:ro
     command: >
       sh -c "
         echo 'Running database migrations...' &&

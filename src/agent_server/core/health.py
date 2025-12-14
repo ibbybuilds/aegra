@@ -2,9 +2,11 @@
 
 import contextlib
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
+
+from .database import db_manager
 
 router = APIRouter()
 
@@ -29,7 +31,7 @@ class InfoResponse(BaseModel):
 
 
 @router.get("/info", response_model=InfoResponse)
-async def info() -> InfoResponse:
+async def info(_request: Request) -> InfoResponse:
     """Simple service information endpoint"""
     return InfoResponse(
         name="Aegra",
@@ -41,11 +43,8 @@ async def info() -> InfoResponse:
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check() -> dict[str, str]:
-    """Comprehensive health check endpoint"""
-    # Import here to avoid circular dependency
-    from .database import db_manager
-
+async def health_check(_request: Request) -> dict[str, str]:
+    """Core health check handler logic"""
     health_status = {
         "status": "healthy",
         "database": "unknown",
@@ -96,10 +95,8 @@ async def health_check() -> dict[str, str]:
 
 
 @router.get("/ready")
-async def readiness_check() -> dict[str, str]:
+async def readiness_check(_request: Request) -> dict[str, str]:
     """Kubernetes readiness probe endpoint"""
-    from .database import db_manager
-
     # Engine must exist and respond to a trivial query
     if not db_manager.engine:
         raise HTTPException(
@@ -135,6 +132,6 @@ async def readiness_check() -> dict[str, str]:
 
 
 @router.get("/live")
-async def liveness_check() -> dict[str, str]:
+async def liveness_check(_request: Request) -> dict[str, str]:
     """Kubernetes liveness probe endpoint"""
     return {"status": "alive"}

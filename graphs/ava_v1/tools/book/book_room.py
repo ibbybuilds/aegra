@@ -179,7 +179,7 @@ async def book_room(
             return json.dumps(error_result, indent=2)
 
     # Build request to polling service
-    poll_service_url = os.getenv("POLL_SERVICE_URL", "http://localhost:8080")
+    poll_service_url = os.getenv("POLLING_SERVICE_URL", "http://localhost:8080")
     endpoint = f"{poll_service_url}/v1/book"
 
     request_body = {

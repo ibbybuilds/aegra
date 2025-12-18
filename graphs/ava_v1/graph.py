@@ -1,7 +1,7 @@
 """Graph configuration for ava_v1 agent."""
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware
+from langchain.agents.middleware import SummarizationMiddleware, ModelFallbackMiddleware
 from langchain.chat_models import init_chat_model
 from langgraph.graph.state import CompiledStateGraph
 
@@ -12,7 +12,7 @@ from ava_v1.tools import book_room, hotel_details, hotel_search, modify_call, qu
 
 
 model = init_chat_model(
-    "claude-haiku-4-5-20251001",
+    "anthropic:claude-haiku-4-5-20251001",
     temperature=0.3,
     timeout=30,
     max_retries=3
@@ -24,11 +24,19 @@ agent: CompiledStateGraph = create_agent(
     model=model,
     tools=[hotel_search, rooms_and_rates, query_vfs, hotel_details, book_room, modify_call],
     system_prompt=TRAVEL_ASSISTANT_PROMPT,  # Base prompt (will be replaced by dynamic prompt)
-    middleware=[SummarizationMiddleware(            
-        model=summarization_model,
-        trigger=("tokens", 4000),
-        keep=("messages", 10),), 
-        customize_agent_prompt],  # Dynamic prompt based on CallContext
+    middleware=[
+        SummarizationMiddleware(
+            model=summarization_model,
+            max_tokens_before_summary=4000,
+            messages_to_keep=10,
+        ),
+        ModelFallbackMiddleware(
+            "anthropic:claude-haiku-3-5",
+            "google_genai:gemini-2.5-flash-lite",
+            "gpt-4o-mini",
+        ),
+        customize_agent_prompt,
+    ],  # Dynamic prompt based on CallContext
     state_schema=AvaV1State,
 )
 

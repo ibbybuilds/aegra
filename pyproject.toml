@@ -46,6 +46,7 @@ dependencies = [
     "uvicorn>=0.35.0",
     # LangChain/LangGraph extensions not provided by ava-core
     "langchain-anthropic>=1.0.3",
+    "langchain-google-genai>=2.0.0",
     "langchain-openai>=1.0.3",
     "langgraph-checkpoint>=3.0.1",
     "langgraph-checkpoint-postgres>=3.0.1",

@@ -115,6 +115,12 @@ async def query_vfs(
     logger.info(f"  active_searches in state: {list(active_searches.keys())}")
     logger.info("=" * 80)
 
+    # Forced delay to ensure polling service has time to fetch results
+    import asyncio
+    logger.info("[QUERY_VFS] Waiting 10 seconds for results to be ready...")
+    await asyncio.sleep(10)
+    logger.info("[QUERY_VFS] Proceeding with query...")
+
     # Check if destination is a room search composite key first - resolve from context_stack
     if not search_id and destination and ":rooms:" in destination:
         # Format: "Miami:rooms:15335119"

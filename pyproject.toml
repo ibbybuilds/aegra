@@ -50,6 +50,10 @@ dependencies = [
     "langgraph-checkpoint>=3.0.1",
     "langgraph-checkpoint-postgres>=3.0.1",
     "langgraph-prebuilt>=1.0.2",
+    # Redis for ava_v1 caching (hotel searches, booking state, price tokens)
+    "redis[hiredis]>=5.0.0",
+    # Jinja2 for ava_v1 dynamic prompt templates
+    "jinja2>=3.1.0",
 ]
 
 [project.urls]

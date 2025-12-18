@@ -44,8 +44,15 @@ services:
       - AUTH_TYPE=noop
       - DEBUG=true
       - PORT=${PORT:-8000}
+      # Redis configuration for ava_v1
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
@@ -62,15 +69,19 @@ services:
         uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
       "
 
-  # Redis (optional - for advanced queuing in future phases)
+  # Redis Stack (required for ava_v1 graph - includes RedisJSON, RedisSearch, etc.)
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack:latest
     ports:
       - "6379:6379"
+      - "8001:8001"  # RedisInsight UI
     volumes:
       - redis_data:/data
-    profiles:
-      - redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   postgres_data:

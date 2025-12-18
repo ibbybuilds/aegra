@@ -157,7 +157,7 @@ async def redis_get_json_compressed(key: str) -> Optional[Dict[str, Any]]:
         # Decompress and parse JSON
         json_bytes = gzip.decompress(compressed_value)
         return json.loads(json_bytes.decode('utf-8'))
-    except (redis.RedisError, gzip.error, json.JSONDecodeError) as e:
+    except (redis.RedisError, gzip.BadGzipFile, json.JSONDecodeError) as e:
         print(f"Redis get compressed error for key {key}: {e}")
         return None
     except Exception as e:
@@ -204,7 +204,7 @@ async def redis_set_json_compressed(
 
         await pool.disconnect()
         return True
-    except (redis.RedisError, gzip.error, json.JSONEncodeError) as e:
+    except (redis.RedisError, gzip.BadGzipFile, json.JSONEncodeError) as e:
         print(f"Redis set compressed error for key {key}: {e}")
         return False
     except Exception as e:

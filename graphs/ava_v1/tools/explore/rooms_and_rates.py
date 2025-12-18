@@ -106,28 +106,28 @@ async def _start_rooms_polling_job(
     return data
 
 
-@tool(description="Retrieve room inventory and rates for a single hotel")
-async def rooms_and_rates(
+@tool(description="Start room search - initiates room search and returns status (does not return room results)")
+async def start_room_search(
     hotel_id: str,
     search_key: str,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Retrieve room inventory and rates for a single hotel.
+    """Start room search - initiates room search but does NOT return room results.
 
     PURPOSE:
-        Initiate room and rate lookup for a specific hotel. This tool returns immediately
-        with a status and optional firstRoom preview. CRITICAL: The firstRoom preview is
-        INCOMPLETE and CANNOT be used for booking. You MUST call query_vfs() after engaging
-        the user to get complete room data with token and rate_key.
+        Initiate room search for a specific hotel. This tool does NOT return room results -
+        it returns immediately with a status and optional firstRoom preview. CRITICAL: The
+        firstRoom preview is INCOMPLETE and CANNOT be used for booking. You MUST call
+        query_vfs() after engaging the user to get complete room data with token and rate_key.
 
     PARAMETERS:
         hotel_id (str): Hotel ID from either:
             - query_vfs results after hotel search (the "id" field)
-            - hotel_search resolvedHotelId (when name_resolved status)
-        search_key (str): Search key from hotel_search response
+            - start_hotel_search resolvedHotelId (when name_resolved status)
+        search_key (str): Search key from start_hotel_search response
             - Simple format: "Miami" (for full destination searches)
             - Composite format: "Miami:JW Marriott" (for name-resolved searches)
-            - IMPORTANT: Use the exact searchKey from hotel_search response
+            - IMPORTANT: Use the exact searchKey from start_hotel_search response
         runtime: Injected tool runtime for accessing agent state
 
     RETURNS:
@@ -174,9 +174,9 @@ async def rooms_and_rates(
         available = list(active_searches.keys())
         hint = ""
         if available:
-            hint = f" Available searches: {', '.join(available)}. Use the search_key from hotel_search response."
+            hint = f" Available searches: {', '.join(available)}. Use the search_key from start_hotel_search response."
         else:
-            hint = " Run hotel_search first to create a search."
+            hint = " Run start_hotel_search first to create a search."
 
         error_result = {
             "status": "error",
@@ -256,6 +256,9 @@ async def rooms_and_rates(
         if "name" in cached_rooms:
             result["hotelName"] = cached_rooms["name"]
 
+        # Add hint for next action
+        result["hint"] = f"Room data available. firstRoom is a preview only. Ask user about room preferences (refundable/non-refundable, bed type), then call query_vfs(destination=\"{search_key}:rooms:{hotel_id}\") to get complete booking data."
+
         # Update active_searches with roomSearchId
         updated_search_meta = {**search_meta, "roomSearchId": room_search_hash}
 
@@ -300,7 +303,8 @@ async def rooms_and_rates(
             "status": "polling",
             "checkIn": search_params["checkIn"],
             "checkOut": search_params["checkOut"],
-            "occupancy": search_params["occupancy"]
+            "occupancy": search_params["occupancy"],
+            "hint": f"Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type, floor preference) while search runs. Call query_vfs(destination=\"{search_key}:rooms:{hotel_id}\") after user responds."
         }
 
         # Update active_searches with roomSearchId

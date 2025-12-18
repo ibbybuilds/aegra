@@ -30,13 +30,13 @@ async def query_vfs(
 
     PURPOSE:
         This is the PRIMARY tool for retrieving complete search results with all fields
-        required for booking. CRITICAL: The firstRoom preview from rooms_and_rates is
+        required for booking. CRITICAL: The firstRoom preview from start_room_search is
         incomplete and CANNOT be used for booking - you MUST call query_vfs to get
         complete room data with token and rate_key before calling book_room.
 
     PARAMETERS:
         search_id (str, optional): Direct search ID from previous search response
-            - Example: "abc123" (the searchId field from hotel_search or rooms_and_rates)
+            - Example: "abc123" (the searchId field from start_hotel_search or start_room_search)
         destination (str, optional): Destination name or composite key
             - Simple format: "Miami" (resolves to hotel search results)
             - Composite format: "Miami:rooms:15335119" (resolves to room search results)
@@ -91,7 +91,7 @@ async def query_vfs(
         - Token is at TOP LEVEL of response, NOT inside room objects
         - rate_key is INSIDE each room object in results array
         - To book a room, you need BOTH: response.token AND response.results[0].rate_key
-        - The firstRoom field from rooms_and_rates is a PREVIEW ONLY - it lacks token
+        - The firstRoom field from start_room_search is a PREVIEW ONLY - it lacks token
     """
     logger.info("=" * 80)
     logger.info(f"[QUERY_VFS] Tool called with:")
@@ -117,8 +117,8 @@ async def query_vfs(
 
     # Forced delay to ensure polling service has time to fetch results
     import asyncio
-    logger.info("[QUERY_VFS] Waiting 10 seconds for results to be ready...")
-    await asyncio.sleep(10)
+    logger.info("[QUERY_VFS] Waiting 5 seconds for results to be ready...")
+    await asyncio.sleep(5)
     logger.info("[QUERY_VFS] Proceeding with query...")
 
     # Check if destination is a room search composite key first - resolve from context_stack
@@ -137,7 +137,7 @@ async def query_vfs(
             if not search_id:
                 result = {
                     "error": "room_search_not_found",
-                    "message": f"No room search found for hotel {hotel_id}. Run rooms_and_rates(hotel_id, search_key) first to initiate room search."
+                    "message": f"No room search found for hotel {hotel_id}. Run start_room_search(hotel_id, search_key) first to initiate room search."
                 }
                 return json.dumps(result, indent=2)
 
@@ -151,9 +151,9 @@ async def query_vfs(
             available = list(active_searches.keys())
             hint = ""
             if available:
-                hint = f" Available searches: {', '.join(available)}. Use one of these keys or run hotel_search first."
+                hint = f" Available searches: {', '.join(available)}. Use one of these keys or run start_hotel_search first."
             else:
-                hint = " Run hotel_search first to create a search."
+                hint = " Run start_hotel_search first to create a search."
 
             result = {
                 "error": "search_not_found",
@@ -166,7 +166,7 @@ async def query_vfs(
         if len(active_searches) == 0:
             result = {
                 "error": "missing_parameter",
-                "message": "Must provide either search_id or destination. No active searches found. Run hotel_search first to create a search."
+                "message": "Must provide either search_id or destination. No active searches found. Run start_hotel_search first to create a search."
             }
             return json.dumps(result, indent=2)
         elif len(active_searches) == 1:
@@ -377,6 +377,17 @@ async def query_vfs(
             # Add token separately for room searches
             if room_token:
                 response["token"] = room_token
+                # Add hint for room searches
+                if isinstance(results, list) and len(results) > 0:
+                    response["hint"] = "Room search complete. Present room options to user with prices and refund policies. When user selects a room, use this response to build the room object for book_room() - extract token from top level and rate_key from the room object."
+                else:
+                    response["hint"] = "No rooms available for this hotel. Suggest alternative hotels or different dates to the user."
+            else:
+                # Add hint for hotel searches
+                if isinstance(results, list) and len(results) > 0:
+                    response["hint"] = "Hotel search complete. Present hotel options to user with prices, ratings, and amenities. When user selects a hotel, call start_room_search(hotel_id, search_key) to check room availability."
+                else:
+                    response["hint"] = "No hotels found. Suggest adjusting search criteria (dates, location, budget) to the user."
 
             # Add warning if returning partial results due to error
             if partial_due_to_error:

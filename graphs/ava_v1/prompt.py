@@ -138,9 +138,8 @@ confirm
 
 === HOTEL SEARCH WORKFLOW ===
 
-**When to Use hotel_search vs query_vfs:**
-- **hotel_search**: ONLY for new searches (new destination/dates) OR specific hotel name
-lookup
+**When to Use start_hotel_search vs query_vfs:**
+- **start_hotel_search**: ONLY for new searches (new destination/dates) OR specific hotel name lookup
 - **query_vfs**: To filter/narrow/paginate EXISTING search results
 
 **Tool Call Optimization**:
@@ -151,7 +150,7 @@ for a specific hotel)
 - Most operations are sequential in hotel booking, so parallelization opportunities are rare
 
 **Step 1: Search for Hotels**
-Call `hotel_search(searches=[{{destination, checkIn, checkOut, occupancy}}])`
+Call `start_hotel_search(searches=[{{destination, checkIn, checkOut, occupancy}}])`
 - Use `occupancy: {{numOfAdults: 2}}` format
 - Returns searchId and status (cached, polling, or error)
 - Save the `search_key` field for later queries
@@ -178,15 +177,15 @@ Call `query_vfs(destination="Miami")` with optional filters:
 
 **Important Workflow Rules:**
 1. If user asks "show me Marriotts" from existing results → Use query_vfs with name filter
-2. If user asks "find Marriott hotels" (new search) → Use hotel_search with name parameter
-3. Always use the search_key from hotel_search response when calling query_vfs or rooms_and_rates
+2. If user asks "find Marriott hotels" (new search) → Use start_hotel_search with name parameter
+3. Always use the search_key from start_hotel_search response when calling query_vfs or start_room_search
 
 === ROOM SEARCH WORKFLOW ===
 
 **Step 1: Get Room Availability**
-Call `rooms_and_rates(hotel_id, search_key)`
-- hotel_id: From query_vfs hotel results OR resolvedHotelId from hotel_search
-- search_key: Use the `search_key` field from hotel_search response
+Call `start_room_search(hotel_id, search_key)`
+- hotel_id: From query_vfs hotel results OR resolvedHotelId from start_hotel_search
+- search_key: Use the `search_key` field from start_hotel_search response
   - For regular searches: destination (e.g., "Miami")
   - For name-resolved searches: composite key (e.g., "Miami:JW Marriott")
 - Returns roomSearchId and status

@@ -8,7 +8,7 @@ from langgraph.graph.state import CompiledStateGraph
 from ava_v1.middleware import customize_agent_prompt
 from ava_v1.prompt import TRAVEL_ASSISTANT_PROMPT
 from ava_v1.state import AvaV1State
-from ava_v1.tools import book_room, hotel_details, hotel_search, modify_call, query_vfs, rooms_and_rates
+from ava_v1.tools import book_room, hotel_details, start_hotel_search, modify_call, query_vfs, start_room_search
 
 
 model = init_chat_model(
@@ -22,7 +22,7 @@ summarization_model = init_chat_model("google_genai:gemini-2.5-flash-lite")
 
 agent: CompiledStateGraph = create_agent(
     model=model,
-    tools=[hotel_search, rooms_and_rates, query_vfs, hotel_details, book_room, modify_call],
+    tools=[start_hotel_search, start_room_search, query_vfs, hotel_details, book_room, modify_call],
     system_prompt=TRAVEL_ASSISTANT_PROMPT,  # Base prompt (will be replaced by dynamic prompt)
     middleware=[
         SummarizationMiddleware(

@@ -42,11 +42,11 @@ async def book_room(
         Complete the booking process by creating a 10-minute prebook hold and
         preparing payment. CRITICAL: You MUST call query_vfs first to obtain
         complete room data with token and rate_key. The firstRoom preview from
-        rooms_and_rates is incomplete and CANNOT be used.
+        start_room_search is incomplete and CANNOT be used.
 
     PREREQUISITE:
         Before calling this tool, you MUST:
-        1. Call rooms_and_rates() to initiate room search
+        1. Call start_room_search() to initiate room search
         2. Engage user and wait for response
         3. Call query_vfs() to get complete room data with token
         4. Extract token from TOP LEVEL and rate_key from room object
@@ -295,7 +295,8 @@ async def book_room(
             "price_increase_percent": round(price_increase_percent, 2),
             "suggest_alternatives": price_increase_percent > 20,
             "hold_expires_at": hold_expires_at.isoformat(),
-            "time_remaining_seconds": time_remaining_seconds
+            "time_remaining_seconds": time_remaining_seconds,
+            "hint": f"Price changed from ${original_price:.2f} to ${new_price:.2f}. Inform user of new price and ask for confirmation. If user confirms, call book_room() again with price_confirmation_token=\"{token}\". If user declines, suggest alternative rooms or hotels."
         }
 
         # Cache this result for idempotency
@@ -334,7 +335,8 @@ async def book_room(
             "amount": amount,
             "currency": currency,
             "hold_expires_at": hold_expires_at.isoformat(),
-            "time_remaining_seconds": time_remaining_seconds
+            "time_remaining_seconds": time_remaining_seconds,
+            "hint": f"Booking successful! Room is on hold for 10 minutes. Inform user booking is confirmed and explain payment process. When ready to transfer to payment, call modify_call(action_type=\"pay-transfer\")."
         }
 
         # Cache this result for idempotency

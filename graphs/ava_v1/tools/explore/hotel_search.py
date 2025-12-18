@@ -457,7 +457,8 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "checkIn": search["checkIn"],
                 "checkOut": search["checkOut"],
                 "occupancy": search["occupancy"],
-                "message": f"Found {hotel_name_from_lookup}. Ready to check room availability."
+                "message": f"Found {hotel_name_from_lookup}. Ready to check room availability.",
+                "hint": f"Hotel identified. Skip query_vfs and call start_room_search(hotel_id=\"{resolved_hotel_id}\", search_key=\"{destination}\") directly to check room availability."
             }
 
         elif confidence == "low":
@@ -515,7 +516,8 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "checkOut": search["checkOut"],
                 "occupancy": search["occupancy"],
                 "geoHash": geo_hash,
-                "message": f"Found {hotel_count} hotels (from recent search)."
+                "message": f"Found {hotel_count} hotels (from recent search).",
+                "hint": f"Results are ready. Call query_vfs(destination=\"{destination}\") to retrieve and present hotels to the user."
             }
 
         # Cache miss - initiate new search
@@ -533,7 +535,8 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
             "checkIn": search["checkIn"],
             "checkOut": search["checkOut"],
             "occupancy": search["occupancy"],
-            "geoHash": geo_hash
+            "geoHash": geo_hash,
+            "hint": f"Search initiated. Ask user about preferences (budget, amenities, location) while search runs in background. Call query_vfs(destination=\"{destination}\") after user responds."
         }
 
         # Add optional fields if present
@@ -565,12 +568,12 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
         }
 
 
-@tool(description="Initiate hotel searches - returns immediately with search status")
-async def hotel_search(
+@tool(description="Start hotel search - initiates search and returns status (does not return hotel results)")
+async def start_hotel_search(
     searches: List[HotelSearchParams],
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Initiate hotel searches - returns immediately with search status.
+    """Start hotel search - initiates search but does NOT return hotel results.
 
     PURPOSE:
         Initiate hotel searches for a destination. This tool does NOT wait for complete
@@ -578,7 +581,7 @@ async def hotel_search(
         the user to retrieve and filter results.
 
         If user provides a hotel name (e.g., "JW Marriott"), this tool will attempt
-        to resolve it directly, allowing you to skip straight to rooms_and_rates().
+        to resolve it directly, allowing you to skip straight to start_room_search().
 
     PARAMETERS:
         searches: List of search dictionaries, each containing:
@@ -651,7 +654,7 @@ async def hotel_search(
                 active_searches[label]["resolvedHotelId"] = search_result.get("resolvedHotelId")
                 active_searches[label]["resolvedHotelName"] = search_result.get("resolvedHotelName")
 
-            # Add search_key to the result so LLM knows what to use for rooms_and_rates
+            # Add search_key to the result so LLM knows what to use for start_room_search
             search_result["search_key"] = label
 
         searches_metadata.append(search_result)

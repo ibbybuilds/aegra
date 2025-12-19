@@ -6,6 +6,7 @@ from ava_v1.tools.detail.hotel_details import hotel_details
 from ava_v1.tools.explore.hotel_search import start_hotel_search
 from ava_v1.tools.explore.query_vfs import query_vfs
 from ava_v1.tools.explore.rooms_and_rates import start_room_search
+from ava_v1.tools.search.internet_search import internet_search
 
 __all__ = [
     # Explore tools
@@ -18,4 +19,6 @@ __all__ = [
     "book_room",
     # Call management tools
     "modify_call",
+    # Search tools
+    "internet_search",
 ]

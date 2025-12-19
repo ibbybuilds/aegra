@@ -2,10 +2,10 @@
 
 import hashlib
 import json
-from typing import Any, Dict
+from typing import Any
 
 
-def _generate_booking_hash(room: Dict[str, Any]) -> str:
+def _generate_booking_hash(room: dict[str, Any]) -> str:
     """Generate deterministic hash from room object.
 
     Hash components: hotel_id + rate_key + token
@@ -28,7 +28,7 @@ def _generate_booking_hash(room: Dict[str, Any]) -> str:
     return hash_object.hexdigest()[:12]
 
 
-def canonical_api_hash(search_params: Dict[str, Any]) -> str:
+def canonical_api_hash(search_params: dict[str, Any]) -> str:
     """Generate a canonical hash for API search parameters.
 
     Creates a deterministic hash by normalizing and sorting all parameters.
@@ -61,7 +61,7 @@ def canonical_api_hash(search_params: Dict[str, Any]) -> str:
         if "numOfAdults" in occupancy:
             normalized_occupancy["num_adults"] = occupancy["numOfAdults"]
 
-        # Optional: numOfRooms
+        # Optional: numOfRooms  # noqa: ERA001
         if "numOfRooms" in occupancy:
             normalized_occupancy["num_rooms"] = occupancy["numOfRooms"]
 
@@ -82,7 +82,7 @@ def canonical_api_hash(search_params: Dict[str, Any]) -> str:
     return full_hash[:12]
 
 
-def canonical_rooms_hash(hotel_id: str, search_params: Dict[str, Any]) -> str:
+def canonical_rooms_hash(hotel_id: str, search_params: dict[str, Any]) -> str:
     """Generate a canonical hash for room search parameters.
 
     Matches the Go polling service hash pattern exactly:

@@ -63,7 +63,7 @@ def modify_call(
         >>> modify_call(action_type="pay-transfer")
     """
     logger.info("=" * 80)
-    logger.info(f"[MODIFY_CALL] Tool called with:")
+    logger.info("[MODIFY_CALL] Tool called with:")
     logger.info(f"  action_type: {action_type}")
     logger.info("=" * 80)
 
@@ -93,7 +93,7 @@ def modify_call(
 
     # Handle pay-transfer (requires booking details from context_stack)
     if action_type == "pay-transfer":
-        logger.info(f"[modify_call] Handling pay-transfer")
+        logger.info("[modify_call] Handling pay-transfer")
 
         # Get context_stack from runtime state (or empty list if runtime is None)
         context_stack = runtime.state.get("context_stack", []) if runtime else []
@@ -168,7 +168,7 @@ def modify_call(
         return json.dumps(result, indent=2)
 
     # Fallback (should never reach here)
-    logger.warning(f"[modify_call] WARNING: Reached fallback case")
+    logger.warning("[modify_call] WARNING: Reached fallback case")
     result = {
         "status": "error",
         "error": {

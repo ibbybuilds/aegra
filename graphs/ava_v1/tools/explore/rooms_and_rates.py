@@ -1,26 +1,26 @@
 """Room inventory and rate tool for hotels."""
 
-import httpx
 import json
 import logging
 import os
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any
 
+import httpx
+import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from ava_v1.shared_libraries.context_helpers import prepare_room_list_push
+from ava_v1.shared_libraries.hashing import canonical_rooms_hash
+
 # Import redis_client and shared libraries
 from ava_v1.shared_libraries.redis_client import get_redis_pool
-import redis.asyncio as redis_async
-
-from ava_v1.shared_libraries.hashing import canonical_rooms_hash
-from ava_v1.shared_libraries.context_helpers import prepare_room_list_push
 
 logger = logging.getLogger(__name__)
 
 
-async def _check_redis_cache_rooms(room_search_hash: str) -> Optional[Dict[str, Any]]:
+async def _check_redis_cache_rooms(room_search_hash: str) -> dict[str, Any] | None:
     """Check Redis JSON cache for existing room/rate results.
 
     Args:
@@ -60,14 +60,13 @@ async def _check_redis_cache_rooms(room_search_hash: str) -> Optional[Dict[str, 
 
 
 async def _start_rooms_polling_job(
-    hotel_id: str, search_params: Dict[str, Any], room_search_hash: str
-) -> Dict[str, Any]:
+    hotel_id: str, search_params: dict[str, Any]
+) -> dict[str, Any]:
     """Send request to Go polling service to start room/rate polling job.
 
     Args:
         hotel_id: Hotel ID (e.g., "39615853")
         search_params: Dict with checkIn, checkOut, occupancy
-        room_search_hash: Redis cache key (canonical hash, without 'rooms:' prefix)
 
     Returns:
         Dict with polling metadata
@@ -138,7 +137,7 @@ async def start_room_search(
         - You MUST call query_vfs() after this tool to get complete room data
     """
     logger.info("=" * 80)
-    logger.info(f"[ROOMS_AND_RATES] Tool called with:")
+    logger.info("[ROOMS_AND_RATES] Tool called with:")
     logger.info(f"  hotel_id: {hotel_id}")
     logger.info(f"  search_key: {search_key}")
     logger.info("=" * 80)
@@ -296,10 +295,9 @@ async def start_room_search(
 
     # Cache MISS - start polling job
     try:
-        polling_response = await _start_rooms_polling_job(
+        await _start_rooms_polling_job(
             hotel_id=hotel_id,
             search_params=search_params,
-            room_search_hash=room_search_hash,
         )
 
         result = {

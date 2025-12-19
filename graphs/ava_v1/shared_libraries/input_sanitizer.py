@@ -1,9 +1,9 @@
 """Input sanitization utilities for handling malformed tool inputs."""
 
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 
-def normalize_search_params(search: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_search_params(search: dict[str, Any]) -> dict[str, Any]:
     """Normalize search parameters from snake_case to camelCase.
 
     Handles both snake_case (check_in, check_out, adults) and camelCase
@@ -85,7 +85,7 @@ def normalize_dict_keys(obj: Any) -> Any:
         return obj
 
 
-def sanitize_tool_input(data: Union[Dict, List]) -> Union[Dict, List]:
+def sanitize_tool_input(data: Union[dict, list]) -> Union[dict, list]:
     """Sanitize tool input by normalizing malformed keys.
 
     Primary entry point for cleaning tool inputs before processing.

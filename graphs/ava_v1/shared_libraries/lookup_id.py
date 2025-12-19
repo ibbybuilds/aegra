@@ -1,10 +1,11 @@
 """Hotel ID lookup utility for resolving natural-language hotel names to hotel IDs."""
 
+from typing import Any
+
 import httpx
-from typing import Any, Dict, List
 
 
-async def lookup_id(query: str, city_hint: str) -> Dict[str, Any]:
+async def lookup_id(query: str, city_hint: str) -> dict[str, Any]:
     """Query hotel names to resolve natural-language hotel names to hotel IDs.
 
     Takes a query string (hotel name) and city string, returns hotel information

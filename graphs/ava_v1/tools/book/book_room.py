@@ -1,16 +1,21 @@
 """Book room tool for initiating hotel room bookings with price verification."""
 
+import contextlib
 import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any
 
 import httpx
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
+
+from ava_v1.shared_libraries.context_helpers import prepare_booking_pending_push
+from ava_v1.shared_libraries.hashing import _generate_booking_hash
+from ava_v1.shared_libraries.input_sanitizer import sanitize_tool_input
 
 # Import redis_client and shared libraries
 from ava_v1.shared_libraries.redis_client import (
@@ -18,15 +23,10 @@ from ava_v1.shared_libraries.redis_client import (
     redis_get_json,
     redis_set_json,
 )
-
 from ava_v1.shared_libraries.validation import (
-    _validate_email,
-    _validate_room_object,
     _validate_customer_info,
+    _validate_room_object,
 )
-from ava_v1.shared_libraries.hashing import _generate_booking_hash
-from ava_v1.shared_libraries.input_sanitizer import sanitize_tool_input
-from ava_v1.shared_libraries.context_helpers import prepare_booking_pending_push
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
     description="Initiate hotel room booking with price verification and payment setup"
 )
 async def book_room(
-    room: Dict[str, Any],
-    customer_info: Dict[str, Any],
+    room: dict[str, Any],
+    customer_info: dict[str, Any],
     payment_type: str,
     session_id: str = None,
     price_confirmation_token: str = None,
@@ -85,7 +85,7 @@ async def book_room(
         Command with state updates containing booking metadata
     """
     logger.info("=" * 80)
-    logger.info(f"[BOOK_ROOM] Tool called with:")
+    logger.info("[BOOK_ROOM] Tool called with:")
     logger.info(f"  room: {room}")
     logger.info(f"  customer_info: {customer_info}")
     logger.info(f"  payment_type: {payment_type}")
@@ -129,7 +129,7 @@ async def book_room(
 
     # Check idempotency - prevent duplicate bookings
     try:
-        redis_client = get_redis_client()
+        get_redis_client()
         idempotency_key = f"booking_attempt:{booking_hash}:{session_id}"
 
         # Check if this exact booking attempt already exists
@@ -278,16 +278,14 @@ async def book_room(
             "hash": booking_hash,
             "original_price": original_price,
             "new_price": new_price,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
-        try:
+        with contextlib.suppress(Exception):
             await redis_set_json(token_key, token_data, ttl_seconds=600)
-        except Exception:
-            pass
 
         # Calculate hold expiry
-        hold_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        hold_expires_at = datetime.now(UTC) + timedelta(minutes=10)
         time_remaining_seconds = 600
 
         result = {
@@ -304,10 +302,8 @@ async def book_room(
         }
 
         # Cache this result for idempotency
-        try:
+        with contextlib.suppress(Exception):
             await redis_set_json(idempotency_key, result, ttl_seconds=600)
-        except Exception:
-            pass
 
         return json.dumps(result, indent=2)
 
@@ -323,7 +319,7 @@ async def book_room(
             payment_link = f"<SMS_PAYMENT_LINK:{s3_key}>"
 
         # Calculate hold expiry
-        hold_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        hold_expires_at = datetime.now(UTC) + timedelta(minutes=10)
         time_remaining_seconds = 600
 
         # Get amount from poll response or estimate
@@ -340,14 +336,12 @@ async def book_room(
             "currency": currency,
             "hold_expires_at": hold_expires_at.isoformat(),
             "time_remaining_seconds": time_remaining_seconds,
-            "hint": f'Booking successful! Room is on hold for 10 minutes. Inform user booking is confirmed and explain payment process. When ready to transfer to payment, call modify_call(action_type="pay-transfer").',
+            "hint": 'Booking successful! Room is on hold for 10 minutes. Inform user booking is confirmed and explain payment process. When ready to transfer to payment, call modify_call(action_type="pay-transfer").',
         }
 
         # Cache this result for idempotency
-        try:
+        with contextlib.suppress(Exception):
             await redis_set_json(idempotency_key, result, ttl_seconds=600)
-        except Exception:
-            pass
 
         if runtime is None:
             return json.dumps(result, indent=2)

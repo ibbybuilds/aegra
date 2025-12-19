@@ -1,7 +1,7 @@
 """Validation utilities for the ava travel assistant."""
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 def _validate_email(email: str) -> bool:
@@ -18,7 +18,7 @@ def _validate_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-def _validate_room_object(room: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _validate_room_object(room: dict[str, Any]) -> dict[str, Any] | None:
     """Validate room object has all required fields.
 
     Returns:
@@ -92,8 +92,8 @@ def _validate_room_object(room: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _validate_customer_info(
-    customer_info: Dict[str, Any], payment_type: str
-) -> Optional[Dict[str, Any]]:
+    customer_info: dict[str, Any], payment_type: str
+) -> dict[str, Any] | None:
     """Validate customer info has all required fields.
 
     Args:

@@ -1,9 +1,9 @@
 """Context stack management helpers for automatic context tracking."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def context_matches(ctx1: Dict[str, Any], ctx2: Dict[str, Any]) -> bool:
+def context_matches(ctx1: dict[str, Any], ctx2: dict[str, Any]) -> bool:
     """Check if two context objects are the same.
 
     Contexts match if they have the same type and same identifier fields.
@@ -27,8 +27,8 @@ def context_matches(ctx1: Dict[str, Any], ctx2: Dict[str, Any]) -> bool:
 
 
 def prepare_hotel_list_push(
-    search_key: str, context_stack: List[Dict[str, Any]]
-) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    search_key: str, context_stack: list[dict[str, Any]]
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Prepare to push HotelList context, handling pops if needed.
 
     Args:
@@ -56,8 +56,8 @@ def prepare_room_list_push(
     search_key: str,
     hotel_id: str,
     room_search_id: str,
-    context_stack: List[Dict[str, Any]],
-) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    context_stack: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Prepare to push RoomList context, handling pops if needed.
 
     Args:
@@ -89,8 +89,8 @@ def prepare_room_list_push(
 
 
 def prepare_hotel_details_push(
-    hotel_id: str, context_stack: List[Dict[str, Any]]
-) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    hotel_id: str, context_stack: list[dict[str, Any]]
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Prepare to push HotelDetails context.
 
     Args:
@@ -117,8 +117,8 @@ def prepare_booking_pending_push(
     hold_expires_at: str,
     amount: float,
     s3_key: str,
-    context_stack: List[Dict[str, Any]],
-) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    context_stack: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Prepare to push BookingPending context, replacing old booking if exists.
 
     Args:

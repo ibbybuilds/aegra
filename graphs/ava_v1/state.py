@@ -6,6 +6,7 @@ This module defines the state schema for the ava_v1 agent:
 """
 
 from typing import Annotated, NotRequired
+
 from langgraph.graph import MessagesState
 
 
@@ -74,7 +75,7 @@ class AvaV1State(MessagesState):
     """
 
     # ADK-style label-based search tracking
-    # Format: {"Miami": {...}, "Miami:JW Marriott": {...}}
+    # Format: {"Miami": {...}, "Miami:JW Marriott": {...}}  # noqa: ERA001
     active_searches: NotRequired[Annotated[dict[str, dict], merge_dicts]]
 
     # ADK-style conversational context tracking

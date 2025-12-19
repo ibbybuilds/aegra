@@ -1,7 +1,7 @@
 """Graph configuration for ava_v1 agent."""
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware, ModelFallbackMiddleware
+from langchain.agents.middleware import ModelFallbackMiddleware, SummarizationMiddleware
 from langchain.chat_models import init_chat_model
 from langgraph.graph.state import CompiledStateGraph
 
@@ -11,12 +11,11 @@ from ava_v1.state import AvaV1State
 from ava_v1.tools import (
     book_room,
     hotel_details,
-    start_hotel_search,
     modify_call,
     query_vfs,
+    start_hotel_search,
     start_room_search,
 )
-
 
 model = init_chat_model(
     "anthropic:claude-haiku-4-5-20251001", temperature=0.3, timeout=30, max_retries=3

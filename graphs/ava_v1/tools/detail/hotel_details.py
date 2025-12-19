@@ -3,27 +3,27 @@
 import json
 import logging
 import os
-from typing import Annotated, Optional
+from typing import Annotated
 
 import httpx
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from ava_v1.shared_libraries.context_helpers import prepare_hotel_details_push
+
 # Import redis_client
 from ava_v1.shared_libraries.redis_client import (
     redis_get_json_compressed,
     redis_set_json_compressed,
 )
-
 from ava_v1.shared_libraries.redis_helpers import _filter_hotel_details
-from ava_v1.shared_libraries.context_helpers import prepare_hotel_details_push
 
 logger = logging.getLogger(__name__)
 
 
 def _wrap_response(
-    result: dict, hotel_id: str, runtime: Optional[ToolRuntime]
+    result: dict, hotel_id: str, runtime: ToolRuntime | None
 ) -> Command | str:
     """Wrap response in Command with context management or return JSON string.
 
@@ -116,7 +116,7 @@ async def hotel_details(
         }
     """
     logger.info("=" * 80)
-    logger.info(f"[HOTEL_DETAILS] Tool called with:")
+    logger.info("[HOTEL_DETAILS] Tool called with:")
     logger.info(f"  hotel_id: {hotel_id}")
     logger.info("=" * 80)
 

@@ -1,9 +1,9 @@
 """Redis and data filtering utilities for the ava travel assistant."""
 
-from typing import Any, Dict
+from typing import Any
 
 
-def _filter_hotel_details(raw_data: Dict[str, Any]) -> Dict[str, Any]:
+def _filter_hotel_details(raw_data: dict[str, Any]) -> dict[str, Any]:
     """Filter hotel details API response to include only relevant fields.
 
     Args:

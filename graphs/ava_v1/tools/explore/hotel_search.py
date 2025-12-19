@@ -2,31 +2,31 @@
 
 import asyncio
 import hashlib
-import httpx
 import json
-import jwt
 import logging
 import os
 import time
 import uuid
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any
 
+import httpx
+import jwt
+import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field, model_validator
 
-# Import redis_client and shared libraries
-from ava_v1.shared_libraries.redis_client import (
-    redis_get_json_compressed,
-    redis_set_json_compressed,
-    get_redis_pool,
-)
-import redis.asyncio as redis_async
-
+from ava_v1.shared_libraries.context_helpers import prepare_hotel_list_push
 from ava_v1.shared_libraries.hashing import canonical_api_hash
 from ava_v1.shared_libraries.lookup_id import lookup_id
-from ava_v1.shared_libraries.context_helpers import prepare_hotel_list_push
+
+# Import redis_client and shared libraries
+from ava_v1.shared_libraries.redis_client import (
+    get_redis_pool,
+    redis_get_json_compressed,
+    redis_set_json_compressed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,11 @@ class HotelSearchParams(BaseModel):
         description="Check-out date in YYYY-MM-DD format (e.g., '2026-01-06')",
         alias="check_out",
     )
-    occupancy: Optional[Dict[str, int]] = Field(
+    occupancy: dict[str, int] | None = Field(
         default=None,
         description="Occupancy details with numOfAdults (e.g., {'numOfAdults': 2})",
     )
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Optional hotel name for direct lookup (e.g., 'JW Marriott')",
     )
@@ -58,14 +58,13 @@ class HotelSearchParams(BaseModel):
     @classmethod
     def convert_adults_to_occupancy(cls, data: Any) -> Any:
         """Convert 'adults' field to 'occupancy' structure if needed."""
-        if isinstance(data, dict):
-            # If 'adults' is provided but 'occupancy' is not, convert it
-            if "adults" in data and "occupancy" not in data:
-                adults = data["adults"]
-                # Convert to int if it's a float with no decimal part
-                if isinstance(adults, float) and adults.is_integer():
-                    adults = int(adults)
-                data["occupancy"] = {"numOfAdults": adults}
+        # If 'adults' is provided but 'occupancy' is not, convert it
+        if isinstance(data, dict) and "adults" in data and "occupancy" not in data:
+            adults = data["adults"]
+            # Convert to int if it's a float with no decimal part
+            if isinstance(adults, float) and adults.is_integer():
+                adults = int(adults)
+            data["occupancy"] = {"numOfAdults": adults}
         return data
 
     class Config:
@@ -243,7 +242,7 @@ async def get_geo_coordinates(destination: str) -> str:
         return json.dumps(result, indent=2)
 
 
-async def _check_redis_cache(search_hash: str) -> Optional[List[Dict[str, Any]]]:
+async def _check_redis_cache(search_hash: str) -> list[dict[str, Any]] | None:
     """Check Redis JSON cache for existing search results.
 
     Args:
@@ -278,7 +277,7 @@ async def _check_redis_cache(search_hash: str) -> Optional[List[Dict[str, Any]]]
         return None
 
 
-async def _init_hotel_search(search: Dict[str, Any], geo_data: Dict[str, Any]) -> str:
+async def _init_hotel_search(search: dict[str, Any], geo_data: dict[str, Any]) -> str:
     """Initialize hotel search by calling the init API endpoint.
 
     Args:
@@ -362,7 +361,7 @@ def _generate_jwt_token() -> str:
 
 async def _start_polling_job(
     token: str, search_hash: str, destination: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Send token to Go polling service to start background polling job.
 
     Args:
@@ -413,7 +412,7 @@ async def _start_polling_job(
         return response_data
 
 
-async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | None:
     """Process a single hotel search - initiate or return cached.
 
     Args:
@@ -594,7 +593,7 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
     description="Start hotel search - initiates search and returns status (does not return hotel results)"
 )
 async def start_hotel_search(
-    searches: List[HotelSearchParams],
+    searches: list[HotelSearchParams],
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
     """Start hotel search - initiates search but does NOT return hotel results.
@@ -652,11 +651,8 @@ async def start_hotel_search(
         if search_result["status"] == "name_resolved":
             hotel_name = search_result.get("resolvedHotelName")
             # Only create composite key if we have a valid hotel name
-            if hotel_name:
-                label = f"{base_label}:{hotel_name}"
-            else:
-                # If name resolution failed, treat as error - don't store
-                label = None
+            # If name resolution failed, treat as error - don't store
+            label = f"{base_label}:{hotel_name}" if hotel_name else None
         else:
             label = base_label
 

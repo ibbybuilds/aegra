@@ -4,11 +4,11 @@ import json
 import logging
 from typing import Annotated
 
+import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 
 # Import redis_client
 from ava_v1.shared_libraries.redis_client import get_redis_pool
-import redis.asyncio as redis_async
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ async def query_vfs(
         - The firstRoom field from start_room_search is a PREVIEW ONLY - it lacks token
     """
     logger.info("=" * 80)
-    logger.info(f"[QUERY_VFS] Tool called with:")
+    logger.info("[QUERY_VFS] Tool called with:")
     logger.info(f"  search_id: {search_id}")
     logger.info(f"  destination: {destination}")
     logger.info(f"  jsonpath: {jsonpath}")
@@ -124,7 +124,7 @@ async def query_vfs(
 
     # Check if destination is a room search composite key first - resolve from context_stack
     if not search_id and destination and ":rooms:" in destination:
-        # Format: "Miami:rooms:15335119"
+        # Format: "Miami:rooms:15335119"  # noqa: ERA001
         parts = destination.split(":rooms:")
         if len(parts) == 2:
             _, hotel_id = parts

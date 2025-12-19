@@ -3,7 +3,7 @@
 import gzip
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 import redis.asyncio as redis
 from dotenv import load_dotenv
@@ -18,8 +18,8 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 
 # Global connection pool (singleton)
-_redis_pool: Optional[redis.ConnectionPool] = None
-_redis_client: Optional[redis.Redis] = None
+_redis_pool: redis.ConnectionPool | None = None
+_redis_client: redis.Redis | None = None
 
 
 def get_redis_pool() -> redis.ConnectionPool:
@@ -54,7 +54,7 @@ def get_redis_client() -> redis.Redis:
     return _redis_client
 
 
-async def redis_get_json(key: str) -> Optional[Dict[str, Any]]:
+async def redis_get_json(key: str) -> dict[str, Any] | None:
     """Get a JSON value from Redis.
 
     Args:
@@ -78,7 +78,7 @@ async def redis_get_json(key: str) -> Optional[Dict[str, Any]]:
 
 
 async def redis_set_json(
-    key: str, value: Dict[str, Any], ttl_seconds: Optional[int] = None
+    key: str, value: dict[str, Any], ttl_seconds: int | None = None
 ) -> bool:
     """Set a JSON value in Redis with optional TTL.
 
@@ -127,7 +127,7 @@ async def redis_exists(key: str) -> bool:
         return False
 
 
-async def redis_get_json_compressed(key: str) -> Optional[Dict[str, Any]]:
+async def redis_get_json_compressed(key: str) -> dict[str, Any] | None:
     """Get a compressed JSON value from Redis.
 
     Args:
@@ -166,7 +166,7 @@ async def redis_get_json_compressed(key: str) -> Optional[Dict[str, Any]]:
 
 
 async def redis_set_json_compressed(
-    key: str, value: Dict[str, Any], ttl_seconds: Optional[int] = None
+    key: str, value: dict[str, Any], ttl_seconds: int | None = None
 ) -> bool:
     """Set a compressed JSON value in Redis with optional TTL.
 

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any
 
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
@@ -11,7 +11,7 @@ from langgraph.types import Command
 logger = logging.getLogger(__name__)
 
 
-def _context_matches(ctx1: Dict[str, Any], ctx2: Dict[str, Any]) -> bool:
+def _context_matches(ctx1: dict[str, Any], ctx2: dict[str, Any]) -> bool:
     """Check if two context objects are the same.
 
     Contexts match if they have the same type and same identifier fields.
@@ -36,7 +36,7 @@ def _context_matches(ctx1: Dict[str, Any], ctx2: Dict[str, Any]) -> bool:
 
 @tool(description="Push a new focus object onto the context_stack")
 def push_context(
-    context_object: Dict[str, Any],
+    context_object: dict[str, Any],
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
     """Push a new focus object onto the context_stack.
@@ -82,7 +82,7 @@ def push_context(
         ... })
     """
     logger.info("=" * 80)
-    logger.info(f"[PUSH_CONTEXT] Tool called with:")
+    logger.info("[PUSH_CONTEXT] Tool called with:")
     logger.info(f"  context_object: {context_object}")
     logger.info("=" * 80)
 
@@ -95,7 +95,7 @@ def push_context(
         return json.dumps(error_result, indent=2)
 
     # Validate that at least one identifier exists
-    identifiers = {k for k in context_object.keys() if k != "type"}
+    identifiers = {k for k in context_object if k != "type"}
     if not identifiers:
         error_result = {
             "error": "invalid_context",
@@ -193,7 +193,7 @@ def pop_context(
         ]
     """
     logger.info("=" * 80)
-    logger.info(f"[POP_CONTEXT] Tool called with:")
+    logger.info("[POP_CONTEXT] Tool called with:")
     logger.info(f"  levels: {levels}")
     logger.info("=" * 80)
 

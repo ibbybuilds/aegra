@@ -42,7 +42,7 @@ async def _check_redis_cache_rooms(room_search_hash: str) -> Optional[Dict[str, 
             return None
 
         # Get data using Redis JSON
-        result = await redis_client.execute_command('JSON.GET', redis_key, '$')
+        result = await redis_client.execute_command("JSON.GET", redis_key, "$")
 
         if result:
             # Parse JSON result
@@ -60,9 +60,7 @@ async def _check_redis_cache_rooms(room_search_hash: str) -> Optional[Dict[str, 
 
 
 async def _start_rooms_polling_job(
-    hotel_id: str,
-    search_params: Dict[str, Any],
-    room_search_hash: str
+    hotel_id: str, search_params: Dict[str, Any], room_search_hash: str
 ) -> Dict[str, Any]:
     """Send request to Go polling service to start room/rate polling job.
 
@@ -86,27 +84,27 @@ async def _start_rooms_polling_job(
         "checkIn": search_params["checkIn"],
         "checkOut": search_params["checkOut"],
         "occupancy": search_params["occupancy"],
-        "hotelId": int(hotel_id)  # Convert to int for API
+        "hotelId": int(hotel_id),  # Convert to int for API
     }
 
     # Make async POST request
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            endpoint,
-            json=request_body,
-            timeout=30.0
-        )
+        response = await client.post(endpoint, json=request_body, timeout=30.0)
         response.raise_for_status()
         data = response.json()
 
     # Validate response
     if "error" in data:
-        raise Exception(f"Polling service error: {data.get('message', 'Unknown error')}")
+        raise Exception(
+            f"Polling service error: {data.get('message', 'Unknown error')}"
+        )
 
     return data
 
 
-@tool(description="Start room search - initiates room search and returns status (does not return room results)")
+@tool(
+    description="Start room search - initiates room search and returns status (does not return room results)"
+)
 async def start_room_search(
     hotel_id: str,
     search_key: str,
@@ -151,8 +149,8 @@ async def start_room_search(
             "status": "error",
             "error": {
                 "type": "invalid_hotel_id",
-                "message": "hotel_id must be a non-empty string"
-            }
+                "message": "hotel_id must be a non-empty string",
+            },
         }
         return json.dumps(error_result, indent=2)
 
@@ -161,8 +159,8 @@ async def start_room_search(
             "status": "error",
             "error": {
                 "type": "invalid_search_key",
-                "message": "search_key must be a non-empty string"
-            }
+                "message": "search_key must be a non-empty string",
+            },
         }
         return json.dumps(error_result, indent=2)
 
@@ -182,8 +180,8 @@ async def start_room_search(
             "status": "error",
             "error": {
                 "type": "search_key_not_found",
-                "message": f"No active search found for '{search_key}'.{hint}"
-            }
+                "message": f"No active search found for '{search_key}'.{hint}",
+            },
         }
         return json.dumps(error_result, indent=2)
 
@@ -202,8 +200,8 @@ async def start_room_search(
                     "status": "error",
                     "error": {
                         "type": "search_expired",
-                        "message": f"Hotel search for '{search_key}' has expired. Please run a new search."
-                    }
+                        "message": f"Hotel search for '{search_key}' has expired. Please run a new search.",
+                    },
                 }
                 return json.dumps(error_result, indent=2)
     except Exception as e:
@@ -217,8 +215,8 @@ async def start_room_search(
             "status": "error",
             "error": {
                 "type": "missing_parameters",
-                "message": f"Search key '{search_key}' missing required fields: {', '.join(missing)}"
-            }
+                "message": f"Search key '{search_key}' missing required fields: {', '.join(missing)}",
+            },
         }
         return json.dumps(error_result, indent=2)
 
@@ -226,7 +224,7 @@ async def start_room_search(
     search_params = {
         "checkIn": search_meta["checkIn"],
         "checkOut": search_meta["checkOut"],
-        "occupancy": search_meta["occupancy"]
+        "occupancy": search_meta["occupancy"],
     }
 
     # Generate canonical hash
@@ -247,7 +245,7 @@ async def start_room_search(
             "roomCount": len(rooms_array),
             "checkIn": search_params["checkIn"],
             "checkOut": search_params["checkOut"],
-            "occupancy": search_params["occupancy"]
+            "occupancy": search_params["occupancy"],
         }
 
         # Add first room and hotel name if available
@@ -257,7 +255,9 @@ async def start_room_search(
             result["hotelName"] = cached_rooms["name"]
 
         # Add hint for next action
-        result["hint"] = f"Room data available. firstRoom is a preview only. Ask user about room preferences (refundable/non-refundable, bed type), then call query_vfs(destination=\"{search_key}:rooms:{hotel_id}\") to get complete booking data."
+        result["hint"] = (
+            f'Room data available. firstRoom is a preview only. Ask user about room preferences (refundable/non-refundable, bed type), then call query_vfs(destination="{search_key}:rooms:{hotel_id}") to get complete booking data.'
+        )
 
         # Update active_searches with roomSearchId
         updated_search_meta = {**search_meta, "roomSearchId": room_search_hash}
@@ -272,10 +272,12 @@ async def start_room_search(
         )
 
         update_dict = {
-            "messages": [ToolMessage(
-                content=json.dumps(result, indent=2),
-                tool_call_id=runtime.tool_call_id
-            )],
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(result, indent=2),
+                    tool_call_id=runtime.tool_call_id,
+                )
+            ],
             "active_searches": {
                 search_key: updated_search_meta
             },  # Will be merged by merge_dicts reducer
@@ -283,8 +285,12 @@ async def start_room_search(
 
         if context_to_push:
             # Need to push - replace stack and append new context
-            update_dict["context_stack"] = {"__replace__": new_stack + [context_to_push]}
-            logger.info(f"[ROOMS_AND_RATES] Pushing RoomList({search_key}, {hotel_id}) to context stack")
+            update_dict["context_stack"] = {
+                "__replace__": new_stack + [context_to_push]
+            }
+            logger.info(
+                f"[ROOMS_AND_RATES] Pushing RoomList({search_key}, {hotel_id}) to context stack"
+            )
 
         return Command(update=update_dict)
 
@@ -293,7 +299,7 @@ async def start_room_search(
         polling_response = await _start_rooms_polling_job(
             hotel_id=hotel_id,
             search_params=search_params,
-            room_search_hash=room_search_hash
+            room_search_hash=room_search_hash,
         )
 
         result = {
@@ -304,7 +310,7 @@ async def start_room_search(
             "checkIn": search_params["checkIn"],
             "checkOut": search_params["checkOut"],
             "occupancy": search_params["occupancy"],
-            "hint": f"Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type, floor preference) while search runs. Call query_vfs(destination=\"{search_key}:rooms:{hotel_id}\") after user responds."
+            "hint": f'Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type, floor preference) while search runs. Call query_vfs(destination="{search_key}:rooms:{hotel_id}") after user responds.',
         }
 
         # Update active_searches with roomSearchId
@@ -320,10 +326,12 @@ async def start_room_search(
         )
 
         update_dict = {
-            "messages": [ToolMessage(
-                content=json.dumps(result, indent=2),
-                tool_call_id=runtime.tool_call_id
-            )],
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(result, indent=2),
+                    tool_call_id=runtime.tool_call_id,
+                )
+            ],
             "active_searches": {
                 search_key: updated_search_meta
             },  # Will be merged by merge_dicts reducer
@@ -331,8 +339,12 @@ async def start_room_search(
 
         if context_to_push:
             # Need to push - replace stack and append new context
-            update_dict["context_stack"] = {"__replace__": new_stack + [context_to_push]}
-            logger.info(f"[ROOMS_AND_RATES] Pushing RoomList({search_key}, {hotel_id}) to context stack")
+            update_dict["context_stack"] = {
+                "__replace__": new_stack + [context_to_push]
+            }
+            logger.info(
+                f"[ROOMS_AND_RATES] Pushing RoomList({search_key}, {hotel_id}) to context stack"
+            )
 
         return Command(update=update_dict)
 
@@ -341,7 +353,7 @@ async def start_room_search(
             "status": "error",
             "error": {
                 "type": "polling_service_error",
-                "message": f"Failed to start room search: {str(e)}"
-            }
+                "message": f"Failed to start room search: {str(e)}",
+            },
         }
         return json.dumps(error_result, indent=2)

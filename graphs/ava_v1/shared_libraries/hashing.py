@@ -20,11 +20,11 @@ def _generate_booking_hash(room: Dict[str, Any]) -> str:
     hash_input = {
         "hotel_id": str(room["hotel_id"]),
         "rate_key": room["rate_key"],
-        "token": room["token"]
+        "token": room["token"],
     }
 
-    canonical_string = json.dumps(hash_input, sort_keys=True, separators=(',', ':'))
-    hash_object = hashlib.md5(canonical_string.encode('utf-8'))
+    canonical_string = json.dumps(hash_input, sort_keys=True, separators=(",", ":"))
+    hash_object = hashlib.md5(canonical_string.encode("utf-8"))
     return hash_object.hexdigest()[:12]
 
 
@@ -72,10 +72,10 @@ def canonical_api_hash(search_params: Dict[str, Any]) -> str:
         normalized["occupancy"] = normalized_occupancy
 
     # Convert to JSON with sorted keys for deterministic output
-    canonical_string = json.dumps(normalized, sort_keys=True, separators=(',', ':'))
+    canonical_string = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
 
     # Generate MD5 hash (fast and sufficient for Redis key generation)
-    hash_object = hashlib.md5(canonical_string.encode('utf-8'))
+    hash_object = hashlib.md5(canonical_string.encode("utf-8"))
     full_hash = hash_object.hexdigest()
 
     # Truncate to 12 characters for compact Redis keys
@@ -119,13 +119,15 @@ def canonical_rooms_hash(hotel_id: str, search_params: Dict[str, Any]) -> str:
         str(hotel_id),
         search_params["checkIn"],
         search_params["checkOut"],
-        str(occupancy["numOfAdults"])
+        str(occupancy["numOfAdults"]),
     ]
 
     # Add childAges if present (format: [age1 age2 ...])
     if "childAges" in occupancy and occupancy["childAges"]:
         # Format as [5 8] with space separation
-        child_ages_str = "[" + " ".join(str(age) for age in occupancy["childAges"]) + "]"
+        child_ages_str = (
+            "[" + " ".join(str(age) for age in occupancy["childAges"]) + "]"
+        )
         parts.append(child_ages_str)
 
     # Add numOfRooms if present
@@ -133,5 +135,5 @@ def canonical_rooms_hash(hotel_id: str, search_params: Dict[str, Any]) -> str:
         parts.append(str(occupancy["numOfRooms"]))
 
     canonical_string = "-".join(parts)
-    hash_object = hashlib.md5(canonical_string.encode('utf-8'))
+    hash_object = hashlib.md5(canonical_string.encode("utf-8"))
     return hash_object.hexdigest()[:12]

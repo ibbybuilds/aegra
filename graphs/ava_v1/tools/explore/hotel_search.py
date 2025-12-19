@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 from ava_v1.shared_libraries.redis_client import (
     redis_get_json_compressed,
     redis_set_json_compressed,
-    get_redis_pool
+    get_redis_pool,
 )
 import redis.asyncio as redis_async
 
@@ -39,33 +39,33 @@ class HotelSearchParams(BaseModel):
     )
     checkIn: str = Field(
         description="Check-in date in YYYY-MM-DD format (e.g., '2026-01-04')",
-        alias="check_in"
+        alias="check_in",
     )
     checkOut: str = Field(
         description="Check-out date in YYYY-MM-DD format (e.g., '2026-01-06')",
-        alias="check_out"
+        alias="check_out",
     )
     occupancy: Optional[Dict[str, int]] = Field(
         default=None,
-        description="Occupancy details with numOfAdults (e.g., {'numOfAdults': 2})"
+        description="Occupancy details with numOfAdults (e.g., {'numOfAdults': 2})",
     )
     name: Optional[str] = Field(
         default=None,
-        description="Optional hotel name for direct lookup (e.g., 'JW Marriott')"
+        description="Optional hotel name for direct lookup (e.g., 'JW Marriott')",
     )
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def convert_adults_to_occupancy(cls, data: Any) -> Any:
         """Convert 'adults' field to 'occupancy' structure if needed."""
         if isinstance(data, dict):
             # If 'adults' is provided but 'occupancy' is not, convert it
-            if 'adults' in data and 'occupancy' not in data:
-                adults = data['adults']
+            if "adults" in data and "occupancy" not in data:
+                adults = data["adults"]
                 # Convert to int if it's a float with no decimal part
                 if isinstance(adults, float) and adults.is_integer():
                     adults = int(adults)
-                data['occupancy'] = {'numOfAdults': adults}
+                data["occupancy"] = {"numOfAdults": adults}
         return data
 
     class Config:
@@ -88,7 +88,7 @@ def geo_destination_hash(destination: str) -> str:
     normalized = " ".join(destination.lower().strip().split())
 
     # Generate MD5 hash
-    hash_object = hashlib.md5(normalized.encode('utf-8'))
+    hash_object = hashlib.md5(normalized.encode("utf-8"))
     full_hash = hash_object.hexdigest()
 
     # Truncate to 12 characters for compact Redis keys
@@ -114,7 +114,10 @@ async def get_geo_coordinates(destination: str) -> str:
     try:
         # Validate inputs
         if not destination or not destination.strip():
-            result = {"error": "invalid_input", "message": "Destination query cannot be empty"}
+            result = {
+                "error": "invalid_input",
+                "message": "Destination query cannot be empty",
+            }
             return json.dumps(result, indent=2)
 
         # Generate hash for Redis cache key
@@ -131,7 +134,10 @@ async def get_geo_coordinates(destination: str) -> str:
         # Get Google API key from environment variables
         google_api_key = os.getenv("GOOGLE_API_KEY")
         if not google_api_key:
-            result = {"error": "configuration", "message": "GOOGLE_API_KEY not configured"}
+            result = {
+                "error": "configuration",
+                "message": "GOOGLE_API_KEY not configured",
+            }
             return json.dumps(result, indent=2)
 
         # Prepare request body
@@ -159,7 +165,10 @@ async def get_geo_coordinates(destination: str) -> str:
         places = data.get("places", [])
 
         if not places:
-            result = {"error": "no_results", "message": f"No places found for '{destination}'"}
+            result = {
+                "error": "no_results",
+                "message": f"No places found for '{destination}'",
+            }
             return json.dumps(result, indent=2)
 
         # Format the first place result
@@ -171,7 +180,9 @@ async def get_geo_coordinates(destination: str) -> str:
         address_components = place.get("addressComponents", [])
         for component in address_components:
             if "country" in component.get("types", []):
-                country_code = component.get("shortText", "").upper()  # ISO 3166-1 alpha-2
+                country_code = component.get(
+                    "shortText", ""
+                ).upper()  # ISO 3166-1 alpha-2
                 break
 
         geo_data = {
@@ -184,15 +195,24 @@ async def get_geo_coordinates(destination: str) -> str:
 
         # Validate that we got coordinates
         if geo_data["latitude"] is None or geo_data["longitude"] is None:
-            result = {"error": "no_coordinates", "message": f"No coordinates found for '{destination}'"}
+            result = {
+                "error": "no_coordinates",
+                "message": f"No coordinates found for '{destination}'",
+            }
             return json.dumps(result, indent=2)
 
         # Country gating validation
-        gating_enabled = os.getenv("HOTEL_SEARCH_COUNTRY_GATING_ENABLED", "true").lower() == "true"
+        gating_enabled = (
+            os.getenv("HOTEL_SEARCH_COUNTRY_GATING_ENABLED", "true").lower() == "true"
+        )
 
         if gating_enabled and country_code:
-            allowed_countries = os.getenv("HOTEL_SEARCH_ALLOWED_COUNTRIES", "US").upper().split(",")
-            allowed_countries = [c.strip() for c in allowed_countries]  # Clean whitespace
+            allowed_countries = (
+                os.getenv("HOTEL_SEARCH_ALLOWED_COUNTRIES", "US").upper().split(",")
+            )
+            allowed_countries = [
+                c.strip() for c in allowed_countries
+            ]  # Clean whitespace
 
             if country_code not in allowed_countries:
                 error_response = {
@@ -200,7 +220,7 @@ async def get_geo_coordinates(destination: str) -> str:
                     "country": country_code,
                     "destination": destination,
                     "message": f"Hotel search is currently only available in: {', '.join(allowed_countries)}. "
-                               f"The destination '{destination}' is in {country_code}."
+                    f"The destination '{destination}' is in {country_code}.",
                 }
                 # Don't cache errors - user might be testing different destinations
                 return json.dumps(error_response, indent=2)
@@ -245,9 +265,7 @@ async def _check_redis_cache(search_hash: str) -> Optional[List[Dict[str, Any]]]
             return None
 
         # Get data using Redis JSON
-        cached_data = await redis_client.execute_command(
-            'JSON.GET', redis_key
-        )
+        cached_data = await redis_client.execute_command("JSON.GET", redis_key)
 
         if cached_data:
             return json.loads(cached_data)
@@ -284,9 +302,9 @@ async def _init_hotel_search(search: Dict[str, Any], geo_data: Dict[str, Any]) -
         "circularRegion": {
             "centerLat": geo_data["latitude"],
             "centerLong": geo_data["longitude"],
-            "radiusInKM": 50  # Hardcoded 50km radius
+            "radiusInKM": 50,  # Hardcoded 50km radius
         },
-        "countryOfResidence": "US"
+        "countryOfResidence": "US",
     }
 
     # Build headers
@@ -295,7 +313,7 @@ async def _init_hotel_search(search: Dict[str, Any], geo_data: Dict[str, Any]) -
         "accountId": os.getenv("HOTEL_API_ACCOUNT_ID", "test-hotels-account-v2"),
         "channelId": os.getenv("HOTEL_API_CHANNEL_ID", "test-hotels-channel-v2"),
         "Content-Type": "application/json",
-        "correlationId": correlation_id
+        "correlationId": correlation_id,
     }
 
     # Call init endpoint
@@ -304,7 +322,7 @@ async def _init_hotel_search(search: Dict[str, Any], geo_data: Dict[str, Any]) -
             "http://54.198.17.253:6001/api/hotel/availability/init",
             headers=headers,
             json=request_body,
-            timeout=30.0
+            timeout=30.0,
         )
         response.raise_for_status()
         data = response.json()
@@ -334,7 +352,7 @@ def _generate_jwt_token() -> str:
         "iss": jwt_issuer,
         "iat": current_time_ms,
         "exp": current_time_ms + (jwt_expiry_seconds * 1000),
-        "jti": f"jwt_{uuid.uuid4().hex[:8]}"
+        "jti": f"jwt_{uuid.uuid4().hex[:8]}",
     }
 
     # Generate and return JWT token
@@ -342,7 +360,9 @@ def _generate_jwt_token() -> str:
     return token
 
 
-async def _start_polling_job(token: str, search_hash: str, destination: str) -> Dict[str, Any]:
+async def _start_polling_job(
+    token: str, search_hash: str, destination: str
+) -> Dict[str, Any]:
     """Send token to Go polling service to start background polling job.
 
     Args:
@@ -358,13 +378,14 @@ async def _start_polling_job(token: str, search_hash: str, destination: str) -> 
         Exception: If polling service returns an error response
     """
     # Get polling service URL from environment
-    polling_service_url = os.getenv(
-        "POLLING_SERVICE_URL",
-        "http://localhost:8080"
-    )
+    polling_service_url = os.getenv("POLLING_SERVICE_URL", "http://localhost:8080")
 
     # Ensure search_id has "search:" prefix for Go service
-    search_id_with_prefix = f"search:{search_hash}" if not search_hash.startswith("search:") else search_hash
+    search_id_with_prefix = (
+        f"search:{search_hash}"
+        if not search_hash.startswith("search:")
+        else search_hash
+    )
 
     # Call polling service
     async with httpx.AsyncClient() as client:
@@ -373,9 +394,9 @@ async def _start_polling_job(token: str, search_hash: str, destination: str) -> 
             json={
                 "token": token,
                 "search_id": search_id_with_prefix,
-                "destination": destination
+                "destination": destination,
             },
-            timeout=5.0
+            timeout=5.0,
         )
 
         # Check for HTTP errors (400, 502, etc.)
@@ -405,7 +426,9 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
     # Validate required fields
     required_fields = ["checkIn", "checkOut", "occupancy"]
     if not all(field in search for field in required_fields):
-        logger.warning(f"[HOTEL_SEARCH] Missing required fields in search: {search}. Required: {required_fields}, Got keys: {list(search.keys())}")
+        logger.warning(
+            f"[HOTEL_SEARCH] Missing required fields in search: {search}. Required: {required_fields}, Got keys: {list(search.keys())}"
+        )
         return None
 
     # Accept both "Destination" (capital D) and "destination" (lowercase d)
@@ -431,8 +454,10 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "status": "error",
                 "error": {
                     "type": "name_lookup_failed",
-                    "message": lookup_result.get("message", "Failed to lookup hotel by name")
-                }
+                    "message": lookup_result.get(
+                        "message", "Failed to lookup hotel by name"
+                    ),
+                },
             }
 
         # Check confidence level
@@ -458,7 +483,7 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "checkOut": search["checkOut"],
                 "occupancy": search["occupancy"],
                 "message": f"Found {hotel_name_from_lookup}. Ready to check room availability.",
-                "hint": f"Hotel identified. Skip query_vfs and call start_room_search(hotel_id=\"{resolved_hotel_id}\", search_key=\"{destination}\") directly to check room availability."
+                "hint": f'Hotel identified. Skip query_vfs and call start_room_search(hotel_id="{resolved_hotel_id}", search_key="{destination}") directly to check room availability.',
             }
 
         elif confidence == "low":
@@ -469,7 +494,7 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "searchId": None,
                 "status": "clarification_needed",
                 "hotels": hotels,
-                "message": f"Found {len(hotels)} hotels matching '{search['name']}'."
+                "message": f"Found {len(hotels)} hotels matching '{search['name']}'.",
             }
 
     # Regular hotel search (no name or name lookup failed)
@@ -484,7 +509,7 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "destination": destination,
                 "searchId": None,
                 "status": "error",
-                "error": geo_data
+                "error": geo_data,
             }
 
         # Generate canonical hash for this search
@@ -495,8 +520,8 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
             "circularRegion": {
                 "centerLat": geo_data["latitude"],
                 "centerLong": geo_data["longitude"],
-                "radiusInKM": 50
-            }
+                "radiusInKM": 50,
+            },
         }
         search_hash = canonical_api_hash(search_params)
         geo_hash = geo_destination_hash(destination)
@@ -517,7 +542,7 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
                 "occupancy": search["occupancy"],
                 "geoHash": geo_hash,
                 "message": f"Found {hotel_count} hotels (from recent search).",
-                "hint": f"Results are ready. Call query_vfs(destination=\"{destination}\") to retrieve and present hotels to the user."
+                "hint": f'Results are ready. Call query_vfs(destination="{destination}") to retrieve and present hotels to the user.',
             }
 
         # Cache miss - initiate new search
@@ -536,7 +561,7 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
             "checkOut": search["checkOut"],
             "occupancy": search["occupancy"],
             "geoHash": geo_hash,
-            "hint": f"Search initiated. Ask user about preferences (budget, amenities, location) while search runs in background. Call query_vfs(destination=\"{destination}\") after user responds."
+            "hint": f'Search initiated. Ask user about preferences (budget, amenities, location) while search runs in background. Call query_vfs(destination="{destination}") after user responds.',
         }
 
         # Add optional fields if present
@@ -559,16 +584,15 @@ async def _process_single_search(search: Dict[str, Any]) -> Optional[Dict[str, A
     except Exception as e:
         return {
             "destination": destination,
-            "searchId": search_hash if 'search_hash' in locals() else None,
+            "searchId": search_hash if "search_hash" in locals() else None,
             "status": "error",
-            "error": {
-                "type": "init_failed",
-                "message": str(e)
-            }
+            "error": {"type": "init_failed", "message": str(e)},
         }
 
 
-@tool(description="Start hotel search - initiates search and returns status (does not return hotel results)")
+@tool(
+    description="Start hotel search - initiates search and returns status (does not return hotel results)"
+)
 async def start_hotel_search(
     searches: List[HotelSearchParams],
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
@@ -638,7 +662,9 @@ async def start_hotel_search(
 
         # Update active_searches state
         # Include both regular searches (with searchId) and name_resolved searches
-        if label and (search_result["searchId"] or search_result["status"] == "name_resolved"):
+        if label and (
+            search_result["searchId"] or search_result["status"] == "name_resolved"
+        ):
             active_searches[label] = {
                 "searchId": search_result["searchId"],
                 "status": search_result["status"],
@@ -646,13 +672,17 @@ async def start_hotel_search(
                 "checkIn": search_result.get("checkIn"),
                 "checkOut": search_result.get("checkOut"),
                 "occupancy": search_result.get("occupancy"),
-                "geoHash": search_result.get("geoHash")
+                "geoHash": search_result.get("geoHash"),
             }
 
             # For name_resolved, also store the resolved hotel info
             if search_result["status"] == "name_resolved":
-                active_searches[label]["resolvedHotelId"] = search_result.get("resolvedHotelId")
-                active_searches[label]["resolvedHotelName"] = search_result.get("resolvedHotelName")
+                active_searches[label]["resolvedHotelId"] = search_result.get(
+                    "resolvedHotelId"
+                )
+                active_searches[label]["resolvedHotelName"] = search_result.get(
+                    "resolvedHotelName"
+                )
 
             # Add search_key to the result so LLM knows what to use for start_room_search
             search_result["search_key"] = label
@@ -663,7 +693,9 @@ async def start_hotel_search(
     logger.info("=" * 80)
     logger.info(f"[HOTEL_SEARCH] Stored {len(active_searches)} active search(es):")
     for label, search_info in active_searches.items():
-        logger.info(f"  Label: '{label}' -> searchId: {search_info.get('searchId')}, status: {search_info.get('status')}")
+        logger.info(
+            f"  Label: '{label}' -> searchId: {search_info.get('searchId')}, status: {search_info.get('status')}"
+        )
     logger.info(f"[HOTEL_SEARCH] Returning {len(searches_metadata)} search result(s)")
     logger.info("=" * 80)
 
@@ -691,19 +723,27 @@ async def start_hotel_search(
 
     # Prepare context stack update
     update_dict = {
-        "messages": [ToolMessage(
-            content=json.dumps(response_data, indent=2),
-            tool_call_id=runtime.tool_call_id
-        )],
+        "messages": [
+            ToolMessage(
+                content=json.dumps(response_data, indent=2),
+                tool_call_id=runtime.tool_call_id,
+            )
+        ],
         "active_searches": active_searches,  # Will be merged by merge_dicts reducer
     }
 
     if first_search_key:
-        context_to_push, new_stack = prepare_hotel_list_push(first_search_key, context_stack)
+        context_to_push, new_stack = prepare_hotel_list_push(
+            first_search_key, context_stack
+        )
         if context_to_push:
             # Need to push - replace stack and append new context
-            update_dict["context_stack"] = {"__replace__": new_stack + [context_to_push]}
-            logger.info(f"[HOTEL_SEARCH] Pushing HotelList({first_search_key}) to context stack")
+            update_dict["context_stack"] = {
+                "__replace__": new_stack + [context_to_push]
+            }
+            logger.info(
+                f"[HOTEL_SEARCH] Pushing HotelList({first_search_key}) to context stack"
+            )
 
     # Return Command with state updates
     return Command(update=update_dict)

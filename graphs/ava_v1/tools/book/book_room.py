@@ -13,12 +13,16 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 # Import redis_client and shared libraries
-from ava_v1.shared_libraries.redis_client import get_redis_client, redis_get_json, redis_set_json
+from ava_v1.shared_libraries.redis_client import (
+    get_redis_client,
+    redis_get_json,
+    redis_set_json,
+)
 
 from ava_v1.shared_libraries.validation import (
     _validate_email,
     _validate_room_object,
-    _validate_customer_info
+    _validate_customer_info,
 )
 from ava_v1.shared_libraries.hashing import _generate_booking_hash
 from ava_v1.shared_libraries.input_sanitizer import sanitize_tool_input
@@ -27,7 +31,9 @@ from ava_v1.shared_libraries.context_helpers import prepare_booking_pending_push
 logger = logging.getLogger(__name__)
 
 
-@tool(description="Initiate hotel room booking with price verification and payment setup")
+@tool(
+    description="Initiate hotel room booking with price verification and payment setup"
+)
 async def book_room(
     room: Dict[str, Any],
     customer_info: Dict[str, Any],
@@ -103,8 +109,8 @@ async def book_room(
             "status": "error",
             "error": {
                 "type": "invalid_payment_type",
-                "message": "payment_type must be 'phone' or 'sms'"
-            }
+                "message": "payment_type must be 'phone' or 'sms'",
+            },
         }
         return json.dumps(error_result, indent=2)
 
@@ -149,8 +155,8 @@ async def book_room(
                     "status": "error",
                     "error": {
                         "type": "invalid_token",
-                        "message": "Price confirmation token is invalid or expired"
-                    }
+                        "message": "Price confirmation token is invalid or expired",
+                    },
                 }
                 return json.dumps(error_result, indent=2)
 
@@ -160,8 +166,8 @@ async def book_room(
                     "status": "error",
                     "error": {
                         "type": "token_mismatch",
-                        "message": "Price confirmation token does not match this booking"
-                    }
+                        "message": "Price confirmation token does not match this booking",
+                    },
                 }
                 return json.dumps(error_result, indent=2)
 
@@ -173,8 +179,8 @@ async def book_room(
                 "status": "error",
                 "error": {
                     "type": "token_validation_error",
-                    "message": f"Failed to validate price confirmation token: {str(e)}"
-                }
+                    "message": f"Failed to validate price confirmation token: {str(e)}",
+                },
             }
             return json.dumps(error_result, indent=2)
 
@@ -187,17 +193,13 @@ async def book_room(
         "customer_info": customer_info,
         "hash": booking_hash,
         "session_id": session_id,
-        "skip_price_check": skip_price_check
+        "skip_price_check": skip_price_check,
     }
 
     # Call polling service
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                endpoint,
-                json=request_body,
-                timeout=30.0
-            )
+            response = await client.post(endpoint, json=request_body, timeout=30.0)
 
             # 409 Conflict means price mismatch - this is expected, not an error
             # Don't raise exception, parse the response body with price info
@@ -213,9 +215,9 @@ async def book_room(
             "status": "error",
             "error": {
                 "type": "poll_service_error",
-                "message": f"Polling service HTTP error {e.response.status_code}: {str(e)}"
+                "message": f"Polling service HTTP error {e.response.status_code}: {str(e)}",
             },
-            "retryable": e.response.status_code >= 500
+            "retryable": e.response.status_code >= 500,
         }
         return json.dumps(error_result, indent=2)
 
@@ -224,9 +226,9 @@ async def book_room(
             "status": "error",
             "error": {
                 "type": "timeout",
-                "message": "Request to polling service timed out"
+                "message": "Request to polling service timed out",
             },
-            "retryable": True
+            "retryable": True,
         }
         return json.dumps(error_result, indent=2)
 
@@ -235,9 +237,9 @@ async def book_room(
             "status": "error",
             "error": {
                 "type": "unexpected_error",
-                "message": f"Unexpected error calling polling service: {str(e)}"
+                "message": f"Unexpected error calling polling service: {str(e)}",
             },
-            "retryable": False
+            "retryable": False,
         }
         return json.dumps(error_result, indent=2)
 
@@ -254,16 +256,18 @@ async def book_room(
                 "status": "error",
                 "error": {
                     "type": "room_unavailable",
-                    "message": "This room is no longer available. Apologize to the customer and ask if they would like to see other rooms at this hotel or explore different hotels."
+                    "message": "This room is no longer available. Apologize to the customer and ask if they would like to see other rooms at this hotel or explore different hotels.",
                 },
-                "booking_hash": booking_hash
+                "booking_hash": booking_hash,
             }
             return json.dumps(result, indent=2)
 
         # Calculate price increase percentage
         price_increase_percent = 0
         if original_price and original_price > 0:
-            price_increase_percent = ((new_price - original_price) / original_price) * 100
+            price_increase_percent = (
+                (new_price - original_price) / original_price
+            ) * 100
 
         # Generate price confirmation token
         token = str(uuid.uuid4())
@@ -274,7 +278,7 @@ async def book_room(
             "hash": booking_hash,
             "original_price": original_price,
             "new_price": new_price,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -296,7 +300,7 @@ async def book_room(
             "suggest_alternatives": price_increase_percent > 20,
             "hold_expires_at": hold_expires_at.isoformat(),
             "time_remaining_seconds": time_remaining_seconds,
-            "hint": f"Price changed from ${original_price:.2f} to ${new_price:.2f}. Inform user of new price and ask for confirmation. If user confirms, call book_room() again with price_confirmation_token=\"{token}\". If user declines, suggest alternative rooms or hotels."
+            "hint": f'Price changed from ${original_price:.2f} to ${new_price:.2f}. Inform user of new price and ask for confirmation. If user confirms, call book_room() again with price_confirmation_token="{token}". If user declines, suggest alternative rooms or hotels.',
         }
 
         # Cache this result for idempotency
@@ -336,7 +340,7 @@ async def book_room(
             "currency": currency,
             "hold_expires_at": hold_expires_at.isoformat(),
             "time_remaining_seconds": time_remaining_seconds,
-            "hint": f"Booking successful! Room is on hold for 10 minutes. Inform user booking is confirmed and explain payment process. When ready to transfer to payment, call modify_call(action_type=\"pay-transfer\")."
+            "hint": f'Booking successful! Room is on hold for 10 minutes. Inform user booking is confirmed and explain payment process. When ready to transfer to payment, call modify_call(action_type="pay-transfer").',
         }
 
         # Cache this result for idempotency
@@ -357,19 +361,23 @@ async def book_room(
             hold_expires_at.isoformat(),
             amount,
             s3_key,
-            context_stack
+            context_stack,
         )
 
         # Context is always pushed for new bookings
         update_dict = {
-            "messages": [ToolMessage(
-                content=json.dumps(result, indent=2),
-                tool_call_id=runtime.tool_call_id
-            )],
-            "context_stack": {"__replace__": new_stack + [context_to_push]}
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(result, indent=2),
+                    tool_call_id=runtime.tool_call_id,
+                )
+            ],
+            "context_stack": {"__replace__": new_stack + [context_to_push]},
         }
 
-        logger.info(f"[BOOK_ROOM] Pushing BookingPending({booking_hash}) to context stack")
+        logger.info(
+            f"[BOOK_ROOM] Pushing BookingPending({booking_hash}) to context stack"
+        )
 
         # Return Command with state updates
         return Command(update=update_dict)
@@ -379,8 +387,8 @@ async def book_room(
         "status": "error",
         "error": {
             "type": "unexpected_response",
-            "message": f"Unexpected response from polling service: {poll_response}"
+            "message": f"Unexpected response from polling service: {poll_response}",
         },
-        "retryable": True
+        "retryable": True,
     }
     return json.dumps(error_result, indent=2)

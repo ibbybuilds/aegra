@@ -27,8 +27,7 @@ def context_matches(ctx1: Dict[str, Any], ctx2: Dict[str, Any]) -> bool:
 
 
 def prepare_hotel_list_push(
-    search_key: str,
-    context_stack: List[Dict[str, Any]]
+    search_key: str, context_stack: List[Dict[str, Any]]
 ) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     """Prepare to push HotelList context, handling pops if needed.
 
@@ -57,7 +56,7 @@ def prepare_room_list_push(
     search_key: str,
     hotel_id: str,
     room_search_id: str,
-    context_stack: List[Dict[str, Any]]
+    context_stack: List[Dict[str, Any]],
 ) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     """Prepare to push RoomList context, handling pops if needed.
 
@@ -74,7 +73,7 @@ def prepare_room_list_push(
         "type": "RoomList",
         "search_key": search_key,
         "hotel_id": hotel_id,
-        "roomSearchId": room_search_id
+        "roomSearchId": room_search_id,
     }
 
     # Check if already at top (idempotent)
@@ -90,8 +89,7 @@ def prepare_room_list_push(
 
 
 def prepare_hotel_details_push(
-    hotel_id: str,
-    context_stack: List[Dict[str, Any]]
+    hotel_id: str, context_stack: List[Dict[str, Any]]
 ) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     """Prepare to push HotelDetails context.
 
@@ -119,7 +117,7 @@ def prepare_booking_pending_push(
     hold_expires_at: str,
     amount: float,
     s3_key: str,
-    context_stack: List[Dict[str, Any]]
+    context_stack: List[Dict[str, Any]],
 ) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Prepare to push BookingPending context, replacing old booking if exists.
 
@@ -142,7 +140,7 @@ def prepare_booking_pending_push(
         "payment_type": payment_type,
         "hold_expires_at": hold_expires_at,
         "amount": amount,
-        "s3_key": s3_key
+        "s3_key": s3_key,
     }
 
     # Pop old BookingPending if at top (replace it)

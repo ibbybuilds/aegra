@@ -13,13 +13,10 @@ __all__ = [
     "start_hotel_search",
     "start_room_search",
     "query_vfs",
-
     # Detail tools
     "hotel_details",
-
     # Book tools
     "book_room",
-
     # Call management tools
     "modify_call",
 ]

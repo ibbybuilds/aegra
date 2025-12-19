@@ -117,6 +117,7 @@ async def query_vfs(
 
     # Forced delay to ensure polling service has time to fetch results
     import asyncio
+
     logger.info("[QUERY_VFS] Waiting 5 seconds for results to be ready...")
     await asyncio.sleep(5)
     logger.info("[QUERY_VFS] Proceeding with query...")
@@ -137,7 +138,7 @@ async def query_vfs(
             if not search_id:
                 result = {
                     "error": "room_search_not_found",
-                    "message": f"No room search found for hotel {hotel_id}. Run start_room_search(hotel_id, search_key) first to initiate room search."
+                    "message": f"No room search found for hotel {hotel_id}. Run start_room_search(hotel_id, search_key) first to initiate room search.",
                 }
                 return json.dumps(result, indent=2)
 
@@ -157,7 +158,7 @@ async def query_vfs(
 
             result = {
                 "error": "search_not_found",
-                "message": f"No active search found for '{destination}'.{hint}"
+                "message": f"No active search found for '{destination}'.{hint}",
             }
             return json.dumps(result, indent=2)
 
@@ -166,7 +167,7 @@ async def query_vfs(
         if len(active_searches) == 0:
             result = {
                 "error": "missing_parameter",
-                "message": "Must provide either search_id or destination. No active searches found. Run start_hotel_search first to create a search."
+                "message": "Must provide either search_id or destination. No active searches found. Run start_hotel_search first to create a search.",
             }
             return json.dumps(result, indent=2)
         elif len(active_searches) == 1:
@@ -177,7 +178,7 @@ async def query_vfs(
             available = ", ".join(active_searches.keys())
             result = {
                 "error": "missing_parameter",
-                "message": f"Must provide either search_id or destination. Available searches: {available}. Use one of these as the destination parameter."
+                "message": f"Must provide either search_id or destination. Available searches: {available}. Use one of these as the destination parameter.",
             }
             return json.dumps(result, indent=2)
 
@@ -227,6 +228,7 @@ async def query_vfs(
         status_exists = await redis_client.exists(status_key) if status_key else False
         if status_exists:
             import asyncio
+
             max_retries = 4  # Check up to 4 times
             retry_delay = 0.5  # 0.5 seconds between retries = 2 seconds max
 
@@ -236,7 +238,9 @@ async def query_vfs(
                 # But hgetall returns dict with potentially bytes keys/values depending on config
                 # Ensure strings for safety
                 if status_data and isinstance(next(iter(status_data.keys())), bytes):
-                    status_data = {k.decode(): v.decode() for k, v in status_data.items()}
+                    status_data = {
+                        k.decode(): v.decode() for k, v in status_data.items()
+                    }
 
                 state = status_data.get("state")
 
@@ -248,7 +252,9 @@ async def query_vfs(
                     data_exists = await redis_client.exists(redis_key)
                     if data_exists:
                         # Partial results available - continue to return them with error note
-                        logger.info(f"[QUERY_VFS] Error state but partial data exists for {search_id}")
+                        logger.info(
+                            f"[QUERY_VFS] Error state but partial data exists for {search_id}"
+                        )
                         partial_due_to_error = True
                         error_message = error_msg
                         break  # Exit retry loop, proceed to query partial data
@@ -257,7 +263,7 @@ async def query_vfs(
                         result = {
                             "status": "error",
                             "message": error_msg,
-                            "searchId": search_id
+                            "searchId": search_id,
                         }
                         return json.dumps(result, indent=2)
 
@@ -282,7 +288,7 @@ async def query_vfs(
                             "message": "Search results not ready yet. Still polling...",
                             "searchId": search_id,
                             "expectedHotelCount": status_data.get("expected_count"),
-                            "lastUpdated": status_data.get("last_updated")
+                            "lastUpdated": status_data.get("last_updated"),
                         }
                         return json.dumps(result, indent=2)
 
@@ -294,8 +300,7 @@ async def query_vfs(
             if not status_exists:
                 # Check if search is tracked in active_searches
                 search_found = any(
-                    s["searchId"] == search_id
-                    for s in active_searches.values()
+                    s["searchId"] == search_id for s in active_searches.values()
                 )
 
                 if search_found:
@@ -303,7 +308,7 @@ async def query_vfs(
                     result = {
                         "status": "expired",
                         "message": "Search results have expired. Please run a new hotel search.",
-                        "searchId": search_id
+                        "searchId": search_id,
                     }
                     return json.dumps(result, indent=2)
 
@@ -311,7 +316,7 @@ async def query_vfs(
             result = {
                 "status": "not_ready",
                 "message": "Search results not ready yet. Still polling...",
-                "searchId": search_id
+                "searchId": search_id,
             }
             return json.dumps(result, indent=2)
 
@@ -320,9 +325,7 @@ async def query_vfs(
             jsonpath = "$"
 
         # Get data using Redis JSON with JSONPath
-        result = await redis_client.execute_command(
-            'JSON.GET', redis_key, jsonpath
-        )
+        result = await redis_client.execute_command("JSON.GET", redis_key, jsonpath)
 
         if result:
             results = json.loads(result)
@@ -336,7 +339,7 @@ async def query_vfs(
             if redis_key.startswith("rooms:"):
                 # Fetch the top-level token from the full Redis data
                 full_data_result = await redis_client.execute_command(
-                    'JSON.GET', redis_key, '$'
+                    "JSON.GET", redis_key, "$"
                 )
                 if full_data_result:
                     full_data = json.loads(full_data_result)
@@ -347,14 +350,16 @@ async def query_vfs(
 
             # Apply sorting if specified (only for lists)
             if sort_by and isinstance(results, list):
-                reverse = (sort_order.lower() == "desc")
+                reverse = sort_order.lower() == "desc"
                 try:
                     # Sort by the specified field
                     # Handle missing fields gracefully by using None as default
                     results = sorted(
                         results,
-                        key=lambda x: x.get(sort_by) if x.get(sort_by) is not None else float('inf'),
-                        reverse=reverse
+                        key=lambda x: x.get(sort_by)
+                        if x.get(sort_by) is not None
+                        else float("inf"),
+                        reverse=reverse,
                     )
                 except Exception as e:
                     # If sorting fails, log but continue with unsorted results
@@ -371,7 +376,7 @@ async def query_vfs(
             response = {
                 "searchId": search_id,
                 "results": results,
-                "count": total_count  # Total available, not just returned
+                "count": total_count,  # Total available, not just returned
             }
 
             # Add token separately for room searches
@@ -379,27 +384,41 @@ async def query_vfs(
                 response["token"] = room_token
                 # Add hint for room searches
                 if isinstance(results, list) and len(results) > 0:
-                    response["hint"] = "Room search complete. Present room options to user with prices and refund policies. When user selects a room, use this response to build the room object for book_room() - extract token from top level and rate_key from the room object."
+                    response["hint"] = (
+                        "Room search complete. Present room options to user with prices and refund policies. When user selects a room, use this response to build the room object for book_room() - extract token from top level and rate_key from the room object."
+                    )
                 else:
-                    response["hint"] = "No rooms available for this hotel. Suggest alternative hotels or different dates to the user."
+                    response["hint"] = (
+                        "No rooms available for this hotel. Suggest alternative hotels or different dates to the user."
+                    )
             else:
                 # Add hint for hotel searches
                 if isinstance(results, list) and len(results) > 0:
-                    response["hint"] = "Hotel search complete. Present hotel options to user with prices, ratings, and amenities. When user selects a hotel, call start_room_search(hotel_id, search_key) to check room availability."
+                    response["hint"] = (
+                        "Hotel search complete. Present hotel options to user with prices, ratings, and amenities. When user selects a hotel, call start_room_search(hotel_id, search_key) to check room availability."
+                    )
                 else:
-                    response["hint"] = "No hotels found. Suggest adjusting search criteria (dates, location, budget) to the user."
+                    response["hint"] = (
+                        "No hotels found. Suggest adjusting search criteria (dates, location, budget) to the user."
+                    )
 
             # Add warning if returning partial results due to error
             if partial_due_to_error:
-                response["warning"] = f"Partial results returned due to error: {error_message}"
+                response["warning"] = (
+                    f"Partial results returned due to error: {error_message}"
+                )
                 response["status"] = "partial"
 
             # Add hint if limit was capped
             if limit_capped:
                 if "warning" in response:
-                    response["warning"] += f" | Results limited to {MAX_RESULTS_LIMIT} for context preservation."
+                    response["warning"] += (
+                        f" | Results limited to {MAX_RESULTS_LIMIT} for context preservation."
+                    )
                 else:
-                    response["note"] = f"Results limited to {MAX_RESULTS_LIMIT} for context preservation. Query again with different filters to see more results."
+                    response["note"] = (
+                        f"Results limited to {MAX_RESULTS_LIMIT} for context preservation. Query again with different filters to see more results."
+                    )
 
             # Log what we're returning
             logger.info("=" * 80)
@@ -417,12 +436,10 @@ async def query_vfs(
 
             return json.dumps(response, indent=2)
         else:
-            logger.warning(f"[QUERY_VFS] No results found in Redis for search_id: {search_id}")
-            result = {
-                "searchId": search_id,
-                "results": [],
-                "count": 0
-            }
+            logger.warning(
+                f"[QUERY_VFS] No results found in Redis for search_id: {search_id}"
+            )
+            result = {"searchId": search_id, "results": [], "count": 0}
             return json.dumps(result, indent=2)
 
     except Exception as e:
@@ -430,6 +447,6 @@ async def query_vfs(
         result = {
             "error": "query_failed",
             "message": f"Failed to query results: {str(e)}",
-            "searchId": search_id
+            "searchId": search_id,
         }
         return json.dumps(result, indent=2)

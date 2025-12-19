@@ -75,8 +75,8 @@ def modify_call(
             "error": {
                 "type": "invalid_type",
                 "message": f"action_type must be one of: {', '.join(valid_types)}",
-                "hint": "Use 'end-call' to end the conversation or 'pay-transfer' to transfer to payment line"
-            }
+                "hint": "Use 'end-call' to end the conversation or 'pay-transfer' to transfer to payment line",
+            },
         }
         logger.info(f"[modify_call] Returning invalid_type error: {result}")
         return json.dumps(result, indent=2)
@@ -86,7 +86,7 @@ def modify_call(
         result = {
             "status": "success",
             "type": "end-call",
-            "message": "Call end signal sent. The call will be terminated."
+            "message": "Call end signal sent. The call will be terminated.",
         }
         logger.info(f"[modify_call] Returning end-call success: {result}")
         return json.dumps(result, indent=2)
@@ -116,8 +116,8 @@ def modify_call(
                         "You must call book_room first to initiate a booking before "
                         "transferring to payment. The booking details will be automatically "
                         "retrieved from the context stack."
-                    )
-                }
+                    ),
+                },
             }
             logger.info(f"[modify_call] No booking found error: {result}")
             return json.dumps(result, indent=2)
@@ -126,7 +126,9 @@ def modify_call(
         booking_hash = booking_context.get("booking_hash")
         s3_key = booking_context.get("s3_key")
         amount = booking_context.get("amount")
-        logger.info(f"[modify_call] Extracted: booking_hash={booking_hash}, s3_key={s3_key}, amount={amount}")
+        logger.info(
+            f"[modify_call] Extracted: booking_hash={booking_hash}, s3_key={s3_key}, amount={amount}"
+        )
 
         # Validate all required fields are present
         if not all([booking_hash, s3_key, amount]):
@@ -143,8 +145,8 @@ def modify_call(
                 "error": {
                     "type": "incomplete_booking_context",
                     "message": f"BookingPending context is missing: {', '.join(missing)}",
-                    "hint": "This is likely a bug. BookingPending should contain all required fields."
-                }
+                    "hint": "This is likely a bug. BookingPending should contain all required fields.",
+                },
             }
             logger.info(f"[modify_call] Incomplete booking error: {result}")
             return json.dumps(result, indent=2)
@@ -160,7 +162,7 @@ def modify_call(
             "booking_hash": booking_hash,
             "s3_key": s3_key,
             "amount": amount,
-            "currency": currency
+            "currency": currency,
         }
         logger.info(f"[modify_call] Returning pay-transfer success: {result}")
         return json.dumps(result, indent=2)
@@ -171,8 +173,8 @@ def modify_call(
         "status": "error",
         "error": {
             "type": "unexpected_error",
-            "message": "Unexpected error in modify_call"
-        }
+            "message": "Unexpected error in modify_call",
+        },
     }
     logger.info(f"[modify_call] Returning fallback error: {result}")
     return json.dumps(result, indent=2)

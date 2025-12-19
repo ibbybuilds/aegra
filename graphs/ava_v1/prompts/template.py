@@ -96,7 +96,11 @@ def _determine_priority(context: CallContext) -> str:
     """
     # Priority 1: Abandoned payment (highest - revenue recovery)
     if context.abandoned_payment:
-        return "abandoned_payment_with_thread" if context.type == "thread_continuation" else "abandoned_payment"
+        return (
+            "abandoned_payment_with_thread"
+            if context.type == "thread_continuation"
+            else "abandoned_payment"
+        )
 
     # Priority 2: Property + Booking hybrid
     if context.property and context.booking:

@@ -49,7 +49,10 @@ class CallSessionContext:
         """Auto-convert nested dicts to typed objects."""
         # Convert session_legs dicts to SessionLeg objects
         if self.session_legs:
-            self.session_legs = [SessionLeg(**leg) if isinstance(leg, dict) else leg for leg in self.session_legs]
+            self.session_legs = [
+                SessionLeg(**leg) if isinstance(leg, dict) else leg
+                for leg in self.session_legs
+            ]
 
 
 @dataclass
@@ -85,7 +88,9 @@ class CallContext:
     system prompt based on call type, property, payment, session, etc.
     """
 
-    type: str = "general"  # property_specific, payment_return, thread_continuation, general
+    type: str = (
+        "general"  # property_specific, payment_return, thread_continuation, general
+    )
     property: PropertyInfo | None = None
     payment: PaymentInfo | None = None
     session: CallSessionContext | None = None

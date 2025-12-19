@@ -14,7 +14,7 @@ def _validate_email(email: str) -> bool:
         True if valid format, False otherwise
     """
     # Standard email regex pattern
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     return bool(re.match(pattern, email))
 
 
@@ -32,18 +32,21 @@ def _validate_room_object(room: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 "status": "error",
                 "error": {
                     "type": "invalid_room_object",
-                    "message": f"room object missing required field: {field}"
-                }
+                    "message": f"room object missing required field: {field}",
+                },
             }
 
     # Validate types
-    if not isinstance(room["hotel_id"], (str, int)) or not str(room["hotel_id"]).strip():
+    if (
+        not isinstance(room["hotel_id"], (str, int))
+        or not str(room["hotel_id"]).strip()
+    ):
         return {
             "status": "error",
             "error": {
                 "type": "invalid_room_object",
-                "message": "hotel_id must be a non-empty string or integer"
-            }
+                "message": "hotel_id must be a non-empty string or integer",
+            },
         }
 
     if not isinstance(room["rate_key"], str) or not room["rate_key"].strip():
@@ -51,8 +54,8 @@ def _validate_room_object(room: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "status": "error",
             "error": {
                 "type": "invalid_room_object",
-                "message": "rate_key must be a non-empty string"
-            }
+                "message": "rate_key must be a non-empty string",
+            },
         }
 
     if not isinstance(room["token"], str) or not room["token"].strip():
@@ -60,8 +63,8 @@ def _validate_room_object(room: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "status": "error",
             "error": {
                 "type": "invalid_room_object",
-                "message": "token must be a non-empty string"
-            }
+                "message": "token must be a non-empty string",
+            },
         }
 
     if not isinstance(room["refundable"], bool):
@@ -69,23 +72,28 @@ def _validate_room_object(room: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "status": "error",
             "error": {
                 "type": "invalid_room_object",
-                "message": "refundable must be a boolean"
-            }
+                "message": "refundable must be a boolean",
+            },
         }
 
-    if not isinstance(room["expected_price"], (int, float)) or room["expected_price"] <= 0:
+    if (
+        not isinstance(room["expected_price"], (int, float))
+        or room["expected_price"] <= 0
+    ):
         return {
             "status": "error",
             "error": {
                 "type": "invalid_room_object",
-                "message": "expected_price must be a positive number"
-            }
+                "message": "expected_price must be a positive number",
+            },
         }
 
     return None
 
 
-def _validate_customer_info(customer_info: Dict[str, Any], payment_type: str) -> Optional[Dict[str, Any]]:
+def _validate_customer_info(
+    customer_info: Dict[str, Any], payment_type: str
+) -> Optional[Dict[str, Any]]:
     """Validate customer info has all required fields.
 
     Args:
@@ -103,17 +111,20 @@ def _validate_customer_info(customer_info: Dict[str, Any], payment_type: str) ->
                 "status": "error",
                 "error": {
                     "type": "invalid_customer_info",
-                    "message": f"customer_info missing required field: {field}"
-                }
+                    "message": f"customer_info missing required field: {field}",
+                },
             }
 
-        if not isinstance(customer_info[field], str) or not customer_info[field].strip():
+        if (
+            not isinstance(customer_info[field], str)
+            or not customer_info[field].strip()
+        ):
             return {
                 "status": "error",
                 "error": {
                     "type": "invalid_customer_info",
-                    "message": f"{field} must be a non-empty string"
-                }
+                    "message": f"{field} must be a non-empty string",
+                },
             }
 
     # Validate email format
@@ -122,8 +133,8 @@ def _validate_customer_info(customer_info: Dict[str, Any], payment_type: str) ->
             "status": "error",
             "error": {
                 "type": "invalid_email",
-                "message": f"Invalid email format: {customer_info['email']}"
-            }
+                "message": f"Invalid email format: {customer_info['email']}",
+            },
         }
 
     # Phone required for SMS payment
@@ -133,17 +144,20 @@ def _validate_customer_info(customer_info: Dict[str, Any], payment_type: str) ->
                 "status": "error",
                 "error": {
                     "type": "missing_phone",
-                    "message": "phone is required for SMS payment"
-                }
+                    "message": "phone is required for SMS payment",
+                },
             }
 
-        if not isinstance(customer_info["phone"], str) or not customer_info["phone"].strip():
+        if (
+            not isinstance(customer_info["phone"], str)
+            or not customer_info["phone"].strip()
+        ):
             return {
                 "status": "error",
                 "error": {
                     "type": "invalid_phone",
-                    "message": "phone must be a non-empty string"
-                }
+                    "message": "phone must be a non-empty string",
+                },
             }
 
     return None

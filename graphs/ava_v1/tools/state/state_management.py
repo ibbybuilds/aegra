@@ -90,7 +90,7 @@ def push_context(
     if "type" not in context_object:
         error_result = {
             "error": "invalid_context",
-            "message": "context_object must contain 'type' field"
+            "message": "context_object must contain 'type' field",
         }
         return json.dumps(error_result, indent=2)
 
@@ -99,7 +99,7 @@ def push_context(
     if not identifiers:
         error_result = {
             "error": "invalid_context",
-            "message": "context_object must contain at least one identifier (e.g., search_key)"
+            "message": "context_object must contain at least one identifier (e.g., search_key)",
         }
         return json.dumps(error_result, indent=2)
 
@@ -110,7 +110,7 @@ def push_context(
     if context_stack and _context_matches(context_stack[-1], context_object):
         error_result = {
             "error": "duplicate_context",
-            "message": f"Context {context_object.get('type')} is already at the top of the stack"
+            "message": f"Context {context_object.get('type')} is already at the top of the stack",
         }
         return json.dumps(error_result, indent=2)
 
@@ -123,7 +123,7 @@ def push_context(
         error_result = {
             "error": "invalid_stack_order",
             "message": "Cannot push HotelList when RoomList is active. Use pop_context() first to go back to hotel search.",
-            "hint": "Call pop_context() to remove the current RoomList, then push the new HotelList"
+            "hint": "Call pop_context() to remove the current RoomList, then push the new HotelList",
         }
         return json.dumps(error_result, indent=2)
 
@@ -132,7 +132,7 @@ def push_context(
         error_result = {
             "error": "invalid_stack_order",
             "message": "Cannot push RoomList when another RoomList is active. Use pop_context() first.",
-            "hint": "Call pop_context() to remove the current RoomList, then push the new RoomList"
+            "hint": "Call pop_context() to remove the current RoomList, then push the new RoomList",
         }
         return json.dumps(error_result, indent=2)
 
@@ -142,7 +142,7 @@ def push_context(
     # The context_stack_reducer will append this to the existing stack
     success_result = {
         "status": "success",
-        "message": f"Pushed {current_type} onto context stack"
+        "message": f"Pushed {current_type} onto context stack",
     }
 
     if runtime is None:
@@ -150,11 +150,15 @@ def push_context(
 
     return Command(
         update={
-            "messages": [ToolMessage(
-                content=json.dumps(success_result, indent=2),
-                tool_call_id=runtime.tool_call_id
-            )],
-            "context_stack": [context_object],  # Will be appended by context_stack_reducer
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(success_result, indent=2),
+                    tool_call_id=runtime.tool_call_id,
+                )
+            ],
+            "context_stack": [
+                context_object
+            ],  # Will be appended by context_stack_reducer
         }
     )
 
@@ -197,7 +201,7 @@ def pop_context(
     if levels < 1:
         error_result = {
             "error": "invalid_parameter",
-            "message": "levels must be at least 1"
+            "message": "levels must be at least 1",
         }
         return json.dumps(error_result, indent=2)
 
@@ -208,7 +212,7 @@ def pop_context(
     if len(context_stack) < levels:
         error_result = {
             "error": "insufficient_context",
-            "message": f"Cannot pop {levels} levels from stack with {len(context_stack)} items"
+            "message": f"Cannot pop {levels} levels from stack with {len(context_stack)} items",
         }
         return json.dumps(error_result, indent=2)
 
@@ -220,7 +224,7 @@ def pop_context(
     success_result = {
         "status": "success",
         "popped": popped[0] if levels == 1 else popped,
-        "message": f"Popped {levels} level(s) from context stack"
+        "message": f"Popped {levels} level(s) from context stack",
     }
 
     if runtime is None:
@@ -230,10 +234,14 @@ def pop_context(
     # Use {"__replace__": new_stack} to signal replacement (not append) via custom reducer
     return Command(
         update={
-            "messages": [ToolMessage(
-                content=json.dumps(success_result, indent=2),
-                tool_call_id=runtime.tool_call_id
-            )],
-            "context_stack": {"__replace__": new_stack},  # Signal replacement, not append
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(success_result, indent=2),
+                    tool_call_id=runtime.tool_call_id,
+                )
+            ],
+            "context_stack": {
+                "__replace__": new_stack
+            },  # Signal replacement, not append
         }
     )

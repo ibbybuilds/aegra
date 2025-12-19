@@ -20,25 +20,22 @@ def normalize_search_params(search: Dict[str, Any]) -> Dict[str, Any]:
     # Map all variations to camelCase
     key_mapping = {
         # Check-in variations
-        'check_in': 'checkIn',
-        'check_in_date': 'checkIn',
-        'checkin': 'checkIn',
-        'checkIn': 'checkIn',
-
+        "check_in": "checkIn",
+        "check_in_date": "checkIn",
+        "checkin": "checkIn",
+        "checkIn": "checkIn",
         # Check-out variations
-        'check_out': 'checkOut',
-        'check_out_date': 'checkOut',
-        'checkout': 'checkOut',
-        'checkOut': 'checkOut',
-
+        "check_out": "checkOut",
+        "check_out_date": "checkOut",
+        "checkout": "checkOut",
+        "checkOut": "checkOut",
         # Destination variations
-        'destination': 'destination',
-        'Destination': 'destination',
-
+        "destination": "destination",
+        "Destination": "destination",
         # Name variations
-        'name': 'name',
-        'hotel_name': 'name',
-        'hotelName': 'name',
+        "name": "name",
+        "hotel_name": "name",
+        "hotelName": "name",
     }
 
     for key, value in search.items():
@@ -47,12 +44,12 @@ def normalize_search_params(search: Dict[str, Any]) -> Dict[str, Any]:
         normalized[normalized_key] = value
 
     # Handle adults -> occupancy conversion
-    if 'adults' in search and 'occupancy' not in normalized:
-        adults = search['adults']
+    if "adults" in search and "occupancy" not in normalized:
+        adults = search["adults"]
         # Convert to int if it's a float with no decimal part
         if isinstance(adults, float) and adults.is_integer():
             adults = int(adults)
-        normalized['occupancy'] = {'numOfAdults': adults}
+        normalized["occupancy"] = {"numOfAdults": adults}
 
     return normalized
 
@@ -78,7 +75,7 @@ def normalize_dict_keys(obj: Any) -> Any:
         normalized = {}
         for key, value in obj.items():
             # Strip leading/trailing quotes from keys
-            clean_key = key.strip('"\'')
+            clean_key = key.strip("\"'")
             # Recursively normalize nested structures
             normalized[clean_key] = normalize_dict_keys(value)
         return normalized

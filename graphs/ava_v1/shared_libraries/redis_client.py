@@ -156,7 +156,7 @@ async def redis_get_json_compressed(key: str) -> Optional[Dict[str, Any]]:
 
         # Decompress and parse JSON
         json_bytes = gzip.decompress(compressed_value)
-        return json.loads(json_bytes.decode('utf-8'))
+        return json.loads(json_bytes.decode("utf-8"))
     except (redis.RedisError, gzip.BadGzipFile, json.JSONDecodeError) as e:
         print(f"Redis get compressed error for key {key}: {e}")
         return None
@@ -194,8 +194,10 @@ async def redis_set_json_compressed(
         binary_client = redis.Redis(connection_pool=pool)
 
         # Serialize to JSON and compress
-        json_bytes = json.dumps(value).encode('utf-8')
-        compressed_value = gzip.compress(json_bytes, compresslevel=6)  # Balanced speed/ratio
+        json_bytes = json.dumps(value).encode("utf-8")
+        compressed_value = gzip.compress(
+            json_bytes, compresslevel=6
+        )  # Balanced speed/ratio
 
         if ttl_seconds:
             await binary_client.setex(key, ttl_seconds, compressed_value)

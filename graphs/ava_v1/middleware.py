@@ -23,11 +23,20 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
     call_context: CallContext | dict[str, Any] | None = None
 
     # PREFERRED: Access context via runtime.context (proper LangGraph pattern)
-    if hasattr(request, "runtime") and request.runtime is not None and hasattr(request.runtime, "context") and request.runtime.context is not None:
+    if (
+        hasattr(request, "runtime")
+        and request.runtime is not None
+        and hasattr(request.runtime, "context")
+        and request.runtime.context is not None
+    ):
         call_context = request.runtime.context
 
     # FALLBACK: Access context from state (for backward compatibility with aegra)
-    if call_context is None and hasattr(request, "state") and isinstance(request.state, dict):
+    if (
+        call_context is None
+        and hasattr(request, "state")
+        and isinstance(request.state, dict)
+    ):
         raw_context = request.state.get("call_context")
         if raw_context is not None:
             call_context = raw_context

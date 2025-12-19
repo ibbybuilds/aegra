@@ -11,7 +11,10 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 # Import redis_client
-from ava_v1.shared_libraries.redis_client import redis_get_json_compressed, redis_set_json_compressed
+from ava_v1.shared_libraries.redis_client import (
+    redis_get_json_compressed,
+    redis_set_json_compressed,
+)
 
 from ava_v1.shared_libraries.redis_helpers import _filter_hotel_details
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_details_push
@@ -20,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _wrap_response(
-    result: dict,
-    hotel_id: str,
-    runtime: Optional[ToolRuntime]
+    result: dict, hotel_id: str, runtime: Optional[ToolRuntime]
 ) -> Command | str:
     """Wrap response in Command with context management or return JSON string.
 
@@ -44,16 +45,17 @@ def _wrap_response(
     context_to_push, new_stack = prepare_hotel_details_push(hotel_id, context_stack)
 
     update_dict = {
-        "messages": [ToolMessage(
-            content=result_json,
-            tool_call_id=runtime.tool_call_id
-        )]
+        "messages": [
+            ToolMessage(content=result_json, tool_call_id=runtime.tool_call_id)
+        ]
     }
 
     if context_to_push:
         # Need to push - replace stack and append new context
         update_dict["context_stack"] = {"__replace__": new_stack + [context_to_push]}
-        logger.info(f"[HOTEL_DETAILS] Pushing HotelDetails({hotel_id}) to context stack")
+        logger.info(
+            f"[HOTEL_DETAILS] Pushing HotelDetails({hotel_id}) to context stack"
+        )
 
     return Command(update=update_dict)
 
@@ -124,8 +126,8 @@ async def hotel_details(
             "status": "error",
             "error": {
                 "type": "invalid_hotel_id",
-                "message": "hotel_id must be a non-empty string"
-            }
+                "message": "hotel_id must be a non-empty string",
+            },
         }
         return _wrap_response(result, hotel_id, runtime)
 
@@ -139,7 +141,7 @@ async def hotel_details(
                 "status": "success",
                 "hotelId": hotel_id,
                 "details": cached_details,
-                "cached": True
+                "cached": True,
             }
             return _wrap_response(result, hotel_id, runtime)
 
@@ -149,10 +151,7 @@ async def hotel_details(
 
         # Make async GET request
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                endpoint,
-                timeout=30.0
-            )
+            response = await client.get(endpoint, timeout=30.0)
             response.raise_for_status()
             raw_data = response.json()
 
@@ -167,7 +166,7 @@ async def hotel_details(
             "status": "success",
             "hotelId": hotel_id,
             "details": filtered_data,
-            "cached": False
+            "cached": False,
         }
         return _wrap_response(result, hotel_id, runtime)
 
@@ -179,8 +178,8 @@ async def hotel_details(
                 "hotelId": hotel_id,
                 "error": {
                     "type": "not_found",
-                    "message": f"Hotel {hotel_id} not found"
-                }
+                    "message": f"Hotel {hotel_id} not found",
+                },
             }
             return _wrap_response(result, hotel_id, runtime)
 
@@ -189,8 +188,8 @@ async def hotel_details(
             "hotelId": hotel_id,
             "error": {
                 "type": "api_error",
-                "message": f"HTTP error {e.response.status_code}: {str(e)}"
-            }
+                "message": f"HTTP error {e.response.status_code}: {str(e)}",
+            },
         }
         return _wrap_response(result, hotel_id, runtime)
 
@@ -200,8 +199,8 @@ async def hotel_details(
             "hotelId": hotel_id,
             "error": {
                 "type": "timeout",
-                "message": "Request to hotel details API timed out"
-            }
+                "message": "Request to hotel details API timed out",
+            },
         }
         return _wrap_response(result, hotel_id, runtime)
 
@@ -211,7 +210,7 @@ async def hotel_details(
             "hotelId": hotel_id,
             "error": {
                 "type": "unexpected_error",
-                "message": f"Unexpected error: {str(e)}"
-            }
+                "message": f"Unexpected error: {str(e)}",
+            },
         }
         return _wrap_response(result, hotel_id, runtime)

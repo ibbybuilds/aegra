@@ -27,6 +27,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -83,6 +93,10 @@ jobs:
       - name: Start Aegra server in background
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_PASSWORD: ""
+          REDIS_DB: 0
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AUTH_TYPE: noop
           PORT: 8000

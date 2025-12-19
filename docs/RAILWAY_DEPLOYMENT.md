@@ -75,6 +75,35 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 Add any additional environment variables required by your `ava-core` package.
 
+## Redis Configuration (Required for ava_v1)
+
+If using the ava_v1 graph, provision a Redis instance:
+
+### Railway Redis Plugin (Recommended)
+
+1. In Railway project, click "New" → "Database" → "Add Redis"
+2. Railway sets `REDIS_URL` automatically
+3. Add these variables to your Aegra service:
+   ```
+   REDIS_HOST=${REDIS_HOST}
+   REDIS_PORT=${REDIS_PORT}
+   REDIS_PASSWORD=${REDIS_PASSWORD}
+   REDIS_DB=0
+   ```
+
+### External Redis Provider
+
+Use Upstash, Redis Cloud, or AWS ElastiCache:
+
+```
+REDIS_HOST=your-redis-host.com
+REDIS_PORT=6379
+REDIS_PASSWORD=your-redis-password
+REDIS_DB=0
+```
+
+**Note:** Without Redis, ava_v1 will fail at runtime. Other graphs work without Redis.
+
 ### GitHub Token for Private Dependencies
 
 **REQUIRED**: Since `ava-core` is a private repository, you need to provide a GitHub token:

@@ -16,6 +16,7 @@ class HealthResponse(BaseModel):
     database: str
     langgraph_checkpointer: str
     langgraph_store: str
+    redis: str
 
 
 class InfoResponse(BaseModel):
@@ -51,6 +52,7 @@ async def health_check() -> dict[str, str]:
         "database": "unknown",
         "langgraph_checkpointer": "unknown",
         "langgraph_store": "unknown",
+        "redis": "unknown",
     }
 
     # Database connectivity
@@ -88,6 +90,20 @@ async def health_check() -> dict[str, str]:
     except Exception as e:
         health_status["langgraph_store"] = f"error: {str(e)}"
         health_status["status"] = "unhealthy"
+
+    # Redis health check (only if ava_v1 is loaded)
+    try:
+        from graphs.ava_v1.shared_libraries.redis_client import get_redis_client
+
+        redis_client = get_redis_client()
+        await redis_client.ping()
+        health_status["redis"] = "healthy"
+    except ImportError:
+        # ava_v1 not available
+        health_status["redis"] = "not_required"
+    except Exception as e:
+        health_status["redis"] = f"unhealthy: {str(e)}"
+        health_status["status"] = "degraded"
 
     if health_status["status"] == "unhealthy":
         raise HTTPException(status_code=503, detail="Service unhealthy")

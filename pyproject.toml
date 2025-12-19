@@ -46,10 +46,15 @@ dependencies = [
     "uvicorn>=0.35.0",
     # LangChain/LangGraph extensions not provided by ava-core
     "langchain-anthropic>=1.0.3",
+    "langchain-google-genai>=2.0.0",
     "langchain-openai>=1.0.3",
     "langgraph-checkpoint>=3.0.1",
     "langgraph-checkpoint-postgres>=3.0.1",
     "langgraph-prebuilt>=1.0.2",
+    # Redis for ava_v1 caching (hotel searches, booking state, price tokens)
+    "redis[hiredis]>=5.0.0",
+    # Jinja2 for ava_v1 dynamic prompt templates
+    "jinja2>=3.1.0",
 ]
 
 [project.urls]

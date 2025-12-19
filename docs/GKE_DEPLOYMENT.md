@@ -146,25 +146,42 @@ gcloud sql instances describe aegra-postgres \
 # postgresql+asyncpg://aegra_user:SECURE_PASSWORD@PRIVATE_IP:5432/aegra_prod
 ```
 
-## Step 3: Set Up Memorystore for Redis (Optional)
+## Step 3: Set Up Redis (Required for ava_v1)
 
-If you plan to use Redis for caching or sessions:
+If using the ava_v1 graph, you need a Redis instance:
+
+### Option 1: GCP Memorystore for Redis
+
+1. Create instance:
+```bash
+gcloud redis instances create aegra-redis \
+    --size=1 \
+    --region=us-central1 \
+    --tier=basic
+```
+
+2. Get connection info:
+```bash
+gcloud redis instances describe aegra-redis --region=us-central1
+```
+
+3. Add to Kubernetes secrets:
+```bash
+kubectl create secret generic redis-credentials \
+    --from-literal=REDIS_HOST=<instance-ip> \
+    --from-literal=REDIS_PORT=6379 \
+    --from-literal=REDIS_DB=0
+```
+
+### Option 2: Self-Hosted Redis on GKE
 
 ```bash
-# Create Redis instance
-gcloud redis instances create aegra-redis \
-  --size=1 \
-  --region=us-central1 \
-  --tier=basic
-
-# Get connection info
-gcloud redis instances describe aegra-redis \
-  --region=us-central1 \
-  --format="value(host, port)"
-
-# Connection string format:
-# redis://REDIS_HOST:6379
+helm install redis bitnami/redis \
+    --set auth.password=your-secure-password \
+    --set master.persistence.size=8Gi
 ```
+
+**Note:** Redis required only for ava_v1 graph.
 
 ## Step 4: Configure GitHub Actions
 

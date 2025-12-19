@@ -82,6 +82,22 @@ python3 scripts/migrate.py reset
 docker compose up postgres -d
 ```
 
+### Redis Management (Required for ava_v1)
+
+```bash
+# Redis is automatically started with docker compose up
+docker compose up -d
+
+# Check Redis connection
+docker compose exec redis redis-cli ping
+
+# Monitor Redis activity (debugging)
+docker compose exec redis redis-cli monitor
+
+# Clear Redis cache (testing)
+docker compose exec redis redis-cli FLUSHDB
+```
+
 ### Code Quality (Optional - not currently configured)
 
 ```bash
@@ -169,6 +185,7 @@ graph = workflow.compile()  # Must export as 'graph'
 - **alembic**: Database migration management
 - **asyncpg**: Async PostgreSQL driver for SQLAlchemy
 - **greenlet**: Required for async SQLAlchemy operations
+- **redis[hiredis]**: In-memory cache for ava_v1 (hotel searches, booking state)
 
 ## Authentication System
 
@@ -195,6 +212,47 @@ To implement custom auth, modify the `@auth.authenticate` and `@auth.on` decorat
 
 **Middleware Integration:**
 Authentication runs as middleware on every request. LangGraph operations automatically inherit the authenticated user context for proper data scoping.
+
+## ava_v1 Graph Architecture
+
+The ava_v1 graph is a LangChain/LangGraph port of the AVA hotel booking agent.
+
+**Key Features:**
+- **State Management**: `active_searches` (label-based tracking), `context_stack` (conversation focus)
+- **Redis Caching**: Hotel searches (30 days TTL), room data, booking idempotency (10 min)
+- **Dynamic Prompts**: 8-level priority system based on CallContext type
+- **Model**: claude-haiku-4-5-20251001 (temperature 0.3)
+
+**Redis Configuration (Required):**
+```bash
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=  # Empty for local dev
+REDIS_DB=0
+```
+
+**CallContext Structure (identical to ava):**
+```json
+{
+  "context": {
+    "call_context": {
+      "type": "general",
+      "property": {...},
+      "booking": {...},
+      "payment": {...},
+      "user_phone": "+1234567890"
+    }
+  }
+}
+```
+
+**Context Types:**
+- `general`: New conversations
+- `property_specific`: Specific hotel inquiries
+- `payment_return`: Post-payment confirmation
+- `thread_continuation`: Resuming conversations
+- `booking`: Dial map integration
+- `abandoned_payment`: Payment recovery flows
 
 ## Development Patterns
 

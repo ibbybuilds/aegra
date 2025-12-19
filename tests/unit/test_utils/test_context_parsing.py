@@ -95,3 +95,25 @@ class TestContextParsing:
         assert "booking" in result
         assert "payment" in result
         assert "abandoned_payment" in result
+
+    def test_parse_context_for_ava_v1_extracts_call_context(self):
+        """Test that AVA_V1 context extracts call_context from nested structure."""
+        context_dict = {
+            "call_context": {
+                "type": "property_specific",
+                "property": {"property_id": "prop_123", "property_name": "Grand Hotel"},
+            }
+        }
+        result = parse_context_for_graph("ava_v1", context_dict)
+        # Should extract call_context, not return nested structure
+        assert result == context_dict["call_context"]
+        assert isinstance(result, dict)
+        assert result["type"] == "property_specific"
+        assert "property" in result
+
+    def test_parse_context_for_ava_v1_without_call_context(self):
+        """Test AVA_V1 context parsing when call_context is missing."""
+        context_dict = {"some_other_key": "value"}
+        result = parse_context_for_graph("ava_v1", context_dict)
+        # Should return original dict if call_context not present
+        assert result == context_dict

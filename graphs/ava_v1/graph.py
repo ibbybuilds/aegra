@@ -11,6 +11,7 @@ from ava_v1.state import AvaV1State
 from ava_v1.tools import (
     book_room,
     hotel_details,
+    internet_search,
     modify_call,
     query_vfs,
     start_hotel_search,
@@ -32,6 +33,7 @@ agent: CompiledStateGraph = create_agent(
         hotel_details,
         book_room,
         modify_call,
+        internet_search,
     ],
     system_prompt=TRAVEL_ASSISTANT_PROMPT,  # Base prompt (will be replaced by dynamic prompt)
     middleware=[

@@ -83,7 +83,6 @@ ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # do not perform function calls in argument defaults (FastAPI Depends)
     "UP007", # use X | Y for type annotations (keep Optional for clarity)
-    "UP038", # use X | Y in isinstance (causes issues in some contexts)
     "TC002", # type-checking imports cause issues with SQLAlchemy, Pydantic, etc.
     "TC003", # type-checking imports cause issues with SQLAlchemy, Pydantic, etc.
 ]

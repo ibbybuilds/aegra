@@ -25,33 +25,24 @@ class DatabaseManager:
         self._store: AsyncPostgresStore | None = None
 
         self._database_url = os.getenv(
-            "DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/aegra"
+            "DATABASE_URL",
+            (
+                f"postgresql+asyncpg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@"
+                f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+            ),
         )
 
     async def initialize(self) -> None:
         """Initialize database connections and LangGraph components"""
-
-        connect_args = {}
-        # LangGraph requires dictionary rows, not tuples
-        lg_kwargs = {
-            "autocommit": True,
-            "prepare_threshold": 0,
-            "row_factory": dict_row,
-        }
-
-        # Handle custom database schema if configured
-        db_schema_name = os.getenv("DB_SCHEMA_NAME")
-        if db_schema_name:
-            connect_args["server_settings"] = {"search_path": db_schema_name}
-            # Set search path for psycopg connection session
-            lg_kwargs["options"] = f"-c search_path={db_schema_name}"
+        # Idempotency check: if already initialized, do nothing
+        if self.engine:
+            return
 
         # 1. SQLAlchemy Engine (app metadata, uses asyncpg)
-        # We strictly limit this pool (defaults to 1 conn) because the main load
+        # We strictly limit this pool because the main load
         # is handled by LangGraph components.
         self.engine = create_async_engine(
             self._database_url,
-            connect_args=connect_args,
             pool_size=int(os.getenv("SA_POOL_SIZE", "2")),
             max_overflow=int(os.getenv("SA_MAX_OVERFLOW", "0")),
             pool_pre_ping=True,
@@ -66,6 +57,12 @@ class DatabaseManager:
 
         lg_min = int(os.getenv("LG_MIN_POOL_SIZE", "1"))
         lg_max = int(os.getenv("LG_POOL_SIZE", "6"))
+
+        lg_kwargs = {
+            "autocommit": True,
+            "prepare_threshold": 0,  # Optimization for PgBouncer/Kubernetes compatibility
+            "row_factory": dict_row,  # LangGraph requires dictionary rows, not tuples
+        }
 
         # Create a single shared pool.
         # 'open=False' is important to avoid RuntimeWarning; we open it explicitly below.
@@ -100,6 +97,7 @@ class DatabaseManager:
         # Close SQLAlchemy engine
         if self.engine:
             await self.engine.dispose()
+            self.engine = None
 
         # Close shared LangGraph pool
         if self.lg_pool:

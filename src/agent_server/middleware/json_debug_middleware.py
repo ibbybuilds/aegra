@@ -87,8 +87,8 @@ class JSONDebugMiddleware:
         # You can add paths to excluded_paths if needed to reduce noise
         self.excluded_paths = [
             "/health",  # Skip health check
-            "/docs",    # Skip OpenAPI docs
-            "/redoc",   # Skip ReDoc
+            "/docs",  # Skip OpenAPI docs
+            "/redoc",  # Skip ReDoc
             "/openapi.json",  # Skip OpenAPI schema
         ]
 
@@ -131,7 +131,9 @@ class JSONDebugMiddleware:
                             # === COMPRESSION/TRUNCATION DETECTION ===
                             # Step 0: Check for Content-Length mismatch and compression
                             content_length_header = headers.get(b"content-length", b"")
-                            content_encoding_header = headers.get(b"content-encoding", b"")
+                            content_encoding_header = headers.get(
+                                b"content-encoding", b""
+                            )
 
                             declared_length = (
                                 int(content_length_header.decode("latin1"))
@@ -141,7 +143,9 @@ class JSONDebugMiddleware:
                             actual_length = len(raw_body)
 
                             # Check if body is gzip-compressed (starts with magic bytes 0x1f 0x8b)
-                            is_gzipped = len(raw_body) >= 2 and raw_body[:2] == b"\x1f\x8b"
+                            is_gzipped = (
+                                len(raw_body) >= 2 and raw_body[:2] == b"\x1f\x8b"
+                            )
 
                             # Log comprehensive request diagnostics
                             logger.info(
@@ -149,29 +153,44 @@ class JSONDebugMiddleware:
                                 method=method,
                                 path=path,
                                 content_type=content_type,
-                                content_encoding=content_encoding_header.decode("latin1") if content_encoding_header else None,
+                                content_encoding=content_encoding_header.decode(
+                                    "latin1"
+                                )
+                                if content_encoding_header
+                                else None,
                                 declared_content_length=declared_length,
                                 actual_body_size_bytes=actual_length,
                                 is_gzipped=is_gzipped,
-                                first_2_bytes_hex=raw_body[:2].hex() if len(raw_body) >= 2 else None,
+                                first_2_bytes_hex=raw_body[:2].hex()
+                                if len(raw_body) >= 2
+                                else None,
                             )
 
                             # Log first and last 200 bytes to identify truncation
                             logger.info(
                                 "[JSON_DEBUG] Body preview",
                                 first_200_bytes=raw_body[:200],
-                                last_200_bytes=raw_body[-200:] if len(raw_body) > 200 else raw_body,
+                                last_200_bytes=raw_body[-200:]
+                                if len(raw_body) > 200
+                                else raw_body,
                             )
 
                             # Check for Content-Length mismatch (red flag for truncation!)
-                            if declared_length is not None and declared_length != actual_length:
+                            if (
+                                declared_length is not None
+                                and declared_length != actual_length
+                            ):
                                 logger.error(
                                     "⚠️ [JSON_DEBUG] CONTENT-LENGTH MISMATCH DETECTED!",
                                     declared_content_length=declared_length,
                                     actual_body_size=actual_length,
                                     difference_bytes=declared_length - actual_length,
                                     is_gzipped=is_gzipped,
-                                    content_encoding=content_encoding_header.decode("latin1") if content_encoding_header else None,
+                                    content_encoding=content_encoding_header.decode(
+                                        "latin1"
+                                    )
+                                    if content_encoding_header
+                                    else None,
                                     diagnosis=(
                                         "Body appears gzip-compressed but Content-Length mismatch detected. "
                                         "Likely cause: reverse proxy compressed body without updating Content-Length header."
@@ -185,7 +204,9 @@ class JSONDebugMiddleware:
                                 logger.warning(
                                     "[JSON_DEBUG] Gzip-compressed body without Content-Encoding header",
                                     is_gzipped=is_gzipped,
-                                    content_encoding_present=bool(content_encoding_header),
+                                    content_encoding_present=bool(
+                                        content_encoding_header
+                                    ),
                                     diagnosis="Body is gzip-compressed (starts with 0x1f8b) but Content-Encoding header is missing. Transparent compression may be occurring.",
                                 )
 

@@ -204,7 +204,7 @@ Call `query_vfs(destination="Miami")` with optional filters:
 - `sort_by`: Sort field (e.g., "price", "rating")
 - `sort_order`: "asc" or "desc"
 - `limit`: Results returned (max 5, enforced automatically)
-- Only present the first 3 results to the user.
+- Only present the first 3 results to the user and present the details naturally in the conversation. Ex: "I found some hotels for you in Miami, here are the first three options. EAST Miami Hotel is five stars starting at five hundred dollars per night. The Marriott Downtown Miami is four stars starting at three hundred dollars per night. The Fontainebleau Miami Beach is five stars starting at seven hundred dollars per night. Do any of these options interest you?"
 
 **Common Filtering Examples:**
 - Price under $300: `jsonpath="$.[?(@.price <= 300)]"`

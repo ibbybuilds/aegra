@@ -233,7 +233,7 @@ class JSONDebugMiddleware:
 
                             # Log request metadata
                             logger.info(
-                                f"[JSON_DEBUG] Processing body (after decompression if applicable)",
+                                "[JSON_DEBUG] Processing body (after decompression if applicable)",
                                 body_length_bytes=len(raw_body),
                             )
 

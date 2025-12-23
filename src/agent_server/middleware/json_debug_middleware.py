@@ -83,14 +83,19 @@ class JSONDebugMiddleware:
 
     def __init__(self, app: ASGIApp):
         self.app = app
-        # Only log for these paths (to avoid noise)
-        self.monitored_paths = [
-            "/threads/",  # All thread endpoints
+        # Monitor ALL paths by default to catch errors from conversation-relay
+        # You can add paths to excluded_paths if needed to reduce noise
+        self.excluded_paths = [
+            "/health",  # Skip health check
+            "/docs",    # Skip OpenAPI docs
+            "/redoc",   # Skip ReDoc
+            "/openapi.json",  # Skip OpenAPI schema
         ]
 
     def should_monitor(self, path: str) -> bool:
         """Check if this path should be monitored for JSON errors."""
-        return any(monitored in path for monitored in self.monitored_paths)
+        # Monitor all paths except excluded ones
+        return not any(excluded in path for excluded in self.excluded_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -123,12 +128,91 @@ class JSONDebugMiddleware:
                         raw_body = b"".join(body_parts)
 
                         if raw_body:
-                            # Log request metadata
+                            # === COMPRESSION/TRUNCATION DETECTION ===
+                            # Step 0: Check for Content-Length mismatch and compression
+                            content_length_header = headers.get(b"content-length", b"")
+                            content_encoding_header = headers.get(b"content-encoding", b"")
+
+                            declared_length = (
+                                int(content_length_header.decode("latin1"))
+                                if content_length_header
+                                else None
+                            )
+                            actual_length = len(raw_body)
+
+                            # Check if body is gzip-compressed (starts with magic bytes 0x1f 0x8b)
+                            is_gzipped = len(raw_body) >= 2 and raw_body[:2] == b"\x1f\x8b"
+
+                            # Log comprehensive request diagnostics
                             logger.info(
                                 f"[JSON_DEBUG] Received JSON request to {path}",
                                 method=method,
                                 path=path,
                                 content_type=content_type,
+                                content_encoding=content_encoding_header.decode("latin1") if content_encoding_header else None,
+                                declared_content_length=declared_length,
+                                actual_body_size_bytes=actual_length,
+                                is_gzipped=is_gzipped,
+                                first_2_bytes_hex=raw_body[:2].hex() if len(raw_body) >= 2 else None,
+                            )
+
+                            # Log first and last 200 bytes to identify truncation
+                            logger.info(
+                                "[JSON_DEBUG] Body preview",
+                                first_200_bytes=raw_body[:200],
+                                last_200_bytes=raw_body[-200:] if len(raw_body) > 200 else raw_body,
+                            )
+
+                            # Check for Content-Length mismatch (red flag for truncation!)
+                            if declared_length is not None and declared_length != actual_length:
+                                logger.error(
+                                    "⚠️ [JSON_DEBUG] CONTENT-LENGTH MISMATCH DETECTED!",
+                                    declared_content_length=declared_length,
+                                    actual_body_size=actual_length,
+                                    difference_bytes=declared_length - actual_length,
+                                    is_gzipped=is_gzipped,
+                                    content_encoding=content_encoding_header.decode("latin1") if content_encoding_header else None,
+                                    diagnosis=(
+                                        "Body appears gzip-compressed but Content-Length mismatch detected. "
+                                        "Likely cause: reverse proxy compressed body without updating Content-Length header."
+                                        if is_gzipped
+                                        else "Content-Length header does not match actual body size. Possible truncation."
+                                    ),
+                                )
+
+                            # Check if gzipped but no Content-Encoding header
+                            if is_gzipped and not content_encoding_header:
+                                logger.warning(
+                                    "[JSON_DEBUG] Gzip-compressed body without Content-Encoding header",
+                                    is_gzipped=is_gzipped,
+                                    content_encoding_present=bool(content_encoding_header),
+                                    diagnosis="Body is gzip-compressed (starts with 0x1f8b) but Content-Encoding header is missing. Transparent compression may be occurring.",
+                                )
+
+                            # If gzipped, attempt to decompress and log results
+                            if is_gzipped:
+                                try:
+                                    import gzip
+
+                                    decompressed_body = gzip.decompress(raw_body)
+                                    logger.info(
+                                        "[JSON_DEBUG] Successfully decompressed gzip body",
+                                        compressed_size=len(raw_body),
+                                        decompressed_size=len(decompressed_body),
+                                        compression_ratio=f"{len(raw_body) / len(decompressed_body):.2%}",
+                                    )
+                                    # Replace raw_body with decompressed version for further processing
+                                    raw_body = decompressed_body
+                                except Exception as decompress_err:
+                                    logger.error(
+                                        "[JSON_DEBUG] Failed to decompress gzip body",
+                                        error=str(decompress_err),
+                                        error_type=type(decompress_err).__name__,
+                                    )
+
+                            # Log request metadata
+                            logger.info(
+                                f"[JSON_DEBUG] Processing body (after decompression if applicable)",
                                 body_length_bytes=len(raw_body),
                             )
 

@@ -20,5 +20,7 @@ class TestRunCreateValidation:
 
     def test_rejects_payload_without_input_command_or_checkpoint(self):
         """Ensure payloads with no input, command, or checkpoint are rejected."""
-        with pytest.raises(ValueError, match="Must specify either 'input' or 'command'"):
+        with pytest.raises(
+            ValueError, match="Must specify either 'input' or 'command'"
+        ):
             RunCreate(assistant_id="agent")

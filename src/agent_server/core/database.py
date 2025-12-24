@@ -72,6 +72,7 @@ class DatabaseManager:
             max_size=lg_max,
             open=False,
             kwargs=lg_kwargs,
+            check=AsyncConnectionPool.check_connection,
         )
 
         # Explicitly open the pool

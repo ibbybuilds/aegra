@@ -9,19 +9,22 @@ from langchain.tools import InjectedToolArg, ToolRuntime, tool
 logger = logging.getLogger(__name__)
 
 
-@tool(description="Signal to end the call or transfer to payment line")
+@tool(description="Signal to end the call, transfer to payment line, or transfer to live agent")
 def modify_call(
     action_type: str,
+    summary: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> str:
-    """Signal to end the call or transfer to payment line.
+    """Signal to end the call, transfer to payment line, or transfer to live agent.
 
     This is a tool that triggers call modification events. For pay-transfer,
     automatically retrieves booking details from the most recent BookingPending
-    context in the context_stack.
+    context in the context_stack. For live-handoff, requires a summary explaining
+    why the transfer is needed.
 
     Args:
-        action_type: Action type - "end-call" or "pay-transfer"
+        action_type: Action type - "end-call", "pay-transfer", or "live-handoff"
+        summary: Required for live-handoff. 1-2 sentences explaining why transferring to live agent
         runtime: Injected tool runtime for accessing agent state
 
     Returns:
@@ -45,6 +48,14 @@ def modify_call(
             "currency": str
         }
 
+        Success (live-handoff):
+        {
+            "status": "success",
+            "type": "live-handoff",
+            "message": "Transferring to live agent",
+            "summary": str
+        }
+
         Error:
         {
             "status": "error",
@@ -61,24 +72,59 @@ def modify_call(
 
         Transfer to payment (retrieves details from context_stack):
         >>> modify_call(action_type="pay-transfer")
+
+        Transfer to live agent:
+        >>> modify_call(action_type="live-handoff", summary="Customer needs group booking for 10+ rooms")
     """
     logger.info("=" * 80)
     logger.info("[MODIFY_CALL] Tool called with:")
     logger.info(f"  action_type: {action_type}")
+    logger.info(f"  summary: {summary}")
     logger.info("=" * 80)
 
     # Validate action_type parameter
-    valid_types = ["end-call", "pay-transfer"]
+    valid_types = ["end-call", "pay-transfer", "live-handoff"]
     if action_type not in valid_types:
         result = {
             "status": "error",
             "error": {
                 "type": "invalid_type",
                 "message": f"action_type must be one of: {', '.join(valid_types)}",
-                "hint": "Use 'end-call' to end the conversation or 'pay-transfer' to transfer to payment line",
+                "hint": "Use 'end-call' to end the conversation, 'pay-transfer' to transfer to payment line, or 'live-handoff' to transfer to a live agent",
             },
         }
         logger.info(f"[modify_call] Returning invalid_type error: {result}")
+        return json.dumps(result, indent=2)
+
+    # Handle live-handoff (requires summary parameter)
+    if action_type == "live-handoff":
+        logger.info("[modify_call] Handling live-handoff")
+
+        # Validate summary is provided and non-empty
+        if not summary or not summary.strip():
+            result = {
+                "status": "error",
+                "error": {
+                    "type": "missing_summary",
+                    "message": "summary parameter is required for live-handoff",
+                    "hint": (
+                        "Provide a brief 1-2 sentence explanation of why you're transferring "
+                        "to a live agent. Example: modify_call(action_type='live-handoff', "
+                        "summary='Customer needs to book 10 rooms for corporate event')"
+                    ),
+                },
+            }
+            logger.info(f"[modify_call] Missing summary error: {result}")
+            return json.dumps(result, indent=2)
+
+        # Success - return handoff signal with summary
+        result = {
+            "status": "success",
+            "type": "live-handoff",
+            "message": "Transferring to live agent",
+            "summary": summary.strip(),
+        }
+        logger.info(f"[modify_call] Returning live-handoff success: {result}")
         return json.dumps(result, indent=2)
 
     # Handle end-call (no additional params required)

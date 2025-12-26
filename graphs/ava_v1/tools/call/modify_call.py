@@ -9,6 +9,137 @@ from langchain.tools import InjectedToolArg, ToolRuntime, tool
 logger = logging.getLogger(__name__)
 
 
+def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
+    """Extract human-readable context from agent state for live handoff.
+
+    Builds a succinct summary of the latest conversation context including:
+    - Current activity (searching, viewing rooms, booking)
+    - Property name (human-readable, not IDs)
+    - Destination and dates
+    - Occupancy details
+    - Booking/payment status if applicable
+
+    Args:
+        runtime: Tool runtime with access to context and state
+
+    Returns:
+        Human-readable context string (e.g., "Customer viewing rooms at JW Marriott Miami
+        for Feb 1-4 (2 adults, 1 room)")
+    """
+    if not runtime:
+        return "No context available"
+
+    parts = []
+
+    # Get context_stack (latest focus) and active_searches
+    context_stack = runtime.state.get("context_stack", [])
+    active_searches = runtime.state.get("active_searches", {})
+
+    # Get CallContext for fallback data
+    call_context = runtime.context if hasattr(runtime, "context") else None
+
+    # Get top of context stack (current focus)
+    current_context = context_stack[-1] if context_stack else None
+
+    if current_context:
+        ctx_type = current_context.get("type")
+        search_key = current_context.get("search_key", "")
+
+        # Extract property name from composite search_key (e.g., "Miami:JW Marriott")
+        property_name = None
+        destination = search_key
+        if ":" in search_key:
+            destination, property_name = search_key.split(":", 1)
+
+        # Get search parameters for dates/occupancy
+        search_params = active_searches.get(search_key, {})
+        check_in = search_params.get("checkIn", "")
+        check_out = search_params.get("checkOut", "")
+        occupancy = search_params.get("occupancy", {})
+        adults = occupancy.get("adults", 0) if occupancy else 0
+        rooms = occupancy.get("rooms", 0) if occupancy else 0
+
+        # Build context based on focus type
+        if ctx_type == "BookingPending":
+            # Customer has a pending booking
+            booking_hash = current_context.get("booking_hash", "")
+            amount = current_context.get("amount", 0)
+            parts.append(f"Customer booking")
+            if property_name:
+                parts.append(f"at {property_name}")
+            if destination:
+                parts.append(f"in {destination}")
+            if amount:
+                parts.append(f"(${amount:.2f}, payment pending)")
+
+        elif ctx_type == "RoomList":
+            # Customer viewing rooms at a specific property
+            parts.append("Customer viewing rooms")
+            if property_name:
+                parts.append(f"at {property_name}")
+            if destination:
+                parts.append(f"in {destination}")
+            if check_in and check_out:
+                # Format dates concisely (e.g., "Feb 1-4")
+                parts.append(f"for {check_in} to {check_out}")
+            if adults or rooms:
+                occ_parts = []
+                if adults:
+                    occ_parts.append(f"{adults} adult{'s' if adults != 1 else ''}")
+                if rooms:
+                    occ_parts.append(f"{rooms} room{'s' if rooms != 1 else ''}")
+                parts.append(f"({', '.join(occ_parts)})")
+
+        elif ctx_type == "HotelList":
+            # Customer searching/browsing hotels
+            parts.append("Customer searching")
+            if destination:
+                parts.append(destination)
+            if check_in and check_out:
+                parts.append(f"for {check_in} to {check_out}")
+            if adults or rooms:
+                occ_parts = []
+                if adults:
+                    occ_parts.append(f"{adults} adult{'s' if adults != 1 else ''}")
+                if rooms:
+                    occ_parts.append(f"{rooms} room{'s' if rooms != 1 else ''}")
+                parts.append(f"({', '.join(occ_parts)})")
+
+        elif ctx_type == "HotelDetails":
+            # Customer viewing details for a specific property
+            hotel_id = current_context.get("hotel_id", "")
+            parts.append("Customer viewing hotel details")
+            if property_name:
+                parts.append(f"for {property_name}")
+            elif hotel_id:
+                parts.append(f"(Hotel ID: {hotel_id})")
+
+    # Fallback to CallContext if no context_stack
+    elif call_context:
+        # Check if there's booking context
+        if hasattr(call_context, "booking") and call_context.booking:
+            booking = call_context.booking
+            parts.append("Customer inquired about")
+            if booking.destination:
+                parts.append(booking.destination)
+            if booking.check_in and booking.check_out:
+                parts.append(f"({booking.check_in} to {booking.check_out})")
+
+        # Check if there's property context
+        elif hasattr(call_context, "property") and call_context.property:
+            prop = call_context.property
+            parts.append("Customer called about")
+            if prop.property_name:
+                parts.append(prop.property_name)
+            if prop.location:
+                parts.append(f"in {prop.location}")
+
+    if not parts:
+        parts.append("Customer requested live agent")
+
+    return " ".join(parts)
+
+
 @tool(description="Signal to end the call, transfer to payment line, or transfer to live agent")
 def modify_call(
     action_type: str,
@@ -19,12 +150,12 @@ def modify_call(
 
     This is a tool that triggers call modification events. For pay-transfer,
     automatically retrieves booking details from the most recent BookingPending
-    context in the context_stack. For live-handoff, requires a summary explaining
-    why the transfer is needed.
+    context in the context_stack. For live-handoff, automatically extracts
+    conversation context and optionally includes agent-provided summary.
 
     Args:
         action_type: Action type - "end-call", "pay-transfer", or "live-handoff"
-        summary: Required for live-handoff. 1-2 sentences explaining why transferring to live agent
+        summary: Optional for live-handoff. Additional context/reason for transfer (auto-extracted context is included)
         runtime: Injected tool runtime for accessing agent state
 
     Returns:
@@ -73,8 +204,9 @@ def modify_call(
         Transfer to payment (retrieves details from context_stack):
         >>> modify_call(action_type="pay-transfer")
 
-        Transfer to live agent:
-        >>> modify_call(action_type="live-handoff", summary="Customer needs group booking for 10+ rooms")
+        Transfer to live agent (auto-extracts context):
+        >>> modify_call(action_type="live-handoff")
+        >>> modify_call(action_type="live-handoff", summary="wants group booking for 10+ rooms")
     """
     logger.info("=" * 80)
     logger.info("[MODIFY_CALL] Tool called with:")
@@ -96,33 +228,28 @@ def modify_call(
         logger.info(f"[modify_call] Returning invalid_type error: {result}")
         return json.dumps(result, indent=2)
 
-    # Handle live-handoff (requires summary parameter)
+    # Handle live-handoff (auto-extracts context, optionally includes agent summary)
     if action_type == "live-handoff":
         logger.info("[modify_call] Handling live-handoff")
 
-        # Validate summary is provided and non-empty
-        if not summary or not summary.strip():
-            result = {
-                "status": "error",
-                "error": {
-                    "type": "missing_summary",
-                    "message": "summary parameter is required for live-handoff",
-                    "hint": (
-                        "Provide a brief 1-2 sentence explanation of why you're transferring "
-                        "to a live agent. Example: modify_call(action_type='live-handoff', "
-                        "summary='Customer needs to book 10 rooms for corporate event')"
-                    ),
-                },
-            }
-            logger.info(f"[modify_call] Missing summary error: {result}")
-            return json.dumps(result, indent=2)
+        # Extract conversation context automatically
+        auto_context = _extract_handoff_context(runtime)
+        logger.info(f"[modify_call] Auto-extracted context: {auto_context}")
 
-        # Success - return handoff signal with summary
+        # Combine with agent's summary if provided
+        if summary and summary.strip():
+            full_summary = f"{auto_context} - {summary.strip()}"
+        else:
+            full_summary = auto_context
+
+        logger.info(f"[modify_call] Full handoff summary: {full_summary}")
+
+        # Success - return handoff signal with full summary
         result = {
             "status": "success",
             "type": "live-handoff",
             "message": "Transferring to live agent",
-            "summary": summary.strip(),
+            "summary": full_summary,
         }
         logger.info(f"[modify_call] Returning live-handoff success: {result}")
         return json.dumps(result, indent=2)

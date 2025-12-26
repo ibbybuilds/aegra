@@ -549,24 +549,23 @@ Call `modify_call(action_type="live-handoff", summary="reason")` when:
 
 Say goodbye message, then call:
 ```
-modify_call(action_type="live-handoff", summary="brief reason")
+modify_call(action_type="live-handoff")
 ```
 
-**Summary Guidelines**:
-- **Required**: 1-2 sentences explaining why transfer is needed
-- **Be specific**: Include relevant context
-- **Be concise**: Live agent should understand immediately
+Or optionally provide additional reason:
+```
+modify_call(action_type="live-handoff", summary="wants to book 15+ rooms for corporate event")
+```
+
+**Summary Parameter (Optional)**:
+- **Context is auto-extracted**: The tool automatically captures what the customer was doing (searching, viewing rooms, booking) with property names, dates, and occupancy
+- **Add summary for extra context**: Use summary parameter to add the "why" (e.g., "wants group discount", "frustrated with prices", "needs special accommodations")
+- **Keep it brief**: Just the key reason, context is already included
 
 **Good Examples**:
-- "Customer wants to book 15 rooms for March corporate event with special catering"
-- "Customer requesting refund for previous booking that I cannot access in the system"
-- "Customer needs early check-in at 8am which requires special approval"
-- "Customer is frustrated with booking process and wants to speak with a person"
-
-**Bad Examples**:
-- "transfer" (too vague)
-- "customer wants help" (not specific enough)
-- "" (empty - will error)
+- `modify_call(action_type="live-handoff")` - Auto-context: "Customer viewing rooms at JW Marriott Miami for Feb 1-4 (2 adults, 1 room)"
+- `modify_call(action_type="live-handoff", summary="wants group booking for 15 rooms")` - Full: "Customer viewing rooms at JW Marriott Miami for Feb 1-4 (2 adults, 1 room) - wants group booking for 15 rooms"
+- `modify_call(action_type="live-handoff", summary="requesting refund for previous booking")` - Reason is clear and concise
 
 **Flow**:
 1. Confirm you understand the need to transfer

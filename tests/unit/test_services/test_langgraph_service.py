@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, mock_open, patch
+from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
@@ -214,8 +214,9 @@ class TestLangGraphServiceGraphs:
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
             # Mock database manager
-            mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
-            mock_db_manager.get_store = AsyncMock(return_value="store")
+            # FIX: Changed AsyncMock to Mock for synchronous getters
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
 
             # Mock graph compilation
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
@@ -272,8 +273,10 @@ class TestLangGraphServiceGraphs:
             ) as mock_load,
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
-            mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
-            mock_db_manager.get_store = AsyncMock(return_value="store")
+            # FIX: Changed AsyncMock to Mock
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
+
             # Make new_graph a StateGraph-like instance to hit compile path
             import agent_server.services.langgraph_service as lgs_module
 
@@ -738,12 +741,14 @@ async def test_get_graph_compiles_stategraph(monkeypatch):
 
     monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
 
-    # Provide a fake db_manager with async get_checkpointer/get_store
+    # Provide a fake db_manager with get_checkpointer/get_store
     class FakeDBManager:
-        async def get_checkpointer(self):
+        # FIX: Removed async def
+        def get_checkpointer(self):
             return "cp"
 
-        async def get_store(self):
+        # FIX: Removed async def
+        def get_store(self):
             return "store"
 
     import agent_server.core.database as dbmod
@@ -770,10 +775,12 @@ async def test_get_graph_precompiled_copy(monkeypatch):
     monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
 
     class FakeDBManager2:
-        async def get_checkpointer(self):
+        # FIX: Removed async def
+        def get_checkpointer(self):
             return "cp2"
 
-        async def get_store(self):
+        # FIX: Removed async def
+        def get_store(self):
             return "store2"
 
     import agent_server.core.database as dbmod

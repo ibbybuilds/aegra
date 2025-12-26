@@ -109,13 +109,13 @@ class DatabaseManager:
 
         logger.info("✅ Database connections closed")
 
-    async def get_checkpointer(self) -> AsyncPostgresSaver:
+    def get_checkpointer(self) -> AsyncPostgresSaver:
         """Return the live AsyncPostgresSaver instance."""
         if self._checkpointer is None:
             raise RuntimeError("Database not initialized")
         return self._checkpointer
 
-    async def get_store(self) -> AsyncPostgresStore:
+    def get_store(self) -> AsyncPostgresStore:
         """Return the live AsyncPostgresStore instance."""
         if self._store is None:
             raise RuntimeError("Database not initialized")

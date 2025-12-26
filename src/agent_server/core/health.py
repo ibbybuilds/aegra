@@ -67,7 +67,7 @@ async def health_check(_request: Request) -> dict[str, str]:
 
     # LangGraph checkpointer (lazy-init)
     try:
-        checkpointer = await db_manager.get_checkpointer()
+        checkpointer = db_manager.get_checkpointer()
         # probe - will raise if connection is bad; tuple may not exist which is fine
         with contextlib.suppress(Exception):
             await checkpointer.aget_tuple(
@@ -80,7 +80,7 @@ async def health_check(_request: Request) -> dict[str, str]:
 
     # LangGraph store (lazy-init)
     try:
-        store = await db_manager.get_store()
+        store = db_manager.get_store()
         with contextlib.suppress(Exception):
             await store.aget(("health",), "check")
         health_status["langgraph_store"] = "connected"
@@ -113,8 +113,8 @@ async def readiness_check(_request: Request) -> dict[str, str]:
 
     # Check that LangGraph components can be obtained (lazy init) and respond
     try:
-        checkpointer = await db_manager.get_checkpointer()
-        store = await db_manager.get_store()
+        checkpointer = db_manager.get_checkpointer()
+        store = db_manager.get_store()
         # lightweight probes
         with contextlib.suppress(Exception):
             await checkpointer.aget_tuple(

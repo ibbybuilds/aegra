@@ -174,8 +174,8 @@ class TestDatabaseManager:
         assert db_manager.get_engine() is not None
 
         # Asynchronous getters (ensure they are awaited)
-        assert await db_manager.get_checkpointer() is not None
-        assert await db_manager.get_store() is not None
+        assert db_manager.get_checkpointer() is not None
+        assert db_manager.get_store() is not None
 
     @pytest.mark.asyncio
     async def test_getters_failure(self, db_manager):
@@ -192,7 +192,7 @@ class TestDatabaseManager:
 
         # Asynchronous getter checks
         with pytest.raises(RuntimeError, match="Database not initialized"):
-            await db_manager.get_checkpointer()
+            db_manager.get_checkpointer()
 
         with pytest.raises(RuntimeError, match="Database not initialized"):
-            await db_manager.get_store()
+            db_manager.get_store()

@@ -30,7 +30,7 @@ async def put_store_item(
     # Get LangGraph store from database manager
     from ..core.database import db_manager
 
-    store = await db_manager.get_store()
+    store = db_manager.get_store()
 
     await store.aput(
         namespace=tuple(scoped_namespace), key=request.key, value=request.value
@@ -62,7 +62,7 @@ async def get_store_item(
     # Get LangGraph store from database manager
     from ..core.database import db_manager
 
-    store = await db_manager.get_store()
+    store = db_manager.get_store()
 
     item = await store.aget(tuple(scoped_namespace), key)
 
@@ -100,7 +100,7 @@ async def delete_store_item(
     # Get LangGraph store from database manager
     from ..core.database import db_manager
 
-    store = await db_manager.get_store()
+    store = db_manager.get_store()
 
     await store.adelete(tuple(scoped_namespace), k)
 
@@ -121,7 +121,7 @@ async def search_store_items(
     # Get LangGraph store from database manager
     from ..core.database import db_manager
 
-    store = await db_manager.get_store()
+    store = db_manager.get_store()
 
     # Search with LangGraph store
     # asearch takes namespace_prefix as a positional-only argument

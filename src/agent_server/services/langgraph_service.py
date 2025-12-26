@@ -159,8 +159,8 @@ class LangGraphService:
         # Always ensure graphs are compiled with our Postgres checkpointer for persistence
         from ..core.database import db_manager
 
-        checkpointer_cm = await db_manager.get_checkpointer()
-        store_cm = await db_manager.get_store()
+        checkpointer_cm = db_manager.get_checkpointer()
+        store_cm = db_manager.get_store()
 
         if isinstance(base_graph, StateGraph):
             # The module exported an *uncompiled* StateGraph – compile it now with

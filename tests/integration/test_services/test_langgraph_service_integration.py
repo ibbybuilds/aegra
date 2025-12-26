@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 from langgraph.graph import StateGraph
@@ -133,8 +133,10 @@ class TestLangGraphServiceDatabase:
             # Mock database manager methods
             mock_checkpointer = Mock()
             mock_store = Mock()
-            mock_db_manager.get_checkpointer = AsyncMock(return_value=mock_checkpointer)
-            mock_db_manager.get_store = AsyncMock(return_value=mock_store)
+
+            # FIX: Changed AsyncMock to Mock because getters are now synchronous
+            mock_db_manager.get_checkpointer = Mock(return_value=mock_checkpointer)
+            mock_db_manager.get_store = Mock(return_value=mock_store)
 
             # Mock graph compilation
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
@@ -173,8 +175,10 @@ class TestLangGraphServiceDatabase:
         ):
             mock_checkpointer = Mock()
             mock_store = Mock()
-            mock_db_manager.get_checkpointer = AsyncMock(return_value=mock_checkpointer)
-            mock_db_manager.get_store = AsyncMock(return_value=mock_store)
+
+            # FIX: Changed AsyncMock to Mock
+            mock_db_manager.get_checkpointer = Mock(return_value=mock_checkpointer)
+            mock_db_manager.get_store = Mock(return_value=mock_store)
 
             result = await service.get_graph("compiled_graph")
 
@@ -286,7 +290,8 @@ class TestLangGraphServiceErrorHandling:
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
             # Mock database error
-            mock_db_manager.get_checkpointer = AsyncMock(
+            # FIX: Changed AsyncMock to Mock (synchronous getter raising exception)
+            mock_db_manager.get_checkpointer = Mock(
                 side_effect=Exception("Database error")
             )
 
@@ -311,8 +316,9 @@ class TestLangGraphServiceErrorHandling:
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
-            mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
-            mock_db_manager.get_store = AsyncMock(return_value="store")
+            # FIX: Changed AsyncMock to Mock
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
 
             with pytest.raises(Exception, match="Compilation error"):
                 await service.get_graph("compile_error_graph")
@@ -366,8 +372,9 @@ class TestLangGraphServiceConcurrency:
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
-            mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
-            mock_db_manager.get_store = AsyncMock(return_value="store")
+            # FIX: Changed AsyncMock to Mock
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
 
             # Load same graph concurrently

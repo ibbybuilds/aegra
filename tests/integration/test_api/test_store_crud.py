@@ -17,7 +17,7 @@ def client(mock_store):
     app.include_router(store_module.router)
 
     # Mock db_manager.get_store()
-    async def mock_get_store():
+    def mock_get_store():
         return mock_store
 
     # Patch at module level

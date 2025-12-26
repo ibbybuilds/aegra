@@ -97,6 +97,91 @@ class TestCreateThread:
         assert data["metadata"]["tags"] == ["urgent", "production"]
         assert data["metadata"]["context"]["tier"] == 3
 
+    def test_create_thread_with_custom_id(self, client):
+        """Test creating a thread with a client-provided threadId"""
+        custom_id = "my-custom-thread-id"
+        resp = client.post("/threads", json={"threadId": custom_id})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["thread_id"] == custom_id
+
+    def test_create_thread_with_custom_id_snake_case(self, client):
+        """Test creating a thread with thread_id (snake_case) also works"""
+        custom_id = "my-snake-case-thread-id"
+        resp = client.post("/threads", json={"thread_id": custom_id})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["thread_id"] == custom_id
+
+    def test_create_thread_if_exists_do_nothing(self):
+        """Test ifExists='do_nothing' returns existing thread"""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        existing_thread = _thread_row("existing-thread-id", metadata={"original": True})
+
+        class Session(DummySessionBase):
+            call_count = 0
+
+            async def scalar(self, _stmt):
+                # First call is the existence check
+                Session.call_count += 1
+                if Session.call_count == 1:
+                    return existing_thread
+                return None
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        # Try to create with same ID and ifExists='do_nothing'
+        resp = client.post(
+            "/threads",
+            json={"threadId": "existing-thread-id", "ifExists": "do_nothing"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["thread_id"] == "existing-thread-id"
+        # Should return the existing thread's metadata
+        assert data["metadata"].get("original") is True
+
+    def test_create_thread_if_exists_raise(self):
+        """Test ifExists='raise' (default) returns 409 on duplicate"""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        existing_thread = _thread_row("conflict-thread-id")
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return existing_thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        # Try to create with same ID (default ifExists='raise')
+        resp = client.post("/threads", json={"threadId": "conflict-thread-id"})
+        assert resp.status_code == 409
+        assert "already exists" in resp.json()["detail"]
+
+    def test_create_thread_if_exists_raise_explicit(self):
+        """Test explicit ifExists='raise' returns 409 on duplicate"""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        existing_thread = _thread_row("conflict-thread-id")
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return existing_thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        # Explicitly set ifExists='raise'
+        resp = client.post(
+            "/threads",
+            json={"threadId": "conflict-thread-id", "ifExists": "raise"},
+        )
+        assert resp.status_code == 409
+        assert "already exists" in resp.json()["detail"]
+
 
 class TestListThreads:
     """Test GET /threads endpoint"""

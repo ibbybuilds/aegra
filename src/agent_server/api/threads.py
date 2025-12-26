@@ -55,9 +55,38 @@ async def create_thread(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Create a new conversation thread"""
+    """Create a new conversation thread
 
-    thread_id = str(uuid4())
+    Supports idempotent creation via optional threadId and ifExists parameters:
+    - threadId: Client-provided thread ID (auto-generated if not provided)
+    - ifExists: Behavior when thread exists - 'raise' (default, returns 409) or 'do_nothing' (returns existing)
+    """
+
+    # Use client-provided ID or generate new one
+    thread_id = request.thread_id or str(uuid4())
+
+    # Check for existing thread if client provided an ID
+    if request.thread_id:
+        existing_stmt = select(ThreadORM).where(
+            ThreadORM.thread_id == thread_id,
+            ThreadORM.user_id == user.identity,
+        )
+        existing = await session.scalar(existing_stmt)
+
+        if existing:
+            if request.if_exists == "do_nothing":
+                # Return existing thread without modification
+                return Thread.model_validate(
+                    {
+                        **{
+                            c.name: getattr(existing, c.name)
+                            for c in existing.__table__.columns
+                        },
+                        "metadata": existing.metadata_json,
+                    }
+                )
+            else:  # "raise" (default)
+                raise HTTPException(409, f"Thread '{thread_id}' already exists")
 
     # Build metadata with required fields
     metadata = request.metadata or {}

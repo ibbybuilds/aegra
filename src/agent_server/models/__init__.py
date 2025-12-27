@@ -31,6 +31,7 @@ from .threads import (
     ThreadState,
     ThreadStateUpdate,
     ThreadStateUpdateResponse,
+    ThreadUpdate,
 )
 
 __all__ = [
@@ -71,4 +72,5 @@ __all__ = [
     "User",
     "AuthContext",
     "TokenPayload",
+    "ThreadUpdate",
 ]

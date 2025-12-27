@@ -789,3 +789,135 @@ async def test_get_graph_precompiled_copy(monkeypatch):
 
     compiled = await service.get_graph("g2")
     assert compiled == "copied:cp2:store2"
+
+
+class TestSetupDependencies:
+    """Tests for _setup_dependencies() method"""
+
+    def test_setup_dependencies_adds_paths(self, tmp_path):
+        """Test that dependencies are added to sys.path"""
+        import sys
+
+        # Create a test dependency directory
+        dep_dir = tmp_path / "my_utils"
+        dep_dir.mkdir()
+
+        # Create config with dependency
+        config = {"graphs": {}, "dependencies": [str(dep_dir)]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            service._setup_dependencies()
+            assert str(dep_dir) in sys.path
+        finally:
+            sys.path = original_path
+
+    def test_setup_dependencies_relative_path(self, tmp_path):
+        """Test that relative paths are resolved from config directory"""
+        import sys
+
+        # Create structure: config_dir/shared_utils/
+        config_dir = tmp_path / "project"
+        config_dir.mkdir()
+        utils_dir = config_dir / "shared_utils"
+        utils_dir.mkdir()
+
+        config = {"graphs": {}, "dependencies": ["./shared_utils"]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = config_dir / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            service._setup_dependencies()
+            assert str(utils_dir) in sys.path
+        finally:
+            sys.path = original_path
+
+    def test_setup_dependencies_missing_path_warns(self, tmp_path, capsys):
+        """Test that missing dependency paths log a warning"""
+        config = {"graphs": {}, "dependencies": ["./nonexistent"]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        service._setup_dependencies()
+
+        # structlog logs to stdout
+        captured = capsys.readouterr()
+        assert "does not exist" in captured.out
+
+    def test_setup_dependencies_empty_config(self):
+        """Test that empty dependencies is handled gracefully"""
+        config = {"graphs": {}}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = Path("aegra.json")
+
+        # Should not raise
+        service._setup_dependencies()
+
+    def test_setup_dependencies_no_duplicates(self, tmp_path):
+        """Test that paths are not added twice to sys.path"""
+        import sys
+
+        # Create a test dependency directory
+        dep_dir = tmp_path / "my_utils"
+        dep_dir.mkdir()
+
+        config = {"graphs": {}, "dependencies": [str(dep_dir)]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            # Call twice
+            service._setup_dependencies()
+            service._setup_dependencies()
+
+            # Should only appear once
+            count = sys.path.count(str(dep_dir))
+            assert count == 1
+        finally:
+            sys.path = original_path
+
+    def test_setup_dependencies_preserves_order(self, tmp_path):
+        """Test that dependencies are added in config order (first = highest priority)"""
+        import sys
+
+        # Create test dependency directories
+        dep1 = tmp_path / "dep1"
+        dep1.mkdir()
+        dep2 = tmp_path / "dep2"
+        dep2.mkdir()
+
+        config = {"graphs": {}, "dependencies": [str(dep1), str(dep2)]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            service._setup_dependencies()
+
+            # dep2 should be inserted first (index 0), then dep1 at index 0
+            # So dep1 should be before dep2 in sys.path
+            idx1 = sys.path.index(str(dep1))
+            idx2 = sys.path.index(str(dep2))
+            assert idx1 < idx2  # dep1 has higher priority (lower index)
+        finally:
+            sys.path = original_path

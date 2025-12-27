@@ -17,6 +17,14 @@ class ThreadCreate(BaseModel):
     )
 
 
+class ThreadUpdate(BaseModel):
+    """Request model for updating threads"""
+
+    metadata: dict[str, Any] | None = Field(
+        None, description="Thread metadata to update"
+    )
+
+
 class Thread(BaseModel):
     """Thread entity model
 

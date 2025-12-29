@@ -262,6 +262,97 @@ Custom routes follow this priority order:
 
 See [`custom_routes_example.py`](custom_routes_example.py) for a complete example.
 
+## ⏰ Startup Tasks
+
+Aegra supports executing tasks when starting up services. This is useful to perform lengthy operations before any user interacts with your agents (e.g. SQL cache warming, computing lookup indices, notifying a webhook, periodic tasks, ...).
+
+### Configuration
+
+Register startup tasks by configuring the `startup` field in your `aegra.json` or `langgraph.json`:
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/react_agent/graph.py:graph",
+    "agent_hitl": "./graphs/react_agent_hitl/graph.py:graph",
+    "subgraph_agent": "./graphs/subgraph_agent/graph.py:graph",
+    "subgraph_hitl_agent": "./graphs/subgraph_hitl_agent/graph.py:graph"
+  },
+  "http": {
+    "app": "./custom_routes_example.py:app"
+  },
+  "startup": {
+    "warm_cache": {
+      "path": "./startup_tasks_example.py:warmup_cache",
+      "blocking": true
+    },
+    "webhook": {
+      "path": "./startup_tasks_example.py:call_webhook",
+      "blocking": false
+    },
+    "periodic": {
+      "path": "./startup_tasks_example.py:run_periodic_task",
+      "blocking": false
+    }
+  }
+}
+```
+
+### Creating your own tasks
+
+Create a Python file (e.g., `startup_tasks_example.py`) with your asynchronous task methods:
+
+
+```python
+import asyncio
+import httpx
+import structlog
+
+
+async def warmup_cache():
+    logger = structlog.get_logger(__name__)
+    logger.info("🕑 Simulating cache warming for a few seconds... Server won't start until this is done")
+    await asyncio.sleep(5)
+    logger.info("✅ Cache warming simulation done !")
+
+
+async def call_webhook():
+    logger = structlog.get_logger(__name__)
+    endpoint = "https://example.com/"
+    logger.info(f"🌐 Requesting webpage at {endpoint}")
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(endpoint)
+        logger.info(f"➡️ Data received from {endpoint}...", data=resp.text)
+    except httpx.RequestError as e:
+        logger.error("❌ Request error in startup hook: " + str(e))
+
+
+async def periodic_task():
+    logger = structlog.get_logger(__name__)
+    loops, max_loops = 0, 10
+
+    while loops < max_loops:
+        loops += 1
+        logger.info(f"🔄️ Periodic Task Loop Count : {loops}/{max_loops}")
+        await asyncio.sleep(3)
+```
+
+### Blocking vs Non-blocking Tasks
+
+Tasks are asynchronous methods written in a Python file. There are two types of tasks:
+
+| Task Type | Description | Example Use Cases |
+| --- | --- | --- |
+| **Blocking** | Blocking tasks will fully resolve before allowing langgraph services from going live | <ul><li>SQL Cache Warming</li><li>Fetch agent configuration</li><li>...</li></ul> |
+| **Non-blocking** | Non-blocking tasks will run concurrently with other services | <ul><li>Periodic Tasks</li><li>Triggering Webhooks</li><li>...</li></ul> |
+
+Tasks are executed according to the order they are registered in the configuration file. Non-blocking tasks depending on blocking task results should be registered *after* said blocking tasks in the configuration.
+
+See [`startup_tasks_example.py`](startup_tasks_example.py) for a complete example.
+
+> **Note:** Tasks can be defined anywhere in your project, including within graphs, enabling proper partitioning.
+
 ## 📁 Project Structure
 
 ```text
@@ -269,6 +360,7 @@ aegra/
 ├── aegra.json           # Graph configuration
 ├── auth.py              # Authentication setup
 ├── custom_routes.py     # Custom FastAPI endpoints (optional)
+├── tasks.py             # Startup task definitions (optional)
 ├── graphs/              # Agent definitions
 │   └── react_agent/     # Example ReAct agent
 ├── src/agent_server/    # FastAPI application

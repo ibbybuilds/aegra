@@ -1,6 +1,8 @@
 """LangGraph integration service with official patterns"""
 
+import asyncio
 import importlib.util
+import inspect
 import json
 import os
 from pathlib import Path
@@ -27,6 +29,7 @@ class LangGraphService:
         self.config: dict[str, Any] | None = None
         self._graph_registry: dict[str, Any] = {}
         self._graph_cache: dict[str, Any] = {}
+        self._running_tasks: dict[str, asyncio.Task] = {}
 
     async def initialize(self):
         """Load configuration file and setup graph registry.
@@ -75,6 +78,9 @@ class LangGraphService:
         # Pre-register assistants for each graph using deterministic UUIDs so
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
+
+        # Load startup tasks registry from config
+        await self._fire_startup_tasks()
 
     def _load_graph_registry(self):
         """Load graph definitions from aegra.json"""
@@ -141,6 +147,94 @@ class LangGraphService:
             await session.commit()
         finally:
             await session.close()
+
+    async def _fire_startup_tasks(self) -> None:
+        if not self.config:
+            return
+
+        tasks = self.config.get("startup", {})
+        valid_tasks: dict[str, dict[str, object]] = {}
+        for task_id, task_settings in tasks.items():
+            # First, validate tasks settings to ensure most are likely to perform
+            if not isinstance(task_settings, dict):
+                raise ValueError(
+                    f"Task settings for `{task_id}` must be an object with keys: `path`, `blocking`. Provided: {task_settings}"
+                )
+
+            task_path = task_settings.get("path")
+            task_blocking = task_settings.get("blocking")
+
+            if not isinstance(task_path, str):
+                raise ValueError(
+                    f"Field `path` must be a valid string for task `{task_id}`. Provided: `{task_path}`"
+                )
+            if not isinstance(task_blocking, bool):
+                raise ValueError(
+                    f"Field `blocking` must be a valid boolean for task `{task_id}`. Provided: `{task_blocking}`"
+                )
+            if ":" not in task_path:
+                raise ValueError(
+                    f"Invalid task path format for `{task_id}`. Provided: `{task_path}`. Expected: `./path/to/file.py:export_name`"
+                )
+
+            file_path, export_name = task_path.split(":", 1)
+            valid_tasks[task_id] = {
+                "file_path": file_path,
+                "export_name": export_name,
+                "blocking": task_blocking,
+            }
+
+        # Fire up tasks
+        for task_id, task_info in valid_tasks.items():
+            task_location = {
+                "file_path": str(task_info["file_path"]),
+                "export_name": str(task_info["export_name"]),
+            }
+            await self._fire_task_from_file(
+                task_id, task_location, blocking=bool(task_info["blocking"])
+            )
+
+    async def _fire_task_from_file(
+        self, task_id: str, task_location: dict[str, str], blocking: bool
+    ) -> None:
+        file_path = Path(task_location["file_path"])
+        if not file_path.exists():
+            raise ValueError(f"Task file not found for `{task_id}`: {file_path}")
+
+        # Dynamic import of task module
+        spec = importlib.util.spec_from_file_location(
+            f"tasks.{task_id}", str(file_path.resolve())
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError(
+                f"Failed to import task module for `{task_id}`: {file_path}"
+            )
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # Get the exported task
+        export_name = task_location["export_name"]
+        if not hasattr(module, export_name):
+            raise ValueError(
+                f"Task export not found for `{task_id}`: {export_name} in {file_path}"
+            )
+
+        # Ensure the exported item is a decorated task (with @task)
+        task = getattr(module, export_name)
+        if not callable(task) or not inspect.iscoroutinefunction(task):
+            raise ValueError(
+                f"Task export `{export_name}` for `{task_id}` must be an asynchronous method."
+            )
+
+        if blocking:
+            await task()
+        else:
+            self._running_tasks[task_id] = asyncio.create_task(task())
+
+    def get_running_tasks(self) -> dict[str, asyncio.Task]:
+        """Get a list of non-blocking tasks that might still be running concurrently"""
+        return self._running_tasks
 
     async def get_graph(self, graph_id: str, force_reload: bool = False) -> Pregel:
         """Get a compiled graph by ID with caching and LangGraph integration"""

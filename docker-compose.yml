@@ -40,6 +40,8 @@ services:
       - ./alembic:/app/alembic:ro # for migrations
       # Mount custom route files dynamically (add your custom routes file here)
       - ./custom_routes_example.py:/app/custom_routes_example.py:ro
+      # Mount startup tasks files here
+      - ./startup_tasks_example.py:/app/startup_tasks_example.py:ro
     command: >
       sh -c "
         echo 'Running database migrations...' &&

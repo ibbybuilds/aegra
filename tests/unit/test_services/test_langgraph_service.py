@@ -841,7 +841,7 @@ class TestSetupDependencies:
         finally:
             sys.path = original_path
 
-    def test_setup_dependencies_missing_path_warns(self, tmp_path, capsys):
+    def test_setup_dependencies_missing_path_warns(self, tmp_path, caplog, capsys):
         """Test that missing dependency paths log a warning"""
         config = {"graphs": {}, "dependencies": ["./nonexistent"]}
 
@@ -849,11 +849,12 @@ class TestSetupDependencies:
         service.config = config
         service.config_path = tmp_path / "aegra.json"
 
-        service._setup_dependencies()
+        with caplog.at_level("WARNING"):
+            service._setup_dependencies()
 
-        # structlog logs to stdout
+        # structlog may output to stdout (dev) or caplog (CI), check both
         captured = capsys.readouterr()
-        assert "does not exist" in captured.out
+        assert "does not exist" in caplog.text or "does not exist" in captured.out
 
     def test_setup_dependencies_empty_config(self):
         """Test that empty dependencies is handled gracefully"""

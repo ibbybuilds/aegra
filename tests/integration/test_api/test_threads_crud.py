@@ -746,3 +746,122 @@ class TestThreadStateCheckpointPost:
             assert resp.status_code == 200
             state = resp.json()
             assert state["checkpoint"]["checkpoint_id"] == "cp-post"
+
+
+class TestUpdateThread:
+    """Test PATCH /threads/{thread_id} endpoint"""
+
+    def test_update_thread_metadata_merge(self):
+        """Test that new metadata is merged with existing metadata (not replaced)"""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        # 1. Setup: the thread already has some data (e.g., system data)
+        initial_metadata = {
+            "graph_id": "test-graph-v1",
+            "assistant_id": "asst-123",
+            "existing_user_field": "do-not-touch",
+        }
+        thread = _thread_row("thread-update-1", metadata=initial_metadata)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+            async def commit(self):
+                pass
+
+            async def refresh(self, obj):
+                # In a real DB, refresh updates the object; here we just simulate it
+                pass
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        # 2. Action: update the thread name and add a new field
+        patch_payload = {
+            "metadata": {"thread_name": "My New Thread Name", "custom_tag": "important"}
+        }
+
+        resp = client.patch("/threads/thread-update-1", json=patch_payload)
+
+        # 3. Verification
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Verify that new fields were added
+        assert data["metadata"]["thread_name"] == "My New Thread Name"
+        assert data["metadata"]["custom_tag"] == "important"
+
+        # IMPORTANT: Verify that old fields did NOT disappear
+        assert data["metadata"]["graph_id"] == "test-graph-v1"
+        assert data["metadata"]["existing_user_field"] == "do-not-touch"
+
+    def test_update_thread_overwrite_field(self):
+        """Test that existing metadata keys can be updated"""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        thread = _thread_row(
+            "thread-update-2", metadata={"status": "draft", "count": 1}
+        )
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+            async def commit(self):
+                pass
+
+            async def refresh(self, obj):
+                pass
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        # Update the existing field 'count'
+        resp = client.patch("/threads/thread-update-2", json={"metadata": {"count": 2}})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["status"] == "draft"  # did not change
+        assert data["metadata"]["count"] == 2  # updated
+
+    def test_update_thread_not_found(self):
+        """Test updating a non-existent thread"""
+        app = create_test_app(include_runs=False, include_threads=True)
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return None
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        resp = client.patch("/threads/missing-thread", json={"metadata": {"a": 1}})
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"]
+
+    def test_update_thread_empty_body(self):
+        """Test patch with empty body (should just update timestamp, not crash)"""
+        app = create_test_app(include_runs=False, include_threads=True)
+        thread = _thread_row("thread-update-3", metadata={"initial": True})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+            async def commit(self):
+                pass
+
+            async def refresh(self, obj):
+                pass
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        # Empty JSON or JSON without metadata
+        resp = client.patch("/threads/thread-update-3", json={})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Data should not have changed
+        assert data["metadata"]["initial"] is True

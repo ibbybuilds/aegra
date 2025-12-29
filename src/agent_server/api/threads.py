@@ -28,6 +28,7 @@ from ..models import (
     ThreadState,
     ThreadStateUpdate,
     ThreadStateUpdateResponse,
+    ThreadUpdate,
     User,
 )
 from ..services.streaming_service import streaming_service
@@ -190,6 +191,53 @@ async def get_thread(
     thread = await session.scalar(stmt)
     if not thread:
         raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+    return Thread.model_validate(
+        {
+            **{c.name: getattr(thread, c.name) for c in thread.__table__.columns},
+            "metadata": thread.metadata_json,
+        }
+    )
+
+
+@router.patch("/threads/{thread_id}", response_model=Thread)
+async def update_thread(
+    thread_id: str,
+    request: ThreadUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Update a thread's metadata and timestamp.
+
+    This performs a deep merge of the provided metadata into the existing metadata
+    and updates the 'updated_at' timestamp.
+    """
+    # 1. Fetch thread
+    stmt = select(ThreadORM).where(
+        ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
+    )
+    thread = await session.scalar(stmt)
+
+    if not thread:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+    # 2. Update timestamp
+    thread.updated_at = datetime.now(UTC)
+
+    # 3. Merge metadata
+    if request.metadata:
+        # Ensure we work with a dict
+        current_metadata = dict(thread.metadata_json or {})
+
+        # Merge new values (updates existing keys, adds new ones)
+        current_metadata.update(request.metadata)
+
+        thread.metadata_json = current_metadata
+
+    # 4. Save and return
+    await session.commit()
+    await session.refresh(thread)
 
     return Thread.model_validate(
         {

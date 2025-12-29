@@ -25,6 +25,7 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 
 ## 🆕 What's New
 
+- **📦 [Dependencies Config](docs/dependencies.md)**: Add shared utility modules to Python path for graph imports
 - **🎨 LangGraph Studio Support**: Full compatibility with LangGraph Studio for visual graph debugging and development
 - **🤖 AG-UI / CopilotKit Support**: Seamless integration with AG-UI and CopilotKit-based clients for enhanced user experiences
 - **⬆️ LangGraph v1.0.0**: Upgraded to LangGraph and LangChain v1.0.0 with latest features and improvements
@@ -330,6 +331,24 @@ LANGFUSE_HOST=https://cloud.langfuse.com
   }
 }
 ```
+
+### Dependencies (Optional)
+
+Add shared utility modules to the Python path for graph imports:
+
+```json
+{
+  "graphs": { ... },
+  "dependencies": [
+    "./shared",
+    "./libs/common"
+  ]
+}
+```
+
+Paths are resolved relative to the config file. This matches LangGraph CLI behavior.
+
+📚 **[Full Documentation](docs/dependencies.md)** - Path resolution, use cases, and examples.
 
 ## 🎯 What You Get
 

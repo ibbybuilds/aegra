@@ -32,6 +32,32 @@ class HttpConfig(TypedDict, total=False):
     """Custom CORS configuration"""
 
 
+class StoreIndexConfig(TypedDict, total=False):
+    """Configuration for vector embeddings in store.
+
+    Enables semantic similarity search using pgvector.
+    See: https://github.com/ibbybuilds/aegra/issues/104
+    """
+
+    dims: int
+    """Embedding vector dimensions (e.g., 1536 for OpenAI text-embedding-3-small)"""
+    embed: str
+    """Embedding model in format '<provider>:<model-id>'
+    Examples:
+    - openai:text-embedding-3-small (1536 dims)
+    - openai:text-embedding-3-large (3072 dims)
+    - bedrock:amazon.titan-embed-text-v2:0 (1024 dims)
+    - cohere:embed-english-v3.0 (1024 dims)
+    """
+
+
+class StoreConfig(TypedDict, total=False):
+    """Store configuration options"""
+
+    index: StoreIndexConfig | None
+    """Vector index configuration for semantic search"""
+
+
 def _resolve_config_path() -> Path | None:
     """Resolve config file path using the same logic as LangGraphService.
 
@@ -96,5 +122,26 @@ def load_http_config() -> HttpConfig | None:
         config_path = _resolve_config_path()
         logger.info(f"Loaded HTTP config from {config_path}")
         return http_config
+
+    return None
+
+
+def load_store_config() -> StoreConfig | None:
+    """Load store config from aegra.json or langgraph.json.
+
+    Uses the same config resolution logic as LangGraphService to ensure consistency.
+
+    Returns:
+        Store configuration dict or None if not found
+    """
+    config = load_config()
+    if config is None:
+        return None
+
+    store_config = config.get("store")
+    if store_config:
+        config_path = _resolve_config_path()
+        logger.info(f"Loaded store config from {config_path}")
+        return store_config
 
     return None

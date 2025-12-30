@@ -34,7 +34,7 @@ Welcome to Aegra! This guide will help you get started with development, whether
 # 1. Clone and setup
 git clone https://github.com/ibbybuilds/aegra.git
 cd aegra
-uv install
+uv sync
 
 # 2. Activate environment (IMPORTANT!)
 source .venv/bin/activate  # Mac/Linux
@@ -53,11 +53,13 @@ Aegra uses automated code quality enforcement to maintain high standards and con
 ### Setup
 
 **Option 1: Using Make (Recommended - installs hooks automatically)**
+
 ```bash
 make dev-install     # Installs dependencies + git hooks
 ```
 
 **Option 2: Using uv directly**
+
 ```bash
 uv sync
 uv run pre-commit install
@@ -69,6 +71,7 @@ The hooks will check your code before every commit.
 ### What Gets Checked Automatically
 
 When you commit, these checks run automatically:
+
 - ✅ **Code formatting** (Ruff) - Auto-formats your code
 - ✅ **Linting** (Ruff) - Checks code quality
 - ✅ **Type checking** (mypy) - Validates type hints
@@ -115,6 +118,7 @@ make ci-check
 ```
 
 📖 **For detailed information**, see:
+
 - [Code Quality Quick Reference](code-quality.md) - Commands and troubleshooting
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Complete contribution guide
 

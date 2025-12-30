@@ -639,7 +639,7 @@ source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 
 # Install dependencies
-uv install
+uv sync
 
 # Start everything
 docker compose up aegra
@@ -653,7 +653,7 @@ source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 
 # Install dependencies
-uv install
+uv sync
 
 # Start database
 docker compose up postgres -d

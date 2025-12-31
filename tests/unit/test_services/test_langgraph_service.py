@@ -1,5 +1,6 @@
 """Unit tests for LangGraphService"""
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
@@ -185,6 +186,317 @@ class TestLangGraphServiceConfig:
         service.config = {}
 
         assert service.get_dependencies() == []
+
+
+class TestLangGraphServiceStartupTasks:
+    """Test startup tasks"""
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_empty_config(self):
+        """Test startup tasks with empty config"""
+        service = LangGraphService()
+        service.config = {"startup": {}}
+
+        # Should complete without error
+        await service._fire_startup_tasks()
+
+        assert service._running_tasks == {}
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_no_startup_key(self):
+        """Test startup tasks when startup key is missing"""
+        service = LangGraphService()
+        service.config = {}
+
+        # Should complete without error
+        await service._fire_startup_tasks()
+
+        assert service._running_tasks == {}
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_invalid_settings_not_dict(self):
+        """Test error when task settings is not a dict"""
+        service = LangGraphService()
+        service.config = {"startup": {"task1": "invalid_string"}}
+
+        with pytest.raises(
+            ValueError, match="Task settings for `task1` must be an object"
+        ):
+            await service._fire_startup_tasks()
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_missing_path(self):
+        """Test error when path field is missing"""
+        service = LangGraphService()
+        service.config = {"startup": {"task1": {"blocking": True}}}
+
+        with pytest.raises(
+            ValueError, match="Field `path` must be a valid string for task `task1`"
+        ):
+            await service._fire_startup_tasks()
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_invalid_path_type(self):
+        """Test error when path is not a string"""
+        service = LangGraphService()
+        service.config = {"startup": {"task1": {"path": 123, "blocking": True}}}
+
+        with pytest.raises(
+            ValueError, match="Field `path` must be a valid string for task `task1`"
+        ):
+            await service._fire_startup_tasks()
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_missing_blocking(self):
+        """Test error when blocking field is missing"""
+        service = LangGraphService()
+        service.config = {"startup": {"task1": {"path": "./tasks/task.py:run"}}}
+
+        with pytest.raises(
+            ValueError,
+            match="Field `blocking` must be a valid boolean for task `task1`",
+        ):
+            await service._fire_startup_tasks()
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_invalid_blocking_type(self):
+        """Test error when blocking is not a boolean"""
+        service = LangGraphService()
+        service.config = {
+            "startup": {"task1": {"path": "./tasks/task.py:run", "blocking": "yes"}}
+        }
+
+        with pytest.raises(
+            ValueError,
+            match="Field `blocking` must be a valid boolean for task `task1`",
+        ):
+            await service._fire_startup_tasks()
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_invalid_path_format(self):
+        """Test error when path doesn't contain colon separator"""
+        service = LangGraphService()
+        service.config = {
+            "startup": {"task1": {"path": "./tasks/task.py", "blocking": True}}
+        }
+
+        with pytest.raises(ValueError, match="Invalid task path format for `task1`"):
+            await service._fire_startup_tasks()
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_from_file_single_task(self):
+        """Test successful execution of a single task"""
+        service = LangGraphService()
+        service.config = {
+            "startup": {"task1": {"path": "./tasks/task.py:run", "blocking": True}}
+        }
+
+        with patch.object(service, "_fire_task_from_file") as mock_fire:
+            await service._fire_startup_tasks()
+            mock_fire.assert_called_once_with(
+                "task1",
+                {"file_path": "./tasks/task.py", "export_name": "run"},
+                blocking=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_fire_startup_tasks_from_file_multiple_tasks(self):
+        """Test firing multiple startup tasks"""
+        service = LangGraphService()
+        service.config = {
+            "startup": {
+                "task1": {"path": "./tasks/task1.py:run1", "blocking": True},
+                "task2": {"path": "./tasks/task2.py:run2", "blocking": False},
+            }
+        }
+
+        with patch.object(service, "_fire_task_from_file") as mock_fire:
+            await service._fire_startup_tasks()
+            assert mock_fire.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_blocking_success(self):
+        """Test successful blocking task execution"""
+        service = LangGraphService()
+
+        task_executed = []
+
+        async def mock_task():
+            task_executed.append(True)
+
+        mock_module = Mock()
+        mock_module.run_task = mock_task
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/task.py")),
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec") as mock_module_from_spec,
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+            mock_module_from_spec.return_value = mock_module
+
+            task_info = {"file_path": "./tasks/task.py", "export_name": "run_task"}
+
+            await service._fire_task_from_file("test_task", task_info, blocking=True)
+
+            assert task_executed == [True]
+            assert "test_task" not in service._running_tasks
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_non_blocking_success(self):
+        """Test successful non-blocking task execution"""
+        service = LangGraphService()
+
+        task_executed = []
+
+        async def mock_task():
+            task_executed.append(True)
+
+        mock_module = Mock()
+        mock_module.run_task = mock_task
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/task.py")),
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec") as mock_module_from_spec,
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+            mock_module_from_spec.return_value = mock_module
+
+            task_info = {"file_path": "./tasks/task.py", "export_name": "run_task"}
+
+            await service._fire_task_from_file("test_task", task_info, blocking=False)
+
+            # Task should be added to running tasks
+            assert "test_task" in service._running_tasks
+            assert isinstance(service._running_tasks["test_task"], asyncio.Task)
+
+            # Wait for task to complete
+            await service._running_tasks["test_task"]
+            assert task_executed == [True]
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_file_not_found(self):
+        """Test error when task file not found"""
+        service = LangGraphService()
+
+        with patch("pathlib.Path.exists", return_value=False):
+            task_info = {"file_path": "./missing/task.py", "export_name": "run_task"}
+
+            with pytest.raises(ValueError, match="Task file not found for `test_task`"):
+                await service._fire_task_from_file(
+                    "test_task", task_info, blocking=True
+                )
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_import_failure(self):
+        """Test error when task module import fails"""
+        service = LangGraphService()
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("importlib.util.spec_from_file_location", return_value=None),
+        ):
+            task_info = {"file_path": "./tasks/task.py", "export_name": "run_task"}
+
+            with pytest.raises(
+                ValueError, match="Failed to import task module for `test_task`"
+            ):
+                await service._fire_task_from_file(
+                    "test_task", task_info, blocking=True
+                )
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_export_not_found(self):
+        """Test error when task export not found in module"""
+        service = LangGraphService()
+
+        mock_module = Mock()
+        del mock_module.missing_export  # Ensure it doesn't exist
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/task.py")),
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec", return_value=mock_module),
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+
+            task_info = {
+                "file_path": "./tasks/task.py",
+                "export_name": "missing_export",
+            }
+
+            with pytest.raises(
+                ValueError, match="Task export not found for `test_task`"
+            ):
+                await service._fire_task_from_file(
+                    "test_task", task_info, blocking=True
+                )
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_not_async_function(self):
+        """Test error when task is not an async function"""
+        service = LangGraphService()
+
+        def sync_task():
+            pass
+
+        mock_module = Mock()
+        mock_module.run_task = sync_task
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/task.py")),
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec") as mock_module_from_spec,
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+            mock_module_from_spec.return_value = mock_module
+
+            task_info = {"file_path": "./tasks/task.py", "export_name": "run_task"}
+
+            with pytest.raises(
+                ValueError,
+                match="Task export `run_task` for `test_task` must be an asynchronous method",
+            ):
+                await service._fire_task_from_file(
+                    "test_task", task_info, blocking=True
+                )
+
+    @pytest.mark.asyncio
+    async def test_fire_task_from_file_not_callable(self):
+        """Test error when task export is not callable"""
+        service = LangGraphService()
+
+        mock_module = Mock()
+        mock_module.run_task = "not_a_function"
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.resolve", return_value=Path("/absolute/task.py")),
+            patch("importlib.util.spec_from_file_location") as mock_spec,
+            patch("importlib.util.module_from_spec") as mock_module_from_spec,
+        ):
+            mock_spec.return_value = Mock()
+            mock_spec.return_value.loader = Mock()
+            mock_module_from_spec.return_value = mock_module
+
+            task_info = {"file_path": "./tasks/task.py", "export_name": "run_task"}
+
+            with pytest.raises(
+                ValueError,
+                match="Task export `run_task` for `test_task` must be an asynchronous method",
+            ):
+                await service._fire_task_from_file(
+                    "test_task", task_info, blocking=True
+                )
 
 
 class TestLangGraphServiceGraphs:

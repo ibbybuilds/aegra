@@ -1,5 +1,6 @@
 """Integration tests for LangGraphService"""
 
+import asyncio
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -421,3 +422,167 @@ class TestLangGraphServiceConcurrency:
         assert all(
             result <= 3 for result in results
         )  # Should be <= original cache size
+
+
+class TestLangGraphServiceStartupTasksIntegration:
+    """Integration tests for startup tasks with real file execution"""
+
+    @pytest.mark.asyncio
+    async def test_blocking_tasks_complete_before_return(self, tmp_path, monkeypatch):
+        """Test that blocking tasks complete before _fire_startup_tasks returns"""
+        log_file = tmp_path / "execution.log"
+
+        task_code = f"""
+import asyncio
+
+async def blocking_task():
+    await asyncio.sleep(0.05)
+    with open(r"{log_file}", "a") as f:
+        f.write("blocking_done\\n")
+"""
+
+        log_file.write_text("")
+        task_file = tmp_path / "task.py"
+        task_file.write_text(task_code)
+
+        monkeypatch.chdir(tmp_path)
+
+        service = LangGraphService()
+        service.config = {
+            "startup": {"task1": {"path": "./task.py:blocking_task", "blocking": True}}
+        }
+
+        await service._fire_startup_tasks()
+
+        # Blocking task should have completed
+        assert log_file.read_text().strip() == "blocking_done"
+
+    @pytest.mark.asyncio
+    async def test_non_blocking_tasks_run_in_background(self, tmp_path, monkeypatch):
+        """Test that non-blocking tasks are started but don't block return"""
+        log_file = tmp_path / "execution.log"
+
+        task_code = f"""
+import asyncio
+
+async def background_task():
+    await asyncio.sleep(0.1)
+    with open(r"{log_file}", "a") as f:
+        f.write("background_done\\n")
+"""
+
+        log_file.write_text("")
+        task_file = tmp_path / "task.py"
+        task_file.write_text(task_code)
+
+        monkeypatch.chdir(tmp_path)
+
+        service = LangGraphService()
+        service.config = {
+            "startup": {
+                "task1": {"path": "./task.py:background_task", "blocking": False}
+            }
+        }
+
+        await service._fire_startup_tasks()
+
+        # Task should be running but not completed yet
+        assert "task1" in service.get_running_tasks()
+        assert log_file.read_text().strip() == ""
+
+        # Wait for task to complete
+        await service.get_running_tasks()["task1"]
+        assert log_file.read_text().strip() == "background_done"
+
+    @pytest.mark.asyncio
+    async def test_blocking_before_non_blocking_order(self, tmp_path, monkeypatch):
+        """Test that blocking tasks execute before non-blocking tasks start"""
+        log_file = tmp_path / "execution.log"
+
+        task_code = f"""
+import asyncio
+
+async def blocking_first():
+    with open(r"{log_file}", "a") as f:
+        f.write("blocking_start\\n")
+    await asyncio.sleep(0.05)
+    with open(r"{log_file}", "a") as f:
+        f.write("blocking_end\\n")
+
+async def non_blocking_second():
+    with open(r"{log_file}", "a") as f:
+        f.write("non_blocking_start\\n")
+"""
+
+        log_file.write_text("")
+        task_file = tmp_path / "task.py"
+        task_file.write_text(task_code)
+
+        monkeypatch.chdir(tmp_path)
+
+        service = LangGraphService()
+        service.config = {
+            "startup": {
+                "blocking": {"path": "./task.py:blocking_first", "blocking": True},
+                "non_blocking": {
+                    "path": "./task.py:non_blocking_second",
+                    "blocking": False,
+                },
+            }
+        }
+
+        await service._fire_startup_tasks()
+
+        # Wait for non-blocking task to complete
+        await service.get_running_tasks()["non_blocking"]
+
+        # Check execution order
+        log_content = log_file.read_text().strip().split("\n")
+        assert log_content[0] == "blocking_start"
+        assert log_content[1] == "blocking_end"
+        # Non-blocking starts after blocking completes
+        assert "non_blocking_start" in log_content
+
+    @pytest.mark.asyncio
+    async def test_multiple_non_blocking_tasks_run_concurrently(
+        self, tmp_path, monkeypatch
+    ):
+        """Test that multiple non-blocking tasks run concurrently"""
+        log_file = tmp_path / "execution.log"
+
+        task_code = """
+import asyncio
+
+async def slow_task():
+    await asyncio.sleep(0.1)
+"""
+
+        log_file.write_text("")
+        task_file = tmp_path / "task.py"
+        task_file.write_text(task_code)
+
+        monkeypatch.chdir(tmp_path)
+
+        service = LangGraphService()
+        service.config = {
+            "startup": {
+                "task1": {"path": "./task.py:slow_task", "blocking": False},
+                "task2": {"path": "./task.py:slow_task", "blocking": False},
+                "task3": {"path": "./task.py:slow_task", "blocking": False},
+            }
+        }
+
+        start_time = asyncio.get_event_loop().time()
+        await service._fire_startup_tasks()
+
+        # All 3 tasks should be running
+        assert len(service.get_running_tasks()) == 3
+
+        # Wait for all tasks
+        await asyncio.gather(*service.get_running_tasks().values())
+        total_time = asyncio.get_event_loop().time() - start_time
+
+        # If running concurrently, total time should be ~0.1s, not ~0.3s
+        assert total_time < 0.25, (
+            f"Tasks took {total_time}s, expected concurrent execution"
+        )

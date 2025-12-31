@@ -86,6 +86,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Stop event store cleanup task
     await event_store.stop_cleanup_task()
 
+    # Cancel tasks that might still be running from startup launch
+    for task in langgraph_service.get_running_tasks().values():
+        if not task.done():
+            task.cancel()
+
     await db_manager.close()
 
 

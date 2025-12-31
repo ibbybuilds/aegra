@@ -7,5 +7,19 @@
   },
   "http": {
     "app": "./custom_routes_example.py:app"
+  },
+  "startup": {
+    "warm_cache": {
+      "path": "./startup_tasks_example.py:warmup_cache",
+      "blocking": true
+    },
+    "webhook": {
+      "path": "./startup_tasks_example.py:call_webhook",
+      "blocking": false
+    },
+    "periodic": {
+      "path": "./startup_tasks_example.py:periodic_task",
+      "blocking": false
+    }
   }
 }

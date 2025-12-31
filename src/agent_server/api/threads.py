@@ -147,12 +147,17 @@ async def create_thread(
     if not isinstance(coerced_created_at, datetime):
         coerced_created_at = datetime.now(UTC)
 
+    coerced_updated_at = getattr(thread_orm, "updated_at", None)
+    if not isinstance(coerced_updated_at, datetime):
+        coerced_updated_at = datetime.now(UTC)
+
     thread_dict: dict[str, Any] = {
         "thread_id": coerced_thread_id,
         "status": coerced_status,
         "metadata": coerced_metadata,
         "user_id": coerced_user_id,
         "created_at": coerced_created_at,
+        "updated_at": coerced_updated_at,
     }
 
     return Thread.model_validate(thread_dict)

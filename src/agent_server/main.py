@@ -201,7 +201,10 @@ if user_app:
     app.add_middleware(CorrelationIdMiddleware)
 
     # Apply CORS configuration
+    # Default expose_headers includes Content-Location and Location which are
+    # required for LangGraph SDK stream reconnection (reconnectOnMount)
     cors_config = http_config.get("cors") if http_config else None
+    default_expose_headers = ["Content-Location", "Location"]
     if cors_config:
         app.add_middleware(
             CORSMiddleware,
@@ -209,7 +212,7 @@ if user_app:
             allow_credentials=cors_config.get("allow_credentials", True),
             allow_methods=cors_config.get("allow_methods", ["*"]),
             allow_headers=cors_config.get("allow_headers", ["*"]),
-            expose_headers=cors_config.get("expose_headers", []),
+            expose_headers=cors_config.get("expose_headers", default_expose_headers),
             max_age=cors_config.get("max_age", 600),
         )
     else:
@@ -219,6 +222,7 @@ if user_app:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=default_expose_headers,
         )
 
     app.add_middleware(DoubleEncodedJSONMiddleware)
@@ -246,13 +250,23 @@ else:
     app.add_middleware(StructLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
 
-    # Add CORS middleware
+    # Add CORS middleware - apply config from http.cors if present
+    # Default expose_headers includes Content-Location and Location which are
+    # required for LangGraph SDK stream reconnection (reconnectOnMount)
+    cors_config = http_config.get("cors") if http_config else None
+    default_expose_headers = ["Content-Location", "Location"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=cors_config.get("allow_origins", ["*"]) if cors_config else ["*"],
+        allow_credentials=cors_config.get("allow_credentials", True)
+        if cors_config
+        else True,
+        allow_methods=cors_config.get("allow_methods", ["*"]) if cors_config else ["*"],
+        allow_headers=cors_config.get("allow_headers", ["*"]) if cors_config else ["*"],
+        expose_headers=cors_config.get("expose_headers", default_expose_headers)
+        if cors_config
+        else default_expose_headers,
+        max_age=cors_config.get("max_age", 600) if cors_config else 600,
     )
 
     # Add middleware to handle double-encoded JSON from frontend

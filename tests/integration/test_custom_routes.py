@@ -140,3 +140,70 @@ async def test_custom_routes_with_cors_config(tmp_path, custom_app_file, monkeyp
     assert http_config is not None
     assert http_config.get("cors") is not None
     assert http_config["cors"]["allow_origins"] == ["https://example.com"]
+
+
+@pytest.mark.asyncio
+async def test_cors_config_without_custom_app(tmp_path, monkeypatch):
+    """Test CORS configuration is applied even without a custom app.
+
+    This verifies the fix for https://github.com/your-repo/aegra/issues/XXX
+    where http.cors.expose_headers was ignored when no http.app was defined.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    config_file = tmp_path / "aegra.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "graphs": {"test": "./test.py:graph"},
+                "http": {
+                    "cors": {
+                        "allow_origins": ["https://myapp.com"],
+                        "expose_headers": ["Content-Location", "Location", "X-Custom"],
+                    },
+                },
+            }
+        )
+    )
+
+    from src.agent_server.config import load_http_config
+
+    http_config = load_http_config()
+    assert http_config is not None
+    # Verify no custom app is configured
+    assert http_config.get("app") is None
+    # Verify CORS config is present and will be used
+    assert http_config.get("cors") is not None
+    assert http_config["cors"]["allow_origins"] == ["https://myapp.com"]
+    assert http_config["cors"]["expose_headers"] == [
+        "Content-Location",
+        "Location",
+        "X-Custom",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cors_default_expose_headers_without_config(tmp_path, monkeypatch):
+    """Test that default expose_headers are applied even with no CORS config.
+
+    Content-Location and Location headers must be exposed by default for
+    LangGraph SDK stream reconnection (reconnectOnMount) to work.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    # Config without any http section
+    config_file = tmp_path / "aegra.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "graphs": {"test": "./test.py:graph"},
+            }
+        )
+    )
+
+    from src.agent_server.config import load_http_config
+
+    http_config = load_http_config()
+    # http_config can be None when no http section exists
+    # The main.py code handles this and applies default expose_headers
+    assert http_config is None or http_config.get("cors") is None

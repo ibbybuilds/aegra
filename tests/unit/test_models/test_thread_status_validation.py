@@ -20,6 +20,7 @@ class TestThreadStatusValidation:
                 metadata={},
                 user_id="test-user",
                 created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             assert thread.status == status
 
@@ -32,6 +33,7 @@ class TestThreadStatusValidation:
                 metadata={},
                 user_id="test-user",
                 created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
 
     def test_thread_rejects_non_string_status(self):
@@ -43,6 +45,7 @@ class TestThreadStatusValidation:
                 metadata={},
                 user_id="test-user",
                 created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
 
     def test_thread_from_orm_with_standard_status(self):
@@ -55,6 +58,7 @@ class TestThreadStatusValidation:
             metadata_json = {}
             user_id = "test-user"
             created_at = datetime.now(UTC)
+            updated_at = datetime.now(UTC)
 
         thread = Thread.model_validate(MockORM())
         assert thread.status == "busy"

@@ -49,6 +49,13 @@ class StoreIndexConfig(TypedDict, total=False):
     - bedrock:amazon.titan-embed-text-v2:0 (1024 dims)
     - cohere:embed-english-v3.0 (1024 dims)
     """
+    fields: list[str] | None
+    """JSON fields to embed. Defaults to ["$"] (entire document).
+    Examples:
+    - ["$"] - Embed entire document as one unit
+    - ["text", "summary"] - Embed specific top-level fields
+    - ["metadata.title", "content.text"] - JSON path notation
+    """
 
 
 class StoreConfig(TypedDict, total=False):

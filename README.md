@@ -361,11 +361,14 @@ Enable semantic similarity search for your agent's memory using pgvector:
   "store": {
     "index": {
       "dims": 1536,
-      "embed": "openai:text-embedding-3-small"
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
     }
   }
 }
 ```
+
+**Options:** `dims` (required), `embed` (required), `fields` (optional, default `["$"]`)
 
 **Supported embedding providers:**
 - `openai:text-embedding-3-small` (1536 dims)

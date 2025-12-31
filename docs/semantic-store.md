@@ -23,7 +23,8 @@ Add the `store` section to your `aegra.json`:
   "store": {
     "index": {
       "dims": 1536,
-      "embed": "openai:text-embedding-3-small"
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
     }
   }
 }
@@ -35,6 +36,32 @@ Add the `store` section to your `aegra.json`:
 |--------|------|----------|-------------|
 | `dims` | `integer` | Yes | Embedding vector dimensions (must match your model) |
 | `embed` | `string` | Yes | Embedding model in format `<provider>:<model-id>` |
+| `fields` | `list[str]` | No | JSON fields to embed (default: `["$"]` for entire document) |
+
+### Fields Configuration
+
+The `fields` option controls which parts of your documents are embedded:
+
+| Value | Behavior |
+|-------|----------|
+| `["$"]` (default) | Embed the entire document as one unit |
+| `["text", "summary"]` | Embed only these top-level fields |
+| `["metadata.title", "content.text"]` | Use JSON path notation for nested fields |
+
+**Example with specific fields:**
+```json
+{
+  "store": {
+    "index": {
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["text", "summary"]
+    }
+  }
+}
+```
+
+Documents missing specified fields will still be stored but won't have embeddings for those fields. You can also override which fields to embed at put time using the `index` parameter.
 
 ### Supported Embedding Providers
 

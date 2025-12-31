@@ -42,7 +42,7 @@ async def test_default_cors_includes_expose_headers(tmp_path, monkeypatch):
     # Clear the module cache to force reload with new config
     import sys
 
-    modules_to_remove = [k for k in sys.modules.keys() if "agent_server" in k]
+    modules_to_remove = [k for k in sys.modules if "agent_server" in k]
     for mod in modules_to_remove:
         del sys.modules[mod]
 
@@ -96,7 +96,7 @@ async def test_cors_config_without_custom_app_applies_settings(tmp_path, monkeyp
     # Clear the module cache to force reload with new config
     import sys
 
-    modules_to_remove = [k for k in sys.modules.keys() if "agent_server" in k]
+    modules_to_remove = [k for k in sys.modules if "agent_server" in k]
     for mod in modules_to_remove:
         del sys.modules[mod]
 
@@ -146,7 +146,7 @@ async def test_cors_expose_headers_defaults_when_not_specified(tmp_path, monkeyp
     # Clear the module cache to force reload with new config
     import sys
 
-    modules_to_remove = [k for k in sys.modules.keys() if "agent_server" in k]
+    modules_to_remove = [k for k in sys.modules if "agent_server" in k]
     for mod in modules_to_remove:
         del sys.modules[mod]
 

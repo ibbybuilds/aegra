@@ -112,9 +112,7 @@ async def test_cors_config_without_custom_app_applies_settings(tmp_path, monkeyp
     ], "Custom allow_origins should be applied"
 
     expose_headers = cors_middleware.kwargs.get("expose_headers", [])
-    assert "X-Request-ID" in expose_headers, (
-        "Custom expose_headers should be applied"
-    )
+    assert "X-Request-ID" in expose_headers, "Custom expose_headers should be applied"
     assert "Content-Location" in expose_headers
     assert "Location" in expose_headers
 
@@ -167,5 +165,3 @@ async def test_cors_expose_headers_defaults_when_not_specified(tmp_path, monkeyp
     assert "Location" in expose_headers, (
         "Location should default when not specified in cors config"
     )
-
-

@@ -47,6 +47,9 @@ class TestDatabaseManager:
             patch(
                 "src.agent_server.core.database.AsyncPostgresStore"
             ) as mock_store_cls,
+            patch(
+                "src.agent_server.core.database.load_store_config"
+            ) as mock_load_store_config,
         ):
             # 1. Setup SQLAlchemy Engine Mock
             mock_engine = AsyncMock()
@@ -65,6 +68,9 @@ class TestDatabaseManager:
             mock_store_instance = AsyncMock()
             mock_store_cls.return_value = mock_store_instance
 
+            # 4. Default: no store config
+            mock_load_store_config.return_value = None
+
             # Yield a dictionary so tests can access specific mocks for assertions
             yield {
                 "create_engine": mock_create_engine,
@@ -75,6 +81,7 @@ class TestDatabaseManager:
                 "saver_instance": mock_saver_instance,
                 "store_cls": mock_store_cls,
                 "store_instance": mock_store_instance,
+                "load_store_config": mock_load_store_config,
             }
 
     @pytest.mark.asyncio
@@ -114,7 +121,10 @@ class TestDatabaseManager:
         mock_db_deps["saver_cls"].assert_called_with(conn=mock_db_deps["pool_instance"])
         mock_db_deps["saver_instance"].setup.assert_awaited_once()
 
-        mock_db_deps["store_cls"].assert_called_with(conn=mock_db_deps["pool_instance"])
+        # Store is initialized with index=None when no store config is provided
+        mock_db_deps["store_cls"].assert_called_with(
+            conn=mock_db_deps["pool_instance"], index=None
+        )
         mock_db_deps["store_instance"].setup.assert_awaited_once()
 
         # 4. Verify internal state of the manager
@@ -196,3 +206,41 @@ class TestDatabaseManager:
 
         with pytest.raises(RuntimeError, match="Database not initialized"):
             db_manager.get_store()
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_store_index_config(self, db_manager, mock_db_deps):
+        """Test that store is initialized with index config when provided."""
+        # Configure mock to return store config with index
+        index_config = {
+            "dims": 1536,
+            "embed": "openai:text-embedding-3-small",
+        }
+        mock_db_deps["load_store_config"].return_value = {"index": index_config}
+
+        # --- EXECUTE ---
+        await db_manager.initialize()
+
+        # --- ASSERTIONS ---
+        # Store should be initialized with the index config
+        mock_db_deps["store_cls"].assert_called_with(
+            conn=mock_db_deps["pool_instance"], index=index_config
+        )
+        mock_db_deps["store_instance"].setup.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_store_config_no_index(
+        self, db_manager, mock_db_deps
+    ):
+        """Test that store is initialized with index=None when store config has no index."""
+        # Configure mock to return store config without index
+        mock_db_deps["load_store_config"].return_value = {}
+
+        # --- EXECUTE ---
+        await db_manager.initialize()
+
+        # --- ASSERTIONS ---
+        # Store should be initialized with index=None
+        mock_db_deps["store_cls"].assert_called_with(
+            conn=mock_db_deps["pool_instance"], index=None
+        )
+        mock_db_deps["store_instance"].setup.assert_awaited_once()

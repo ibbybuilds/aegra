@@ -25,6 +25,7 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 
 ## 🆕 What's New
 
+- **🗂️ [Semantic Store](docs/semantic-store.md)**: Vector embeddings with pgvector for semantic similarity search in your agent memory
 - **📦 [Dependencies Config](docs/dependencies.md)**: Add shared utility modules to Python path for graph imports
 - **🎨 LangGraph Studio Support**: Full compatibility with LangGraph Studio for visual graph debugging and development
 - **🤖 AG-UI / CopilotKit Support**: Seamless integration with AG-UI and CopilotKit-based clients for enhanced user experiences
@@ -349,6 +350,33 @@ Add shared utility modules to the Python path for graph imports:
 Paths are resolved relative to the config file. This matches LangGraph CLI behavior.
 
 📚 **[Full Documentation](docs/dependencies.md)** - Path resolution, use cases, and examples.
+
+### Semantic Store (Optional)
+
+Enable semantic similarity search for your agent's memory using pgvector:
+
+```json
+{
+  "graphs": { ... },
+  "store": {
+    "index": {
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
+    }
+  }
+}
+```
+
+**Options:** `dims` (required), `embed` (required), `fields` (optional, default `["$"]`)
+
+**Supported embedding providers:**
+- `openai:text-embedding-3-small` (1536 dims)
+- `openai:text-embedding-3-large` (3072 dims)
+- `bedrock:amazon.titan-embed-text-v2:0` (1024 dims)
+- `cohere:embed-english-v3.0` (1024 dims)
+
+📚 **[Full Documentation](docs/semantic-store.md)** - Configuration, usage examples, and troubleshooting.
 
 ## 🎯 What You Get
 

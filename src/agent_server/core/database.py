@@ -9,6 +9,8 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from ..config import load_store_config
+
 logger = structlog.get_logger(__name__)
 
 
@@ -88,8 +90,16 @@ class DatabaseManager:
         self._checkpointer = AsyncPostgresSaver(conn=self.lg_pool)
         await self._checkpointer.setup()  # Ensure tables exist
 
-        self._store = AsyncPostgresStore(conn=self.lg_pool)
+        # Load store configuration for semantic search (if configured)
+        store_config = load_store_config()
+        index_config = store_config.get("index") if store_config else None
+
+        self._store = AsyncPostgresStore(conn=self.lg_pool, index=index_config)
         await self._store.setup()  # Ensure tables exist
+
+        if index_config:
+            embed_model = index_config.get("embed", "unknown")
+            logger.info(f"Semantic store enabled with embeddings: {embed_model}")
 
         logger.info("✅ Database and LangGraph components initialized")
 

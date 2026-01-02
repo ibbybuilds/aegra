@@ -1,5 +1,6 @@
 """LangGraph integration service with official patterns"""
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -28,6 +29,9 @@ class LangGraphService:
         self.config: dict[str, Any] | None = None
         self._graph_registry: dict[str, Any] = {}
         self._graph_cache: dict[str, Any] = {}
+        # Instance-level locks to prevent race conditions
+        self._graph_load_locks: dict[str, asyncio.Lock] = {}
+        self._lock_creation_lock: asyncio.Lock | None = None
 
     async def initialize(self):
         """Load configuration file and setup graph registry.
@@ -185,44 +189,65 @@ class LangGraphService:
         if not force_reload and graph_id in self._graph_cache:
             return self._graph_cache[graph_id]
 
-        graph_info = self._graph_registry[graph_id]
+        # Initialize master lock if needed (lazy initialization to avoid event loop issues)
+        if self._lock_creation_lock is None:
+            self._lock_creation_lock = asyncio.Lock()
 
-        # Load graph from file
-        base_graph = await self._load_graph_from_file(graph_id, graph_info)
+        # Get or create lock for this graph_id (thread-safe)
+        if graph_id not in self._graph_load_locks:
+            async with self._lock_creation_lock:
+                # Double-check after acquiring creation lock
+                if graph_id not in self._graph_load_locks:
+                    self._graph_load_locks[graph_id] = asyncio.Lock()
 
-        # Always ensure graphs are compiled with our Postgres checkpointer for persistence
-        from ..core.database import db_manager
+        graph_lock = self._graph_load_locks[graph_id]
 
-        checkpointer_cm = db_manager.get_checkpointer()
-        store_cm = db_manager.get_store()
+        # Acquire the graph-specific lock
+        async with graph_lock:
+            # Check cache again after acquiring lock (respecting force_reload)
+            if not force_reload and graph_id in self._graph_cache:
+                return self._graph_cache[graph_id]
 
-        if isinstance(base_graph, StateGraph):
-            # The module exported an *uncompiled* StateGraph – compile it now with
-            # a Postgres checkpointer for durable state.
+            graph_info = self._graph_registry[graph_id]
 
-            logger.info(f"🔧 Compiling graph '{graph_id}' with Postgres persistence")
-            compiled_graph = base_graph.compile(
-                checkpointer=checkpointer_cm, store=store_cm
-            )
-        else:
-            # Graph was already compiled by the module.  Create a shallow copy
-            # that injects our Postgres checkpointer *unless* the author already
-            # set one.
-            try:
-                compiled_graph = base_graph.copy(
-                    update={"checkpointer": checkpointer_cm, "store": store_cm}
+            # Load graph from file
+            base_graph = await self._load_graph_from_file(graph_id, graph_info)
+
+            # Always ensure graphs are compiled with our Postgres checkpointer for persistence
+            from ..core.database import db_manager
+
+            checkpointer_cm = db_manager.get_checkpointer()
+            store_cm = db_manager.get_store()
+
+            if isinstance(base_graph, StateGraph):
+                # The module exported an *uncompiled* StateGraph – compile it now with
+                # a Postgres checkpointer for durable state.
+
+                logger.info(
+                    f"🔧 Compiling graph '{graph_id}' with Postgres persistence"
                 )
-            except Exception:
-                # Fallback: property may be immutably set; run as-is with warning
-                logger.warning(
-                    f"⚠️  Pre-compiled graph '{graph_id}' does not support checkpointer injection; running without persistence"
+                compiled_graph = base_graph.compile(
+                    checkpointer=checkpointer_cm, store=store_cm
                 )
-                compiled_graph = base_graph
+            else:
+                # Graph was already compiled by the module.  Create a shallow copy
+                # that injects our Postgres checkpointer *unless* the author already
+                # set one.
+                try:
+                    compiled_graph = base_graph.copy(
+                        update={"checkpointer": checkpointer_cm, "store": store_cm}
+                    )
+                except Exception:
+                    # Fallback: property may be immutably set; run as-is with warning
+                    logger.warning(
+                        f"⚠️  Pre-compiled graph '{graph_id}' does not support checkpointer injection; running without persistence"
+                    )
+                    compiled_graph = base_graph
 
-        # Cache the compiled graph
-        self._graph_cache[graph_id] = compiled_graph
+            # Cache the compiled graph
+            self._graph_cache[graph_id] = compiled_graph
 
-        return compiled_graph
+            return compiled_graph
 
     async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]):
         """Load graph from filesystem"""
@@ -266,8 +291,11 @@ class LangGraphService:
         """Invalidate graph cache for hot-reload"""
         if graph_id:
             self._graph_cache.pop(graph_id, None)
+            # Also clean up the corresponding lock to prevent memory leaks
+            self._graph_load_locks.pop(graph_id, None)
         else:
             self._graph_cache.clear()
+            self._graph_load_locks.clear()
 
     def get_config(self) -> dict[str, Any] | None:
         """Get loaded configuration"""

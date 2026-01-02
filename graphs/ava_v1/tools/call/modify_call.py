@@ -141,7 +141,7 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
 
 
 @tool(description="Signal to end the call, transfer to payment line, or transfer to live agent")
-def modify_call(
+async def modify_call(
     action_type: str,
     summary: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
@@ -184,7 +184,8 @@ def modify_call(
             "status": "success",
             "type": "live-handoff",
             "message": "Transferring to live agent",
-            "summary": str
+            "summary": str,
+            "url": str (optional)
         }
 
         Error:
@@ -244,6 +245,27 @@ def modify_call(
 
         logger.info(f"[modify_call] Full handoff summary: {full_summary}")
 
+        # Generate reservation URL
+        reservation_url = None
+        if runtime:
+            from ava_v1.shared_libraries.url_generator import generate_reservation_url
+
+            context_stack = runtime.state.get("context_stack", [])
+            active_searches = runtime.state.get("active_searches", {})
+            call_context = runtime.context if hasattr(runtime, "context") else None
+
+            try:
+                reservation_url = await generate_reservation_url(
+                    context_stack, active_searches, call_context
+                )
+                if reservation_url:
+                    logger.info(
+                        f"[modify_call] Generated reservation URL: {reservation_url}"
+                    )
+            except Exception as e:
+                logger.warning(f"[modify_call] Failed to generate URL: {e}")
+                # Continue - URL is optional, don't fail handoff
+
         # Success - return handoff signal with full summary
         result = {
             "status": "success",
@@ -251,6 +273,11 @@ def modify_call(
             "message": "Transferring to live agent",
             "summary": full_summary,
         }
+
+        # Add URL if generated successfully
+        if reservation_url:
+            result["url"] = reservation_url
+
         logger.info(f"[modify_call] Returning live-handoff success: {result}")
         return json.dumps(result, indent=2)
 

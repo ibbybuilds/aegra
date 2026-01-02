@@ -4,9 +4,16 @@ This file contains shared fixtures and configuration that are available
 to all tests across the test suite.
 """
 
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+
+# Add graphs directory to Python path for importing ava_v1 and other graph modules
+graphs_dir = Path(__file__).parent.parent / "graphs"
+if str(graphs_dir) not in sys.path:
+    sys.path.insert(0, str(graphs_dir))
 
 from tests.fixtures.auth import DummyUser
 from tests.fixtures.clients import (

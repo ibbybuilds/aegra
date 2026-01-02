@@ -71,6 +71,7 @@ packages = ["src/agent_server"]
 
 [tool.hatch.build.targets.wheel.sources]
 "graphs/react_agent" = "react_agent"
+"graphs/ava_v1" = "ava_v1"
 
 [tool.hatch.metadata]
 allow-direct-references = true

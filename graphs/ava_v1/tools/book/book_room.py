@@ -73,7 +73,7 @@ async def book_room(
                 "firstName": str,
                 "lastName": str,
                 "email": str,
-                "phone": str  # Required only if payment_type is "sms"
+                "phone": str  # Required for billing contact (fallback to call_context.user_phone)
             }
 
         payment_type (str): Payment method - "phone" or "sms"
@@ -98,6 +98,21 @@ async def book_room(
     customer_info = sanitize_tool_input(customer_info)
     logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
     logger.info(f"[BOOK_ROOM] Sanitized customer_info: {customer_info}")
+
+    # Fallback: use user_phone from call_context if customer phone not provided
+    if runtime and not customer_info.get("phone"):
+        call_context = runtime.context if hasattr(runtime, "context") else None
+        if call_context:
+            # Handle both CallContext object and dict
+            user_phone = None
+            if hasattr(call_context, "user_phone"):
+                user_phone = call_context.user_phone
+            elif isinstance(call_context, dict):
+                user_phone = call_context.get("user_phone")
+
+            if user_phone:
+                customer_info["phone"] = user_phone
+                logger.info(f"[BOOK_ROOM] Using user_phone from call_context: {user_phone}")
 
     # Generate session_id if not provided
     if not session_id:

@@ -97,8 +97,8 @@ def _validate_customer_info(
     """Validate customer info has all required fields.
 
     Args:
-        customer_info: Customer information dict
-        payment_type: Payment type to determine if phone is required
+        customer_info: Customer information dict (must include phone)
+        payment_type: Payment type (phone or sms)
 
     Returns:
         Error dict if invalid, None if valid
@@ -137,27 +137,26 @@ def _validate_customer_info(
             },
         }
 
-    # Phone required for SMS payment
-    if payment_type == "sms":
-        if "phone" not in customer_info or not customer_info["phone"]:
-            return {
-                "status": "error",
-                "error": {
-                    "type": "missing_phone",
-                    "message": "phone is required for SMS payment",
-                },
-            }
+    # Phone required for billing contact
+    if "phone" not in customer_info or not customer_info["phone"]:
+        return {
+            "status": "error",
+            "error": {
+                "type": "missing_phone",
+                "message": "phone is required for billing contact",
+            },
+        }
 
-        if (
-            not isinstance(customer_info["phone"], str)
-            or not customer_info["phone"].strip()
-        ):
-            return {
-                "status": "error",
-                "error": {
-                    "type": "invalid_phone",
-                    "message": "phone must be a non-empty string",
-                },
-            }
+    if (
+        not isinstance(customer_info["phone"], str)
+        or not customer_info["phone"].strip()
+    ):
+        return {
+            "status": "error",
+            "error": {
+                "type": "invalid_phone",
+                "message": "phone must be a non-empty string",
+            },
+        }
 
     return None

@@ -293,6 +293,12 @@ Call `hotel_details(hotel_id)` for property information:
 2. Last name
 3. Email address
 
+**Phone Number Handling**:
+- **DO NOT ask for phone number** - it is automatically provided from the call context
+- The customer's phone number is already available and will be included automatically
+- **ONLY ask for phone if the booking tool explicitly returns an error saying phone is missing**
+- If you do need to collect it, the phone number must be in E.164 format (e.g., +1234567890)
+
 **Spelling Verification Protocol (MANDATORY)**:
 - After collecting the customer's information, you MUST spell-check every detail
 - Read back and spell each field **letter-by-letter very slowly** for the user
@@ -369,6 +375,7 @@ book_room(
     "firstName": "John",
     "lastName": "Smith",
     "email": "john@example.com"
+    # NOTE: phone is automatically added from call context - do not include here
   }},
   payment_type="phone" or "sms"
 )

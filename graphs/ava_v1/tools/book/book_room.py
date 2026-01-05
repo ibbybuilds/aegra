@@ -101,18 +101,40 @@ async def book_room(
 
     # Fallback: use user_phone from call_context if customer phone not provided
     if runtime and not customer_info.get("phone"):
-        call_context = runtime.context if hasattr(runtime, "context") else None
+        # Extract call_context from runtime (prefer runtime.context, fallback to state)
+        call_context = None
+
+        # PREFERRED: Access via runtime.context (for /runs endpoint with context parameter)
+        if hasattr(runtime, "context") and runtime.context is not None:
+            call_context = runtime.context
+            logger.info(f"[BOOK_ROOM] Extracted call_context from runtime.context: {call_context}")
+
+        # FALLBACK: Access via runtime.state (for /state endpoint updates)
+        if call_context is None and hasattr(runtime, "state") and isinstance(runtime.state, dict):
+            call_context = runtime.state.get("call_context")
+            if call_context:
+                logger.info(f"[BOOK_ROOM] Extracted call_context from runtime.state: {call_context}")
+
         if call_context:
             # Handle both CallContext object and dict
             user_phone = None
             if hasattr(call_context, "user_phone"):
                 user_phone = call_context.user_phone
+                logger.info(f"[BOOK_ROOM] Extracted user_phone from CallContext object: {user_phone}")
             elif isinstance(call_context, dict):
                 user_phone = call_context.get("user_phone")
+                logger.info(f"[BOOK_ROOM] Extracted user_phone from dict: {user_phone}")
 
             if user_phone:
+                # Preserve E.164 format (e.g., +1234567890)
                 customer_info["phone"] = user_phone
-                logger.info(f"[BOOK_ROOM] Using user_phone from call_context: {user_phone}")
+                logger.info(f"[BOOK_ROOM] Using user_phone from call_context (E.164 format preserved): {user_phone}")
+            else:
+                logger.warning("[BOOK_ROOM] user_phone not found in call_context")
+        else:
+            logger.warning("[BOOK_ROOM] No call_context available in runtime.context or runtime.state")
+    elif customer_info.get("phone"):
+        logger.info(f"[BOOK_ROOM] Phone already provided in customer_info: {customer_info.get('phone')}")
 
     # Generate session_id if not provided
     if not session_id:

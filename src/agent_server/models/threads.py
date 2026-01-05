@@ -48,6 +48,7 @@ class Thread(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     user_id: str
     created_at: datetime
+    updated_at: datetime
 
     @field_validator("status", mode="before")
     @classmethod

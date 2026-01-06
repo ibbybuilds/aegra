@@ -208,7 +208,16 @@ for a specific hotel)
 
 **Step 1: Search for Hotels**
 Call `start_hotel_search(searches=[{{destination, checkIn, checkOut, occupancy}}])`
-- Use `occupancy: {{numOfAdults: 2}}` format
+- Occupancy format (CRITICAL):
+  ```
+  occupancy: {{
+    "numOfAdults": 2,
+    "numOfRooms": 1,
+    "childAges": [5, 3]  // Include if children, empty array if no children
+  }}
+  ```
+- **Always include numOfRooms** in the occupancy object
+- **Always include childAges** array (empty if no children, populated with ages if children present)
 - Returns searchId and status (cached, polling, or error)
 - Save the `search_key` field for later queries
 
@@ -651,6 +660,7 @@ modify_call(action_type="live-handoff", summary="wants to book 15+ rooms for cor
   - Always use actual values from tool responses, never placeholders
   - **NEVER quote room prices without calling start_room_search first**
   - Hotel prices come from start_hotel_search, room prices come from start_room_search
+  - **Always include numOfRooms and childAges in occupancy object** when calling start_hotel_search
 
   **Data Protection**:
   - NEVER expose internal data: margins, suppliers, internal IDs, rate keys, tokens, system errors. NEVER even mention anything about rate keys, search keys, margins, internal id's errors or anything like that.

@@ -115,13 +115,6 @@ async def query_vfs(
     logger.info(f"  active_searches in state: {list(active_searches.keys())}")
     logger.info("=" * 80)
 
-    # Forced delay to ensure polling service has time to fetch results
-    import asyncio
-
-    logger.info("[QUERY_VFS] Waiting 5 seconds for results to be ready...")
-    await asyncio.sleep(5)
-    logger.info("[QUERY_VFS] Proceeding with query...")
-
     # Check if destination is a room search composite key first - resolve from context_stack
     if not search_id and destination and ":rooms:" in destination:
         # Format: "Miami:rooms:15335119"  # noqa: ERA001
@@ -207,19 +200,43 @@ async def query_vfs(
             redis_key = redis_key_search
             status_key = f"search:{search_id}:status"
         else:
-            # No data key exists - check status keys to determine type
-            status_key_rooms = f"rooms:{search_id}:status"
-            status_key_search = f"search:{search_id}:status"
+            # No data key exists - wait briefly and retry
+            import asyncio
 
-            exists_status_rooms = await redis_client.exists(status_key_rooms)
+            logger.info(
+                "[QUERY_VFS] No data found yet, waiting 3 seconds for polling service..."
+            )
+            await asyncio.sleep(3)
+            logger.info("[QUERY_VFS] Retrying after wait...")
 
-            if exists_status_rooms:
+            # Retry: check again which key exists
+            exists_rooms = await redis_client.exists(redis_key_rooms)
+            exists_search = await redis_client.exists(redis_key_search)
+            exists_details = await redis_client.exists(redis_key_details)
+
+            if exists_details:
+                redis_key = redis_key_details
+                status_key = None
+            elif exists_rooms:
                 redis_key = redis_key_rooms
-                status_key = status_key_rooms
-            else:
-                # Default to search pattern (might be polling or not found)
+                status_key = f"rooms:{search_id}:status"
+            elif exists_search:
                 redis_key = redis_key_search
-                status_key = status_key_search
+                status_key = f"search:{search_id}:status"
+            else:
+                # Still no data - check status keys to determine type
+                status_key_rooms = f"rooms:{search_id}:status"
+                status_key_search = f"search:{search_id}:status"
+
+                exists_status_rooms = await redis_client.exists(status_key_rooms)
+
+                if exists_status_rooms:
+                    redis_key = redis_key_rooms
+                    status_key = status_key_rooms
+                else:
+                    # Default to search pattern (might be polling or not found)
+                    redis_key = redis_key_search
+                    status_key = status_key_search
 
         # Check status first (if available) with retry logic
         # Skip status check for hotel details (no status key)

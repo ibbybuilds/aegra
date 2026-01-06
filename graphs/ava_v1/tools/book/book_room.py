@@ -103,6 +103,23 @@ async def book_room(
     if runtime and not customer_info.get("phone"):
         user_phone = None
 
+        # DEBUG: Log what's available in runtime
+        logger.info(f"[BOOK_ROOM] Runtime available: {runtime is not None}")
+        logger.info(f"[BOOK_ROOM] Runtime has 'context' attr: {hasattr(runtime, 'context')}")
+        logger.info(f"[BOOK_ROOM] Runtime has 'state' attr: {hasattr(runtime, 'state')}")
+
+        if hasattr(runtime, "state"):
+            logger.info(f"[BOOK_ROOM] Runtime.state type: {type(runtime.state)}")
+            if isinstance(runtime.state, dict):
+                # Log all keys in state to see what's available
+                state_keys = list(runtime.state.keys())
+                logger.info(f"[BOOK_ROOM] Runtime.state keys: {state_keys}")
+                # Check if user_phone is directly in state
+                if "user_phone" in runtime.state:
+                    logger.info(f"[BOOK_ROOM] Found 'user_phone' key in runtime.state: {runtime.state.get('user_phone')}")
+                if "call_context" in runtime.state:
+                    logger.info(f"[BOOK_ROOM] Found 'call_context' key in runtime.state")
+
         # OPTION 1: Access via runtime.context (for /runs endpoint with context parameter)
         if hasattr(runtime, "context") and runtime.context is not None:
             call_context = runtime.context

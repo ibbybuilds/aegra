@@ -72,6 +72,12 @@ class AvaV1State(MessagesState):
         context_stack: Conversational focus tracking stack
             Format: [{"type": "HotelList", "search_key": "Miami"}, ...]
             Types: HotelList, RoomList, HotelDetails, RoomSelected, BookingPending
+
+        user_phone: User's phone number in E.164 format (e.g., +12125551234)
+            Set via /state endpoint for booking operations
+
+        call_reference: Unique call reference ID for tracking
+            Set via /state endpoint for call session tracking
     """
 
     # ADK-style label-based search tracking
@@ -82,3 +88,7 @@ class AvaV1State(MessagesState):
     # Stack of focus objects: [{"type": "HotelList", "search_key": "Miami"}, ...]
     # Uses custom reducer to handle both push (append) and pop (replace)
     context_stack: NotRequired[Annotated[list[dict], context_stack_reducer]]
+
+    # Call context metadata (set via /state endpoint)
+    user_phone: NotRequired[str]  # User's phone number in E.164 format
+    call_reference: NotRequired[str]  # Unique call reference ID

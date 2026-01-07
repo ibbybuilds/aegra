@@ -171,7 +171,7 @@ hotel booking related queries. Use it when:
    - Restaurant recommendations in the area
    - Events happening/things to do in the area
    - Local attractions and activities in the area
-   - **Distances & Proximity**: Checking how far specific venues, restaurants, or attractions are from the hotel (e.g., "How far is the convention center?").
+   - **Distances & Proximity**: Checking distance to venues/attractions. **STRATEGY**: Query must be specific: "Distance from [Hotel Name] [City] to [Target]".
 
 **Example Usage** (ONLY hotel booking related):
 - User: "What's the weather like in Miami during my stay?" (helps with hotel choice)
@@ -181,7 +181,7 @@ hotel booking related queries. Use it when:
 - User: "Is the Marriott Downtown near the airport affected by construction?"
   → Call internet_search(query="Marriott Downtown Miami construction December 2025")
 - User: "How far is the stadium from this hotel?" (helps with location decision)
-  → Call internet_search(query="Distance between Hard Rock Stadium and Marriott Downtown Miami")
+  → Call internet_search(query="Distance from Marriott Downtown Miami to Hard Rock Stadium")
 - User: "What are good restaurants near this hotel?" (good information for the user to know)
   → Call internet_search(query="Good restaurants near Marriott Downtown Miami")
 

@@ -18,7 +18,9 @@ from agent_server.services.assistant_service import AssistantService, to_pydanti
 @pytest.fixture
 def mock_session():
     """Mock AsyncSession for testing"""
-    return AsyncMock()
+    session = AsyncMock()
+    session.add = Mock()  # session.add is synchronous
+    return session
 
 
 @pytest.fixture

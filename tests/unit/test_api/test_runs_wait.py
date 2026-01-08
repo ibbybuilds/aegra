@@ -41,6 +41,7 @@ class TestWaitForRunExceptionPaths:
 
         # Mock session
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         # Mock assistant
         assistant = AssistantORM(
@@ -90,6 +91,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
@@ -128,6 +130,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -173,6 +176,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.side_effect = asyncio.CancelledError()
@@ -205,6 +209,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -250,6 +255,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.side_effect = Exception("Test exception")
@@ -282,6 +288,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -313,6 +320,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None  # Task completes normally
@@ -346,6 +354,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -392,6 +401,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
             patch("agent_server.api.runs.logger") as mock_logger,
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -425,6 +435,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -470,6 +481,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -501,6 +513,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -546,6 +559,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -576,6 +590,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -633,6 +648,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -678,6 +694,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -709,6 +726,7 @@ class TestWaitForRunExceptionPaths:
         request.stream_subgraphs = False
 
         session = AsyncMock()
+        session.add = MagicMock()  # session.add is synchronous
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -754,6 +772,7 @@ class TestWaitForRunExceptionPaths:
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("agent_server.api.runs.active_runs", {}),
+            patch("agent_server.api.runs.execute_run_async"),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None

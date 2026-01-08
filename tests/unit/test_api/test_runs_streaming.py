@@ -1,5 +1,6 @@
 """Unit tests for streaming run endpoints."""
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -17,17 +18,17 @@ class TestRunsStreamingEndpoints:
     """Test streaming run endpoints."""
 
     @pytest.fixture
-    def mock_user(self):
+    def mock_user(self) -> User:
         return User(identity="test-user", scopes=[])
 
     @pytest.fixture
-    def mock_session(self):
+    def mock_session(self) -> AsyncMock:
         session = AsyncMock()
         session.add = MagicMock()  # session.add is synchronous
         return session
 
     @pytest.fixture
-    def sample_assistant(self):
+    def sample_assistant(self) -> AssistantORM:
         return AssistantORM(
             assistant_id="test-assistant",
             graph_id="test-graph",
@@ -39,8 +40,11 @@ class TestRunsStreamingEndpoints:
 
     @pytest.mark.asyncio
     async def test_create_and_stream_run_success(
-        self, mock_user, mock_session, sample_assistant
-    ):
+        self,
+        mock_user: User,
+        mock_session: AsyncMock,
+        sample_assistant: AssistantORM,
+    ) -> None:
         """Test creating and streaming a run."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -70,9 +74,7 @@ class TestRunsStreamingEndpoints:
             patch(
                 "agent_server.api.runs.streaming_service.stream_run_execution"
             ) as mock_stream_exec,
-            patch(
-                "agent_server.api.runs.execute_run_async", new_callable=MagicMock
-            ),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
@@ -80,7 +82,7 @@ class TestRunsStreamingEndpoints:
             mock_session.scalar.return_value = sample_assistant
 
             # Mock generator for streaming response
-            async def mock_generator():
+            async def mock_generator() -> AsyncGenerator:
                 yield "data"
 
             mock_stream_exec.return_value = mock_generator()
@@ -105,7 +107,9 @@ class TestRunsStreamingEndpoints:
             mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_stream_run_success(self, mock_user, mock_session):
+    async def test_stream_run_success(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test reconnecting to existing run stream."""
         thread_id = "test-thread"
         run_id = "run-123"
@@ -127,7 +131,7 @@ class TestRunsStreamingEndpoints:
             "agent_server.api.runs.streaming_service.stream_run_execution"
         ) as mock_stream_exec:
             # Mock generator
-            async def mock_generator():
+            async def mock_generator() -> AsyncGenerator:
                 yield "data"
 
             mock_stream_exec.return_value = mock_generator()
@@ -149,7 +153,9 @@ class TestRunsStreamingEndpoints:
             assert call_args[0][1] == "evt-1"
 
     @pytest.mark.asyncio
-    async def test_stream_run_not_found(self, mock_user, mock_session):
+    async def test_stream_run_not_found(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test streaming non-existent run."""
         mock_session.scalar.return_value = None
 

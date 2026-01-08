@@ -17,18 +17,18 @@ class TestRunsEndpoints:
     """Test standard run endpoints."""
 
     @pytest.fixture
-    def mock_user(self):
+    def mock_user(self) -> User:
         return User(identity="test-user", scopes=[])
 
     @pytest.fixture
-    def mock_session(self):
+    def mock_session(self) -> AsyncMock:
         session = AsyncMock()
         session.refresh = AsyncMock()
         session.add = MagicMock()  # session.add is synchronous
         return session
 
     @pytest.fixture
-    def sample_assistant(self):
+    def sample_assistant(self) -> AssistantORM:
         return AssistantORM(
             assistant_id="test-assistant",
             graph_id="test-graph",
@@ -39,7 +39,9 @@ class TestRunsEndpoints:
         )
 
     @pytest.mark.asyncio
-    async def test_create_run_success(self, mock_user, mock_session, sample_assistant):
+    async def test_create_run_success(
+        self, mock_user: User, mock_session: AsyncMock, sample_assistant: AssistantORM
+    ) -> None:
         """Test successful run creation."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -67,9 +69,7 @@ class TestRunsEndpoints:
             patch("agent_server.api.runs.uuid4", return_value=run_id),
             patch("agent_server.api.runs.asyncio.create_task") as mock_create_task,
             patch("agent_server.api.runs.active_runs", {}),
-            patch(
-                "agent_server.api.runs.execute_run_async", new_callable=MagicMock
-            ),
+            patch("agent_server.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
@@ -93,7 +93,9 @@ class TestRunsEndpoints:
             mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_run_assistant_not_found(self, mock_user, mock_session):
+    async def test_create_run_assistant_not_found(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test creation with non-existent assistant."""
         thread_id = "test-thread-123"
         request = RunCreate(assistant_id="nonexistent", input={})
@@ -122,8 +124,8 @@ class TestRunsEndpoints:
 
     @pytest.mark.asyncio
     async def test_create_run_graph_not_found(
-        self, mock_user, mock_session, sample_assistant
-    ):
+        self, mock_user: User, mock_session: AsyncMock, sample_assistant: AssistantORM
+    ) -> None:
         """Test creation where assistant's graph is missing."""
         thread_id = "test-thread-123"
         request = RunCreate(assistant_id="test-assistant", input={})
@@ -150,7 +152,9 @@ class TestRunsEndpoints:
             assert "Graph" in str(exc.value.detail)
 
     @pytest.mark.asyncio
-    async def test_create_run_config_context_conflict(self, mock_user, mock_session):
+    async def test_create_run_config_context_conflict(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test validation error when both configurable and context are provided."""
         thread_id = "test-thread-123"
         request = RunCreate(
@@ -181,7 +185,9 @@ class TestRunsEndpoints:
             )
 
     @pytest.mark.asyncio
-    async def test_get_run_success(self, mock_user, mock_session):
+    async def test_get_run_success(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test retrieving an existing run."""
         thread_id = "test-thread"
         run_id = "run-123"
@@ -206,7 +212,9 @@ class TestRunsEndpoints:
         mock_session.refresh.assert_called_once_with(run_orm)
 
     @pytest.mark.asyncio
-    async def test_get_run_not_found(self, mock_user, mock_session):
+    async def test_get_run_not_found(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test retrieving non-existent run."""
         mock_session.scalar.return_value = None
 
@@ -217,7 +225,9 @@ class TestRunsEndpoints:
         assert "Run" in str(exc.value.detail)
 
     @pytest.mark.asyncio
-    async def test_list_runs_success(self, mock_user, mock_session):
+    async def test_list_runs_success(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test listing runs."""
         thread_id = "test-thread"
 
@@ -252,7 +262,9 @@ class TestRunsEndpoints:
         assert result[0].run_id == "run-0"
 
     @pytest.mark.asyncio
-    async def test_update_run_cancel(self, mock_user, mock_session):
+    async def test_update_run_cancel(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test cancelling a run."""
         thread_id = "test-thread"
         run_id = "run-123"
@@ -289,7 +301,9 @@ class TestRunsEndpoints:
             assert result.run_id == run_id
 
     @pytest.mark.asyncio
-    async def test_update_run_not_found(self, mock_user, mock_session):
+    async def test_update_run_not_found(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test updating non-existent run."""
         mock_session.scalar.return_value = None
 
@@ -305,7 +319,9 @@ class TestRunsEndpoints:
         assert exc.value.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_join_run_terminal_state(self, mock_user, mock_session):
+    async def test_join_run_terminal_state(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test joining a completed run returns output immediately."""
         run_orm = RunORM(
             run_id="run-1",
@@ -324,7 +340,9 @@ class TestRunsEndpoints:
         assert result == {"result": "done"}
 
     @pytest.mark.asyncio
-    async def test_join_run_active_state(self, mock_user, mock_session):
+    async def test_join_run_active_state(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
         """Test joining an active run waits for completion."""
         # Setup run initially in running state
         run_orm_running = RunORM(

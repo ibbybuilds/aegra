@@ -18,7 +18,7 @@ class TestWaitForRunExceptionPaths:
     """Test exception handling and edge cases in wait_for_run endpoint."""
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_timeout(self):
+    async def test_wait_for_run_timeout(self) -> None:
         """Test that TimeoutError is handled gracefully and returns current state."""
         # Setup mocks
         thread_id = "test-thread-123"
@@ -110,7 +110,7 @@ class TestWaitForRunExceptionPaths:
             assert mock_wait_for.called
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_cancelled(self):
+    async def test_wait_for_run_cancelled(self) -> None:
         """Test that CancelledError is handled gracefully."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -189,7 +189,7 @@ class TestWaitForRunExceptionPaths:
             assert mock_wait_for.called
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_generic_exception(self):
+    async def test_wait_for_run_generic_exception(self) -> None:
         """Test that generic Exception is handled gracefully."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -268,7 +268,7 @@ class TestWaitForRunExceptionPaths:
             assert mock_wait_for.called
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_disappeared(self):
+    async def test_wait_for_run_disappeared(self) -> None:
         """Test that HTTPException 500 is raised if run disappears during execution."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -334,7 +334,7 @@ class TestWaitForRunExceptionPaths:
             assert "disappeared during execution" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_failed_status(self):
+    async def test_wait_for_run_failed_status(self) -> None:
         """Test that failed runs return output and log error."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -415,7 +415,7 @@ class TestWaitForRunExceptionPaths:
             mock_logger.error.assert_called()
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_interrupted_status(self):
+    async def test_wait_for_run_interrupted_status(self) -> None:
         """Test that interrupted runs return partial output."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -493,7 +493,7 @@ class TestWaitForRunExceptionPaths:
             assert result == {"partial": "result", "__interrupt__": [{"value": "test"}]}
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_cancelled_status(self):
+    async def test_wait_for_run_cancelled_status(self) -> None:
         """Test that cancelled runs return empty output."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -571,7 +571,7 @@ class TestWaitForRunExceptionPaths:
             assert result == {}
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_graph_not_found(self):
+    async def test_wait_for_run_graph_not_found(self) -> None:
         """Test that HTTPException 404 is raised if assistant's graph doesn't exist."""
         thread_id = "test-thread-123"
         user = User(identity="test-user", scopes=[])
@@ -628,7 +628,7 @@ class TestWaitForRunExceptionPaths:
             assert "not found" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_with_context_branch(self):
+    async def test_wait_for_run_with_context_branch(self) -> None:
         """Test the context branch where context is provided."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
@@ -706,7 +706,7 @@ class TestWaitForRunExceptionPaths:
             assert result == {"result": "success"}
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_without_context_branch(self):
+    async def test_wait_for_run_without_context_branch(self) -> None:
         """Test the else branch where context is not provided."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())

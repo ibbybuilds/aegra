@@ -1,5 +1,6 @@
 """Unit tests for streaming_service module"""
 
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,7 +14,7 @@ from agent_server.services.streaming_service import StreamingService
 class TestStreamingService:
     """Test StreamingService class"""
 
-    async def test_next_event_counter(self):
+    async def test_next_event_counter(self) -> None:
         """Test event counter update logic"""
         service = StreamingService()
         run_id = "run-123"
@@ -37,7 +38,7 @@ class TestStreamingService:
         count = service._next_event_counter(run_id, "invalid")
         assert count == 10  # Should remain unchanged
 
-    async def test_put_to_broker(self):
+    async def test_put_to_broker(self) -> None:
         """Test putting event to broker"""
         service = StreamingService()
         run_id = "run-123"
@@ -57,7 +58,7 @@ class TestStreamingService:
             mock_broker.put.assert_awaited_with(event_id, raw_event)
             assert service.event_counters[run_id] == 1
 
-    async def test_store_event_from_raw_messages(self):
+    async def test_store_event_from_raw_messages(self) -> None:
         """Test storing message events"""
         service = StreamingService()
         run_id = "run-123"
@@ -65,7 +66,8 @@ class TestStreamingService:
 
         # Test messages (tuple with 2 items)
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("messages", {"content": "hello"})
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -82,14 +84,15 @@ class TestStreamingService:
                 },
             )
 
-    async def test_store_event_from_raw_partial(self):
+    async def test_store_event_from_raw_partial(self) -> None:
         """Test storing partial message events"""
         service = StreamingService()
         run_id = "run-123"
         event_id = "evt-1"
 
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("messages/partial", ["chunk"])
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -101,14 +104,15 @@ class TestStreamingService:
                 {"type": "messages_partial", "messages": ["chunk"], "node_path": None},
             )
 
-    async def test_store_event_from_raw_complete(self):
+    async def test_store_event_from_raw_complete(self) -> None:
         """Test storing complete message events"""
         service = StreamingService()
         run_id = "run-123"
         event_id = "evt-1"
 
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("messages/complete", ["msg"])
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -120,14 +124,15 @@ class TestStreamingService:
                 {"type": "messages_complete", "messages": ["msg"], "node_path": None},
             )
 
-    async def test_store_event_from_raw_metadata(self):
+    async def test_store_event_from_raw_metadata(self) -> None:
         """Test storing metadata events"""
         service = StreamingService()
         run_id = "run-123"
         event_id = "evt-1"
 
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("messages/metadata", {"meta": "data"})
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -143,14 +148,15 @@ class TestStreamingService:
                 },
             )
 
-    async def test_store_event_from_raw_events(self):
+    async def test_store_event_from_raw_events(self) -> None:
         """Test storing langchain events"""
         service = StreamingService()
         run_id = "run-123"
         event_id = "evt-1"
 
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("events", {"event": "data"})
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -162,14 +168,15 @@ class TestStreamingService:
                 {"type": "langchain_event", "event": {"event": "data"}},
             )
 
-    async def test_store_event_from_raw_values(self):
+    async def test_store_event_from_raw_values(self) -> None:
         """Test storing values events"""
         service = StreamingService()
         run_id = "run-123"
         event_id = "evt-1"
 
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("values", {"val": 1})
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -181,14 +188,15 @@ class TestStreamingService:
                 {"type": "execution_values", "chunk": {"val": 1}},
             )
 
-    async def test_store_event_from_raw_end(self):
+    async def test_store_event_from_raw_end(self) -> None:
         """Test storing end events"""
         service = StreamingService()
         run_id = "run-123"
         event_id = "evt-1"
 
         with patch(
-            "agent_server.services.streaming_service.store_sse_event"
+            "agent_server.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
         ) as mock_store:
             raw_event = ("end", {"status": "success", "final_output": "done"})
             await service.store_event_from_raw(run_id, event_id, raw_event)
@@ -200,7 +208,7 @@ class TestStreamingService:
                 {"type": "run_complete", "status": "success", "final_output": "done"},
             )
 
-    async def test_signal_run_cancelled(self):
+    async def test_signal_run_cancelled(self) -> None:
         """Test signalling run cancellation"""
         service = StreamingService()
         run_id = "run-123"
@@ -222,7 +230,7 @@ class TestStreamingService:
             # Should cleanup broker
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
-    async def test_signal_run_error(self):
+    async def test_signal_run_error(self) -> None:
         """Test signalling run error"""
         service = StreamingService()
         run_id = "run-123"
@@ -245,7 +253,7 @@ class TestStreamingService:
             # Should cleanup broker
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
-    async def test_stream_run_execution(self):
+    async def test_stream_run_execution(self) -> None:
         """Test overall streaming execution"""
         service = StreamingService()
         run = Run(
@@ -263,7 +271,7 @@ class TestStreamingService:
         mock_broker = MagicMock()
         mock_broker.is_finished.return_value = False
 
-        async def mock_aiter():
+        async def mock_aiter() -> AsyncGenerator:
             yield "run-123_event_3", "raw3"
             yield "run-123_event_4", "raw4"
 
@@ -295,7 +303,7 @@ class TestStreamingService:
             # Should have fetched stored events
             mock_store.get_all_events.assert_awaited_with("run-123")
 
-    async def test_stream_run_execution_with_last_id(self):
+    async def test_stream_run_execution_with_last_id(self) -> None:
         """Test streaming with last_event_id resume"""
         service = StreamingService()
         run = Run(
@@ -320,7 +328,7 @@ class TestStreamingService:
 
             mock_broker = MagicMock()
 
-            async def mock_aiter():
+            async def mock_aiter() -> AsyncGenerator:
                 if False:
                     yield  # Force async generator
 
@@ -335,7 +343,7 @@ class TestStreamingService:
             # Should fetch events since last_id
             mock_store.get_events_since.assert_awaited_with("run-123", last_id)
 
-    async def test_cancel_background_task(self):
+    async def test_cancel_background_task(self) -> None:
         """Test cancelling background task"""
         service = StreamingService()
         run_id = "run-123"
@@ -350,7 +358,7 @@ class TestStreamingService:
             service._cancel_background_task(run_id)
             mock_task.cancel.assert_called_once()
 
-    async def test_interrupt_run(self):
+    async def test_interrupt_run(self) -> None:
         """Test run interruption"""
         service = StreamingService()
         run_id = "run-123"
@@ -365,7 +373,7 @@ class TestStreamingService:
             mock_signal.assert_awaited_with(run_id, "Run was interrupted")
             mock_update.assert_awaited_with(run_id, "interrupted")
 
-    async def test_cancel_run(self):
+    async def test_cancel_run(self) -> None:
         """Test run cancellation"""
         service = StreamingService()
         run_id = "run-123"
@@ -380,7 +388,7 @@ class TestStreamingService:
             mock_signal.assert_awaited_with(run_id)
             mock_update.assert_awaited_with(run_id, "interrupted")
 
-    async def test_is_run_streaming(self):
+    async def test_is_run_streaming(self) -> None:
         """Test fetching if run is streaming"""
         service = StreamingService()
 
@@ -400,7 +408,7 @@ class TestStreamingService:
             assert service.is_run_streaming("run-1") is False
 
     @pytest.mark.asyncio
-    async def test_cleanup_run(self):
+    async def test_cleanup_run(self) -> None:
         """Test run cleanup"""
         service = StreamingService()
         run_id = "run-123"

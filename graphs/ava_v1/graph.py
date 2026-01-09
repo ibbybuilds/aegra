@@ -5,7 +5,7 @@ from langchain.agents.middleware import ModelFallbackMiddleware, SummarizationMi
 from langchain.chat_models import init_chat_model
 from langgraph.graph.state import CompiledStateGraph
 
-from ava_v1.middleware import customize_agent_prompt
+from ava_v1.middleware import ForcedRetryMiddleware, customize_agent_prompt
 from ava_v1.prompt import TRAVEL_ASSISTANT_PROMPT
 from ava_v1.state import AvaV1State
 from ava_v1.tools import (
@@ -48,6 +48,7 @@ agent: CompiledStateGraph = create_agent(
             "gpt-4o-mini",
         ),
         customize_agent_prompt,
+        ForcedRetryMiddleware(),
     ],  # Dynamic prompt based on CallContext
     state_schema=AvaV1State,
 )

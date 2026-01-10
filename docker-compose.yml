@@ -23,35 +23,38 @@ services:
       dockerfile: deployments/docker/Dockerfile
     user: "0:0"  # Run as root to install dependencies
     ports:
-      - "${PORT:-2024}:${PORT:-2024}"  # 使用 2024 端口
+      - "0.0.0.0:${PORT:-2024}:${PORT:-2024}"  # 绑定到所有网络接口，内网可访问
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # 允许容器访问主机服务
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra  # 容器内仍是 5432
       - AUTH_TYPE=custom
       - DEBUG=true
       - PORT=${PORT:-2024}  # 服务监听 2024
-      # Override quantitative_strategy_agent config paths for container
-      - BASE_DATA_DIR=/tmp/aegra_data
-      - WORKSPACE_DIR=/tmp/aegra_data/workspace
-      - MEMORIES_DIR=/tmp/aegra_data/memories
+      # Data directories - 映射到主机持久化目录
+      - BASE_DATA_DIR=/app/data
+      - WORKSPACE_DIR=/app/data/workspace
+      - MEMORIES_DIR=/app/data/memories
+      # User Database - 连接到内网 IP 的 PostgreSQL (端口 5435)
+      - USER_DATABASE_URL=postgresql+asyncpg://alagent:alagent@202.45.128.237:5435/alagent
+      # Langfuse - 连接到内网 IP 的 Langfuse 服务
+      - LANGFUSE_HOST=http://202.45.128.237:7312
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ./aegra.json:/app/aegra.json:ro
+      - ./aegra.docker.json:/app/aegra.json:ro  # 使用 Docker 专用配置
       - ./graphs:/app/graphs:ro
       - ./src:/app/src:ro # for hot reload support of server
       - ./auth.py:/app/auth.py:ro
       - ./.env:/app/.env:ro
       - ./alembic:/app/alembic:ro # for migrations
-      # Mount custom route files dynamically (add your custom routes file here)
-      - ./custom_routes_example.py:/app/custom_routes_example.py:ro
-      - ./webapp_wrapper.py:/app/webapp_wrapper.py:ro # User management routes
-      # Mount quantitative_strategy_agent for custom app (webapp.py) and graph loading
+      # Mount quantitative_strategy_agent for graph loading
       - ../quantitative_strategy_agent:/app/quantitative_strategy_agent:ro
+      # Mount data directories for persistence
+      - ../data:/app/data  # 持久化 workspace 和 memories
     command: >
       sh -c "
-        echo 'Installing webapp dependencies...' &&
-        pip install --no-cache-dir email-validator python-multipart psycopg2-binary bcrypt passlib python-jose &&
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&

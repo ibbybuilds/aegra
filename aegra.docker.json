@@ -1,0 +1,19 @@
+{
+  "dependencies": [
+    "/app/quantitative_strategy_agent"
+  ],
+  "graphs": {
+    "quant_agent": "/app/quantitative_strategy_agent/qsa/agent.py:agent",
+    "paper_pipeline": "/app/quantitative_strategy_agent/qsa/pipeline_graph.py:pipeline_graph"
+  },
+  "http": {
+    "app": "/app/quantitative_strategy_agent/qsa/webapp.py:app",
+    "enable_custom_route_auth": false,
+    "cors": {
+      "allow_origins": ["*"],
+      "allow_credentials": true,
+      "allow_methods": ["*"],
+      "allow_headers": ["*"]
+    }
+  }
+}

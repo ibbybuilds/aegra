@@ -27,7 +27,8 @@ COPY src/ ./src/
 
 # Install project (builds wheel and installs dependencies specified in pyproject)
 RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir . && \
+    pip install --no-cache-dir email-validator python-multipart psycopg2-binary bcrypt passlib python-jose
 
 # -----------------------------
 # Final, minimal runtime image

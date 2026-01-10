@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: aegra
     ports:
-      - "5432:5432"
+      - "5442:5432"  # 外部端口 5442，避免与 Langfuse 冲突
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,13 +21,18 @@ services:
     build:
       context: .
       dockerfile: deployments/docker/Dockerfile
+    user: "0:0"  # Run as root to install dependencies
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "${PORT:-2024}:${PORT:-2024}"  # 使用 2024 端口
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra
-      - AUTH_TYPE=noop
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra  # 容器内仍是 5432
+      - AUTH_TYPE=custom
       - DEBUG=true
-      - PORT=${PORT:-8000}
+      - PORT=${PORT:-2024}  # 服务监听 2024
+      # Override quantitative_strategy_agent config paths for container
+      - BASE_DATA_DIR=/tmp/aegra_data
+      - WORKSPACE_DIR=/tmp/aegra_data/workspace
+      - MEMORIES_DIR=/tmp/aegra_data/memories
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,12 +45,17 @@ services:
       - ./alembic:/app/alembic:ro # for migrations
       # Mount custom route files dynamically (add your custom routes file here)
       - ./custom_routes_example.py:/app/custom_routes_example.py:ro
+      - ./webapp_wrapper.py:/app/webapp_wrapper.py:ro # User management routes
+      # Mount quantitative_strategy_agent for custom app (webapp.py) and graph loading
+      - ../quantitative_strategy_agent:/app/quantitative_strategy_agent:ro
     command: >
       sh -c "
+        echo 'Installing webapp dependencies...' &&
+        pip install --no-cache-dir email-validator python-multipart psycopg2-binary bcrypt passlib python-jose &&
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-2024} --reload
       "
 
   # Redis (optional - for advanced queuing in future phases)

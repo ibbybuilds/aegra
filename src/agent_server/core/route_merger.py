@@ -115,17 +115,22 @@ def merge_exception_handlers(
     return user_app
 
 
-def update_openapi_spec(user_app: Starlette) -> None:
+def update_openapi_spec(user_app: Starlette, protected_routes: list[BaseRoute] | None = None) -> None:
     """Update OpenAPI spec if user app is FastAPI.
 
     If the user app is a FastAPI instance, its OpenAPI spec will be automatically
     merged with Aegra's default spec when FastAPI generates the combined spec.
+    
+    Protected routes (from Mount) are also added to OpenAPI schema for documentation,
+    but actual request handling still goes through the Mount with auth middleware.
 
     Args:
         user_app: User's FastAPI/Starlette application
+        protected_routes: Optional list of protected routes to include in OpenAPI
     """
     if "fastapi" in sys.modules:
         from fastapi import FastAPI
+        from fastapi.routing import APIRoute
 
         if isinstance(user_app, FastAPI):
             # FastAPI automatically merges routes into OpenAPI spec
@@ -134,3 +139,32 @@ def update_openapi_spec(user_app: Starlette) -> None:
             logger.info(
                 "Custom FastAPI app detected - OpenAPI spec will include custom routes"
             )
+            
+            # Add protected routes to OpenAPI schema for documentation
+            # These routes are already handled by the protected Mount,
+            # but we need to add them to OpenAPI for visibility
+            if protected_routes:
+                for route in protected_routes:
+                    if isinstance(route, APIRoute):
+                        # Create a clone of the route for OpenAPI documentation only
+                        # Mark it with a tag to indicate auth is required
+                        if not any(r.path == route.path and r.methods == route.methods 
+                                   for r in user_app.routes if isinstance(r, APIRoute)):
+                            # Add auth requirement to route's OpenAPI schema
+                            route_copy = APIRoute(
+                                path=route.path,
+                                endpoint=route.endpoint,
+                                methods=route.methods,
+                                name=route.name,
+                                tags=route.tags or ["Aegra Core API"],
+                                summary=route.summary,
+                                description=route.description,
+                                response_model=route.response_model,
+                                responses={
+                                    **route.responses,
+                                    401: {"description": "Authentication required"}
+                                } if route.responses else {401: {"description": "Authentication required"}},
+                            )
+                            user_app.routes.append(route_copy)
+                
+                logger.info(f"Added {len(protected_routes)} protected routes to OpenAPI spec")

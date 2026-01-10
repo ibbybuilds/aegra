@@ -44,14 +44,20 @@ if AUTH_TYPE == "noop":
         return {}  # Empty filter = no access restrictions
 
 elif AUTH_TYPE == "custom":
-    logger.info("Using custom authentication")
+    logger.info("Using custom JWT authentication")
+
+    # JWT 配置
+    from jose import JWTError, jwt
+    JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production")
+    JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
     @auth.authenticate
     async def authenticate(headers: dict[str, str]) -> Auth.types.MinimalUserDict:
         """
-        Custom authentication handler.
-
-        Modify this function to integrate with your authentication service.
+        JWT authentication handler - 集成你的 quantitative_strategy_agent 认证逻辑
+        
+        允许无 token 请求通过（返回匿名用户），具体端点自己决定是否需要认证。
+        这样 /auth/login, /auth/register 等公开端点可以正常访问。
         """
         # Extract authorization header
         authorization = (
@@ -65,43 +71,62 @@ elif AUTH_TYPE == "custom":
         if isinstance(authorization, bytes):
             authorization = authorization.decode("utf-8")
 
+        # 没有 token 时返回匿名用户（允许公开端点访问）
         if not authorization:
-            logger.warning("Missing Authorization header")
-            raise Auth.exceptions.HTTPException(
-                status_code=401, detail="Authorization header required"
-            )
-
-        # Development token for testing
-        if authorization == "Bearer dev-token":
             return {
-                "identity": "dev-user",
-                "display_name": "Development User",
-                "email": "dev@example.com",
-                "permissions": ["admin"],
-                "org_id": "dev-org",
-                "is_authenticated": True,
+                "identity": "anonymous",
+                "display_name": "Anonymous User",
+                "is_authenticated": False,  # 标记为未认证
             }
 
-        # Example: Simple API key validation (replace with your logic)
-        if authorization.startswith("Bearer "):
-            # TODO: Replace with your auth service integration
-            logger.warning("Invalid token")
+        # Parse Bearer token
+        try:
+            scheme, token = authorization.split()
+            if scheme.lower() != "bearer":
+                raise Auth.exceptions.HTTPException(
+                    status_code=401,
+                    detail="Invalid authentication scheme. Expected 'Bearer <token>'"
+                )
+        except ValueError:
             raise Auth.exceptions.HTTPException(
-                status_code=401, detail="Invalid authentication token"
+                status_code=401,
+                detail="Invalid authorization header format. Expected 'Bearer <token>'"
             )
 
-        # Reject requests without proper format
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="Invalid authorization format. Expected 'Bearer <token>'",
-        )
+        # Validate JWT token
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            email = payload.get("email")
+            plan = payload.get("plan", "free")
+
+            if not user_id:
+                raise Auth.exceptions.HTTPException(
+                    status_code=401,
+                    detail="Invalid token payload: missing 'sub' field"
+                )
+
+            # Return user information
+            return {
+                "identity": user_id,
+                "is_authenticated": True,
+                "email": email,
+                "subscription_plan": plan,
+            }
+
+        except JWTError as e:
+            logger.warning(f"JWT validation failed: {str(e)}")
+            raise Auth.exceptions.HTTPException(
+                status_code=401,
+                detail=f"Invalid token: {str(e)}"
+            )
 
     @auth.on
     async def authorize(
         ctx: Auth.types.AuthContext, value: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Multi-tenant authorization with user-scoped access control.
+        资源访问控制 - 确保用户只能访问自己的资源
         """
         try:
             # Get user identity from authentication context

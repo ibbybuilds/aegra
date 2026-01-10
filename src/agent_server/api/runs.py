@@ -873,6 +873,12 @@ async def cancel_run_endpoint(
     if not run_orm:
         raise HTTPException(404, f"Run '{run_id}' not found")
 
+    # CRITICAL: Cancel the asyncio task FIRST to stop the agent execution
+    task = active_runs.get(run_id)
+    if task and not task.done():
+        logger.info(f"[cancel_run] Cancelling asyncio task for run_id={run_id}")
+        task.cancel()
+
     if action == "interrupt":
         logger.info(
             f"[cancel_run] interrupt run_id={run_id} user={user.identity} thread_id={thread_id}"
@@ -899,11 +905,12 @@ async def cancel_run_endpoint(
         await session.commit()
 
     # Optionally wait for background task
-    if wait:
-        task = active_runs.get(run_id)
-        if task:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+    if wait and task:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
+    
+    # Clean up the task from active_runs
+    active_runs.pop(run_id, None)
 
     # Reload and return updated Run (do NOT delete here; deletion is a separate endpoint)
     run_orm = await session.scalar(

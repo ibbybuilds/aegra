@@ -83,7 +83,7 @@ async def create_thread(
                             c.name: getattr(existing, c.name)
                             for c in existing.__table__.columns
                         },
-                        "metadata": existing.metadata_json,
+                        "metadata": existing.metadata_json or {},
                     }
                 )
             else:  # "raise" (default)
@@ -175,7 +175,7 @@ async def list_threads(
         Thread.model_validate(
             {
                 **{c.name: getattr(t, c.name) for c in t.__table__.columns},
-                "metadata": t.metadata_json,
+                "metadata": t.metadata_json or {},
             }
         )
         for t in rows
@@ -200,7 +200,7 @@ async def get_thread(
     return Thread.model_validate(
         {
             **{c.name: getattr(thread, c.name) for c in thread.__table__.columns},
-            "metadata": thread.metadata_json,
+            "metadata": thread.metadata_json or {},
         }
     )
 
@@ -247,7 +247,7 @@ async def update_thread(
     return Thread.model_validate(
         {
             **{c.name: getattr(thread, c.name) for c in thread.__table__.columns},
-            "metadata": thread.metadata_json,
+            "metadata": thread.metadata_json or {},
         }
     )
 
@@ -901,7 +901,7 @@ async def search_threads(
         Thread.model_validate(
             {
                 **{c.name: getattr(t, c.name) for c in t.__table__.columns},
-                "metadata": t.metadata_json,
+                "metadata": t.metadata_json or {},
             }
         )
         for t in rows

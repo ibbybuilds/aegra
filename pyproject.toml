@@ -43,7 +43,11 @@ dependencies = [
     "langfuse>=3.3.4",
     "structlog>=25.4.0",
     "asgi-correlation-id>=4.3.4",
+    "click>=8.1.0",
 ]
+
+[project.scripts]
+aegra = "agent_server.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ibbybuilds/aegra"
@@ -57,8 +61,16 @@ Documentation = "https://github.com/ibbybuilds/aegra#readme"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_server"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/alembic",
+    "/scripts",
+    "/alembic.ini",
+]
+
 [tool.hatch.build.targets.wheel.sources]
-"graphs/react_agent" = "react_agent"
+"src" = ""
 
 [tool.ruff]
 line-length = 88

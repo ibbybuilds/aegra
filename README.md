@@ -34,6 +34,47 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 - **📊 [Langfuse Integration](docs/langfuse-usage.md)**: Complete observability and tracing for your agent runs
 
 
+## ⚠️ Important: Upgrade to PostgreSQL 18
+
+**Update (Jan 2026):** We have upgraded the database from PostgreSQL 15 to 18. This is a **breaking change** for existing local environments.
+
+If you are a **new user**, simply run `docker compose up` and ignore this section.
+
+If you have **existing data**, you must migrate your database, otherwise, the container will fail to start.
+
+### 🔄 Migration Guide (Preserve Data)
+
+**1. Backup your data (Before pulling new changes)**
+While your v15 container is still running:
+```bash
+docker compose exec -T postgres pg_dumpall -c -U user > dump.sql
+```
+**2. Remove the old volume The internal file structure has changed in v18. You must delete the old volume to let Docker create a fresh one.**
+```
+# Option A: Delete all volumes (Simplest)
+docker compose down -v
+
+# Option B: Delete only Postgres volume (If you need to keep Redis data)
+docker volume rm aegra_postgres_data
+
+# ⚠️ This deletes the old database volume. Ensure you have the dump from Step 1.
+```
+**3. Update and Start DB Only Pull the changes and start only the database. Do not start the full app yet, or it will create empty tables and conflict with your restore.**
+```
+git pull origin main
+docker compose up -d postgres
+```
+**4. Restore Data Wait a few seconds for the database to initialize, then restore your data:**
+```
+cat dump.sql | docker compose exec -T postgres psql -U user -d postgres
+```
+**5. Start Application Now that the data is restored, stop the temporary session and start the full stack:**
+```
+docker compose down
+docker compose up -d
+```
+
+
 ## 🔥 Why Aegra vs LangGraph Platform?
 
 | Feature                | LangGraph Platform         | Aegra (Self-Hosted)                               |
@@ -295,7 +336,14 @@ cp .env.example .env
 
 ```bash
 # Database
+POSTGRES_USER=user
+POSTGRES_PASSWORD=password
+POSTGRES_DB=aegra
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
+DATABASE_ECHO=false
 
 # Authentication (extensible)
 AUTH_TYPE=noop  # noop, custom

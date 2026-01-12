@@ -322,6 +322,16 @@ def downgrade() -> None:
 
 ## 🚨 Common Issues & Solutions
 
+### Database Version Upgrade (Postgres 15 -> 18)
+
+**Problem**: Container fails with `FATAL: database files are incompatible with server`
+
+This happens because we upgraded to PostgreSQL 18, but your Docker volume still contains data formatted for PostgreSQL 15.
+
+**Solution**:
+You need to remove the old volume and (optionally) restore your data.
+Please follow the **[Migration Guide in README](../README.md#%EF%B8%8F-important-upgrade-to-postgresql-18)**.
+
 ### Migration Issues in Docker
 
 **Problem**: Migration fails in Docker container
@@ -622,8 +632,9 @@ python3 scripts/migrate.py upgrade
 
 ### Troubleshooting Quick Reference
 
-| Problem                   | Solution                              |
-| ------------------------- | ------------------------------------- |
+| Problem                   | Solution                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| **Incompatible DB version** | **See [Migration Guide](../README.md#%EF%B8%8F-important-upgrade-to-postgresql-18)** |
 | Can't connect to database | `docker compose up postgres -d`       |
 | Migration fails           | `python3 scripts/migrate.py current`  |
 | Permission denied         | `chmod +x scripts/migrate.py`         |

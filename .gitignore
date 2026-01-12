@@ -15,6 +15,9 @@ wheels/
 # Pycharm
 .idea/
 
+# VSCode
+.vscode/
+
 # Testing
 .coverage
 coverage.xml

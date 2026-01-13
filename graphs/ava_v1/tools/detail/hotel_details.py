@@ -12,13 +12,6 @@ from langgraph.types import Command
 
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_details_push
 
-# Import redis_client
-from ava_v1.shared_libraries.redis_client import (
-    redis_get_json_compressed,
-    redis_set_json_compressed,
-)
-from ava_v1.shared_libraries.redis_helpers import _filter_hotel_details
-
 logger = logging.getLogger(__name__)
 
 
@@ -67,42 +60,22 @@ async def hotel_details(
 ) -> Command | str:
     """Retrieve detailed information about a specific hotel.
 
-    Fetches comprehensive property details including descriptions, facilities,
-    policies, location, and reviews. Response is filtered to include only
-    relevant fields for the agent.
+    Triggers cache-worker to cache hotel details. The agent must then call
+    query_vfs to retrieve the actual data from Redis.
 
     Args:
         hotel_id: Hotel ID from query_vfs results (the 'id' field)
-        runtime: Injected tool runtime (unused, no state access needed)
+        runtime: Injected tool runtime for context management
 
     Returns:
-        JSON string containing:
-        - status: "success" or "error"
-        - hotelId: str - The hotel ID
-        - details: dict - Filtered hotel details (only if success)
-        - cached: bool - Whether result was from cache (only if success)
-        - error: dict - Error details (only if error)
+        JSON string or Command with status metadata
 
     Example Success Response:
         {
             "status": "success",
             "hotelId": "39615853",
-            "cached": False,
-            "details": {
-                "id": 39615853,
-                "name": "Marriott Downtown Miami",
-                "chainName": "Marriott",
-                "brandName": "Marriott Hotels & Resorts",
-                "starRating": 4,
-                "propertyType": "Hotel",
-                "geocode": {"lat": 25.7743, "long": -80.1937},
-                "address": {...},
-                "descriptions": [...],
-                "facilities": [...],
-                "policies": [...],
-                "review": {"rating": 4, "count": 1250},
-                "timezone": "America/New_York"
-            }
+            "message": "Hotel details cached. Call query_vfs(destination=\"details:39615853\") to retrieve full details.",
+            "cached": True
         }
 
     Example Error Response:
@@ -110,7 +83,7 @@ async def hotel_details(
             "status": "error",
             "hotelId": "39615853",
             "error": {
-                "type": "invalid_hotel_id" | "api_error" | "not_found" | "timeout" | "unexpected_error",
+                "type": "hotel_not_found" | "api_error" | "unexpected_error",
                 "message": "..."
             }
         }
@@ -131,77 +104,47 @@ async def hotel_details(
         }
         return _wrap_response(result, hotel_id, runtime)
 
-    try:
-        # Check Redis cache first
-        redis_key = f"details:{hotel_id}"
-        cached_details = await redis_get_json_compressed(redis_key)
+    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
+    endpoint = f"{cache_worker_url}/v1/search/details/{hotel_id}"
 
-        if cached_details is not None:
+    logger.info(f"[HOTEL_DETAILS] Calling cache-worker for hotel_id: {hotel_id}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(endpoint, timeout=10.0)
+            response.raise_for_status()
+            data = response.json()
+
+            logger.info(f"[HOTEL_DETAILS] Status: {data['status']}")
+
             result = {
                 "status": "success",
                 "hotelId": hotel_id,
-                "details": cached_details,
-                "cached": True,
+                "message": f"Hotel details cached. Call query_vfs(destination=\"details:{hotel_id}\") to retrieve full details.",
+                "cached": True
             }
+
             return _wrap_response(result, hotel_id, runtime)
 
-        # Cache miss - fetch from API
-        base_url = os.getenv("HOTEL_DETAIL_API_URL", "http://54.198.17.253:6001")
-        endpoint = f"{base_url}/api/hotelcontent/{hotel_id}/detail"
-
-        # Make async GET request
-        async with httpx.AsyncClient() as client:
-            response = await client.get(endpoint, timeout=30.0)
-            response.raise_for_status()
-            raw_data = response.json()
-
-        # Filter response to include only relevant fields
-        filtered_data = _filter_hotel_details(raw_data)
-
-        # Store in Redis cache with 1 hour TTL
-        TTL_SECONDS = 3600  # 1 hour
-        await redis_set_json_compressed(redis_key, filtered_data, TTL_SECONDS)
-
-        result = {
-            "status": "success",
-            "hotelId": hotel_id,
-            "details": filtered_data,
-            "cached": False,
-        }
-        return _wrap_response(result, hotel_id, runtime)
-
     except httpx.HTTPStatusError as e:
-        # Handle 404 (not found) specifically
         if e.response.status_code == 404:
             result = {
                 "status": "error",
                 "hotelId": hotel_id,
                 "error": {
-                    "type": "not_found",
-                    "message": f"Hotel {hotel_id} not found",
-                },
+                    "type": "hotel_not_found",
+                    "message": f"Hotel with ID '{hotel_id}' not found"
+                }
             }
-            return _wrap_response(result, hotel_id, runtime)
-
-        result = {
-            "status": "error",
-            "hotelId": hotel_id,
-            "error": {
-                "type": "api_error",
-                "message": f"HTTP error {e.response.status_code}: {str(e)}",
-            },
-        }
-        return _wrap_response(result, hotel_id, runtime)
-
-    except httpx.TimeoutException:
-        result = {
-            "status": "error",
-            "hotelId": hotel_id,
-            "error": {
-                "type": "timeout",
-                "message": "Request to hotel details API timed out",
-            },
-        }
+        else:
+            result = {
+                "status": "error",
+                "hotelId": hotel_id,
+                "error": {
+                    "type": "api_error",
+                    "message": f"Hotel details API error: {str(e)}"
+                }
+            }
         return _wrap_response(result, hotel_id, runtime)
 
     except Exception as e:
@@ -210,7 +153,7 @@ async def hotel_details(
             "hotelId": hotel_id,
             "error": {
                 "type": "unexpected_error",
-                "message": f"Unexpected error: {str(e)}",
-            },
+                "message": f"Unexpected error: {str(e)}"
+            }
         }
         return _wrap_response(result, hotel_id, runtime)

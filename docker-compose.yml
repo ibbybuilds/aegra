@@ -28,13 +28,18 @@ services:
       - "host.docker.internal:host-gateway"  # 允许容器访问主机服务
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra  # 容器内仍是 5432
-      - AUTH_TYPE=custom
+      - AUTH_TYPE=noop
       - DEBUG=true
       - PORT=${PORT:-2024}  # 服务监听 2024
-      # Data directories - 映射到主机持久化目录
+      # Data directories - 容器内路径
       - BASE_DATA_DIR=/app/data
       - WORKSPACE_DIR=/app/data/workspace
       - MEMORIES_DIR=/app/data/memories
+      # DinD (Docker-in-Docker) 宿主机路径 - 用于 Docker 卷挂载
+      # 当 aegra 容器调用 Docker API 创建 backtestlite 容器时，需要使用宿主机路径
+      # 通过环境变量配置，方便分发。运行 setup_environment.sh 自动配置
+      - HOST_BASE_DATA_DIR=${HOST_BASE_DATA_DIR:-../data}
+      - HOST_WORKSPACE_DIR=${HOST_WORKSPACE_DIR:-../data/workspace}
       # User Database - 连接到内网 IP 的 PostgreSQL (端口 5435)
       - USER_DATABASE_URL=postgresql+asyncpg://alagent:alagent@202.45.128.237:5435/alagent
       # Langfuse - 连接到内网 IP 的 Langfuse 服务

@@ -38,8 +38,12 @@ services:
       # DinD (Docker-in-Docker) 宿主机路径 - 用于 Docker 卷挂载
       # 当 aegra 容器调用 Docker API 创建 backtestlite 容器时，需要使用宿主机路径
       # 通过环境变量配置，方便分发。运行 setup_environment.sh 自动配置
-      - HOST_BASE_DATA_DIR=${HOST_BASE_DATA_DIR:-../data}
-      - HOST_WORKSPACE_DIR=${HOST_WORKSPACE_DIR:-../data/workspace}
+      - HOST_BASE_DATA_DIR=/home/whlu/ALAGENT/Chatbot_ALAGENT/data
+      - HOST_WORKSPACE_DIR=/home/whlu/ALAGENT/Chatbot_ALAGENT/data/workspace
+      # Docker 执行配置 - 用于 execute_backtest 工具
+      - DOCKER_IMAGE=${DOCKER_IMAGE:-backtestlite-slave:latest}
+      - DOCKER_TIMEOUT=${DOCKER_TIMEOUT:-300}
+      - DOCKER_MEMORY_LIMIT=${DOCKER_MEMORY_LIMIT:-4g}
       # User Database - 连接到内网 IP 的 PostgreSQL (端口 5435)
       - USER_DATABASE_URL=postgresql+asyncpg://alagent:alagent@202.45.128.237:5435/alagent
       # Langfuse - 连接到内网 IP 的 Langfuse 服务
@@ -58,6 +62,8 @@ services:
       - ../quantitative_strategy_agent:/app/quantitative_strategy_agent:ro
       # Mount data directories for persistence
       - ../data:/app/data  # 持久化 workspace 和 memories
+      # DinD: 挂载 Docker socket，允许容器内调用 Docker API
+      - /var/run/docker.sock:/var/run/docker.sock
     command: >
       sh -c "
         echo 'Running database migrations...' &&

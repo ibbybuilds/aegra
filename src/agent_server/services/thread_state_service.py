@@ -129,6 +129,11 @@ class ThreadStateService:
         checkpoint_id = configurable.get("checkpoint_id")
         checkpoint_ns = configurable.get("checkpoint_ns", "")
 
+        # Convert checkpoint_id to string if it's a UUID or other non-string type
+        # LangGraph 0.6+ may return UUID objects, but ThreadCheckpoint expects str
+        if checkpoint_id is not None:
+            checkpoint_id = str(checkpoint_id)
+
         return ThreadCheckpoint(
             checkpoint_id=checkpoint_id,
             thread_id=thread_id,

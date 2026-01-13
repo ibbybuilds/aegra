@@ -92,3 +92,7 @@ class AvaV1State(MessagesState):
     # Call context metadata (set via /state endpoint)
     user_phone: NotRequired[str]  # User's phone number in E.164 format
     call_reference: NotRequired[str]  # Unique call reference ID
+
+    # Verified customer details collected during conversation
+    # Format: {"first_name": "John", "last_name": "Doe", "email": "john@example.com"}
+    customer_details: NotRequired[Annotated[dict[str, str], merge_dicts]]

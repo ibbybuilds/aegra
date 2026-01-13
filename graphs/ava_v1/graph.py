@@ -16,6 +16,7 @@ from ava_v1.tools import (
     query_vfs,
     start_hotel_search,
     start_room_search,
+    update_customer_details,
 )
 
 model = init_chat_model(
@@ -34,6 +35,7 @@ agent: CompiledStateGraph = create_agent(
         book_room,
         modify_call,
         internet_search,
+        update_customer_details,
     ],
     system_prompt=TRAVEL_ASSISTANT_PROMPT,  # Base prompt (will be replaced by dynamic prompt)
     middleware=[

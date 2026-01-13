@@ -36,7 +36,6 @@ logger = logging.getLogger(__name__)
 )
 async def book_room(
     room: dict[str, Any],
-    customer_info: dict[str, Any],
     payment_type: str,
     session_id: str = None,
     price_confirmation_token: str = None,
@@ -56,6 +55,7 @@ async def book_room(
         2. Engage user and wait for response
         3. Call query_vfs() to get complete room data with token
         4. Extract token from TOP LEVEL and rate_key from room object
+        5. Verify customer details (first name, last name, email) sequentially using update_customer_details tool
 
     PARAMETERS:
         room (dict): Room object built from query_vfs response
@@ -66,14 +66,6 @@ async def book_room(
                 "token": vfs_response["token"],  # FROM TOP LEVEL
                 "refundable": True or False,
                 "expected_price": vfs_response["results"][0]["refundable_rate"]
-            }
-
-        customer_info (dict): Customer information
-            {
-                "firstName": str,
-                "lastName": str,
-                "email": str,
-                "phone": str  # Required for billing contact (fallback to call_context.user_phone)
             }
 
         payment_type (str): Payment method - "phone" or "sms"
@@ -87,7 +79,7 @@ async def book_room(
     logger.info("=" * 80)
     logger.info("[BOOK_ROOM] Tool called with:")
     logger.info(f"  room: {room}")
-    logger.info(f"  customer_info: {customer_info}")
+    # customer_info is no longer passed as argument
     logger.info(f"  payment_type: {payment_type}")
     logger.info(f"  session_id: {session_id}")
     logger.info(f"  price_confirmation_token: {price_confirmation_token}")
@@ -95,30 +87,52 @@ async def book_room(
 
     # Sanitize input to handle malformed JSON keys
     room = sanitize_tool_input(room)
-    customer_info = sanitize_tool_input(customer_info)
     logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
-    logger.info(f"[BOOK_ROOM] Sanitized customer_info: {customer_info}")
+
+    # Extract verified customer details from state
+    customer_details = {}
+    if runtime:
+        customer_details = runtime.state.get("customer_details", {})
+        # Redact email PII partially in logs
+        log_details = customer_details.copy()
+        if "email" in log_details:
+            parts = log_details["email"].split("@")
+            if len(parts) == 2:
+                log_details["email"] = f"{parts[0][:2]}***@{parts[1]}"
+        logger.info(f"[BOOK_ROOM] Retrieved customer_details from state: {log_details}")
+    else:
+        logger.warning("[BOOK_ROOM] Runtime not available, cannot retrieve customer details")
+
+    first_name = customer_details.get("first_name")
+    last_name = customer_details.get("last_name")
+    email = customer_details.get("email")
+
+    if not all([first_name, last_name, email]):
+        missing = []
+        if not first_name: missing.append("first_name")
+        if not last_name: missing.append("last_name")
+        if not email: missing.append("email")
+        
+        error_msg = f"Missing verified customer details: {', '.join(missing)}. Please verify these details sequentially using update_customer_details tool."
+        return json.dumps({
+            "status": "error",
+            "error": {
+                "type": "missing_customer_details",
+                "message": error_msg
+            }
+        })
+
+    # Construct verified customer info
+    customer_info = {
+        "firstName": first_name,
+        "lastName": last_name,
+        "email": email
+    }
 
     # Fallback: use user_phone from call_context or state if customer phone not provided
-    if runtime and not customer_info.get("phone"):
+    # Note: customer_info currently constructed above doesn't have phone yet
+    if runtime:
         user_phone = None
-
-        # DEBUG: Log what's available in runtime
-        logger.info(f"[BOOK_ROOM] Runtime available: {runtime is not None}")
-        logger.info(f"[BOOK_ROOM] Runtime has 'context' attr: {hasattr(runtime, 'context')}")
-        logger.info(f"[BOOK_ROOM] Runtime has 'state' attr: {hasattr(runtime, 'state')}")
-
-        if hasattr(runtime, "state"):
-            logger.info(f"[BOOK_ROOM] Runtime.state type: {type(runtime.state)}")
-            if isinstance(runtime.state, dict):
-                # Log all keys in state to see what's available
-                state_keys = list(runtime.state.keys())
-                logger.info(f"[BOOK_ROOM] Runtime.state keys: {state_keys}")
-                # Check if user_phone is directly in state
-                if "user_phone" in runtime.state:
-                    logger.info(f"[BOOK_ROOM] Found 'user_phone' key in runtime.state: {runtime.state.get('user_phone')}")
-                if "call_context" in runtime.state:
-                    logger.info(f"[BOOK_ROOM] Found 'call_context' key in runtime.state")
 
         # OPTION 1: Access via runtime.context (for /runs endpoint with context parameter)
         if hasattr(runtime, "context") and runtime.context is not None:
@@ -158,9 +172,8 @@ async def book_room(
             logger.info(f"[BOOK_ROOM] Using user_phone (E.164 format preserved): {user_phone}")
         else:
             logger.warning("[BOOK_ROOM] user_phone not found in runtime.context or runtime.state")
-    elif customer_info.get("phone"):
-        logger.info(f"[BOOK_ROOM] Phone already provided in customer_info: {customer_info.get('phone')}")
-
+            # If no phone found, validation below will catch it if required by payment type
+    
     # Generate session_id if not provided
     if not session_id:
         session_id = str(uuid.uuid4())

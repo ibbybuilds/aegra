@@ -35,6 +35,10 @@ class RunCreate(BaseModel):
         None,
         description="Behavior on client disconnect: 'cancel' or 'continue' (default).",
     )
+    on_completion: str | None = Field(
+        None,
+        description="Behavior on run completion for stateless runs: 'delete' or 'keep' (default). Only applies when thread_id is None.",
+    )
 
     multitask_strategy: str | None = Field(
         None,

@@ -448,6 +448,456 @@ async def create_and_stream_run(
     )
 
 
+@router.post("/runs/stream")
+async def create_and_stream_run_stateless(
+    request: RunCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> StreamingResponse:
+    """Create a new run without a thread_id and stream its execution - stateless run with auto-created thread."""
+    
+    # Generate a temporary thread_id for this stateless run
+    thread_id = str(uuid4())
+    
+    # Determine if we should delete the thread after completion
+    on_completion = (request.on_completion or "keep").lower()
+    should_delete_thread = on_completion == "delete"
+    
+    logger.info(
+        f"[create_and_stream_run_stateless] creating stateless run with thread_id={thread_id} user={user.identity} on_completion={on_completion}"
+    )
+    
+    # Validate resume command requirements early
+    await _validate_resume_command(session, thread_id, request.command)
+    
+    run_id = str(uuid4())
+    
+    # Get LangGraph service
+    langgraph_service = get_langgraph_service()
+    logger.info(
+        f"[create_and_stream_run_stateless] scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
+    )
+    
+    # Validate assistant exists and get its graph_id. Allow passing a graph_id
+    # by mapping it to a deterministic assistant ID.
+    requested_id = str(request.assistant_id)
+    available_graphs = langgraph_service.list_graphs()
+    
+    resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
+    
+    config = request.config
+    context = request.context
+    configurable = config.get("configurable", {})
+    
+    if config.get("configurable") and context:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
+        )
+    
+    if context:
+        configurable = context.copy()
+        config["configurable"] = configurable
+    else:
+        context = configurable.copy()
+    
+    assistant_stmt = select(AssistantORM).where(
+        AssistantORM.assistant_id == resolved_assistant_id,
+    )
+    assistant = await session.scalar(assistant_stmt)
+    if not assistant:
+        raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
+    
+    config = _merge_jsonb(assistant.config, config)
+    context = _merge_jsonb(assistant.context, context)
+    
+    # Validate the assistant's graph exists
+    available_graphs = langgraph_service.list_graphs()
+    if assistant.graph_id not in available_graphs:
+        raise HTTPException(
+            404, f"Graph '{assistant.graph_id}' not found for assistant"
+        )
+    
+    # Mark thread as busy and update metadata with assistant/graph info
+    # update_thread_metadata will auto-create thread if it doesn't exist
+    await update_thread_metadata(
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
+    )
+    await set_thread_status(session, thread_id, "busy")
+    
+    # Persist run record
+    now = datetime.now(UTC)
+    run_orm = RunORM(
+        run_id=run_id,
+        thread_id=thread_id,
+        assistant_id=resolved_assistant_id,
+        status="running",
+        input=request.input or {},
+        config=config,
+        context=context,
+        user_id=user.identity,
+        created_at=now,
+        updated_at=now,
+        output=None,
+        error_message=None,
+    )
+    session.add(run_orm)
+    await session.commit()
+    
+    # Build response model for stream context
+    run = Run(
+        run_id=run_id,
+        thread_id=thread_id,
+        assistant_id=resolved_assistant_id,
+        status="running",
+        input=request.input or {},
+        config=config,
+        context=context,
+        user_id=user.identity,
+        created_at=now,
+        updated_at=now,
+        output=None,
+        error_message=None,
+    )
+    
+    # Start background execution that will populate the broker
+    # Don't pass the session to avoid transaction conflicts
+    task = asyncio.create_task(
+        execute_run_async(
+            run_id,
+            thread_id,
+            assistant.graph_id,
+            request.input or {},
+            user,
+            config,
+            context,
+            request.stream_mode,
+            None,  # Don't pass session to avoid conflicts
+            request.checkpoint,
+            request.command,
+            request.interrupt_before,
+            request.interrupt_after,
+            request.multitask_strategy,
+            request.stream_subgraphs,
+        )
+    )
+    logger.info(
+        f"[create_and_stream_run_stateless] background task created task_id={id(task)} for run_id={run_id}"
+    )
+    active_runs[run_id] = task
+    
+    # Extract requested stream mode(s)
+    stream_mode = request.stream_mode
+    if not stream_mode and config and "stream_mode" in config:
+        stream_mode = config["stream_mode"]
+    
+    # Stream immediately from broker (which will also include replay of any early events)
+    cancel_on_disconnect = (request.on_disconnect or "continue").lower() == "cancel"
+    
+    # Create a wrapper generator that handles thread cleanup after streaming completes
+    async def stream_with_cleanup() -> AsyncIterator[str]:
+        """Stream run execution and optionally delete thread after completion."""
+        try:
+            async for event in streaming_service.stream_run_execution(
+                run,
+                None,
+                cancel_on_disconnect=cancel_on_disconnect,
+            ):
+                yield event
+        finally:
+            # After streaming completes, optionally delete the thread
+            if should_delete_thread:
+                try:
+                    # Get a new session for cleanup
+                    async_session_maker = _get_session_maker()
+                    async with async_session_maker() as cleanup_session:
+                        # Check for active runs and cancel them
+                        active_runs_stmt = select(RunORM).where(
+                            RunORM.thread_id == thread_id,
+                            RunORM.user_id == user.identity,
+                            RunORM.status.in_(["pending", "running"]),
+                        )
+                        active_runs_list = (await cleanup_session.scalars(active_runs_stmt)).all()
+                        
+                        # Cancel active runs if they exist
+                        if active_runs_list:
+                            logger.info(
+                                f"[create_and_stream_run_stateless] Cancelling {len(active_runs_list)} active runs for thread {thread_id}"
+                            )
+                            
+                            for run_obj in active_runs_list:
+                                run_obj_id = run_obj.run_id
+                                logger.debug(f"Cancelling run {run_obj_id}")
+                                
+                                # Cancel via streaming service
+                                await streaming_service.cancel_run(run_obj_id)
+                                
+                                # Clean up background task if exists
+                                task_obj = active_runs.pop(run_obj_id, None)
+                                if task_obj and not task_obj.done():
+                                    task_obj.cancel()
+                                    try:
+                                        await task_obj
+                                    except asyncio.CancelledError:
+                                        pass
+                                    except Exception as e:
+                                        logger.warning(f"Error waiting for task {run_obj_id} to settle: {e}")
+                        
+                        # Delete thread (CASCADE DELETE will automatically remove all runs)
+                        thread_stmt = select(ThreadORM).where(
+                            ThreadORM.thread_id == thread_id,
+                            ThreadORM.user_id == user.identity,
+                        )
+                        thread = await cleanup_session.scalar(thread_stmt)
+                        if thread:
+                            await cleanup_session.delete(thread)
+                            await cleanup_session.commit()
+                            logger.info(
+                                f"[create_and_stream_run_stateless] Deleted thread {thread_id} after stateless run completion"
+                            )
+                except Exception as e:
+                    logger.error(
+                        f"[create_and_stream_run_stateless] Error cleaning up thread {thread_id}: {e}",
+                        exc_info=True,
+                    )
+    
+    return StreamingResponse(
+        stream_with_cleanup(),
+        media_type="text/event-stream",
+        headers={
+            **get_sse_headers(),
+            "Location": f"/threads/{thread_id}/runs/{run_id}/stream",
+            "Content-Location": f"/threads/{thread_id}/runs/{run_id}",
+        },
+    )
+
+
+@router.post("/runs/wait")
+async def wait_for_run_stateless(
+    request: RunCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Create a run without a thread_id, execute it, and wait for completion - stateless run with auto-created thread.
+    
+    This endpoint combines run creation and execution with synchronous waiting for stateless runs.
+    Returns the final output directly (not the Run object).
+    
+    Compatible with LangGraph SDK's runs.wait() method when thread_id is None.
+    """
+    # Generate a temporary thread_id for this stateless run
+    thread_id = str(uuid4())
+    
+    # Determine if we should delete the thread after completion
+    on_completion = (request.on_completion or "keep").lower()
+    should_delete_thread = on_completion == "delete"
+    
+    logger.info(
+        f"[wait_for_run_stateless] creating stateless run with thread_id={thread_id} user={user.identity} on_completion={on_completion}"
+    )
+    
+    # Validate resume command requirements early
+    await _validate_resume_command(session, thread_id, request.command)
+    
+    run_id = str(uuid4())
+    
+    # Get LangGraph service
+    langgraph_service = get_langgraph_service()
+    logger.info(
+        f"[wait_for_run_stateless] creating run run_id={run_id} thread_id={thread_id} user={user.identity}"
+    )
+    
+    # Validate assistant exists and get its graph_id
+    requested_id = str(request.assistant_id)
+    available_graphs = langgraph_service.list_graphs()
+    resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
+    
+    config = request.config
+    context = request.context
+    configurable = config.get("configurable", {})
+    
+    if config.get("configurable") and context:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
+        )
+    
+    if context:
+        configurable = context.copy()
+        config["configurable"] = configurable
+    else:
+        context = configurable.copy()
+    
+    assistant_stmt = select(AssistantORM).where(
+        AssistantORM.assistant_id == resolved_assistant_id,
+    )
+    assistant = await session.scalar(assistant_stmt)
+    if not assistant:
+        raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
+    
+    config = _merge_jsonb(assistant.config, config)
+    context = _merge_jsonb(assistant.context, context)
+    
+    # Validate the assistant's graph exists
+    available_graphs = langgraph_service.list_graphs()
+    if assistant.graph_id not in available_graphs:
+        raise HTTPException(
+            404, f"Graph '{assistant.graph_id}' not found for assistant"
+        )
+    
+    # Mark thread as busy and update metadata with assistant/graph info
+    # update_thread_metadata will auto-create thread if it doesn't exist
+    await update_thread_metadata(
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity
+    )
+    await set_thread_status(session, thread_id, "busy")
+    
+    # Persist run record
+    now = datetime.now(UTC)
+    run_orm = RunORM(
+        run_id=run_id,
+        thread_id=thread_id,
+        assistant_id=resolved_assistant_id,
+        status="pending",
+        input=request.input or {},
+        config=config,
+        context=context,
+        user_id=user.identity,
+        created_at=now,
+        updated_at=now,
+        output=None,
+        error_message=None,
+    )
+    session.add(run_orm)
+    await session.commit()
+    
+    # Start execution asynchronously
+    task = asyncio.create_task(
+        execute_run_async(
+            run_id,
+            thread_id,
+            assistant.graph_id,
+            request.input or {},
+            user,
+            config,
+            context,
+            request.stream_mode,
+            None,  # Don't pass session to avoid conflicts
+            request.checkpoint,
+            request.command,
+            request.interrupt_before,
+            request.interrupt_after,
+            request.multitask_strategy,
+            request.stream_subgraphs,
+        )
+    )
+    logger.info(
+        f"[wait_for_run_stateless] background task created task_id={id(task)} for run_id={run_id}"
+    )
+    active_runs[run_id] = task
+    
+    # Wait for task to complete with timeout
+    try:
+        await asyncio.wait_for(task, timeout=300.0)  # 5 minute timeout
+    except TimeoutError:
+        logger.warning(f"[wait_for_run_stateless] timeout waiting for run_id={run_id}")
+        # Don't raise, just return current state
+    except asyncio.CancelledError:
+        logger.info(f"[wait_for_run_stateless] cancelled run_id={run_id}")
+        # Task was cancelled, continue to return final state
+    except Exception as e:
+        logger.error(f"[wait_for_run_stateless] exception in run_id={run_id}: {e}")
+        # Exception already handled by execute_run_async
+    
+    # Get final output from database
+    run_orm = await session.scalar(
+        select(RunORM).where(
+            RunORM.run_id == run_id,
+            RunORM.thread_id == thread_id,
+            RunORM.user_id == user.identity,
+        )
+    )
+    if not run_orm:
+        raise HTTPException(500, f"Run '{run_id}' disappeared during execution")
+    
+    await session.refresh(run_orm)
+    
+    # Prepare output
+    output = run_orm.output or {}
+    
+    # Optionally delete the thread after completion
+    if should_delete_thread:
+        try:
+            # Get a new session for cleanup
+            async_session_maker = _get_session_maker()
+            async with async_session_maker() as cleanup_session:
+                # Check for active runs and cancel them
+                active_runs_stmt = select(RunORM).where(
+                    RunORM.thread_id == thread_id,
+                    RunORM.user_id == user.identity,
+                    RunORM.status.in_(["pending", "running"]),
+                )
+                active_runs_list = (await cleanup_session.scalars(active_runs_stmt)).all()
+                
+                # Cancel active runs if they exist
+                if active_runs_list:
+                    logger.info(
+                        f"[wait_for_run_stateless] Cancelling {len(active_runs_list)} active runs for thread {thread_id}"
+                    )
+                    
+                    for run_obj in active_runs_list:
+                        run_obj_id = run_obj.run_id
+                        logger.debug(f"Cancelling run {run_obj_id}")
+                        
+                        # Cancel via streaming service
+                        await streaming_service.cancel_run(run_obj_id)
+                        
+                        # Clean up background task if exists
+                        task_obj = active_runs.pop(run_obj_id, None)
+                        if task_obj and not task_obj.done():
+                            task_obj.cancel()
+                            try:
+                                await task_obj
+                            except asyncio.CancelledError:
+                                pass
+                            except Exception as e:
+                                logger.warning(f"Error waiting for task {run_obj_id} to settle: {e}")
+                
+                # Delete thread (CASCADE DELETE will automatically remove all runs)
+                thread_stmt = select(ThreadORM).where(
+                    ThreadORM.thread_id == thread_id,
+                    ThreadORM.user_id == user.identity,
+                )
+                thread = await cleanup_session.scalar(thread_stmt)
+                if thread:
+                    await cleanup_session.delete(thread)
+                    await cleanup_session.commit()
+                    logger.info(
+                        f"[wait_for_run_stateless] Deleted thread {thread_id} after stateless run completion"
+                    )
+        except Exception as e:
+            logger.error(
+                f"[wait_for_run_stateless] Error cleaning up thread {thread_id}: {e}",
+                exc_info=True,
+            )
+    
+    # Return output based on final status
+    if run_orm.status == "success":
+        return output
+    elif run_orm.status == "error":
+        # For error runs, still return output if available, but log the error
+        logger.error(
+            f"[wait_for_run_stateless] run failed run_id={run_id} error={run_orm.error_message}"
+        )
+        return output
+    elif run_orm.status == "interrupted":
+        # Return partial output for interrupted runs
+        return output
+    else:
+        # Still pending/running after timeout
+        return output
+
+
 @router.get("/threads/{thread_id}/runs/{run_id}", response_model=Run)
 async def get_run(
     thread_id: str,

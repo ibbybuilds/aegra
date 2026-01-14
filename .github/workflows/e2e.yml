@@ -12,7 +12,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:18
         env:
           POSTGRES_USER: user
           POSTGRES_PASSWORD: password
@@ -41,11 +41,13 @@ jobs:
 
       - name: Run database migrations
         env:
+          AEGRA_CONFIG: ""
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
         run: uv run alembic upgrade head
 
       - name: Start Aegra server in background
         env:
+          AEGRA_CONFIG: ""
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AUTH_TYPE: noop
@@ -68,6 +70,7 @@ jobs:
 
       - name: Run E2E tests
         env:
+          AEGRA_CONFIG: ""
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERVER_URL: http://localhost:8000
         run: uv run pytest tests/e2e -v --tb=short

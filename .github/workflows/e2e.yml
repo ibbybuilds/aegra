@@ -48,6 +48,7 @@ jobs:
           POSTGRES_PORT: 5432
           POSTGRES_DB: "aegra"
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
+          LANGFUSE_LOGGING: true
         run: uv run alembic upgrade head
 
       - name: Start Aegra server in background
@@ -62,6 +63,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AUTH_TYPE: noop
           PORT: 8000
+          LANGFUSE_LOGGING: true
         run: |
           uv run python run_server.py > server.log 2>&1 &
           echo $! > server.pid
@@ -88,6 +90,7 @@ jobs:
           POSTGRES_DB: "aegra"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERVER_URL: http://localhost:8000
+          LANGFUSE_LOGGING: true
         run: uv run pytest tests/e2e -v --tb=short
 
       - name: Show server logs on failure

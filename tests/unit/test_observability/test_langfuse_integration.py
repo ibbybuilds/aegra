@@ -30,9 +30,9 @@ def reload_langfuse_module():
 class TestGetTracingCallbacks:
     """Test get_tracing_callbacks function"""
 
-    def test_callbacks_disabled_by_default(self, monkeypatch):
-        """Test that callbacks are disabled when LANGFUSE_LOGGING is not set"""
-        monkeypatch.delenv("LANGFUSE_LOGGING", raising=False)
+    def test_callbacks_disabled_explicitly(self, monkeypatch):
+        """Test that callbacks are disabled when LANGFUSE_LOGGING is explicitly false"""
+        monkeypatch.setenv("LANGFUSE_LOGGING", "false")
 
         langfuse_module = reload_langfuse_module()
         callbacks = langfuse_module.get_tracing_callbacks()

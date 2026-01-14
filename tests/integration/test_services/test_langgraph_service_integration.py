@@ -10,6 +10,9 @@ from langgraph.graph import StateGraph
 
 from agent_server.services.langgraph_service import LangGraphService
 
+# Import settings to patch it reliably
+from src.agent_server.settings import settings
+
 
 class DummyStateGraph(StateGraph):
     def __init__(self):
@@ -51,10 +54,13 @@ class TestLangGraphServiceRealFiles:
             config_path = Path(temp_dir) / "env_config.json"
             config_path.write_text(json.dumps(config_data))
 
-            monkeypatch.setenv("AEGRA_CONFIG", str(config_path))
-
-            with patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+            # Directly patch settings object. This is more reliable than monkeypatch.setenv
+            # because the Settings object is instantiated once at module import time.
+            with (
+                patch.object(settings.app, "AEGRA_CONFIG", str(config_path)),
+                patch(
+                    "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                ),
             ):
                 service = LangGraphService()
                 await service.initialize()
@@ -71,12 +77,15 @@ class TestLangGraphServiceRealFiles:
             langgraph_path = Path(temp_dir) / "langgraph.json"
             langgraph_path.write_text(json.dumps(config_data))
 
-            # Change to temp directory and clear AEGRA_CONFIG
-            monkeypatch.delenv("AEGRA_CONFIG", raising=False)
+            # Change working directory so relative path lookups work
             monkeypatch.chdir(temp_dir)
 
-            with patch(
-                "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+            # Ensure AEGRA_CONFIG is None so fallback logic triggers
+            with (
+                patch.object(settings.app, "AEGRA_CONFIG", None),
+                patch(
+                    "agent_server.services.langgraph_service.LangGraphService._ensure_default_assistants"
+                ),
             ):
                 service = LangGraphService()
                 await service.initialize()

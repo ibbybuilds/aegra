@@ -335,23 +335,41 @@ cp .env.example .env
 ```
 
 ```bash
+# --- Application Settings ---
+PROJECT_NAME=Aegra
+VERSION="0.1.0"
+DEBUG=true
+
+# [MANDATORY] Path to the main agent configuration file
+AEGRA_CONFIG=
+
 # Database
 POSTGRES_USER=user
 POSTGRES_PASSWORD=password
 POSTGRES_DB=aegra
-POSTGRES_HOST=localhost
+POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
 
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
 DATABASE_ECHO=false
 
+# --- Connection Pools ---
+# SQLAlchemy (Metadata & App)
+SQLALCHEMY_POOL_SIZE=2
+SQLALCHEMY_MAX_OVERFLOW=0
+
+# LangGraph (Agent Runtime)
+LANGGRAPH_MIN_POOL_SIZE=1
+LANGGRAPH_MAX_POOL_SIZE=6
+
 # Authentication (extensible)
 AUTH_TYPE=noop  # noop, custom
 
-# Server
+# Server Configuration
 HOST=0.0.0.0
 PORT=8000
 DEBUG=true
+SERVER_URL=http://localhost:8000
 
 # Logging
 LOG_LEVEL=INFO
@@ -363,7 +381,8 @@ OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=...
 # TOGETHER_API_KEY=...
 
-LANGFUSE_LOGGING=true
+# --- Observability (Langfuse) ---
+LANGFUSE_LOGGING=false
 LANGFUSE_SECRET_KEY=sk-...
 LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_HOST=https://cloud.langfuse.com

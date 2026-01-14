@@ -1,13 +1,12 @@
-import os
 from typing import Any
 
 import structlog
 
+from src.agent_server.settings import settings
+
 from .base import ObservabilityProvider
 
 logger = structlog.getLogger(__name__)
-
-_LANGFUSE_LOGGING_ENABLED = os.getenv("LANGFUSE_LOGGING", "false").lower() == "true"
 
 
 class LangfuseProvider(ObservabilityProvider):
@@ -61,7 +60,7 @@ class LangfuseProvider(ObservabilityProvider):
 
     def is_enabled(self) -> bool:
         """Check if Langfuse is enabled."""
-        return _LANGFUSE_LOGGING_ENABLED
+        return settings.langfuse.LANGFUSE_LOGGING
 
 
 # Create and register the Langfuse provider

@@ -13,21 +13,27 @@ from agent_server.services.langgraph_service import (
     inject_user_context,
 )
 
+# Import the settings singleton directly to patch it
+from src.agent_server.settings import settings
+
 
 class TestLangGraphServiceInit:
     """Test LangGraphService initialization"""
 
     def test_init_default_config_path(self):
         """Test initialization with default config path"""
-        service = LangGraphService()
-        assert service.config_path == Path("aegra.json")
-        assert service.config is None
-        assert service._graph_registry == {}
-        assert service._graph_cache == {}
+        # Ensure AEGRA_CONFIG is None so it defaults to aegra.json
+        with patch.object(settings.app, "AEGRA_CONFIG", None):
+            service = LangGraphService()
+            assert service.config_path == Path("aegra.json")
+            assert service.config is None
+            assert service._graph_registry == {}
+            assert service._graph_cache == {}
 
     def test_init_custom_config_path(self):
         """Test initialization with custom config path"""
         custom_path = "custom.json"
+        # Explicit path passed to constructor overrides everything
         service = LangGraphService(custom_path)
         assert service.config_path == Path(custom_path)
         assert service.config is None
@@ -45,15 +51,15 @@ class TestLangGraphServiceConfig:
     """Test configuration loading and management"""
 
     @pytest.mark.asyncio
-    async def test_initialize_env_var_override(self, monkeypatch):
+    async def test_initialize_env_var_override(self):
         """Test config loading with AEGRA_CONFIG env var"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
+        env_path = "/env/path/config.json"
 
-        # Mock environment variable
-        monkeypatch.setenv("AEGRA_CONFIG", "/env/path/config.json")
-
-        # Mock file operations and database dependencies
+        # Patch the settings object directly. This ensures the service sees the change
+        # without needing to reload modules.
         with (
+            patch.object(settings.app, "AEGRA_CONFIG", env_path),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
@@ -64,13 +70,14 @@ class TestLangGraphServiceConfig:
             await service.initialize()
 
             assert service.config == config_data
-            assert service.config_path == Path("/env/path/config.json")
+            assert service.config_path == Path(env_path)
 
     @pytest.mark.asyncio
     async def test_initialize_explicit_path_exists(self):
         """Test config loading with existing explicit path"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
 
+        # Even if config is set, explicit path (arg) should win
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
@@ -85,14 +92,13 @@ class TestLangGraphServiceConfig:
             assert service.config_path == Path("explicit.json")
 
     @pytest.mark.asyncio
-    async def test_initialize_aegra_json_fallback(self, monkeypatch):
+    async def test_initialize_aegra_json_fallback(self):
         """Test config loading with aegra.json fallback"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
 
-        # Clear AEGRA_CONFIG
-        monkeypatch.delenv("AEGRA_CONFIG", raising=False)
-
+        # Ensure AEGRA_CONFIG is None so it falls back to default
         with (
+            patch.object(settings.app, "AEGRA_CONFIG", None),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
@@ -106,14 +112,13 @@ class TestLangGraphServiceConfig:
             assert service.config_path == Path("aegra.json")
 
     @pytest.mark.asyncio
-    async def test_initialize_langgraph_json_fallback(self, monkeypatch):
+    async def test_initialize_langgraph_json_fallback(self):
         """Test config loading with langgraph.json fallback"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
 
-        # Clear AEGRA_CONFIG
-        monkeypatch.delenv("AEGRA_CONFIG", raising=False)
-
+        # Ensure AEGRA_CONFIG is None
         with (
+            patch.object(settings.app, "AEGRA_CONFIG", None),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
@@ -124,16 +129,16 @@ class TestLangGraphServiceConfig:
             await service.initialize()
 
             assert service.config == config_data
-            # Since we're mocking exists to return True, it will find aegra.json first
+            # Since we mock exists=True, logic finds aegra.json first in this mock setup
             assert service.config_path == Path("aegra.json")
 
     @pytest.mark.asyncio
-    async def test_initialize_no_config_file_found(self, monkeypatch):
+    async def test_initialize_no_config_file_found(self):
         """Test error when no config file is found"""
-        # Clear AEGRA_CONFIG
-        monkeypatch.delenv("AEGRA_CONFIG", raising=False)
-
-        with patch("pathlib.Path.exists", return_value=False):
+        with (
+            patch.object(settings.app, "AEGRA_CONFIG", None),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
             service = LangGraphService()
 
             with pytest.raises(ValueError, match="Configuration file not found"):

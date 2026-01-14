@@ -9,7 +9,6 @@ This script:
 """
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -17,6 +16,7 @@ import structlog
 import uvicorn
 from dotenv import load_dotenv
 
+from src.agent_server.settings import settings
 from src.agent_server.utils.setup_logging import get_logging_config, setup_logging
 
 # Add graphs directory to Python path so imports can be resolved
@@ -29,25 +29,9 @@ setup_logging()
 logger = structlog.get_logger()
 
 
-def setup_environment():
-    """Set up environment variables for testing"""
-    # Set database URL for development
-    if not os.getenv("DATABASE_URL"):
-        os.environ["DATABASE_URL"] = (
-            "postgresql+asyncpg://user:password@localhost:5432/aegra"
-        )
-
-    # Set auth type (can be overridden)
-    if not os.getenv("AUTH_TYPE"):
-        os.environ["AUTH_TYPE"] = "noop"
-
-    logger.info(f"🔐 Auth Type: {os.getenv('AUTH_TYPE')}")
-    logger.info(f"🗄️  Database: {os.getenv('DATABASE_URL')}")
-
-
 def configure_logging(level: str = "DEBUG"):
     """Configure root and app loggers to emit to stdout with formatting."""
-    log_level = getattr(logging, level.upper(), logging.DEBUG)
+    log_level = getattr(logging, level, logging.DEBUG)
     formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
 
     root = logging.getLogger()
@@ -70,10 +54,12 @@ def configure_logging(level: str = "DEBUG"):
 
 def main():
     """Start the server"""
-    setup_environment()
-    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+    configure_logging(settings.app.LOG_LEVEL)
 
-    port = int(os.getenv("PORT", "8000"))
+    port = settings.app.PORT
+
+    logger.info(f"🔐 Auth Type: {settings.app.AUTH_TYPE}")
+    logger.info(f"🗄️  Database: {settings.db.database_url}")
 
     logger.info("🚀 Starting Aegra...")
     logger.info(f"📍 Server will be available at: http://localhost:{port}")
@@ -82,7 +68,7 @@ def main():
 
     uvicorn.run(
         "src.agent_server.main:app",
-        host=os.getenv("HOST", "0.0.0.0"),  # nosec B104 - required for Docker
+        host=settings.app.HOST,
         port=port,
         reload=True,
         access_log=False,

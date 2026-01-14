@@ -1,11 +1,12 @@
 """Configuration management for Aegra HTTP settings"""
 
 import json
-import os
 from pathlib import Path
 from typing import TypedDict
 
 import structlog
+
+from src.agent_server.settings import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -77,8 +78,7 @@ def _resolve_config_path() -> Path | None:
         Path to config file or None if not found
     """
     # 1) Env var override - return even if doesn't exist (let caller handle error)
-    env_path = os.getenv("AEGRA_CONFIG")
-    if env_path:
+    if env_path := settings.app.AEGRA_CONFIG:
         return Path(env_path)
 
     # 2) aegra.json if present

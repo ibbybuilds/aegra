@@ -1,7 +1,6 @@
 """FastAPI application for Aegra (Agent Protocol Server)"""
 
 import asyncio
-import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,6 +27,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount, Route
+
+from src.agent_server.settings import settings
 
 from .api.assistants import router as assistants_router
 from .api.runs import router as runs_router
@@ -125,7 +126,11 @@ exception_handlers = {
 # Define shadowable routes (can be overridden by custom routes)
 async def root_handler() -> dict[str, str]:
     """Root endpoint"""
-    return {"message": "Aegra", "version": "0.1.0", "status": "running"}
+    return {
+        "message": settings.app.PROJECT_NAME,
+        "version": settings.app.VERSION,
+        "status": "running",
+    }
 
 
 # Extract routes from health router - these are already Starlette-compatible
@@ -239,9 +244,10 @@ if user_app:
 else:
     # Standard Aegra app without custom routes
     app = FastAPI(
-        title="Aegra",
+        title=settings.app.PROJECT_NAME,
         description="Production-ready Agent Protocol server built on LangGraph",
-        version="0.1.0",
+        version=settings.app.VERSION,
+        debug=settings.app.DEBUG,
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan,
@@ -292,11 +298,15 @@ else:
     @app.get("/")
     async def root() -> dict[str, str]:
         """Root endpoint"""
-        return {"message": "Aegra", "version": "0.1.0", "status": "running"}
+        return {
+            "message": settings.app.PROJECT_NAME,
+            "version": settings.app.VERSION,
+            "status": "running",
+        }
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)  # nosec B104 - binding to all interfaces is intentional
+    port = int(settings.app.PORT)
+    uvicorn.run(app, host=settings.app.HOST, port=port)  # nosec B104 - binding to all interfaces is intentional

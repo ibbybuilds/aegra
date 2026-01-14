@@ -23,6 +23,7 @@ from starlette.authentication import (
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 
+from ..config import load_config
 from ..models.errors import AgentProtocolError
 
 logger = structlog.getLogger(__name__)
@@ -74,10 +75,41 @@ class LangGraphAuthBackend(AuthenticationBackend):
         self.auth_instance = self._load_auth_instance()
 
     def _load_auth_instance(self) -> Auth | None:
-        """Load the auth instance from auth.py"""
+        """Load the auth instance from auth.py or config-specified path"""
         try:
-            # Import the auth instance from the project root auth.py
-            auth_path = Path.cwd() / "auth.py"
+            # First, check if auth path is specified in config
+            config = load_config()
+            auth_path_str = None
+            auth_attr = "auth"
+            
+            if config and "auth" in config:
+                auth_config = config["auth"]
+                if isinstance(auth_config, dict) and "path" in auth_config:
+                    # Parse path format: "path/to/file.py:attribute"
+                    auth_path_str = auth_config["path"]
+                    if ":" in auth_path_str:
+                        auth_path_str, auth_attr = auth_path_str.rsplit(":", 1)
+                elif isinstance(auth_config, str):
+                    # Simple string path
+                    auth_path_str = auth_config
+            
+            # Resolve auth file path
+            if auth_path_str:
+                # Path from config (can be relative or absolute)
+                auth_path = Path(auth_path_str)
+                if not auth_path.is_absolute():
+                    # Resolve relative to config file location
+                    config_path = Path.cwd() / "aegra.json"
+                    if not config_path.exists():
+                        config_path = Path.cwd() / "langgraph.json"
+                    if config_path.exists():
+                        auth_path = config_path.parent / auth_path
+                    else:
+                        auth_path = Path.cwd() / auth_path
+            else:
+                # Default: look for auth.py in current working directory
+                auth_path = Path.cwd() / "auth.py"
+            
             if not auth_path.exists():
                 logger.warning(f"Auth file not found at {auth_path}")
                 return None
@@ -91,9 +123,9 @@ class LangGraphAuthBackend(AuthenticationBackend):
             sys.modules["auth_module"] = auth_module
             spec.loader.exec_module(auth_module)
 
-            auth_instance = getattr(auth_module, "auth", None)
+            auth_instance = getattr(auth_module, auth_attr, None)
             if not isinstance(auth_instance, Auth):
-                logger.error(f"No valid Auth instance found in {auth_path}")
+                logger.error(f"No valid Auth instance found at '{auth_attr}' in {auth_path}")
                 return None
 
             logger.info(f"Successfully loaded auth instance from {auth_path}")

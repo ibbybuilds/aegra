@@ -91,7 +91,7 @@ class PoolSettings(EnvBase):
 class LangfuseSettings(EnvBase):
     """Langfuse integration settings."""
 
-    LANGFUSE_LOGGING: bool = False
+    LANGFUSE_LOGGING: bool
 
 
 class Settings:

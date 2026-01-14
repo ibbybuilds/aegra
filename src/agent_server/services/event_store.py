@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 from ..core.database import db_manager
 from ..core.serializers import GeneralSerializer
 from ..core.sse import SSEEvent
+from ..core.table_naming import table_name
 
 logger = structlog.get_logger(__name__)
 
@@ -50,8 +51,8 @@ class EventStore:
 
         async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
             await cur.execute(
-                """
-                INSERT INTO run_events (id, run_id, seq, event, data, created_at)
+                f"""
+                INSERT INTO {table_name('run_events')} (id, run_id, seq, event, data, created_at)
                 VALUES (%(id)s, %(run_id)s, %(seq)s, %(event)s, %(data)s, NOW())
                 ON CONFLICT (id) DO NOTHING
                 """,
@@ -76,9 +77,9 @@ class EventStore:
 
         async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
             await cur.execute(
-                """
+                f"""
                 SELECT id, event, data, created_at
-                FROM run_events
+                FROM {table_name('run_events')}
                 WHERE run_id = %(run_id)s AND seq > %(last_seq)s
                 ORDER BY seq ASC
                 """,
@@ -99,9 +100,9 @@ class EventStore:
 
         async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
             await cur.execute(
-                """
+                f"""
                 SELECT id, event, data, created_at
-                FROM run_events
+                FROM {table_name('run_events')}
                 WHERE run_id = %(run_id)s
                 ORDER BY seq ASC
                 """,
@@ -122,7 +123,7 @@ class EventStore:
 
         async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
             await cur.execute(
-                "DELETE FROM run_events WHERE run_id = %(run_id)s",
+                f"DELETE FROM {table_name('run_events')} WHERE run_id = %(run_id)s",
                 {"run_id": run_id},
             )
 
@@ -133,9 +134,9 @@ class EventStore:
         async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
             # 1. Fetch sequence range
             await cur.execute(
-                """
+                f"""
                 SELECT MIN(seq) AS first_seq, MAX(seq) AS last_seq
-                FROM run_events
+                FROM {table_name('run_events')}
                 WHERE run_id = %(run_id)s
                 """,
                 {"run_id": run_id},
@@ -147,9 +148,9 @@ class EventStore:
 
             # 2. Fetch last event
             await cur.execute(
-                """
+                f"""
                 SELECT id, created_at
-                FROM run_events
+                FROM {table_name('run_events')}
                 WHERE run_id = %(run_id)s AND seq = %(last_seq)s
                 LIMIT 1
                 """,
@@ -185,7 +186,7 @@ class EventStore:
         try:
             async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
                 await cur.execute(
-                    "DELETE FROM run_events WHERE created_at < NOW() - INTERVAL '1 hour'"
+                    f"DELETE FROM {table_name('run_events')} WHERE created_at < NOW() - INTERVAL '1 hour'"
                 )
         except Exception as e:
             logger.error(f"Failed to cleanup old runs: {e}")

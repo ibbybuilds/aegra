@@ -6,6 +6,8 @@ Create Date: 2025-11-15 15:24:15.221101
 
 """
 
+import os
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -15,6 +17,13 @@ revision = "d042a0ca1cb5"
 down_revision = "aee821a02fc8"
 branch_labels = None
 depends_on = None
+
+
+_PREFIX = os.getenv("AEGRA_TABLE_PREFIX", "")
+
+
+def _tn(name: str) -> str:
+    return f"{_PREFIX}{name}"
 
 
 def upgrade() -> None:
@@ -29,18 +38,30 @@ def upgrade() -> None:
     Other statuses (pending, running, interrupted, error, success, timeout) remain unchanged.
     """
     # Update completed → success
-    op.execute(sa.text("UPDATE runs SET status = 'success' WHERE status = 'completed'"))
+    op.execute(
+        sa.text(
+            f"UPDATE {_tn('runs')} SET status = 'success' WHERE status = 'completed'"
+        )
+    )
 
     # Update failed → error
-    op.execute(sa.text("UPDATE runs SET status = 'error' WHERE status = 'failed'"))
+    op.execute(
+        sa.text(f"UPDATE {_tn('runs')} SET status = 'error' WHERE status = 'failed'")
+    )
 
     # Update cancelled → interrupted
     op.execute(
-        sa.text("UPDATE runs SET status = 'interrupted' WHERE status = 'cancelled'")
+        sa.text(
+            f"UPDATE {_tn('runs')} SET status = 'interrupted' WHERE status = 'cancelled'"
+        )
     )
 
     # Update streaming → running (legacy status for active streaming runs)
-    op.execute(sa.text("UPDATE runs SET status = 'running' WHERE status = 'streaming'"))
+    op.execute(
+        sa.text(
+            f"UPDATE {_tn('runs')} SET status = 'running' WHERE status = 'streaming'"
+        )
+    )
 
 
 def downgrade() -> None:
@@ -58,17 +79,29 @@ def downgrade() -> None:
     will become "streaming".
     """
     # Update success → completed
-    op.execute(sa.text("UPDATE runs SET status = 'completed' WHERE status = 'success'"))
+    op.execute(
+        sa.text(
+            f"UPDATE {_tn('runs')} SET status = 'completed' WHERE status = 'success'"
+        )
+    )
 
     # Update error → failed
-    op.execute(sa.text("UPDATE runs SET status = 'failed' WHERE status = 'error'"))
+    op.execute(
+        sa.text(f"UPDATE {_tn('runs')} SET status = 'failed' WHERE status = 'error'")
+    )
 
     # Update interrupted → cancelled
     # Note: This is lossy - we can't distinguish original cancelled vs interrupted
     op.execute(
-        sa.text("UPDATE runs SET status = 'cancelled' WHERE status = 'interrupted'")
+        sa.text(
+            f"UPDATE {_tn('runs')} SET status = 'cancelled' WHERE status = 'interrupted'"
+        )
     )
 
     # Update running → streaming
     # Note: This is lossy - we can't distinguish original running vs streaming
-    op.execute(sa.text("UPDATE runs SET status = 'streaming' WHERE status = 'running'"))
+    op.execute(
+        sa.text(
+            f"UPDATE {_tn('runs')} SET status = 'streaming' WHERE status = 'running'"
+        )
+    )

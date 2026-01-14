@@ -28,11 +28,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column
 
+from .table_naming import index_name, table_name
+
 Base = declarative_base()
 
 
 class Assistant(Base):
-    __tablename__ = "assistant"
+    __tablename__ = table_name("assistant")
 
     # TEXT PK with DB-side generation using uuid_generate_v4()::text
     assistant_id: Mapped[str] = mapped_column(
@@ -59,10 +61,15 @@ class Assistant(Base):
 
     # Indexes for performance
     __table_args__ = (
-        Index("idx_assistant_user", "user_id"),
-        Index("idx_assistant_user_assistant", "user_id", "assistant_id", unique=True),
+        Index(index_name("idx_assistant_user"), "user_id"),
         Index(
-            "idx_assistant_user_graph_config",
+            index_name("idx_assistant_user_assistant"),
+            "user_id",
+            "assistant_id",
+            unique=True,
+        ),
+        Index(
+            index_name("idx_assistant_user_graph_config"),
             "user_id",
             "graph_id",
             "config",
@@ -72,10 +79,12 @@ class Assistant(Base):
 
 
 class AssistantVersion(Base):
-    __tablename__ = "assistant_versions"
+    __tablename__ = table_name("assistant_versions")
 
     assistant_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("assistant.assistant_id", ondelete="CASCADE"), primary_key=True
+        Text,
+        ForeignKey(f"{table_name('assistant')}.assistant_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     version: Mapped[int] = mapped_column(Integer, primary_key=True)
     graph_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -92,7 +101,7 @@ class AssistantVersion(Base):
 
 
 class Thread(Base):
-    __tablename__ = "thread"
+    __tablename__ = table_name("thread")
 
     thread_id: Mapped[str] = mapped_column(Text, primary_key=True)
     status: Mapped[str] = mapped_column(Text, server_default=text("'idle'"))
@@ -109,21 +118,23 @@ class Thread(Base):
     )
 
     # Indexes for performance
-    __table_args__ = (Index("idx_thread_user", "user_id"),)
+    __table_args__ = (Index(index_name("idx_thread_user"), "user_id"),)
 
 
 class Run(Base):
-    __tablename__ = "runs"
+    __tablename__ = table_name("runs")
 
     # TEXT PK with DB-side generation using uuid_generate_v4()::text
     run_id: Mapped[str] = mapped_column(
         Text, primary_key=True, server_default=text("public.uuid_generate_v4()::text")
     )
     thread_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False
+        Text,
+        ForeignKey(f"{table_name('thread')}.thread_id", ondelete="CASCADE"),
+        nullable=False,
     )
     assistant_id: Mapped[str | None] = mapped_column(
-        Text, ForeignKey("assistant.assistant_id", ondelete="CASCADE")
+        Text, ForeignKey(f"{table_name('assistant')}.assistant_id", ondelete="CASCADE")
     )
     status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"))
     input: Mapped[dict | None] = mapped_column(
@@ -145,16 +156,16 @@ class Run(Base):
 
     # Indexes for performance
     __table_args__ = (
-        Index("idx_runs_thread_id", "thread_id"),
-        Index("idx_runs_user", "user_id"),
-        Index("idx_runs_status", "status"),
-        Index("idx_runs_assistant_id", "assistant_id"),
-        Index("idx_runs_created_at", "created_at"),
+        Index(index_name("idx_runs_thread_id"), "thread_id"),
+        Index(index_name("idx_runs_user"), "user_id"),
+        Index(index_name("idx_runs_status"), "status"),
+        Index(index_name("idx_runs_assistant_id"), "assistant_id"),
+        Index(index_name("idx_runs_created_at"), "created_at"),
     )
 
 
 class RunEvent(Base):
-    __tablename__ = "run_events"
+    __tablename__ = table_name("run_events")
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     run_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -167,8 +178,8 @@ class RunEvent(Base):
 
     # Indexes for performance
     __table_args__ = (
-        Index("idx_run_events_run_id", "run_id"),
-        Index("idx_run_events_seq", "run_id", "seq"),
+        Index(index_name("idx_run_events_run_id"), "run_id"),
+        Index(index_name("idx_run_events_seq"), "run_id", "seq"),
     )
 
 

@@ -30,6 +30,15 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
+
+def _get_version_table_name() -> str:
+    """Use a prefixed Alembic version table when table prefix is configured.
+
+    This keeps Aegra migrations isolated when multiple systems share the same DB/schema.
+    """
+    prefix = os.getenv("AEGRA_TABLE_PREFIX", "")
+    return f"{prefix}alembic_version" if prefix else "alembic_version"
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -54,11 +63,13 @@ def run_migrations_offline() -> None:
 
     """
     url = get_url()
+    version_table = _get_version_table_name()
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table=version_table,
     )
 
     with context.begin_transaction():
@@ -67,7 +78,11 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Run migrations with the given connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table=_get_version_table_name(),
+    )
 
     with context.begin_transaction():
         context.run_migrations()

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.agent_server.core.sse import SSEEvent
+from src.agent_server.core.table_naming import table_name
 from src.agent_server.services.event_store import EventStore
 
 
@@ -58,14 +59,14 @@ def clean_event_store_tables(database_available):
 
     # Clean up before test
     with engine.connect() as conn:
-        conn.execute(text("DELETE FROM run_events"))
+        conn.execute(text(f"DELETE FROM {table_name('run_events')}"))
         conn.commit()
 
     yield
 
     # Clean up after test
     with engine.connect() as conn:
-        conn.execute(text("DELETE FROM run_events"))
+        conn.execute(text(f"DELETE FROM {table_name('run_events')}"))
         conn.commit()
 
     engine.dispose()

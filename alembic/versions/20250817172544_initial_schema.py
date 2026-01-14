@@ -12,10 +12,26 @@ Create Date: 2025-08-17 17:25:44.338823
 
 """
 
+import os
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
+
+
+_PREFIX = os.getenv("AEGRA_TABLE_PREFIX", "")
+
+
+def _tn(name: str) -> str:
+    """Resolve table name with optional prefix."""
+    return f"{_PREFIX}{name}"
+
+
+def _ix(name: str) -> str:
+    """Resolve index name with optional prefix (indexes are schema-global)."""
+    return f"{_PREFIX}{name}" if _PREFIX else name
+
 
 # revision identifiers, used by Alembic.
 revision = "7b79bfd12626"
@@ -32,7 +48,7 @@ def upgrade() -> None:
 
     # Create assistant table
     op.create_table(
-        "assistant",
+        _tn("assistant"),
         sa.Column(
             "assistant_id",
             sa.Text(),
@@ -66,12 +82,16 @@ def upgrade() -> None:
 
     # Create run_events table for streaming functionality
     op.create_table(
-        "run_events",
+        _tn("run_events"),
         sa.Column("id", sa.Text(), nullable=False),
         sa.Column("run_id", sa.Text(), nullable=False),
         sa.Column("seq", sa.Integer(), nullable=False),
         sa.Column("event", sa.Text(), nullable=False),
-        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "data",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+        ),
         sa.Column(
             "created_at",
             sa.TIMESTAMP(timezone=True),
@@ -83,7 +103,7 @@ def upgrade() -> None:
 
     # Create thread table
     op.create_table(
-        "thread",
+        _tn("thread"),
         sa.Column("thread_id", sa.Text(), nullable=False),
         sa.Column(
             "status", sa.Text(), server_default=sa.text("'idle'"), nullable=False
@@ -112,7 +132,7 @@ def upgrade() -> None:
 
     # Create runs table with foreign key constraints
     op.create_table(
-        "runs",
+        _tn("runs"),
         sa.Column(
             "run_id",
             sa.Text(),
@@ -146,57 +166,41 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["assistant_id"], ["assistant.assistant_id"]),
-        sa.ForeignKeyConstraint(["thread_id"], ["thread.thread_id"]),
+        sa.ForeignKeyConstraint(["assistant_id"], [f"{_tn('assistant')}.assistant_id"]),
+        sa.ForeignKeyConstraint(["thread_id"], [f"{_tn('thread')}.thread_id"]),
         sa.PrimaryKeyConstraint("run_id"),
     )
 
     # Create indexes for performance optimization
     # Assistant indexes
-    op.create_index("idx_assistant_user", "assistant", ["user_id"])
+    op.create_index(_ix("idx_assistant_user"), _tn("assistant"), ["user_id"])
     op.create_index(
-        "idx_assistant_user_graph", "assistant", ["user_id", "graph_id"], unique=True
+        _ix("idx_assistant_user_graph"),
+        _tn("assistant"),
+        ["user_id", "graph_id"],
+        unique=True,
     )
 
     # Run events indexes
-    op.create_index("idx_run_events_run_id", "run_events", ["run_id"])
-    op.create_index("idx_run_events_seq", "run_events", ["run_id", "seq"])
+    op.create_index(_ix("idx_run_events_run_id"), _tn("run_events"), ["run_id"])
+    op.create_index(_ix("idx_run_events_seq"), _tn("run_events"), ["run_id", "seq"])
 
     # Thread indexes
-    op.create_index("idx_thread_user", "thread", ["user_id"])
+    op.create_index(_ix("idx_thread_user"), _tn("thread"), ["user_id"])
 
     # Runs indexes
-    op.create_index("idx_runs_assistant_id", "runs", ["assistant_id"])
-    op.create_index("idx_runs_created_at", "runs", ["created_at"])
-    op.create_index("idx_runs_status", "runs", ["status"])
-    op.create_index("idx_runs_thread_id", "runs", ["thread_id"])
-    op.create_index("idx_runs_user", "runs", ["user_id"])
+    op.create_index(_ix("idx_runs_assistant_id"), _tn("runs"), ["assistant_id"])
 
 
 def downgrade() -> None:
-    """Drop all tables and indexes created in this migration."""
-
-    # Drop indexes in reverse order (respecting dependencies)
-    # Runs indexes
-    op.drop_index("idx_runs_user", table_name="runs")
-    op.drop_index("idx_runs_thread_id", table_name="runs")
-    op.drop_index("idx_runs_status", table_name="runs")
-    op.drop_index("idx_runs_created_at", table_name="runs")
-    op.drop_index("idx_runs_assistant_id", table_name="runs")
-
-    # Thread indexes
-    op.drop_index("idx_thread_user", table_name="thread")
-
-    # Run events indexes
-    op.drop_index("idx_run_events_seq", table_name="run_events")
-    op.drop_index("idx_run_events_run_id", table_name="run_events")
-
-    # Assistant indexes
-    op.drop_index("idx_assistant_user_graph", table_name="assistant")
-    op.drop_index("idx_assistant_user", table_name="assistant")
-
-    # Drop tables in reverse order (respecting foreign key constraints)
-    op.drop_table("runs")
-    op.drop_table("thread")
-    op.drop_table("run_events")
-    op.drop_table("assistant")
+    """Drop initial database schema."""
+    op.drop_index(_ix("idx_runs_assistant_id"), table_name=_tn("runs"))
+    op.drop_index(_ix("idx_thread_user"), table_name=_tn("thread"))
+    op.drop_index(_ix("idx_run_events_seq"), table_name=_tn("run_events"))
+    op.drop_index(_ix("idx_run_events_run_id"), table_name=_tn("run_events"))
+    op.drop_index(_ix("idx_assistant_user_graph"), table_name=_tn("assistant"))
+    op.drop_index(_ix("idx_assistant_user"), table_name=_tn("assistant"))
+    op.drop_table(_tn("runs"))
+    op.drop_table(_tn("thread"))
+    op.drop_table(_tn("run_events"))
+    op.drop_table(_tn("assistant"))

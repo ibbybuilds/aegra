@@ -89,6 +89,7 @@ async def hotel_details(
         }
     """
     logger.info("=" * 80)
+    logger.info("[DEBUG] hotel_details() ENTRY POINT - Tool called")
     logger.info("[HOTEL_DETAILS] Tool called with:")
     logger.info(f"  hotel_id: {hotel_id}")
     logger.info("=" * 80)
@@ -107,13 +108,18 @@ async def hotel_details(
     cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
     endpoint = f"{cache_worker_url}/v1/search/details/{hotel_id}"
 
+    logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
     logger.info(f"[HOTEL_DETAILS] Calling cache-worker for hotel_id: {hotel_id}")
 
     try:
+        logger.info(f"[DEBUG] Creating httpx.AsyncClient for hotel details")
         async with httpx.AsyncClient() as client:
+            logger.info(f"[DEBUG] Sending GET request to {endpoint}")
             response = await client.get(endpoint, timeout=10.0)
+            logger.info(f"[DEBUG] Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
+            logger.info(f"[DEBUG] Parsed response JSON successfully")
 
             logger.info(f"[HOTEL_DETAILS] Status: {data['status']}")
 
@@ -124,9 +130,12 @@ async def hotel_details(
                 "cached": True
             }
 
+            logger.info(f"[DEBUG] hotel_details() returning successfully")
             return _wrap_response(result, hotel_id, runtime)
 
     except httpx.HTTPStatusError as e:
+        logger.error(f"[DEBUG] HTTPStatusError in hotel_details: {type(e).__name__}: {str(e)}")
+        logger.error(f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}")
         if e.response.status_code == 404:
             result = {
                 "status": "error",
@@ -148,6 +157,8 @@ async def hotel_details(
         return _wrap_response(result, hotel_id, runtime)
 
     except Exception as e:
+        logger.error(f"[DEBUG] Unexpected exception in hotel_details: {type(e).__name__}: {str(e)}")
+        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
         result = {
             "status": "error",
             "hotelId": hotel_id,

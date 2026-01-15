@@ -259,9 +259,9 @@ async def book_room(
             }
             return json.dumps(error_result, indent=2)
 
-    # Build request to polling service
-    poll_service_url = os.getenv("POLLING_SERVICE_URL", "http://localhost:8080")
-    endpoint = f"{poll_service_url}/v1/book"
+    # Build request to cache-worker
+    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
+    endpoint = f"{cache_worker_url}/v1/book"
 
     request_body = {
         "room": room,
@@ -271,7 +271,7 @@ async def book_room(
         "skip_price_check": skip_price_check,
     }
 
-    # Call polling service
+    # Call cache-worker
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(endpoint, json=request_body, timeout=30.0)
@@ -279,18 +279,18 @@ async def book_room(
             # 409 Conflict means price mismatch - this is expected, not an error
             # Don't raise exception, parse the response body with price info
             if response.status_code == 409:
-                poll_response = response.json()
+                booking_response = response.json()
             else:
                 # For all other status codes, raise on error
                 response.raise_for_status()
-                poll_response = response.json()
+                booking_response = response.json()
 
     except httpx.HTTPStatusError as e:
         error_result = {
             "status": "error",
             "error": {
-                "type": "poll_service_error",
-                "message": f"Polling service HTTP error {e.response.status_code}: {str(e)}",
+                "type": "booking_service_error",
+                "message": f"Cache-worker HTTP error {e.response.status_code}: {str(e)}",
             },
             "retryable": e.response.status_code >= 500,
         }
@@ -301,7 +301,7 @@ async def book_room(
             "status": "error",
             "error": {
                 "type": "timeout",
-                "message": "Request to polling service timed out",
+                "message": "Request to cache-worker timed out",
             },
             "retryable": True,
         }
@@ -312,18 +312,18 @@ async def book_room(
             "status": "error",
             "error": {
                 "type": "unexpected_error",
-                "message": f"Unexpected error calling polling service: {str(e)}",
+                "message": f"Unexpected error calling cache-worker: {str(e)}",
             },
             "retryable": False,
         }
         return json.dumps(error_result, indent=2)
 
-    # Handle polling service response
+    # Handle cache-worker response
 
     # Case 1: Price mismatch (only possible when skip_price_check=False)
-    if poll_response.get("priceMatch") is False:
-        original_price = poll_response.get("originalPrice")
-        new_price = poll_response.get("newPrice")
+    if booking_response.get("priceMatch") is False:
+        original_price = booking_response.get("originalPrice")
+        new_price = booking_response.get("newPrice")
 
         # Check if room is no longer available (price = 0)
         if new_price == 0 or new_price is None:
@@ -383,8 +383,8 @@ async def book_room(
         return json.dumps(result, indent=2)
 
     # Case 2: Success - booking initiated, S3 upload complete
-    if "key" in poll_response and "hash" in poll_response:
-        s3_key = poll_response["key"]
+    if "key" in booking_response and "hash" in booking_response:
+        s3_key = booking_response["key"]
 
         # Generate payment link if SMS
         payment_link = None
@@ -398,8 +398,8 @@ async def book_room(
         time_remaining_seconds = 600
 
         # Get amount from poll response or estimate
-        amount = poll_response.get("amount", 0.0)
-        currency = poll_response.get("currency", "USD")
+        amount = booking_response.get("amount", 0.0)
+        currency = booking_response.get("currency", "USD")
 
         result = {
             "status": "payment_pending",
@@ -451,12 +451,12 @@ async def book_room(
         # Return Command with state updates
         return Command(update=update_dict)
 
-    # Case 3: Unexpected response from polling service
+    # Case 3: Unexpected response from cache-worker
     error_result = {
         "status": "error",
         "error": {
             "type": "unexpected_response",
-            "message": f"Unexpected response from polling service: {poll_response}",
+            "message": f"Unexpected response from cache-worker: {booking_response}",
         },
         "retryable": True,
     }

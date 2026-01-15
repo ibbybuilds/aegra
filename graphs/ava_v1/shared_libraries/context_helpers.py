@@ -44,9 +44,9 @@ def prepare_hotel_list_push(
     if context_stack and context_matches(context_stack[-1], new_context):
         return None, context_stack
 
-    # Pop RoomList or different HotelList from top
+    # Pop RoomList, HotelList, or HotelDetails from top
     new_stack = context_stack.copy()
-    while new_stack and new_stack[-1].get("type") in ["RoomList", "HotelList"]:
+    while new_stack and new_stack[-1].get("type") in ["RoomList", "HotelList", "HotelDetails"]:
         new_stack.pop()
 
     return new_context, new_stack
@@ -80,9 +80,9 @@ def prepare_room_list_push(
     if context_stack and context_matches(context_stack[-1], new_context):
         return None, context_stack
 
-    # Pop other RoomLists from top (until we reach HotelList or empty)
+    # Pop other RoomLists or HotelDetails from top (until we reach HotelList or empty)
     new_stack = context_stack.copy()
-    while new_stack and new_stack[-1].get("type") == "RoomList":
+    while new_stack and new_stack[-1].get("type") in ["RoomList", "HotelDetails"]:
         new_stack.pop()
 
     return new_context, new_stack

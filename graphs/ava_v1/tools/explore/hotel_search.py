@@ -45,9 +45,9 @@ class HotelSearchParams(BaseModel):
         description="Check-out date in YYYY-MM-DD format (e.g., '2026-01-06')",
         alias="check_out",
     )
-    occupancy: dict[str, int] | None = Field(
+    occupancy: dict[str, int | list[int]] | None = Field(
         default=None,
-        description="Occupancy details with numOfAdults (e.g., {'numOfAdults': 2})",
+        description="Occupancy details with numOfAdults and optional childAges (e.g., {'numOfAdults': 2, 'numOfRooms': 1, 'childAges': [5, 3]})",
     )
     name: str | None = Field(
         default=None,
@@ -109,6 +109,8 @@ async def get_geo_coordinates(destination: str) -> str:
         {"error": "location_not_found", "message": "..."}
         {"error": "geocode_error", "message": "..."}
     """
+    logger.info(f"[DEBUG] get_geo_coordinates() called with destination: {destination}")
+
     # Validate inputs
     if not destination or not destination.strip():
         result = {
@@ -120,17 +122,22 @@ async def get_geo_coordinates(destination: str) -> str:
     cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
     endpoint = f"{cache_worker_url}/v1/search/geo"
 
+    logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
     logger.info(f"[GEO_COORDINATES] Calling cache-worker for destination: {destination}")
 
     try:
+        logger.info(f"[DEBUG] Creating httpx.AsyncClient for geocode request")
         async with httpx.AsyncClient() as client:
+            logger.info(f"[DEBUG] Sending GET request to {endpoint}")
             response = await client.get(
                 endpoint,
                 params={"destination": destination},
                 timeout=10.0
             )
+            logger.info(f"[DEBUG] Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
+            logger.info(f"[DEBUG] Parsed response JSON successfully")
 
             logger.info(f"[GEO_COORDINATES] Cache {'HIT' if data.get('status') == 'cached' else 'MISS'}")
 
@@ -141,9 +148,12 @@ async def get_geo_coordinates(destination: str) -> str:
                 "formatted_address": data["formatted_address"]
             }
 
+            logger.info(f"[DEBUG] get_geo_coordinates() returning successfully")
             return json.dumps(geo_data, indent=2)
 
     except httpx.HTTPStatusError as e:
+        logger.error(f"[DEBUG] HTTPStatusError in get_geo_coordinates: {type(e).__name__}: {str(e)}")
+        logger.error(f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}")
         if e.response.status_code == 404:
             error_response = {
                 "error": "location_not_found",
@@ -156,7 +166,8 @@ async def get_geo_coordinates(destination: str) -> str:
             }
         return json.dumps(error_response, indent=2)
 
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as e:
+        logger.error(f"[DEBUG] TimeoutException in get_geo_coordinates: {str(e)}")
         error_response = {
             "error": "timeout",
             "message": "Geocode request timed out"
@@ -164,6 +175,8 @@ async def get_geo_coordinates(destination: str) -> str:
         return json.dumps(error_response, indent=2)
 
     except Exception as e:
+        logger.error(f"[DEBUG] Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}")
+        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
         error_response = {
             "error": "unexpected_error",
             "message": f"Unexpected geocode error: {str(e)}"
@@ -216,7 +229,7 @@ async def _start_hotel_search(
     endpoint = f"{cache_worker_url}/v1/search"
 
     request_body = {
-        "destination": search["Destination"],
+        "destination": search["destination"],
         "checkIn": search["checkIn"],
         "checkOut": search["checkOut"],
         "occupancy": search["occupancy"],
@@ -226,18 +239,49 @@ async def _start_hotel_search(
         }
     }
 
+    logger.info(f"[DEBUG] _start_hotel_search() called")
     logger.info(f"[HOTEL_SEARCH] Calling cache-worker: {endpoint}")
     logger.info(f"[HOTEL_SEARCH] Request body: {request_body}")
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(endpoint, json=request_body, timeout=30.0)
-        response.raise_for_status()
-        data = response.json()
+    try:
+        logger.info(f"[DEBUG] Creating httpx.AsyncClient for hotel search")
+        async with httpx.AsyncClient() as client:
+            logger.info(f"[DEBUG] Sending POST request to cache-worker")
+            response = await client.post(endpoint, json=request_body, timeout=30.0)
+            logger.info(f"[DEBUG] Received response with status: {response.status_code}")
+            response.raise_for_status()
+            data = response.json()
+            logger.info(f"[DEBUG] Parsed response JSON successfully")
 
-    logger.info(f"[HOTEL_SEARCH] Response status: {data['status']}")
-    logger.info(f"[HOTEL_SEARCH] Search ID: {data['searchId']}")
+        logger.info(f"[HOTEL_SEARCH] Response status: {data['status']}")
+        logger.info(f"[HOTEL_SEARCH] Search ID: {data['searchId']}")
 
-    return data
+        return data
+    except Exception as e:
+        logger.error(f"[DEBUG] Exception in _start_hotel_search: {type(e).__name__}: {str(e)}")
+        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
+        raise
+
+
+def _normalize_search_dict(search: dict[str, Any]) -> dict[str, Any]:
+    """Normalize search dict to consistent key names.
+
+    Ensures all keys are lowercase and handles aliases consistently.
+    This prevents KeyError bugs from case mismatches.
+
+    Args:
+        search: Search dict from Pydantic model_dump()
+
+    Returns:
+        Normalized dict with guaranteed lowercase keys
+    """
+    return {
+        "destination": search.get("destination") or search.get("Destination"),
+        "checkIn": search.get("checkIn") or search.get("check_in"),
+        "checkOut": search.get("checkOut") or search.get("check_out"),
+        "occupancy": search.get("occupancy"),
+        "name": search.get("name"),
+    }
 
 
 async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | None:
@@ -250,18 +294,19 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
         Dict with search metadata (searchId, status, etc.)
         None if invalid parameters
     """
+    # Normalize keys to prevent case mismatch errors
+    search = _normalize_search_dict(search)
+    logger.info(f"[DEBUG] _process_single_search() called with search: {search}")
+
     # Validate required fields
-    required_fields = ["checkIn", "checkOut", "occupancy"]
-    if not all(field in search for field in required_fields):
+    required_fields = ["destination", "checkIn", "checkOut", "occupancy"]
+    if not all(field in search and search[field] for field in required_fields):
         logger.warning(
             f"[HOTEL_SEARCH] Missing required fields in search: {search}. Required: {required_fields}, Got keys: {list(search.keys())}"
         )
         return None
 
-    # Accept both "Destination" (capital D) and "destination" (lowercase d)
-    destination = search.get("Destination") or search.get("destination")
-    if not destination:
-        return None
+    destination = search["destination"]
 
     label = destination.split(",")[0].strip()
 
@@ -418,16 +463,26 @@ async def start_hotel_search(
         runtime: Injected tool runtime for accessing agent state
     """
     logger.info("=" * 80)
+    logger.info(f"[DEBUG] start_hotel_search() ENTRY POINT - Tool called")
     logger.info(f"[HOTEL_SEARCH] Tool called with {len(searches)} search(es)")
     logger.info(f"[HOTEL_SEARCH] Searches: {searches}")
     logger.info("=" * 80)
 
-    # Convert Pydantic models to dicts
-    search_dicts = [search.model_dump(by_alias=False) for search in searches]
+    try:
+        # Convert Pydantic models to dicts
+        logger.info(f"[DEBUG] Converting {len(searches)} Pydantic models to dicts")
+        search_dicts = [search.model_dump(by_alias=False) for search in searches]
+        logger.info(f"[DEBUG] Conversion successful")
 
-    # Process all searches in parallel
-    search_tasks = [_process_single_search(search) for search in search_dicts]
-    search_results = await asyncio.gather(*search_tasks)
+        # Process all searches in parallel
+        logger.info(f"[DEBUG] Starting parallel processing of {len(search_dicts)} searches")
+        search_tasks = [_process_single_search(search) for search in search_dicts]
+        search_results = await asyncio.gather(*search_tasks)
+        logger.info(f"[DEBUG] Parallel processing completed, got {len(search_results)} results")
+    except Exception as e:
+        logger.error(f"[DEBUG] Exception in start_hotel_search: {type(e).__name__}: {str(e)}")
+        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
+        raise
 
     # Build response
     searches_metadata = []

@@ -250,9 +250,13 @@ Call `query_vfs(destination="Miami")` with optional filters:
 
 === ROOM SEARCH WORKFLOW ===
 
-**Context Shortcut**:
-- If the call is initialized with a specific `hotel_id` and booking details, **SKIP** `start_hotel_search`.
-- Call `start_room_search(hotel_id, search_key)` directly.
+**CRITICAL**: You MUST always call `start_hotel_search` before `start_room_search`, even if you already have a hotel_id from context. This is required to populate active_searches with dates and occupancy.
+
+**Property-Specific Context**:
+- If the call context includes a specific hotel (property_specific or property_booking_hybrid), you still need to call `start_hotel_search` first
+- Use the `name` parameter to target the specific hotel: `start_hotel_search(destination="Miami", name="JW Marriott", checkIn=..., checkOut=..., occupancy=...)`
+- This creates the search_key entry (e.g., "Miami:JW Marriott") needed for `start_room_search`
+- Then call `start_room_search(hotel_id, search_key)` with the returned search_key
 
 **Step 1: Get Room Availability**
 Call `start_room_search(hotel_id, search_key)`
@@ -285,9 +289,11 @@ Call `query_vfs(destination="Miami:rooms:HOTEL_ID")` with filters:
   ```
 
 **Room Filtering Examples:**
-- Refundable: `jsonpath="$.rooms[?(@.refundable_rate)]"`
-- Under $200: `jsonpath="$.rooms[?(@.non_refundable_rate <= 200)]"`
-- Non-smoking: `jsonpath="$.rooms[?(@.smoking_allowed == false)]"`
+- **IMPORTANT**: JSONPath filters Redis structure which has `rooms` array, NOT `results`
+- Refundable rooms: `jsonpath="$.rooms[?(@.refundable_rate)]"`
+- Non-refundable under $200: `jsonpath="$.rooms[?(@.non_refundable_rate && @.non_refundable_rate <= 200)]"`
+- Non-smoking rooms: `jsonpath="$.rooms[?(@.smoking_allowed == false)]"`
+- Rooms with king bed: `jsonpath="$.rooms[?(@.beds =~ /king/i)]"`
 
 - Only present 3 available room options to the user at most.
 

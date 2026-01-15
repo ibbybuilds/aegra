@@ -5,6 +5,7 @@ import pytest
 
 # Adjust the import path to match your project structure
 from src.agent_server.core.database import DatabaseManager
+from src.agent_server.settings import settings
 
 
 class TestDatabaseManager:
@@ -20,10 +21,10 @@ class TestDatabaseManager:
         Using patch.dict ensures these are reset after the test.
         """
         env_vars = {
-            "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost:5432/db",
-            "SA_POOL_SIZE": "5",
-            "LG_POOL_SIZE": "10",
-            "LG_MIN_POOL_SIZE": "2",
+            "DATABASE_URL": settings.db.database_url,
+            "SQLALCHEMY_POOL_SIZE": str(settings.pool.SQLALCHEMY_POOL_SIZE),
+            "LANGGRAPH_MAX_POOL_SIZE": str(settings.pool.LANGGRAPH_MAX_POOL_SIZE),
+            "LANGGRAPH_MIN_POOL_SIZE": str(settings.pool.LANGGRAPH_MIN_POOL_SIZE),
         }
         with patch.dict(os.environ, env_vars):
             yield
@@ -84,9 +85,8 @@ class TestDatabaseManager:
                 "load_store_config": mock_load_store_config,
             }
 
-    @pytest.mark.asyncio
     async def test_initialize_success(self, db_manager, mock_db_deps):
-        """Test successful initialization with mocked drivers and environment variables."""
+        """Test successful initialization checking against ACTUAL settings."""
 
         # --- EXECUTE ---
         await db_manager.initialize()
@@ -96,16 +96,16 @@ class TestDatabaseManager:
         # 1. Verify SQLAlchemy engine creation
         mock_db_deps["create_engine"].assert_called_once()
         _, kwargs = mock_db_deps["create_engine"].call_args
-        assert kwargs["pool_size"] == 5
+
+        assert kwargs["pool_size"] == settings.pool.SQLALCHEMY_POOL_SIZE
         assert kwargs["pool_pre_ping"] is True
 
         # 2. Verify LangGraph Pool creation
         mock_db_deps["pool_cls"].assert_called_once()
         _, lg_kwargs = mock_db_deps["pool_cls"].call_args
 
-        # Check arguments passed to AsyncConnectionPool
-        assert lg_kwargs["min_size"] == 2
-        assert lg_kwargs["max_size"] == 10
+        assert lg_kwargs["min_size"] == settings.pool.LANGGRAPH_MIN_POOL_SIZE
+        assert lg_kwargs["max_size"] == settings.pool.LANGGRAPH_MAX_POOL_SIZE
         assert lg_kwargs["open"] is False
         assert "check" in lg_kwargs
 
@@ -127,7 +127,7 @@ class TestDatabaseManager:
         )
         mock_db_deps["store_instance"].setup.assert_awaited_once()
 
-        # 4. Verify internal state of the manager
+        # 4. Verify internal state
         assert db_manager.engine == mock_db_deps["engine_instance"]
         assert db_manager.lg_pool == mock_db_deps["pool_instance"]
 

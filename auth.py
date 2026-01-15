@@ -8,11 +8,12 @@ This module provides environment-based authentication switching between:
 Set AUTH_TYPE environment variable to choose authentication mode.
 """
 
-import os
 from typing import Any
 
 import structlog
 from langgraph_sdk import Auth
+
+from src.agent_server.settings import settings
 
 logger = structlog.getLogger(__name__)
 
@@ -20,7 +21,7 @@ logger = structlog.getLogger(__name__)
 auth = Auth()
 
 # Get authentication type from environment
-AUTH_TYPE = os.getenv("AUTH_TYPE", "noop").lower()
+AUTH_TYPE = settings.app.AUTH_TYPE
 
 if AUTH_TYPE == "noop":
     logger.info("Using noop authentication (no auth required)")

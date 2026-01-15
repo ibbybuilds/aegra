@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any, TypeVar
@@ -11,6 +10,8 @@ from uuid import uuid5
 import structlog
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
+
+from src.agent_server.settings import settings
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
 from ..observability.base import get_tracing_callbacks, get_tracing_metadata
@@ -48,7 +49,7 @@ class LangGraphService:
         env_resolved = _resolve_config_path()
 
         # 2) If env var was set, use it (even if file doesn't exist yet - let error happen later)
-        env_path = os.getenv("AEGRA_CONFIG")
+        env_path = settings.app.AEGRA_CONFIG
         if env_path and env_resolved and env_resolved == Path(env_path):
             resolved_path = env_resolved
         # 3) Otherwise check explicit config_path (if provided and exists)

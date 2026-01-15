@@ -21,11 +21,10 @@ services:
       dockerfile: deployments/docker/Dockerfile
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra
-      - AUTH_TYPE=noop
-      - DEBUG=true
-      - PORT=${PORT:-8000}
+      - POSTGRES_HOST=postgres
     depends_on:
       postgres:
         condition: service_healthy

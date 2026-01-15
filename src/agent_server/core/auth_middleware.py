@@ -6,7 +6,6 @@ using Starlette's AuthenticationMiddleware.
 """
 
 import importlib.util
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,6 +21,8 @@ from starlette.authentication import (
 )
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
+
+from src.agent_server.settings import settings
 
 from ..models.errors import AgentProtocolError
 
@@ -176,7 +177,7 @@ def get_auth_backend() -> AuthenticationBackend:
     Returns:
         AuthenticationBackend instance
     """
-    auth_type = os.getenv("AUTH_TYPE", "noop").lower()
+    auth_type = settings.app.AUTH_TYPE
 
     if auth_type in ["noop", "custom"]:
         logger.info(f"Using LangGraph auth backend with type: {auth_type}")

@@ -7,17 +7,16 @@ To run these tests:
 3. Run: pytest tests/e2e/test_custom_routes/ -v
 """
 
-import os
-
 import httpx
 import pytest
 
+from src.agent_server.settings import settings
 from tests.e2e._utils import elog
 
 
 def get_server_url() -> str:
     """Get server URL from environment or use default"""
-    return os.getenv("SERVER_URL", "http://localhost:8000")
+    return settings.app.SERVER_URL
 
 
 @pytest.mark.e2e

@@ -1,4 +1,3 @@
-import os
 import time
 from typing import TypedDict
 
@@ -6,6 +5,8 @@ import structlog
 from asgi_correlation_id import correlation_id
 from starlette.types import ASGIApp, Receive, Scope, Send
 from uvicorn.protocols.utils import get_path_with_query_string
+
+from src.agent_server.settings import settings
 
 app_logger = structlog.stdlib.get_logger("app.app_logs")
 access_logger = structlog.stdlib.get_logger("app.access_logs")
@@ -64,7 +65,7 @@ class StructLogMiddleware:
                 "method": http_method,
                 "version": http_version,
             }
-            if os.getenv("LOG_VERBOSITY", "standard").lower() == "verbose":
+            if settings.app.LOG_VERBOSITY == "verbose":
                 log_data["request_id"] = correlation_id.get()
 
             status_code = info.get("status_code", 500)

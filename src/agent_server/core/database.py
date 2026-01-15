@@ -1,13 +1,13 @@
 """Database manager with LangGraph integration"""
 
-import os
-
 import structlog
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+from src.agent_server.settings import settings
 
 from ..config import load_store_config
 
@@ -22,17 +22,9 @@ class DatabaseManager:
 
         # Shared pool for LangGraph components (Checkpointer + Store)
         self.lg_pool: AsyncConnectionPool | None = None
-
         self._checkpointer: AsyncPostgresSaver | None = None
         self._store: AsyncPostgresStore | None = None
-
-        self._database_url = os.getenv(
-            "DATABASE_URL",
-            (
-                f"postgresql+asyncpg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
-                f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
-            ),
-        )
+        self._database_url = settings.db.database_url
 
     async def initialize(self) -> None:
         """Initialize database connections and LangGraph components"""
@@ -45,21 +37,13 @@ class DatabaseManager:
         # is handled by LangGraph components.
         self.engine = create_async_engine(
             self._database_url,
-            pool_size=int(os.getenv("SA_POOL_SIZE", "2")),
-            max_overflow=int(os.getenv("SA_MAX_OVERFLOW", "0")),
+            pool_size=settings.pool.SQLALCHEMY_POOL_SIZE,
+            max_overflow=settings.pool.SQLALCHEMY_MAX_OVERFLOW,
             pool_pre_ping=True,
-            echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
+            echo=settings.db.DB_ECHO_LOG,
         )
 
-        # 2. Shared Pool for LangGraph (uses psycopg)
-        # Convert SQLAlchemy URL (asyncpg) to psycopg format
-        dsn_for_lg = self._database_url.replace(
-            "postgresql+asyncpg://", "postgresql://"
-        )
-
-        lg_min = int(os.getenv("LG_MIN_POOL_SIZE", "1"))
-        lg_max = int(os.getenv("LG_POOL_SIZE", "6"))
-
+        lg_max = settings.pool.LANGGRAPH_MAX_POOL_SIZE
         lg_kwargs = {
             "autocommit": True,
             "prepare_threshold": 0,  # Optimization for PgBouncer/Kubernetes compatibility
@@ -69,8 +53,8 @@ class DatabaseManager:
         # Create a single shared pool.
         # 'open=False' is important to avoid RuntimeWarning; we open it explicitly below.
         self.lg_pool = AsyncConnectionPool(
-            conninfo=dsn_for_lg,
-            min_size=lg_min,
+            conninfo=settings.db.database_url_sync,
+            min_size=settings.pool.LANGGRAPH_MIN_POOL_SIZE,
             max_size=lg_max,
             open=False,
             kwargs=lg_kwargs,
@@ -80,7 +64,7 @@ class DatabaseManager:
         # Explicitly open the pool
         await self.lg_pool.open()
 
-        # 3. Initialize LangGraph components using the shared pool
+        # 2. Initialize LangGraph components using the shared pool
         # Passing 'conn=self.lg_pool' prevents components from creating their own pools.
 
         logger.info(

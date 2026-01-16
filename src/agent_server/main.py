@@ -117,6 +117,32 @@ async def agent_protocol_exception_handler(
     )
 
 
+async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
+    """Handle JSON decode and validation errors"""
+    error_msg = str(exc)
+    logger.error(f"Validation error: {error_msg}")
+
+    # Check if it's a JSON decode error
+    if "JSON" in error_msg or "json" in error_msg.lower():
+        return JSONResponse(
+            status_code=400,
+            content=AgentProtocolError(
+                error="invalid_request",
+                message="Invalid JSON in request body. Ensure file content is properly encoded.",
+                details={"error": error_msg},
+            ).model_dump(),
+        )
+
+    return JSONResponse(
+        status_code=400,
+        content=AgentProtocolError(
+            error="validation_error",
+            message=error_msg,
+            details={"exception": str(exc)},
+        ).model_dump(),
+    )
+
+
 async def general_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions"""
     return JSONResponse(
@@ -131,6 +157,7 @@ async def general_exception_handler(_request: Request, exc: Exception) -> JSONRe
 
 exception_handlers = {
     HTTPException: agent_protocol_exception_handler,
+    ValueError: value_error_handler,
     Exception: general_exception_handler,
 }
 

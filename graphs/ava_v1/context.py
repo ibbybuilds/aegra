@@ -9,13 +9,15 @@ from dataclasses import dataclass, field
 
 @dataclass
 class PropertyInfo:
-    """Property/hotel information for property-specific contexts."""
+    """Property/hotel information for property-specific contexts.
 
-    property_id: str = ""
+    Minimal required fields:
+    - property_name: Hotel name (e.g., "JW Marriott Miami")
+    - hotel_id: Hotel ID for API calls (e.g., "123abc")
+    """
+
     property_name: str = ""
     hotel_id: str = ""
-    location: str = ""
-    features: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -65,8 +67,7 @@ class DialMapBookingContext:
     rooms: int = 1
     adults: int = 2
     children: int = 0
-    hotel_id: str | None = None
-    site: str | None = None
+    hotel_id: str | None = None  # Used for dated property URLs in live agent handoff
 
 
 @dataclass

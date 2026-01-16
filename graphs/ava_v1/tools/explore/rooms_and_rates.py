@@ -12,7 +12,6 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from ava_v1.shared_libraries.context_helpers import prepare_room_list_push
-from ava_v1.shared_libraries.hashing import canonical_rooms_hash
 
 # Import redis_client and shared libraries
 from ava_v1.shared_libraries.redis_client import get_redis_pool
@@ -20,83 +19,41 @@ from ava_v1.shared_libraries.redis_client import get_redis_pool
 logger = logging.getLogger(__name__)
 
 
-async def _check_redis_cache_rooms(room_search_hash: str) -> dict[str, Any] | None:
-    """Check Redis JSON cache for existing room/rate results.
-
-    Args:
-        room_search_hash: The canonical hash for the room search (e.g., "f3a9b2c8d1e4")
-
-    Returns:
-        Dict with {rooms: [...], name: str, token: str} if cached
-        None if cache miss or error
-    """
-    try:
-        pool = get_redis_pool()
-        redis_client = redis_async.Redis(connection_pool=pool)
-
-        redis_key = f"rooms:{room_search_hash}"
-
-        # Check if key exists first
-        exists = await redis_client.exists(redis_key)
-        if not exists:
-            return None
-
-        # Get data using Redis JSON
-        result = await redis_client.execute_command("JSON.GET", redis_key, "$")
-
-        if result:
-            # Parse JSON result
-            data = json.loads(result)
-            # Redis JSON returns array when using '$' path, get first element
-            if isinstance(data, list) and len(data) > 0:
-                return data[0]
-            return data
-
-        return None
-
-    except Exception as e:
-        logger.warning(f"Redis cache check error for rooms:{room_search_hash}: {e}")
-        return None
-
-
-async def _start_rooms_polling_job(
+async def _start_rooms_search(
     hotel_id: str, search_params: dict[str, Any]
 ) -> dict[str, Any]:
-    """Send request to Go polling service to start room/rate polling job.
+    """Send room search request to cache-worker.
+
+    Cache-worker handles hash generation, cache checking, and polling internally.
+    Returns metadata only.
 
     Args:
-        hotel_id: Hotel ID (e.g., "39615853")
+        hotel_id: Hotel ID
         search_params: Dict with checkIn, checkOut, occupancy
 
     Returns:
-        Dict with polling metadata
-
-    Raises:
-        httpx.HTTPError: If polling service call fails
-        Exception: If polling service returns an error response
+        Dict with roomSearchId, status, roomCount (metadata only)
     """
-    polling_service_url = os.getenv("POLLING_SERVICE_URL", "http://localhost:8080")
-    endpoint = f"{polling_service_url}/v1/search/rooms"
+    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
+    endpoint = f"{cache_worker_url}/v1/search/rooms"
 
-    # Build request body
     request_body = {
+        "hotelId": int(hotel_id),
         "checkIn": search_params["checkIn"],
         "checkOut": search_params["checkOut"],
         "occupancy": search_params["occupancy"],
-        "hotelId": int(hotel_id),  # Convert to int for API
     }
 
-    # Make async POST request
+    logger.info(f"[ROOMS_SEARCH] Calling cache-worker: {endpoint}")
+    logger.info(f"[ROOMS_SEARCH] Request body: {request_body}")
+
     async with httpx.AsyncClient() as client:
         response = await client.post(endpoint, json=request_body, timeout=30.0)
         response.raise_for_status()
         data = response.json()
 
-    # Validate response
-    if "error" in data:
-        raise Exception(
-            f"Polling service error: {data.get('message', 'Unknown error')}"
-        )
+    logger.info(f"[ROOMS_SEARCH] Response status: {data['status']}")
+    logger.info(f"[ROOMS_SEARCH] Room search ID: {data['roomSearchId']}")
 
     return data
 
@@ -226,93 +183,69 @@ async def start_room_search(
         "occupancy": search_meta["occupancy"],
     }
 
-    # Generate canonical hash
-    room_search_hash = canonical_rooms_hash(hotel_id, search_params)
+    logger.info(f"[ROOMS_AND_RATES] Search params: {search_params}")
 
-    # Check Redis cache
-    cached_rooms = await _check_redis_cache_rooms(room_search_hash)
+    # Call cache-worker (replaces hash generation, cache check, polling)
+    try:
+        search_result = await _start_rooms_search(hotel_id, search_params)
 
-    if cached_rooms is not None:
-        # Cache HIT - return first room + count
-        rooms_array = cached_rooms.get("rooms", [])
-
-        result = {
-            "hotelId": hotel_id,
-            "searchKey": search_key,
-            "roomSearchId": room_search_hash,
-            "status": "cached",
-            "roomCount": len(rooms_array),
-            "checkIn": search_params["checkIn"],
-            "checkOut": search_params["checkOut"],
-            "occupancy": search_params["occupancy"],
-        }
-
-        # Add first room and hotel name if available
-        if len(rooms_array) > 0:
-            result["firstRoom"] = rooms_array[0]
-        if "name" in cached_rooms:
-            result["hotelName"] = cached_rooms["name"]
-
-        # Add hint for next action
-        result["hint"] = (
-            f'Room data available. firstRoom is a preview only. Ask user about room preferences (refundable/non-refundable, bed type), then call query_vfs(destination="{search_key}:rooms:{hotel_id}") to get complete booking data.'
-        )
-
-        # Update active_searches with roomSearchId
-        updated_search_meta = {**search_meta, "roomSearchId": room_search_hash}
-
-        if runtime is None:
-            return json.dumps(result, indent=2)
-
-        # Auto-manage context stack: push RoomList
-        context_stack = runtime.state.get("context_stack", [])
-        context_to_push, new_stack = prepare_room_list_push(
-            search_key, hotel_id, room_search_hash, context_stack
-        )
-
-        update_dict = {
-            "messages": [
-                ToolMessage(
-                    content=json.dumps(result, indent=2),
-                    tool_call_id=runtime.tool_call_id,
-                )
-            ],
-            "active_searches": {
-                search_key: updated_search_meta
-            },  # Will be merged by merge_dicts reducer
-        }
-
-        if context_to_push:
-            # Need to push - replace stack and append new context
-            update_dict["context_stack"] = {
-                "__replace__": new_stack + [context_to_push]
-            }
+        # Cache HIT - return metadata
+        if search_result["status"] == "cached":
             logger.info(
-                f"[ROOMS_AND_RATES] Pushing RoomList({search_key}, {hotel_id}) to context stack"
+                f"[ROOMS_AND_RATES] Cache HIT! {search_result.get('roomCount', 0)} rooms available"
             )
 
-        return Command(update=update_dict)
+            result = {
+                "hotelId": hotel_id,
+                "searchKey": search_key,
+                "roomSearchId": search_result["roomSearchId"],
+                "status": "cached",
+                "roomCount": search_result.get("roomCount", 0),
+                "checkIn": search_params["checkIn"],
+                "checkOut": search_params["checkOut"],
+                "occupancy": search_params["occupancy"],
+            }
 
-    # Cache MISS - start polling job
-    try:
-        await _start_rooms_polling_job(
-            hotel_id=hotel_id,
-            search_params=search_params,
-        )
+            # Add optional fields if present
+            if "hotelName" in search_result:
+                result["hotelName"] = search_result["hotelName"]
 
-        result = {
-            "hotelId": hotel_id,
-            "searchKey": search_key,
-            "roomSearchId": room_search_hash,
-            "status": "polling",
-            "checkIn": search_params["checkIn"],
-            "checkOut": search_params["checkOut"],
-            "occupancy": search_params["occupancy"],
-            "hint": f'Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type, floor preference) while search runs. Call query_vfs(destination="{search_key}:rooms:{hotel_id}") after user responds.',
-        }
+            # Add hint for next action
+            result["hint"] = (
+                f"Room data cached. Ask user about room preferences (refundable/non-refundable, bed type), "
+                f'then call query_vfs(destination="{search_key}:rooms:{hotel_id}") to retrieve complete room list.'
+            )
 
-        # Update active_searches with roomSearchId
-        updated_search_meta = {**search_meta, "roomSearchId": room_search_hash}
+            # Update active_searches with roomSearchId
+            updated_search_meta = {
+                **search_meta,
+                "roomSearchId": search_result["roomSearchId"],
+            }
+
+        # Cache MISS - return polling status
+        else:
+            logger.info("[ROOMS_AND_RATES] Cache MISS - polling initiated")
+
+            result = {
+                "hotelId": hotel_id,
+                "searchKey": search_key,
+                "roomSearchId": search_result["roomSearchId"],
+                "status": "polling",
+                "checkIn": search_params["checkIn"],
+                "checkOut": search_params["checkOut"],
+                "occupancy": search_params["occupancy"],
+                "estimatedSeconds": search_result.get("estimatedSeconds", 5),
+                "hint": (
+                    f"Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type) "
+                    f'while search runs. Call query_vfs(destination="{search_key}:rooms:{hotel_id}") after user responds.'
+                ),
+            }
+
+            # Update active_searches with roomSearchId
+            updated_search_meta = {
+                **search_meta,
+                "roomSearchId": search_result["roomSearchId"],
+            }
 
         if runtime is None:
             return json.dumps(result, indent=2)
@@ -320,7 +253,7 @@ async def start_room_search(
         # Auto-manage context stack: push RoomList
         context_stack = runtime.state.get("context_stack", [])
         context_to_push, new_stack = prepare_room_list_push(
-            search_key, hotel_id, room_search_hash, context_stack
+            search_key, hotel_id, search_result["roomSearchId"], context_stack
         )
 
         update_dict = {
@@ -347,10 +280,13 @@ async def start_room_search(
         return Command(update=update_dict)
 
     except Exception as e:
+        logger.error(
+            f"[ROOMS_AND_RATES] Cache-worker error: {type(e).__name__}: {str(e)}"
+        )
         error_result = {
             "status": "error",
             "error": {
-                "type": "polling_service_error",
+                "type": "room_search_error",
                 "message": f"Failed to start room search: {str(e)}",
             },
         }

@@ -11,22 +11,15 @@ from typing import Annotated, Any
 
 import httpx
 import jwt
-import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field, model_validator
 
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_list_push
-from ava_v1.shared_libraries.hashing import canonical_api_hash
 from ava_v1.shared_libraries.lookup_id import lookup_id
 
 # Import redis_client and shared libraries
-from ava_v1.shared_libraries.redis_client import (
-    get_redis_pool,
-    redis_get_json_compressed,
-    redis_set_json_compressed,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +38,9 @@ class HotelSearchParams(BaseModel):
         description="Check-out date in YYYY-MM-DD format (e.g., '2026-01-06')",
         alias="check_out",
     )
-    occupancy: dict[str, int] | None = Field(
+    occupancy: dict[str, int | list[int]] | None = Field(
         default=None,
-        description="Occupancy details with numOfAdults (e.g., {'numOfAdults': 2})",
+        description="Occupancy details with numOfAdults and optional childAges (e.g., {'numOfAdults': 2, 'numOfRooms': 1, 'childAges': [5, 3]})",
     )
     name: str | None = Field(
         default=None,
@@ -95,243 +88,100 @@ def geo_destination_hash(destination: str) -> str:
 
 
 async def get_geo_coordinates(destination: str) -> str:
-    """Get geographic coordinates for a destination using Google Places API.
+    """Get geographic coordinates for a destination using cache-worker.
 
-    Includes Redis caching to reduce API calls and country gating for restrictions.
+    Cache-worker handles Redis caching and Google Places API calls internally.
+    Returns coordinates directly (tiny payload exception).
 
     Args:
         destination: The destination query string (e.g., "Orlando, Florida")
-        runtime: Injected tool runtime (unused, no state updates)
 
     Returns:
-        JSON string with latitude, longitude, displayName, formattedAddress, and countryCode if found.
-        Returns error dict if country not allowed or lookup fails:
-        {"error": "country_not_supported", "country": "FR", "message": "..."}
-        {"error": "no_results", "message": "..."}
-        {"error": "api_error", "message": "..."}
+        JSON string with latitude, longitude, and formatted_address if found.
+        Returns error dict if lookup fails:
+        {"error": "location_not_found", "message": "..."}
+        {"error": "geocode_error", "message": "..."}
     """
-    try:
-        # Validate inputs
-        if not destination or not destination.strip():
-            result = {
-                "error": "invalid_input",
-                "message": "Destination query cannot be empty",
-            }
-            return json.dumps(result, indent=2)
+    logger.info(f"[DEBUG] get_geo_coordinates() called with destination: {destination}")
 
-        # Generate hash for Redis cache key
-        dest_hash = geo_destination_hash(destination)
-        redis_key = f"geo:{dest_hash}"
-
-        # Check Redis cache first
-        cached_geo_data = await redis_get_json_compressed(redis_key)
-        if cached_geo_data:
-            # Cache hit - return cached data
-            return json.dumps(cached_geo_data, indent=2)
-
-        # Cache miss - fetch from Google Places API
-        # Get Google API key from environment variables
-        google_api_key = os.getenv("GOOGLE_API_KEY")
-        if not google_api_key:
-            result = {
-                "error": "configuration",
-                "message": "GOOGLE_API_KEY not configured",
-            }
-            return json.dumps(result, indent=2)
-
-        # Prepare request body
-        request_body = {"textQuery": destination.strip(), "pageSize": 1}
-
-        # Prepare headers - include addressComponents to get country code
-        headers = {
-            "X-Goog-Api-Key": google_api_key,
-            "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.addressComponents",
-            "Content-Type": "application/json",
+    # Validate inputs
+    if not destination or not destination.strip():
+        result = {
+            "error": "invalid_input",
+            "message": "Destination query cannot be empty",
         }
+        return json.dumps(result, indent=2)
 
-        # Make async POST request to Google Places API
+    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
+    endpoint = f"{cache_worker_url}/v1/search/geo"
+
+    logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
+    logger.info(
+        f"[GEO_COORDINATES] Calling cache-worker for destination: {destination}"
+    )
+
+    try:
+        logger.info("[DEBUG] Creating httpx.AsyncClient for geocode request")
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://places.googleapis.com/v1/places:searchText",
-                headers=headers,
-                json=request_body,
-                timeout=30.0,
+            logger.info(f"[DEBUG] Sending GET request to {endpoint}")
+            response = await client.get(
+                endpoint, params={"destination": destination}, timeout=10.0
+            )
+            logger.info(
+                f"[DEBUG] Received response with status: {response.status_code}"
             )
             response.raise_for_status()
             data = response.json()
+            logger.info("[DEBUG] Parsed response JSON successfully")
 
-        # Extract and format results
-        places = data.get("places", [])
-
-        if not places:
-            result = {
-                "error": "no_results",
-                "message": f"No places found for '{destination}'",
-            }
-            return json.dumps(result, indent=2)
-
-        # Format the first place result
-        place = places[0]
-        location = place.get("location", {})
-
-        # Extract country code from address components
-        country_code = None
-        address_components = place.get("addressComponents", [])
-        for component in address_components:
-            if "country" in component.get("types", []):
-                country_code = component.get(
-                    "shortText", ""
-                ).upper()  # ISO 3166-1 alpha-2
-                break
-
-        geo_data = {
-            "displayName": place.get("displayName", {}).get("text", "N/A"),
-            "formattedAddress": place.get("formattedAddress", "N/A"),
-            "latitude": location.get("latitude"),
-            "longitude": location.get("longitude"),
-            "countryCode": country_code,
-        }
-
-        # Validate that we got coordinates
-        if geo_data["latitude"] is None or geo_data["longitude"] is None:
-            result = {
-                "error": "no_coordinates",
-                "message": f"No coordinates found for '{destination}'",
-            }
-            return json.dumps(result, indent=2)
-
-        # Country gating validation
-        gating_enabled = (
-            os.getenv("HOTEL_SEARCH_COUNTRY_GATING_ENABLED", "true").lower() == "true"
-        )
-
-        if gating_enabled and country_code:
-            allowed_countries = (
-                os.getenv("HOTEL_SEARCH_ALLOWED_COUNTRIES", "US").upper().split(",")
+            logger.info(
+                f"[GEO_COORDINATES] Cache {'HIT' if data.get('status') == 'cached' else 'MISS'}"
             )
-            allowed_countries = [
-                c.strip() for c in allowed_countries
-            ]  # Clean whitespace
 
-            if country_code not in allowed_countries:
-                error_response = {
-                    "error": "country_not_supported",
-                    "country": country_code,
-                    "destination": destination,
-                    "message": f"Hotel search is currently only available in: {', '.join(allowed_countries)}. "
-                    f"The destination '{destination}' is in {country_code}.",
-                }
-                # Don't cache errors - user might be testing different destinations
-                return json.dumps(error_response, indent=2)
+            # Extract coordinates (format unchanged for downstream code)
+            geo_data = {
+                "latitude": data["latitude"],
+                "longitude": data["longitude"],
+                "formatted_address": data["formatted_address"],
+            }
 
-        # Store successful geo data in Redis cache with 30-day TTL
-        # Coordinates don't change often, so long TTL is appropriate
-        TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days = 2,592,000 seconds
-        await redis_set_json_compressed(redis_key, geo_data, TTL_SECONDS)
-
-        return json.dumps(geo_data, indent=2)
+            logger.info("[DEBUG] get_geo_coordinates() returning successfully")
+            return json.dumps(geo_data, indent=2)
 
     except httpx.HTTPStatusError as e:
-        result = {"error": "api_error", "message": f"HTTP error: {str(e)}"}
-        return json.dumps(result, indent=2)
-    except httpx.RequestError as e:
-        result = {"error": "api_error", "message": f"Request error: {str(e)}"}
-        return json.dumps(result, indent=2)
-    except Exception as e:
-        result = {"error": "api_error", "message": f"Unexpected error: {str(e)}"}
-        return json.dumps(result, indent=2)
-
-
-async def _check_redis_cache(search_hash: str) -> list[dict[str, Any]] | None:
-    """Check Redis JSON cache for existing search results.
-
-    Args:
-        search_hash: The canonical hash for the search (e.g., "abc123")
-
-    Returns:
-        Cached results if found, None otherwise
-    """
-    try:
-        pool = get_redis_pool()
-        redis_client = redis_async.Redis(connection_pool=pool)
-
-        # Build Redis key: search:{hash}
-        redis_key = f"search:{search_hash}"
-
-        # Check if key exists
-        exists = await redis_client.exists(redis_key)
-        if not exists:
-            return None
-
-        # Get data using Redis JSON
-        cached_data = await redis_client.execute_command("JSON.GET", redis_key)
-
-        if cached_data:
-            return json.loads(cached_data)
-
-        return None
-
-    except Exception as e:
-        # Log error but don't fail - just treat as cache miss
-        logger.warning(f"Redis cache check error: {e}")
-        return None
-
-
-async def _init_hotel_search(search: dict[str, Any], geo_data: dict[str, Any]) -> str:
-    """Initialize hotel search by calling the init API endpoint.
-
-    Args:
-        search: The search parameters
-        geo_data: Geographic data including coordinates and country code
-
-    Returns:
-        Token string for polling the search results
-
-    Raises:
-        httpx.HTTPStatusError: If the API returns an error status
-        Exception: For other API-related errors
-    """
-    # Build request body
-    request_body = {
-        "currency": "USD",
-        "culture": "en-US",
-        "checkIn": search["checkIn"],
-        "checkOut": search["checkOut"],
-        "occupancy": search["occupancy"],
-        "circularRegion": {
-            "centerLat": geo_data["latitude"],
-            "centerLong": geo_data["longitude"],
-            "radiusInKM": 50,  # Hardcoded 50km radius
-        },
-        "countryOfResidence": "US",
-    }
-
-    # Build headers
-    correlation_id = str(uuid.uuid4())
-    headers = {
-        "accountId": os.getenv("HOTEL_API_ACCOUNT_ID", "test-hotels-account-v2"),
-        "channelId": os.getenv("HOTEL_API_CHANNEL_ID", "test-hotels-channel-v2"),
-        "Content-Type": "application/json",
-        "correlationId": correlation_id,
-    }
-
-    # Call init endpoint
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "http://54.198.17.253:6001/api/hotel/availability/init",
-            headers=headers,
-            json=request_body,
-            timeout=30.0,
+        logger.error(
+            f"[DEBUG] HTTPStatusError in get_geo_coordinates: {type(e).__name__}: {str(e)}"
         )
-        response.raise_for_status()
-        data = response.json()
+        logger.error(
+            f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}"
+        )
+        if e.response.status_code == 404:
+            error_response = {
+                "error": "location_not_found",
+                "message": f"Could not find coordinates for '{destination}'",
+            }
+        else:
+            error_response = {
+                "error": "geocode_error",
+                "message": f"Geocode API error: {str(e)}",
+            }
+        return json.dumps(error_response, indent=2)
 
-    # Extract and return token
-    token = data.get("token")
-    if not token:
-        raise Exception("API did not return a token")
+    except httpx.TimeoutException as e:
+        logger.error(f"[DEBUG] TimeoutException in get_geo_coordinates: {str(e)}")
+        error_response = {"error": "timeout", "message": "Geocode request timed out"}
+        return json.dumps(error_response, indent=2)
 
-    return token
+    except Exception as e:
+        logger.error(
+            f"[DEBUG] Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}"
+        )
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
+        error_response = {
+            "error": "unexpected_error",
+            "message": f"Unexpected geocode error: {str(e)}",
+        }
+        return json.dumps(error_response, indent=2)
 
 
 def _generate_jwt_token() -> str:
@@ -359,57 +209,82 @@ def _generate_jwt_token() -> str:
     return token
 
 
-async def _start_polling_job(
-    token: str, search_hash: str, destination: str
+async def _start_hotel_search(
+    search: dict[str, Any], geo_data: dict[str, Any]
 ) -> dict[str, Any]:
-    """Send token to Go polling service to start background polling job.
+    """Send hotel search request to cache-worker.
+
+    Cache-worker handles hash generation, cache checking, init API calls,
+    and polling internally. Returns metadata only.
 
     Args:
-        token: Token from init endpoint
-        search_hash: Redis cache key (canonical hash, without 'search:' prefix)
-        destination: Destination name (for logging)
+        search: Search parameters (destination, checkIn, checkOut, occupancy)
+        geo_data: Geographic coordinates (latitude, longitude)
 
     Returns:
-        Dict with search metadata
-
-    Raises:
-        httpx.HTTPError: If polling service call fails
-        Exception: If polling service returns an error response
+        Dict with searchId, status, hotelCount (metadata only)
     """
-    # Get polling service URL from environment
-    polling_service_url = os.getenv("POLLING_SERVICE_URL", "http://localhost:8080")
+    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
+    endpoint = f"{cache_worker_url}/v1/search"
 
-    # Ensure search_id has "search:" prefix for Go service
-    search_id_with_prefix = (
-        f"search:{search_hash}"
-        if not search_hash.startswith("search:")
-        else search_hash
-    )
+    request_body = {
+        "destination": search["destination"],
+        "checkIn": search["checkIn"],
+        "checkOut": search["checkOut"],
+        "occupancy": search["occupancy"],
+        "geoCoordinates": {
+            "latitude": geo_data["latitude"],
+            "longitude": geo_data["longitude"],
+        },
+    }
 
-    # Call polling service
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{polling_service_url}/v1/search",
-            json={
-                "token": token,
-                "search_id": search_id_with_prefix,
-                "destination": destination,
-            },
-            timeout=5.0,
+    logger.info("[DEBUG] _start_hotel_search() called")
+    logger.info(f"[HOTEL_SEARCH] Calling cache-worker: {endpoint}")
+    logger.info(f"[HOTEL_SEARCH] Request body: {request_body}")
+
+    try:
+        logger.info("[DEBUG] Creating httpx.AsyncClient for hotel search")
+        async with httpx.AsyncClient() as client:
+            logger.info("[DEBUG] Sending POST request to cache-worker")
+            response = await client.post(endpoint, json=request_body, timeout=30.0)
+            logger.info(
+                f"[DEBUG] Received response with status: {response.status_code}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            logger.info("[DEBUG] Parsed response JSON successfully")
+
+        logger.info(f"[HOTEL_SEARCH] Response status: {data['status']}")
+        logger.info(f"[HOTEL_SEARCH] Search ID: {data['searchId']}")
+
+        return data
+    except Exception as e:
+        logger.error(
+            f"[DEBUG] Exception in _start_hotel_search: {type(e).__name__}: {str(e)}"
         )
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
+        raise
 
-        # Check for HTTP errors (400, 502, etc.)
-        response.raise_for_status()
 
-        # Parse response
-        response_data = response.json()
+def _normalize_search_dict(search: dict[str, Any]) -> dict[str, Any]:
+    """Normalize search dict to consistent key names.
 
-        # Check if response contains an error
-        if "error" in response_data:
-            error_msg = response_data.get("message", "Unknown polling service error")
-            raise Exception(f"Polling service error: {error_msg}")
+    Ensures all keys are lowercase and handles aliases consistently.
+    This prevents KeyError bugs from case mismatches.
 
-        return response_data
+    Args:
+        search: Search dict from Pydantic model_dump()
+
+    Returns:
+        Normalized dict with guaranteed lowercase keys
+    """
+    return {
+        "destination": search.get("destination") or search.get("Destination"),
+        "checkIn": search.get("checkIn") or search.get("check_in"),
+        "checkOut": search.get("checkOut") or search.get("check_out"),
+        "occupancy": search.get("occupancy"),
+        "name": search.get("name"),
+    }
 
 
 async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | None:
@@ -422,18 +297,19 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
         Dict with search metadata (searchId, status, etc.)
         None if invalid parameters
     """
+    # Normalize keys to prevent case mismatch errors
+    search = _normalize_search_dict(search)
+    logger.info(f"[DEBUG] _process_single_search() called with search: {search}")
+
     # Validate required fields
-    required_fields = ["checkIn", "checkOut", "occupancy"]
-    if not all(field in search for field in required_fields):
+    required_fields = ["destination", "checkIn", "checkOut", "occupancy"]
+    if not all(field in search and search[field] for field in required_fields):
         logger.warning(
             f"[HOTEL_SEARCH] Missing required fields in search: {search}. Required: {required_fields}, Got keys: {list(search.keys())}"
         )
         return None
 
-    # Accept both "Destination" (capital D) and "destination" (lowercase d)
-    destination = search.get("Destination") or search.get("destination")
-    if not destination:
-        return None
+    destination = search["destination"]
 
     label = destination.split(",")[0].strip()
 
@@ -511,67 +387,39 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
                 "error": geo_data,
             }
 
-        # Generate canonical hash for this search
-        search_params = {
-            "checkIn": search["checkIn"],
-            "checkOut": search["checkOut"],
-            "occupancy": search["occupancy"],
-            "circularRegion": {
-                "centerLat": geo_data["latitude"],
-                "centerLong": geo_data["longitude"],
-                "radiusInKM": 50,
-            },
-        }
-        search_hash = canonical_api_hash(search_params)
-        geo_hash = geo_destination_hash(destination)
+        # Call cache-worker (replaces: hash generation, cache check, init, polling)
+        search_result = await _start_hotel_search(search, geo_data)
 
-        # Check Redis cache for existing results
-        cached_results = await _check_redis_cache(search_hash)
-
-        if cached_results:
-            # Cache hit - return immediately
-            hotel_count = len(cached_results) if isinstance(cached_results, list) else 0
-            return {
-                "destination": destination,
-                "searchId": search_hash,
-                "status": "cached",
-                "hotelCount": hotel_count,
-                "checkIn": search["checkIn"],
-                "checkOut": search["checkOut"],
-                "occupancy": search["occupancy"],
-                "geoHash": geo_hash,
-                "message": f"Found {hotel_count} hotels (from recent search).",
-                "hint": f'Results are ready. Call query_vfs(destination="{destination}") to retrieve and present hotels to the user.',
-            }
-
-        # Cache miss - initiate new search
-        # Step 1: Call init endpoint to get token
-        token = await _init_hotel_search(search, geo_data)
-
-        # Step 2: Start polling job
-        polling_response = await _start_polling_job(token, search_hash, destination)
-
-        # Build result
+        # Build result for ava_v1 state management
         result = {
             "destination": destination,
-            "searchId": search_hash,
-            "status": "polling",
+            "searchId": search_result["searchId"],
+            "status": search_result["status"],
             "checkIn": search["checkIn"],
             "checkOut": search["checkOut"],
             "occupancy": search["occupancy"],
-            "geoHash": geo_hash,
-            "hint": f'Search initiated. Ask user about preferences (budget, amenities, location) while search runs in background. Call query_vfs(destination="{destination}") after user responds.',
         }
 
-        # Add optional fields if present
-        if "expected_hotel_count" in polling_response:
-            result["expectedHotelCount"] = polling_response["expected_hotel_count"]
-        if "loaded_count" in polling_response:
-            result["loadedCount"] = polling_response["loaded_count"]
-        if "estimated_seconds" in polling_response:
-            result["estimatedSeconds"] = polling_response["estimated_seconds"]
-        if "message" in polling_response:
-            result["message"] = polling_response["message"]
+        # Add optional fields if present in response
+        if "hotelCount" in search_result:
+            result["hotelCount"] = search_result["hotelCount"]
+        if "expectedHotelCount" in search_result:
+            result["expectedHotelCount"] = search_result["expectedHotelCount"]
+        if "estimatedSeconds" in search_result:
+            result["estimatedSeconds"] = search_result["estimatedSeconds"]
+        if "message" in search_result:
+            result["message"] = search_result["message"]
+
+        # Generate hint based on status
+        if search_result["status"] == "cached":
+            count = result.get("hotelCount", 0)
+            result["hint"] = (
+                f'Found {count} hotels. Call query_vfs(destination="{destination}") to retrieve and present results to the user.'
+            )
+        elif search_result["status"] == "polling":
+            result["hint"] = (
+                f'Hotel search initiated. Ask user about preferences (budget, star rating) while search runs. Call query_vfs(destination="{destination}") after {search_result.get("estimatedSeconds", 8)}s.'
+            )
 
         # Add resolved hotel_id if name lookup was performed
         if resolved_hotel_id:
@@ -583,9 +431,9 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
     except Exception as e:
         return {
             "destination": destination,
-            "searchId": search_hash if "search_hash" in locals() else None,
+            "searchId": None,
             "status": "error",
-            "error": {"type": "init_failed", "message": str(e)},
+            "error": {"type": "search_failed", "message": str(e)},
         }
 
 
@@ -622,16 +470,32 @@ async def start_hotel_search(
         runtime: Injected tool runtime for accessing agent state
     """
     logger.info("=" * 80)
+    logger.info("[DEBUG] start_hotel_search() ENTRY POINT - Tool called")
     logger.info(f"[HOTEL_SEARCH] Tool called with {len(searches)} search(es)")
     logger.info(f"[HOTEL_SEARCH] Searches: {searches}")
     logger.info("=" * 80)
 
-    # Convert Pydantic models to dicts
-    search_dicts = [search.model_dump(by_alias=False) for search in searches]
+    try:
+        # Convert Pydantic models to dicts
+        logger.info(f"[DEBUG] Converting {len(searches)} Pydantic models to dicts")
+        search_dicts = [search.model_dump(by_alias=False) for search in searches]
+        logger.info("[DEBUG] Conversion successful")
 
-    # Process all searches in parallel
-    search_tasks = [_process_single_search(search) for search in search_dicts]
-    search_results = await asyncio.gather(*search_tasks)
+        # Process all searches in parallel
+        logger.info(
+            f"[DEBUG] Starting parallel processing of {len(search_dicts)} searches"
+        )
+        search_tasks = [_process_single_search(search) for search in search_dicts]
+        search_results = await asyncio.gather(*search_tasks)
+        logger.info(
+            f"[DEBUG] Parallel processing completed, got {len(search_results)} results"
+        )
+    except Exception as e:
+        logger.error(
+            f"[DEBUG] Exception in start_hotel_search: {type(e).__name__}: {str(e)}"
+        )
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
+        raise
 
     # Build response
     searches_metadata = []

@@ -62,9 +62,8 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
         # Build context based on focus type
         if ctx_type == "BookingPending":
             # Customer has a pending booking
-            booking_hash = current_context.get("booking_hash", "")
             amount = current_context.get("amount", 0)
-            parts.append(f"Customer booking")
+            parts.append("Customer booking")
             if property_name:
                 parts.append(f"at {property_name}")
             if destination:
@@ -140,7 +139,9 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
     return " ".join(parts)
 
 
-@tool(description="Signal to end the call, transfer to payment line, or transfer to live agent")
+@tool(
+    description="Signal to end the call, transfer to payment line, or transfer to live agent"
+)
 async def modify_call(
     action_type: str,
     summary: str | None = None,

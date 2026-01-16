@@ -299,9 +299,21 @@ async def update_thread_state(
     If 'values' is provided, updates the state. Otherwise, behaves like GET to retrieve state.
     This supports CopilotKit and other clients that use POST for state queries.
     """
+    logger.info("=" * 80)
+    logger.info("[DEBUG] POST /threads/{thread_id}/state ENTRY POINT")
+    logger.info(f"[DEBUG] thread_id: {thread_id}")
+    logger.info(f"[DEBUG] user: {user.identity}")
+    logger.info(f"[DEBUG] request.values present: {request.values is not None}")
+    if request.values is not None:
+        logger.info(
+            f"[DEBUG] request.values keys: {list(request.values.keys()) if isinstance(request.values, dict) else 'not a dict'}"
+        )
+    logger.info("=" * 80)
+
     # If no values provided, treat this as a GET-like query via POST
     # This is what CopilotKit uses when regenerating messages
     if request.values is None:
+        logger.info("[DEBUG] No values provided, treating as GET request")
         # Delegate to GET handler logic
         return await get_thread_state(
             thread_id=thread_id,
@@ -312,17 +324,24 @@ async def update_thread_state(
         )
 
     # Otherwise, update the state
+    logger.info("[DEBUG] Values provided, proceeding with state update")
     try:
+        logger.info("[DEBUG] Looking up thread in database")
         stmt = select(ThreadORM).where(
             ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
         )
         thread = await session.scalar(stmt)
         if not thread:
+            logger.error(f"[DEBUG] Thread not found: {thread_id}")
             raise HTTPException(404, f"Thread '{thread_id}' not found")
 
+        logger.info(f"[DEBUG] Thread found: {thread_id}")
         thread_metadata = thread.metadata_json or {}
         graph_id = thread_metadata.get("graph_id")
+        logger.info(f"[DEBUG] Graph ID from thread metadata: {graph_id}")
+
         if not graph_id:
+            logger.error("[DEBUG] No graph_id in thread metadata")
             raise HTTPException(
                 400,
                 f"Thread '{thread_id}' has no associated graph. Cannot update state.",
@@ -333,33 +352,55 @@ async def update_thread_state(
             get_langgraph_service,
         )
 
+        logger.info("[DEBUG] Getting langgraph service")
         langgraph_service = get_langgraph_service()
+
+        logger.info(f"[DEBUG] Loading graph: {graph_id}")
         try:
             agent = await langgraph_service.get_graph(graph_id)
+            logger.info(f"[DEBUG] Graph loaded successfully: {graph_id}")
         except Exception as e:
+            logger.error(f"[DEBUG] Failed to load graph: {type(e).__name__}: {str(e)}")
             logger.exception("Failed to load graph '%s' for state update", graph_id)
             raise HTTPException(
                 500, f"Failed to load graph '{graph_id}': {str(e)}"
             ) from e
 
+        logger.info("[DEBUG] Creating thread config")
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        logger.info(
+            f"[DEBUG] Config created with thread_id: {config.get('configurable', {}).get('thread_id')}"
+        )
 
         # Apply checkpoint configuration
+        logger.info("[DEBUG] Applying checkpoint configuration")
         if request.checkpoint_id:
             config["configurable"]["checkpoint_id"] = request.checkpoint_id
+            logger.info(f"[DEBUG] Applied checkpoint_id: {request.checkpoint_id}")
         if request.checkpoint:
             config["configurable"].update(request.checkpoint)
+            logger.info(f"[DEBUG] Applied checkpoint: {request.checkpoint}")
         if request.checkpoint_ns:
             config["configurable"]["checkpoint_ns"] = request.checkpoint_ns
+            logger.info(f"[DEBUG] Applied checkpoint_ns: {request.checkpoint_ns}")
 
         try:
             # Update state using aupdate_state method
             # This creates a new checkpoint with the updated values
+            logger.info("[DEBUG] Creating agent with config")
             agent = agent.with_config(config)
+            logger.info("[DEBUG] Agent with_config successful")
 
             # Handle values - can be dict or list of dicts
             update_values = request.values
+            logger.info(
+                f"[DEBUG] Processing update_values (type: {type(update_values)})"
+            )
+
             if isinstance(update_values, list):
+                logger.info(
+                    f"[DEBUG] update_values is a list with {len(update_values)} items"
+                )
                 # If it's a list, use the first dict or convert to dict
                 if update_values and isinstance(update_values[0], dict):
                     # Merge all dicts in the list
@@ -368,14 +409,99 @@ async def update_thread_state(
                         if isinstance(item, dict):
                             merged.update(item)
                     update_values = merged
+                    logger.info(
+                        f"[DEBUG] Merged list into dict with keys: {list(merged.keys())}"
+                    )
                 else:
                     update_values = update_values[0] if update_values else {}
+                    logger.info("[DEBUG] Using first list item or empty dict")
+            else:
+                logger.info(
+                    f"[DEBUG] update_values is dict with keys: {list(update_values.keys()) if isinstance(update_values, dict) else 'unknown'}"
+                )
+
+            # Process context if provided
+            if request.context:
+                logger.info("=" * 80)
+                logger.info("[CONTEXT_MIGRATION] Context provided in /state request")
+                logger.info(
+                    f"[CONTEXT_MIGRATION] Raw context type: {request.context.get('type')}"
+                )
+                logger.info(
+                    f"[CONTEXT_MIGRATION] Raw context keys: {list(request.context.keys())}"
+                )
+                logger.info("=" * 80)
+                from ..utils.context_parser import parse_context_for_graph
+
+                try:
+                    # Parse context based on graph type
+                    parsed_context = parse_context_for_graph(graph_id, request.context)
+                    logger.info(
+                        f"[CONTEXT_MIGRATION] ✓ Successfully parsed context for graph {graph_id}"
+                    )
+                    logger.info(
+                        f"[CONTEXT_MIGRATION] Parsed context type: {type(parsed_context)}"
+                    )
+                    if hasattr(parsed_context, "__dict__"):
+                        logger.info(
+                            f"[CONTEXT_MIGRATION] Parsed context attrs: {list(parsed_context.__dict__.keys())}"
+                        )
+
+                    # For ava_v1, inject call_context into state values
+                    if graph_id in ["ava", "ava_v1"] and parsed_context:
+                        logger.info(
+                            "[CONTEXT_MIGRATION] → Injecting call_context into state for ava/ava_v1"
+                        )
+                        # If values not provided, create dict with just context
+                        if update_values is None:
+                            update_values = {"call_context": parsed_context}
+                            logger.info(
+                                "[CONTEXT_MIGRATION] ✓ Created new update_values dict with call_context"
+                            )
+                        elif isinstance(update_values, dict):
+                            update_values["call_context"] = parsed_context
+                            logger.info(
+                                "[CONTEXT_MIGRATION] ✓ Merged call_context into existing update_values"
+                            )
+                        else:
+                            logger.warning(
+                                f"[CONTEXT_MIGRATION] ✗ Cannot inject - update_values is not dict (type: {type(update_values)})"
+                            )
+
+                        logger.info("=" * 80)
+                        logger.info(
+                            f"[CONTEXT_MIGRATION] Final update_values keys: {list(update_values.keys()) if isinstance(update_values, dict) else 'not a dict'}"
+                        )
+                        logger.info(
+                            "[CONTEXT_MIGRATION] Context injection complete - will be persisted to checkpoint"
+                        )
+                        logger.info("=" * 80)
+                    else:
+                        logger.info(
+                            f"[CONTEXT_MIGRATION] Skipping injection for graph_id={graph_id}"
+                        )
+                except Exception as e:
+                    logger.error("=" * 80)
+                    logger.error(
+                        f"[CONTEXT_MIGRATION] ✗ Context parsing FAILED: {type(e).__name__}: {str(e)}"
+                    )
+                    logger.error(
+                        "[CONTEXT_MIGRATION] Continuing without context (optional)"
+                    )
+                    logger.error("=" * 80)
+                    # Continue without context - it's optional
 
             # Update the state using aupdate_state
             # aupdate_state signature: aupdate_state(config, values, as_node=None)
             # When as_node is not specified, the graph may try to continue execution,
             # which can fail if the state doesn't match expected graph flow.
             # We should always use as_node to prevent unwanted execution.
+            logger.info("[DEBUG] Calling agent.aupdate_state()")
+            logger.info(f"[DEBUG] as_node parameter: {request.as_node}")
+            logger.info(
+                f"[DEBUG] update_values keys: {list(update_values.keys()) if isinstance(update_values, dict) else 'not a dict'}"
+            )
+
             try:
                 # If as_node is not provided, we need to determine a safe node to use
                 # For state updates without as_node, we'll use None which should just update state
@@ -383,7 +509,12 @@ async def update_thread_state(
                 updated_config = await agent.aupdate_state(
                     config, update_values, as_node=request.as_node
                 )
+                logger.info("[DEBUG] agent.aupdate_state() completed successfully")
+                logger.info(f"[DEBUG] updated_config type: {type(updated_config)}")
             except Exception as update_error:
+                logger.error(
+                    f"[DEBUG] aupdate_state raised exception: {type(update_error).__name__}: {str(update_error)}"
+                )
                 logger.exception(
                     "aupdate_state failed for thread %s: %s",
                     thread_id,
@@ -394,6 +525,7 @@ async def update_thread_state(
 
             # Extract checkpoint info from the updated config
             # aupdate_state returns the updated config dict
+            logger.info("[DEBUG] Validating updated_config")
             if not isinstance(updated_config, dict):
                 logger.error(
                     "aupdate_state returned non-dict: %s (type: %s)",
@@ -405,6 +537,7 @@ async def update_thread_state(
                     f"Unexpected return type from aupdate_state: {type(updated_config)}",
                 )
 
+            logger.info("[DEBUG] Extracting checkpoint info from updated_config")
             checkpoint_info = {
                 "checkpoint_id": updated_config.get("configurable", {}).get(
                     "checkpoint_id"
@@ -420,18 +553,27 @@ async def update_thread_state(
                 thread_id,
                 checkpoint_info.get("checkpoint_id"),
             )
+            logger.info("[DEBUG] Returning ThreadStateUpdateResponse")
 
             return ThreadStateUpdateResponse(checkpoint=checkpoint_info)
 
         except HTTPException:
+            logger.error("[DEBUG] HTTPException in state update block")
             raise
         except Exception as e:
+            logger.error(
+                f"[DEBUG] Exception in state update block: {type(e).__name__}: {str(e)}"
+            )
             logger.exception("Failed to update state for thread '%s'", thread_id)
             raise HTTPException(500, f"Failed to update thread state: {str(e)}") from e
 
     except HTTPException:
+        logger.error("[DEBUG] HTTPException in outer try block")
         raise
     except Exception as e:
+        logger.error(
+            f"[DEBUG] Exception in outer try block: {type(e).__name__}: {str(e)}"
+        )
         logger.exception("Unexpected error updating state for thread '%s'", thread_id)
         raise HTTPException(500, f"Error updating thread state: {str(e)}") from e
 

@@ -120,10 +120,21 @@ class ThreadState(BaseModel):
 
 
 class ThreadStateUpdate(BaseModel):
-    """Request model for updating thread state"""
+    """Request model for updating thread state.
+
+    The context field allows initializing call-specific context (like property_specific
+    or booking information) before the first run. This is particularly useful for
+    background workers that pre-initialize state based on user browsing activity.
+
+    For ava_v1 graphs, context is parsed and stored as 'call_context' in state.
+    """
 
     values: dict[str, Any] | list[dict[str, Any]] | None = Field(
         None, description="The values to update the state with"
+    )
+    context: dict[str, Any] | None = Field(
+        None,
+        description="Optional context for dynamic prompt customization (e.g., call_context for ava_v1)",
     )
     checkpoint: dict[str, Any] | None = Field(
         None, description="The checkpoint to update the state of"

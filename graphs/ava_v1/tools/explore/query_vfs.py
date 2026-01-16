@@ -40,6 +40,7 @@ async def query_vfs(
         destination (str, optional): Destination name or composite key
             - Simple format: "Miami" (resolves to hotel search results)
             - Composite format: "Miami:rooms:15335119" (resolves to room search results)
+            - Details format: "details:39615853" (resolves to hotel details by hotel_id)
         jsonpath (str, optional): JSONPath query for filtering
             - Hotels: "$.[?(@.price <= 300)]" filters by price
             - Rooms: "$.rooms[?(@.refundable_rate)]" filters refundable rooms
@@ -134,6 +135,14 @@ async def query_vfs(
                     "message": f"No room search found for hotel {hotel_id}. Run start_room_search(hotel_id, search_key) first to initiate room search.",
                 }
                 return json.dumps(result, indent=2)
+
+    # Check if destination is a hotel details lookup - handle "details:" prefix
+    if not search_id and destination and destination.startswith("details:"):
+        # Format: "details:39615853"  # noqa: ERA001
+        search_id = destination.split("details:")[1].strip()
+        logger.info(
+            f"[QUERY_VFS] Detected hotel details lookup, extracted search_id: {search_id}"
+        )
 
     # Resolve search_id from regular destination (non-room search) if needed
     if not search_id and destination:
@@ -341,6 +350,30 @@ async def query_vfs(
         if not jsonpath:
             jsonpath = "$"
 
+        # Auto-rewrite common JSONPath mistakes based on Redis key type
+        # Agent often confuses response structure (results) with Redis structure
+        original_jsonpath = jsonpath
+        jsonpath_rewritten = False
+
+        if jsonpath and "$.results" in jsonpath:
+            if redis_key.startswith("rooms:"):
+                # rooms:* keys have structure: {"rooms": [...], "token": "..."}
+                # Rewrite $.results[...] → $.rooms[...]
+                jsonpath = jsonpath.replace("$.results", "$.rooms")
+                jsonpath_rewritten = True
+                logger.info(
+                    f"[QUERY_VFS] Auto-rewriting JSONPath: '{original_jsonpath}' → '{jsonpath}'"
+                )
+            elif redis_key.startswith("search:"):
+                # search:* keys are direct arrays: [{hotel1}, {hotel2}, ...]
+                # Rewrite $.results[...] → $[...]
+                jsonpath = jsonpath.replace("$.results", "$")
+                jsonpath_rewritten = True
+                logger.info(
+                    f"[QUERY_VFS] Auto-rewriting JSONPath: '{original_jsonpath}' → '{jsonpath}'"
+                )
+            # details:* keys are single objects, no rewrite needed
+
         # Get data using Redis JSON with JSONPath
         result = await redis_client.execute_command("JSON.GET", redis_key, jsonpath)
 
@@ -436,6 +469,21 @@ async def query_vfs(
                     response["note"] = (
                         f"Results limited to {MAX_RESULTS_LIMIT} for context preservation. Query again with different filters to see more results."
                     )
+
+            # Add note if JSONPath was auto-rewritten
+            if jsonpath_rewritten:
+                rewrite_msg = f"JSONPath was auto-corrected from '{original_jsonpath}' to '{jsonpath}'. "
+                if redis_key.startswith("rooms:"):
+                    rewrite_msg += (
+                        "For room queries, use $.rooms[...] not $.results[...]."
+                    )
+                elif redis_key.startswith("search:"):
+                    rewrite_msg += "For hotel queries, use $[...] not $.results[...] (direct array)."
+
+                if "note" in response:
+                    response["note"] += f" | {rewrite_msg}"
+                else:
+                    response["note"] = rewrite_msg
 
             # Log what we're returning
             logger.info("=" * 80)

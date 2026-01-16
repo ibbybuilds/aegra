@@ -1,7 +1,6 @@
 """Unit tests for url_generator module."""
 
 import pytest
-
 from ava_v1.context import CallContext, DialMapBookingContext, PropertyInfo
 from ava_v1.shared_libraries.url_generator import (
     _build_location_url,

@@ -9,7 +9,6 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any
 from urllib.parse import quote
 
 from ava_v1.context import CallContext
@@ -83,9 +82,7 @@ def _build_property_url(
     return url
 
 
-def _build_location_url(
-    geo_data: dict, dates: tuple[str, str], occupancy: dict
-) -> str:
+def _build_location_url(geo_data: dict, dates: tuple[str, str], occupancy: dict) -> str:
     """Build location search URL.
 
     Args:
@@ -456,7 +453,11 @@ async def generate_reservation_url(
 
             # Validate geo data has required fields
             if not all(
-                [geo_data.get("latitude"), geo_data.get("longitude"), geo_data.get("formattedAddress")]
+                [
+                    geo_data.get("latitude"),
+                    geo_data.get("longitude"),
+                    geo_data.get("formattedAddress"),
+                ]
             ):
                 logger.warning(f"[url_generator] Incomplete geo data: {geo_data}")
                 return None

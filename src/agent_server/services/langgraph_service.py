@@ -2,7 +2,7 @@
 
 import importlib.util
 import json
-import os
+import sys
 from pathlib import Path
 from typing import Any, TypeVar
 from uuid import uuid5
@@ -10,6 +10,8 @@ from uuid import uuid5
 import structlog
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
+
+from src.agent_server.settings import settings
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
 from ..observability.base import get_tracing_callbacks, get_tracing_metadata
@@ -31,28 +33,33 @@ class LangGraphService:
     async def initialize(self):
         """Load configuration file and setup graph registry.
 
+        Uses shared config loading logic to ensure consistency.
         Resolution order:
         1) AEGRA_CONFIG env var (absolute or relative path)
         2) Explicit self.config_path if it exists
         3) aegra.json in CWD
         4) langgraph.json in CWD (fallback)
         """
-        # 1) Env var override
-        env_path = os.getenv("AEGRA_CONFIG")
-        resolved_path: Path
-        if env_path:
-            resolved_path = Path(env_path)
-        # 2) Provided path if exists
+        from ..config import _resolve_config_path
+
+        # Priority: env var > explicit config_path > shared resolution
+        resolved_path: Path | None = None
+
+        # 1) Check env var first (via shared resolution logic)
+        env_resolved = _resolve_config_path()
+
+        # 2) If env var was set, use it (even if file doesn't exist yet - let error happen later)
+        env_path = settings.app.AEGRA_CONFIG
+        if env_path and env_resolved and env_resolved == Path(env_path):
+            resolved_path = env_resolved
+        # 3) Otherwise check explicit config_path (if provided and exists)
         elif self.config_path and Path(self.config_path).exists():
             resolved_path = Path(self.config_path)
-        # 3) aegra.json if present
-        elif Path("aegra.json").exists():
-            resolved_path = Path("aegra.json")
-        # 4) fallback to langgraph.json
+        # 4) Otherwise use shared resolution (fallback to aegra.json/langgraph.json)
         else:
-            resolved_path = Path("langgraph.json")
+            resolved_path = env_resolved
 
-        if not resolved_path.exists():
+        if not resolved_path or not resolved_path.exists():
             raise ValueError(
                 "Configuration file not found. Expected one of: "
                 "AEGRA_CONFIG path, ./aegra.json, or ./langgraph.json"
@@ -63,6 +70,9 @@ class LangGraphService:
 
         with self.config_path.open() as f:
             self.config = json.load(f)
+
+        # Setup dependency paths before loading graphs
+        self._setup_dependencies()
 
         # Load graph registry from config
         self._load_graph_registry()
@@ -85,6 +95,36 @@ class LangGraphService:
                 "file_path": file_path,
                 "export_name": export_name,
             }
+
+    def _setup_dependencies(self) -> None:
+        """Add dependency paths to sys.path for graph imports.
+
+        Supports paths from the 'dependencies' config key, similar to LangGraph CLI.
+        Paths are resolved relative to the config file location.
+        """
+        dependencies = self.config.get("dependencies", [])
+        if not dependencies:
+            return
+
+        config_dir = self.config_path.parent
+
+        # Iterate in reverse so first dependency in config has highest priority
+        for dep in reversed(dependencies):
+            dep_path = Path(dep)
+
+            # Resolve relative paths from config directory
+            if not dep_path.is_absolute():
+                dep_path = (config_dir / dep_path).resolve()
+            else:
+                dep_path = dep_path.resolve()
+
+            # Add to sys.path if exists and not already present
+            path_str = str(dep_path)
+            if dep_path.exists() and path_str not in sys.path:
+                sys.path.insert(0, path_str)
+                logger.info(f"Added dependency path to sys.path: {path_str}")
+            elif not dep_path.exists():
+                logger.warning(f"Dependency path does not exist: {path_str}")
 
     async def _ensure_default_assistants(self) -> None:
         """Create a default assistant per graph with deterministic UUID.
@@ -154,8 +194,8 @@ class LangGraphService:
         # Always ensure graphs are compiled with our Postgres checkpointer for persistence
         from ..core.database import db_manager
 
-        checkpointer_cm = await db_manager.get_checkpointer()
-        store_cm = await db_manager.get_store()
+        checkpointer_cm = db_manager.get_checkpointer()
+        store_cm = db_manager.get_store()
 
         if isinstance(base_graph, StateGraph):
             # The module exported an *uncompiled* StateGraph – compile it now with
@@ -239,6 +279,16 @@ class LangGraphService:
         if self.config is None:
             return []
         return self.config.get("dependencies", [])
+
+    def get_http_config(self) -> dict[str, Any] | None:
+        """Get HTTP configuration from loaded config file.
+
+        Returns:
+            HTTP configuration dict or None if not configured
+        """
+        if self.config is None:
+            return None
+        return self.config.get("http")
 
 
 # Global service instance

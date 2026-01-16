@@ -10,7 +10,7 @@ Project: Aegra — Open Source LangGraph Backend (Agent Protocol Server)
 
 ```bash
 # Install dependencies
-uv install
+uv sync
 
 # Activate virtual environment (IMPORTANT for migrations)
 source .venv/bin/activate

@@ -12,7 +12,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:18
         env:
           POSTGRES_USER: user
           POSTGRES_PASSWORD: password
@@ -41,15 +41,29 @@ jobs:
 
       - name: Run database migrations
         env:
+          AEGRA_CONFIG: ""
+          POSTGRES_USER: "user"
+          POSTGRES_PASSWORD: "password"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: "aegra"
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
+          LANGFUSE_LOGGING: true
         run: uv run alembic upgrade head
 
       - name: Start Aegra server in background
         env:
+          AEGRA_CONFIG: ""
+          POSTGRES_USER: "user"
+          POSTGRES_PASSWORD: "password"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: "aegra"
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AUTH_TYPE: noop
           PORT: 8000
+          LANGFUSE_LOGGING: true
         run: |
           uv run python run_server.py > server.log 2>&1 &
           echo $! > server.pid
@@ -68,8 +82,15 @@ jobs:
 
       - name: Run E2E tests
         env:
+          AEGRA_CONFIG: ""
+          POSTGRES_USER: "user"
+          POSTGRES_PASSWORD: "password"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: "aegra"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERVER_URL: http://localhost:8000
+          LANGFUSE_LOGGING: true
         run: uv run pytest tests/e2e -v --tb=short
 
       - name: Show server logs on failure

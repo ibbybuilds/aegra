@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..utils.status_compat import validate_thread_status
 
@@ -11,9 +11,29 @@ from ..utils.status_compat import validate_thread_status
 class ThreadCreate(BaseModel):
     """Request model for creating threads"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     metadata: dict[str, Any] | None = Field(None, description="Thread metadata")
     initial_state: dict[str, Any] | None = Field(
         None, description="LangGraph initial state"
+    )
+    thread_id: str | None = Field(
+        None,
+        alias="threadId",
+        description="Optional client-provided thread ID for idempotent creation",
+    )
+    if_exists: str | None = Field(
+        "raise",
+        alias="ifExists",
+        description="Behavior when thread exists: 'raise' (default) or 'do_nothing'",
+    )
+
+
+class ThreadUpdate(BaseModel):
+    """Request model for updating threads"""
+
+    metadata: dict[str, Any] | None = Field(
+        None, description="Thread metadata to update"
     )
 
 
@@ -28,6 +48,7 @@ class Thread(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     user_id: str
     created_at: datetime
+    updated_at: datetime
 
     @field_validator("status", mode="before")
     @classmethod

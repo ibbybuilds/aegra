@@ -1,9 +1,10 @@
 import logging
 import logging.config
-import os
 from typing import Any
 
 import structlog
+
+from src.agent_server.settings import settings
 
 
 def get_logging_config() -> dict[str, Any]:
@@ -15,8 +16,8 @@ def get_logging_config() -> dict[str, Any]:
     by using string references for streams (e.g., "ext://sys.stdout").
     """
     # Determine log level from environment or set a default
-    env_mode = os.getenv("ENV_MODE", "LOCAL").upper()
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    env_mode = settings.app.ENV_MODE
+    log_level = settings.app.LOG_LEVEL
 
     # These processors will be used by BOTH structlog and standard logging
     # to ensure consistent output for all logs.

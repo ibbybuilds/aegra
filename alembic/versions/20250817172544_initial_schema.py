@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.Column(
             "assistant_id",
             sa.Text(),
-            server_default=sa.text("uuid_generate_v4()::text"),
+            server_default=sa.text("public.uuid_generate_v4()::text"),
             nullable=False,
         ),
         sa.Column("name", sa.Text(), nullable=False),
@@ -116,7 +116,7 @@ def upgrade() -> None:
         sa.Column(
             "run_id",
             sa.Text(),
-            server_default=sa.text("uuid_generate_v4()::text"),
+            server_default=sa.text("public.uuid_generate_v4()::text"),
             nullable=False,
         ),
         sa.Column("thread_id", sa.Text(), nullable=False),

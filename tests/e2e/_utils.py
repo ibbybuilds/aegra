@@ -1,5 +1,6 @@
 import json
-import os
+
+from src.agent_server.settings import settings
 
 try:
     from langgraph_sdk import get_client
@@ -20,6 +21,6 @@ def elog(title: str, payload):
 
 def get_e2e_client():
     """Construct a LangGraph SDK client from env and log the target URL."""
-    server_url = os.getenv("SERVER_URL", "http://localhost:8000")
+    server_url = settings.app.SERVER_URL
     print(f"[E2E] Using SERVER_URL={server_url}")
     return get_client(url=server_url)

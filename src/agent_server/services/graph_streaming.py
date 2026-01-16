@@ -29,8 +29,6 @@ from langgraph.pregel.debug import CheckpointPayload, TaskResultPayload
 from pydantic import ValidationError
 from pydantic.v1 import ValidationError as ValidationErrorLegacy
 
-from ..utils.run_utils import _filter_context_by_schema
-
 logger = structlog.getLogger(__name__)
 
 # Type alias for stream output
@@ -80,7 +78,6 @@ async def stream_graph_events(
     config: RunnableConfig,
     *,
     stream_mode: list[str],
-    context: dict[str, Any] | None = None,
     subgraphs: bool = False,
     output_keys: list[str] | None = None,
     on_checkpoint: Callable[[CheckpointPayload | None], None] = lambda _: None,
@@ -97,7 +94,6 @@ async def stream_graph_events(
         input_data: Input data for graph execution
         config: RunnableConfig for execution
         stream_mode: List of stream modes (e.g., ["messages", "values", "debug"])
-        context: Optional context dictionary
         subgraphs: Whether to include subgraph namespaces in event types
         output_keys: Optional output channel keys for astream
         on_checkpoint: Callback invoked when checkpoint events are received
@@ -134,16 +130,6 @@ async def stream_graph_events(
     # Track whether to filter non-interrupt updates
     only_interrupt_updates = not updates_explicitly_requested
 
-    # Apply context schema filtering if available
-    if context and not is_js_graph:
-        try:
-            context_schema = graph.get_context_jsonschema()
-            context = await _filter_context_by_schema(context, context_schema)
-        except Exception as e:
-            await logger.adebug(
-                f"Failed to get context schema for filtering: {e}", exc_info=e
-            )
-
     # Initialize streaming state
     messages: dict[str, BaseMessageChunk] = {}
 
@@ -162,7 +148,6 @@ async def stream_graph_events(
             graph.astream_events(
                 input_data,
                 config,
-                context=context,
                 version="v2",
                 stream_mode=list(stream_modes_set),
                 subgraphs=subgraphs,
@@ -261,7 +246,6 @@ async def stream_graph_events(
             graph.astream(
                 input_data,
                 config,
-                context=context,
                 stream_mode=list(stream_modes_set),
                 output_keys=output_keys,
                 subgraphs=subgraphs,

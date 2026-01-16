@@ -27,7 +27,6 @@ from ..services.graph_streaming import stream_graph_events
 from ..services.langgraph_service import create_run_config, get_langgraph_service
 from ..services.streaming_service import streaming_service
 from ..utils.assistants import resolve_assistant_id
-from ..utils.context_parser import parse_context_for_graph
 from ..utils.run_utils import (
     _merge_jsonb,
 )
@@ -195,20 +194,6 @@ async def create_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config
-    context = request.context
-    configurable = config.get("configurable", {})
-
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
-        context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -218,7 +203,6 @@ async def create_run(
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
     config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
 
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
@@ -243,7 +227,7 @@ async def create_run(
         status="pending",
         input=request.input or {},
         config=config,
-        context=context,
+        context={},
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -261,7 +245,7 @@ async def create_run(
         status="pending",
         input=request.input or {},
         config=config,
-        context=context,
+        context={},
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -272,7 +256,7 @@ async def create_run(
     # Start execution asynchronously
     # Don't pass the session to avoid transaction conflicts
     logger.info(
-        f"[create_run] About to call execute_run_async with graph_id={assistant.graph_id}, context={context}"
+        f"[create_run] About to call execute_run_async with graph_id={assistant.graph_id}"
     )
     task = asyncio.create_task(
         execute_run_async(
@@ -282,7 +266,6 @@ async def create_run(
             request.input or {},
             user,
             config,
-            context,
             request.stream_mode,
             None,  # Don't pass session to avoid conflicts
             request.checkpoint,
@@ -329,20 +312,6 @@ async def create_and_stream_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config
-    context = request.context
-    configurable = config.get("configurable", {})
-
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
-        context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -352,7 +321,6 @@ async def create_and_stream_run(
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
     config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
 
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
@@ -377,7 +345,7 @@ async def create_and_stream_run(
         status="running",
         input=request.input or {},
         config=config,
-        context=context,
+        context={},
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -395,7 +363,7 @@ async def create_and_stream_run(
         status="running",
         input=request.input or {},
         config=config,
-        context=context,
+        context={},
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -413,7 +381,6 @@ async def create_and_stream_run(
             request.input or {},
             user,
             config,
-            context,
             request.stream_mode,
             None,  # Don't pass session to avoid conflicts
             request.checkpoint,
@@ -648,20 +615,6 @@ async def wait_for_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config
-    context = request.context
-    configurable = config.get("configurable", {})
-
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
-        context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -671,7 +624,6 @@ async def wait_for_run(
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
     config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
 
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
@@ -696,7 +648,7 @@ async def wait_for_run(
         status="pending",
         input=request.input or {},
         config=config,
-        context=context,
+        context={},
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -715,7 +667,6 @@ async def wait_for_run(
             request.input or {},
             user,
             config,
-            context,
             request.stream_mode,
             None,  # Don't pass session to avoid conflicts
             request.checkpoint,
@@ -931,7 +882,6 @@ async def execute_run_async(
     input_data: dict,
     user: User,
     config: dict | None = None,
-    context: dict | None = None,
     stream_mode: list[str] | None = None,
     session: AsyncSession | None = None,
     checkpoint: dict | None = None,
@@ -975,20 +925,6 @@ async def execute_run_async(
 
         # Note: multitask_strategy is handled at the run creation level, not execution level
         # It controls concurrent run behavior, not graph execution behavior
-
-        # Parse context for all graphs (including AVA, which now supports runtime.context)
-        parsed_context = None
-        if context:
-            try:
-                parsed_context = parse_context_for_graph(graph_id, context)
-                logger.debug(
-                    f"[execute_run_async] Context parsing successful for graph_id={graph_id}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[execute_run_async] Context parsing failed for graph_id={graph_id}: {e}"
-                )
-                parsed_context = context  # Fallback to raw context
 
         # Determine input for execution (either input_data or command)
         if command is not None:
@@ -1040,7 +976,7 @@ async def execute_run_async(
         else:
             stream_mode_list = stream_mode.copy()
 
-        # Execute graph (context passed via runtime.context for all graphs)
+        # Execute graph
         async with with_auth_ctx(user, []):
             # Stream events using the graph_streaming service
             async for event_type, event_data in stream_graph_events(
@@ -1048,7 +984,6 @@ async def execute_run_async(
                 input_data=execution_input,
                 config=run_config,
                 stream_mode=stream_mode_list,
-                context=parsed_context,
                 subgraphs=subgraphs,
                 on_checkpoint=lambda _: None,  # Can add checkpoint handling if needed
                 on_task_result=lambda _: None,  # Can add task result handling if needed

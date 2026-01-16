@@ -23,7 +23,6 @@ class RunCreate(BaseModel):
         description="Input data for the run. Optional when resuming from a checkpoint.",
     )
     config: dict[str, Any] | None = Field({}, description="Execution config")
-    context: dict[str, Any] | None = Field({}, description="Execution context")
     checkpoint: dict[str, Any] | None = Field(
         None,
         description="Checkpoint configuration (e.g., {'checkpoint_id': '...', 'checkpoint_ns': ''})",

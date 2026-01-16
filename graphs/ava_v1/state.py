@@ -78,6 +78,11 @@ class AvaV1State(MessagesState):
 
         call_reference: Unique call reference ID for tracking
             Set via /state endpoint for call session tracking
+
+        call_context: Dynamic call context dict for prompt customization
+            Set via /state endpoint with context parameter
+            Used by middleware to customize prompts based on call type
+            Format: {"type": "property_specific", "property": {...}, ...}
     """
 
     # ADK-style label-based search tracking
@@ -92,6 +97,11 @@ class AvaV1State(MessagesState):
     # Call context metadata (set via /state endpoint)
     user_phone: NotRequired[str]  # User's phone number in E.164 format
     call_reference: NotRequired[str]  # Unique call reference ID
+
+    # Dynamic call context for prompt customization (set via /state endpoint)
+    # This is the parsed CallContext dict used by middleware for property-specific,
+    # booking, payment return, and other dynamic prompt scenarios
+    call_context: NotRequired[dict]
 
     # Verified customer details collected during conversation
     # Format: {"first_name": "John", "last_name": "Doe", "email": "john@example.com"}

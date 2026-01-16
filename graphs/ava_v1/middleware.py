@@ -33,20 +33,29 @@ FIXABLE_ERRORS = {
 
 
 def extract_call_context(request: ModelRequest) -> CallContext | None:
-    """Extract CallContext from ModelRequest, preferring runtime.context over state.
+    """Extract or auto-derive CallContext from ModelRequest.
 
-    This helper function extracts call context from the ModelRequest object.
-    It's separated for testability and clarity.
+    This function implements smart context derivation:
+    1. Check for explicit call_context (payment_return, abandoned_payment, session)
+    2. Auto-derive from active_searches (property_booking_hybrid, property_specific, booking)
+    3. Check message history for thread_continuation
+    4. Default to general
 
     Args:
         request: ModelRequest-like object with runtime and/or state attributes
 
     Returns:
-        CallContext instance, dict converted to CallContext, or None
+        CallContext instance with auto-derived type and metadata
     """
+    import logging
+    from ava_v1.context import PropertyInfo, DialMapBookingContext
+
+    logger = logging.getLogger(__name__)
+
+    # Step 1: Check for explicit call_context (for external metadata)
     call_context: CallContext | dict[str, Any] | None = None
 
-    # PREFERRED: Access context via runtime.context (proper LangGraph pattern)
+    # Check runtime.context first
     if (
         hasattr(request, "runtime")
         and request.runtime is not None
@@ -54,8 +63,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         and request.runtime.context is not None
     ):
         call_context = request.runtime.context
+        logger.info("[CONTEXT_AUTO_DERIVE] Found explicit call_context via runtime.context")
 
-    # FALLBACK: Access context from state (for backward compatibility with aegra)
+    # Check state.call_context as fallback
     if (
         call_context is None
         and hasattr(request, "state")
@@ -64,10 +74,10 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         raw_context = request.state.get("call_context")
         if raw_context is not None:
             call_context = raw_context
+            logger.info("[CONTEXT_AUTO_DERIVE] Found explicit call_context via state.call_context")
 
     # Convert dict to CallContext if needed
     if isinstance(call_context, dict):
-        # Filter out unknown keys to avoid TypeErrors
         valid_keys = {
             "type",
             "property",
@@ -81,9 +91,121 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
             "dial_map_session_id",
         }
         filtered_context = {k: v for k, v in call_context.items() if k in valid_keys}
-        return CallContext(**filtered_context)
+        call_context = CallContext(**filtered_context)
 
-    return cast("CallContext | None", call_context)
+    # If explicit context exists and is external type, use it as-is
+    if call_context and call_context.type in ["payment_return", "abandoned_payment", "session"]:
+        logger.info(f"[CONTEXT_AUTO_DERIVE] Using explicit external context type: {call_context.type}")
+        return call_context
+
+    # Step 2: Auto-derive from state
+    if hasattr(request, "state") and isinstance(request.state, dict):
+        state = request.state
+        active_searches = state.get("active_searches", {})
+        context_stack = state.get("context_stack", [])
+        messages = state.get("messages", [])
+
+        # Extract metadata from state or existing call_context
+        user_phone = state.get("user_phone") or (call_context.user_phone if call_context else None)
+        call_reference = state.get("call_reference") or (call_context.call_reference if call_context else None)
+        thread_id = (call_context.thread_id if call_context else None)
+        dial_map_session_id = (call_context.dial_map_session_id if call_context else None)
+
+        # Check active_searches for property/booking info
+        hotel_id = None
+        hotel_name = None
+        booking_info = None
+
+        for search_key, search_data in active_searches.items():
+            if isinstance(search_data, dict):
+                # Check for hotel_id (property-specific search)
+                if "hotelId" in search_data or "hotel_id" in search_data:
+                    hotel_id = search_data.get("hotelId") or search_data.get("hotel_id")
+                    hotel_name = search_data.get("hotelName") or search_data.get("hotel_name") or search_key
+
+                # Check for booking parameters (dates, occupancy)
+                # Support both camelCase (from API) and snake_case (from tools)
+                if "dates" in search_data or "occupancy" in search_data or "checkIn" in search_data:
+                    dates = search_data.get("dates", {})
+                    occupancy = search_data.get("occupancy", {})
+
+                    # Extract dates - check both camelCase and snake_case
+                    check_in = (
+                        search_data.get("checkIn") or
+                        dates.get("check_in") or
+                        dates.get("checkIn") or
+                        ""
+                    )
+                    check_out = (
+                        search_data.get("checkOut") or
+                        dates.get("check_out") or
+                        dates.get("checkOut") or
+                        ""
+                    )
+
+                    # Extract occupancy - check both camelCase and snake_case
+                    rooms = occupancy.get("rooms") or occupancy.get("numOfRooms") or 1
+                    adults = occupancy.get("adults") or occupancy.get("numOfAdults") or 2
+                    children = occupancy.get("children") or occupancy.get("numOfChildren") or 0
+
+                    booking_info = DialMapBookingContext(
+                        destination=search_data.get("destination", search_key),
+                        check_in=check_in,
+                        check_out=check_out,
+                        rooms=rooms,
+                        adults=adults,
+                        children=children,
+                        hotel_id=hotel_id
+                    )
+                    logger.info(f"[CONTEXT_AUTO_DERIVE] Extracted booking info: check_in={check_in}, check_out={check_out}, rooms={rooms}, adults={adults}")
+
+        # Fallback: Check context_stack for property info
+        if not hotel_id and context_stack:
+            top_context = context_stack[-1]
+            if isinstance(top_context, dict):
+                if top_context.get("type") == "HotelDetails":
+                    hotel_id = top_context.get("hotel_id")
+                    hotel_name = top_context.get("hotel_name")
+
+        # Derive context type based on what we found
+        derived_type = "general"
+        property_info = None
+
+        if hotel_id and booking_info:
+            derived_type = "property_booking_hybrid"
+            property_info = PropertyInfo(property_name=hotel_name or "", hotel_id=hotel_id)
+            logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_booking_hybrid (hotel_id={hotel_id}, dates present)")
+        elif hotel_id:
+            derived_type = "property_specific"
+            property_info = PropertyInfo(property_name=hotel_name or "", hotel_id=hotel_id)
+            logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_specific (hotel_id={hotel_id})")
+        elif booking_info:
+            derived_type = "booking"
+            logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)")
+        elif len(messages) > 2:  # Has conversation history
+            derived_type = "thread_continuation"
+            logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: thread_continuation (message history exists)")
+        else:
+            logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: general (default)")
+
+        # Build derived CallContext
+        return CallContext(
+            type=derived_type,
+            property=property_info,
+            booking=booking_info,
+            user_phone=user_phone,
+            thread_id=thread_id,
+            call_reference=call_reference,
+            dial_map_session_id=dial_map_session_id,
+        )
+
+    # Step 3: No state available, return general or existing context
+    if call_context:
+        logger.info(f"[CONTEXT_AUTO_DERIVE] Using existing context type: {call_context.type}")
+        return call_context
+
+    logger.info("[CONTEXT_AUTO_DERIVE] No context or state available, defaulting to general")
+    return CallContext(type="general")
 
 
 @dynamic_prompt

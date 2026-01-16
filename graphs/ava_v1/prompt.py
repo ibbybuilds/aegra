@@ -299,8 +299,9 @@ Call `query_vfs(destination="Miami:rooms:HOTEL_ID")` with filters:
 
 === HOTEL DETAILS ===
 
-Call `hotel_details(hotel_id)` for property information:
+Call `hotel_details(hotel_id)` or `hotel_details(hotel_name, destination)` for property information:
 - Descriptions, facilities, policies, location, reviews
+- Supports both hotel ID and hotel name lookups (like start_hotel_search)
 - Use when user asks about amenities or policies
 - Present information naturally, don't dump raw data
 

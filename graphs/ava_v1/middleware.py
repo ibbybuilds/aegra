@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
 
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -48,7 +48,8 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         CallContext instance with auto-derived type and metadata
     """
     import logging
-    from ava_v1.context import PropertyInfo, DialMapBookingContext
+
+    from ava_v1.context import DialMapBookingContext, PropertyInfo
 
     logger = logging.getLogger(__name__)
 
@@ -190,10 +191,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         # Fallback: Check context_stack for property info
         if not hotel_id and context_stack:
             top_context = context_stack[-1]
-            if isinstance(top_context, dict):
-                if top_context.get("type") == "HotelDetails":
-                    hotel_id = top_context.get("hotel_id")
-                    hotel_name = top_context.get("hotel_name")
+            if isinstance(top_context, dict) and top_context.get("type") == "HotelDetails":
+                hotel_id = top_context.get("hotel_id")
+                hotel_name = top_context.get("hotel_name")
 
         # Derive context type based on what we found
         derived_type = "general"
@@ -218,7 +218,7 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         elif booking_info:
             derived_type = "booking"
             logger.info(
-                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)"
+                "[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)"
             )
         elif len(messages) > 2:  # Has conversation history
             derived_type = "thread_continuation"

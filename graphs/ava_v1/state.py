@@ -104,5 +104,5 @@ class AvaV1State(MessagesState):
     call_context: NotRequired[dict]
 
     # Verified customer details collected during conversation
-    # Format: {"first_name": "John", "last_name": "Doe", "email": "john@example.com"}
+    # Format: {"first_name": "John", "last_name": "Doe", "email": "john@example.com"}  # noqa: ERA001
     customer_details: NotRequired[Annotated[dict[str, str], merge_dicts]]

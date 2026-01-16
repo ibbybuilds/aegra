@@ -341,7 +341,7 @@ async def update_thread_state(
         logger.info(f"[DEBUG] Graph ID from thread metadata: {graph_id}")
 
         if not graph_id:
-            logger.error(f"[DEBUG] No graph_id in thread metadata")
+            logger.error("[DEBUG] No graph_id in thread metadata")
             raise HTTPException(
                 400,
                 f"Thread '{thread_id}' has no associated graph. Cannot update state.",
@@ -414,7 +414,7 @@ async def update_thread_state(
                     )
                 else:
                     update_values = update_values[0] if update_values else {}
-                    logger.info(f"[DEBUG] Using first list item or empty dict")
+                    logger.info("[DEBUG] Using first list item or empty dict")
             else:
                 logger.info(
                     f"[DEBUG] update_values is dict with keys: {list(update_values.keys()) if isinstance(update_values, dict) else 'unknown'}"

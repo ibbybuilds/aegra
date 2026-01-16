@@ -11,22 +11,15 @@ from typing import Annotated, Any
 
 import httpx
 import jwt
-import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field, model_validator
 
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_list_push
-from ava_v1.shared_libraries.hashing import canonical_api_hash
 from ava_v1.shared_libraries.lookup_id import lookup_id
 
 # Import redis_client and shared libraries
-from ava_v1.shared_libraries.redis_client import (
-    get_redis_pool,
-    redis_get_json_compressed,
-    redis_set_json_compressed,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +121,7 @@ async def get_geo_coordinates(destination: str) -> str:
     )
 
     try:
-        logger.info(f"[DEBUG] Creating httpx.AsyncClient for geocode request")
+        logger.info("[DEBUG] Creating httpx.AsyncClient for geocode request")
         async with httpx.AsyncClient() as client:
             logger.info(f"[DEBUG] Sending GET request to {endpoint}")
             response = await client.get(
@@ -139,7 +132,7 @@ async def get_geo_coordinates(destination: str) -> str:
             )
             response.raise_for_status()
             data = response.json()
-            logger.info(f"[DEBUG] Parsed response JSON successfully")
+            logger.info("[DEBUG] Parsed response JSON successfully")
 
             logger.info(
                 f"[GEO_COORDINATES] Cache {'HIT' if data.get('status') == 'cached' else 'MISS'}"
@@ -152,7 +145,7 @@ async def get_geo_coordinates(destination: str) -> str:
                 "formatted_address": data["formatted_address"],
             }
 
-            logger.info(f"[DEBUG] get_geo_coordinates() returning successfully")
+            logger.info("[DEBUG] get_geo_coordinates() returning successfully")
             return json.dumps(geo_data, indent=2)
 
     except httpx.HTTPStatusError as e:
@@ -183,7 +176,7 @@ async def get_geo_coordinates(destination: str) -> str:
         logger.error(
             f"[DEBUG] Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}"
         )
-        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
         error_response = {
             "error": "unexpected_error",
             "message": f"Unexpected geocode error: {str(e)}",
@@ -245,21 +238,21 @@ async def _start_hotel_search(
         },
     }
 
-    logger.info(f"[DEBUG] _start_hotel_search() called")
+    logger.info("[DEBUG] _start_hotel_search() called")
     logger.info(f"[HOTEL_SEARCH] Calling cache-worker: {endpoint}")
     logger.info(f"[HOTEL_SEARCH] Request body: {request_body}")
 
     try:
-        logger.info(f"[DEBUG] Creating httpx.AsyncClient for hotel search")
+        logger.info("[DEBUG] Creating httpx.AsyncClient for hotel search")
         async with httpx.AsyncClient() as client:
-            logger.info(f"[DEBUG] Sending POST request to cache-worker")
+            logger.info("[DEBUG] Sending POST request to cache-worker")
             response = await client.post(endpoint, json=request_body, timeout=30.0)
             logger.info(
                 f"[DEBUG] Received response with status: {response.status_code}"
             )
             response.raise_for_status()
             data = response.json()
-            logger.info(f"[DEBUG] Parsed response JSON successfully")
+            logger.info("[DEBUG] Parsed response JSON successfully")
 
         logger.info(f"[HOTEL_SEARCH] Response status: {data['status']}")
         logger.info(f"[HOTEL_SEARCH] Search ID: {data['searchId']}")
@@ -269,7 +262,7 @@ async def _start_hotel_search(
         logger.error(
             f"[DEBUG] Exception in _start_hotel_search: {type(e).__name__}: {str(e)}"
         )
-        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
         raise
 
 
@@ -477,7 +470,7 @@ async def start_hotel_search(
         runtime: Injected tool runtime for accessing agent state
     """
     logger.info("=" * 80)
-    logger.info(f"[DEBUG] start_hotel_search() ENTRY POINT - Tool called")
+    logger.info("[DEBUG] start_hotel_search() ENTRY POINT - Tool called")
     logger.info(f"[HOTEL_SEARCH] Tool called with {len(searches)} search(es)")
     logger.info(f"[HOTEL_SEARCH] Searches: {searches}")
     logger.info("=" * 80)
@@ -486,7 +479,7 @@ async def start_hotel_search(
         # Convert Pydantic models to dicts
         logger.info(f"[DEBUG] Converting {len(searches)} Pydantic models to dicts")
         search_dicts = [search.model_dump(by_alias=False) for search in searches]
-        logger.info(f"[DEBUG] Conversion successful")
+        logger.info("[DEBUG] Conversion successful")
 
         # Process all searches in parallel
         logger.info(
@@ -501,7 +494,7 @@ async def start_hotel_search(
         logger.error(
             f"[DEBUG] Exception in start_hotel_search: {type(e).__name__}: {str(e)}"
         )
-        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
         raise
 
     # Build response

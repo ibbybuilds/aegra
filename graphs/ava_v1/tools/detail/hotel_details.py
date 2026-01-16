@@ -228,7 +228,7 @@ async def hotel_details(
     )
 
     try:
-        logger.info(f"[DEBUG] Creating httpx.AsyncClient for hotel details")
+        logger.info("[DEBUG] Creating httpx.AsyncClient for hotel details")
         async with httpx.AsyncClient() as client:
             logger.info(f"[DEBUG] Sending GET request to {endpoint}")
             response = await client.get(endpoint, timeout=10.0)
@@ -237,7 +237,7 @@ async def hotel_details(
             )
             response.raise_for_status()
             data = response.json()
-            logger.info(f"[DEBUG] Parsed response JSON successfully")
+            logger.info("[DEBUG] Parsed response JSON successfully")
 
             logger.info(f"[HOTEL_DETAILS] Status: {data['status']}")
 
@@ -252,7 +252,7 @@ async def hotel_details(
             if resolved_hotel_name:
                 result["hotelName"] = resolved_hotel_name
 
-            logger.info(f"[DEBUG] hotel_details() returning successfully")
+            logger.info("[DEBUG] hotel_details() returning successfully")
             return _wrap_response(result, resolved_hotel_id, runtime)
 
     except httpx.HTTPStatusError as e:
@@ -286,7 +286,7 @@ async def hotel_details(
         logger.error(
             f"[DEBUG] Unexpected exception in hotel_details: {type(e).__name__}: {str(e)}"
         )
-        logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
+        logger.error("[DEBUG] Exception traceback:", exc_info=True)
         result = {
             "status": "error",
             "hotelId": resolved_hotel_id,

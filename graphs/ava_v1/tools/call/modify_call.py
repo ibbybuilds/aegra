@@ -64,7 +64,7 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
             # Customer has a pending booking
             booking_hash = current_context.get("booking_hash", "")
             amount = current_context.get("amount", 0)
-            parts.append(f"Customer booking")
+            parts.append("Customer booking")
             if property_name:
                 parts.append(f"at {property_name}")
             if destination:

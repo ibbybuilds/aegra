@@ -9,7 +9,6 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any
 from urllib.parse import quote
 
 from ava_v1.context import CallContext

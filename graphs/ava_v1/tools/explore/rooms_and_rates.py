@@ -12,7 +12,6 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from ava_v1.shared_libraries.context_helpers import prepare_room_list_push
-from ava_v1.shared_libraries.hashing import canonical_rooms_hash
 
 # Import redis_client and shared libraries
 from ava_v1.shared_libraries.redis_client import get_redis_pool
@@ -225,7 +224,7 @@ async def start_room_search(
 
         # Cache MISS - return polling status
         else:
-            logger.info(f"[ROOMS_AND_RATES] Cache MISS - polling initiated")
+            logger.info("[ROOMS_AND_RATES] Cache MISS - polling initiated")
 
             result = {
                 "hotelId": hotel_id,

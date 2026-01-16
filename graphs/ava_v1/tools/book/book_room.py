@@ -101,7 +101,9 @@ async def book_room(
                 log_details["email"] = f"{parts[0][:2]}***@{parts[1]}"
         logger.info(f"[BOOK_ROOM] Retrieved customer_details from state: {log_details}")
     else:
-        logger.warning("[BOOK_ROOM] Runtime not available, cannot retrieve customer details")
+        logger.warning(
+            "[BOOK_ROOM] Runtime not available, cannot retrieve customer details"
+        )
 
     first_name = customer_details.get("first_name")
     last_name = customer_details.get("last_name")
@@ -109,25 +111,23 @@ async def book_room(
 
     if not all([first_name, last_name, email]):
         missing = []
-        if not first_name: missing.append("first_name")
-        if not last_name: missing.append("last_name")
-        if not email: missing.append("email")
-        
+        if not first_name:
+            missing.append("first_name")
+        if not last_name:
+            missing.append("last_name")
+        if not email:
+            missing.append("email")
+
         error_msg = f"Missing verified customer details: {', '.join(missing)}. Please verify these details sequentially using update_customer_details tool."
-        return json.dumps({
-            "status": "error",
-            "error": {
-                "type": "missing_customer_details",
-                "message": error_msg
+        return json.dumps(
+            {
+                "status": "error",
+                "error": {"type": "missing_customer_details", "message": error_msg},
             }
-        })
+        )
 
     # Construct verified customer info
-    customer_info = {
-        "firstName": first_name,
-        "lastName": last_name,
-        "email": email
-    }
+    customer_info = {"firstName": first_name, "lastName": last_name, "email": email}
 
     # Fallback: use user_phone from call_context or state if customer phone not provided
     # Note: customer_info currently constructed above doesn't have phone yet
@@ -137,43 +137,65 @@ async def book_room(
         # OPTION 1: Access via runtime.context (for /runs endpoint with context parameter)
         if hasattr(runtime, "context") and runtime.context is not None:
             call_context = runtime.context
-            logger.info(f"[BOOK_ROOM] Extracted context from runtime.context: {call_context}")
+            logger.info(
+                f"[BOOK_ROOM] Extracted context from runtime.context: {call_context}"
+            )
 
             # Extract user_phone from context (object or dict)
             if hasattr(call_context, "user_phone"):
                 user_phone = call_context.user_phone
-                logger.info(f"[BOOK_ROOM] Extracted user_phone from context object: {user_phone}")
+                logger.info(
+                    f"[BOOK_ROOM] Extracted user_phone from context object: {user_phone}"
+                )
             elif isinstance(call_context, dict):
                 user_phone = call_context.get("user_phone")
-                logger.info(f"[BOOK_ROOM] Extracted user_phone from context dict: {user_phone}")
+                logger.info(
+                    f"[BOOK_ROOM] Extracted user_phone from context dict: {user_phone}"
+                )
 
         # OPTION 2: Access via runtime.state (for /state endpoint updates)
-        if user_phone is None and hasattr(runtime, "state") and isinstance(runtime.state, dict):
+        if (
+            user_phone is None
+            and hasattr(runtime, "state")
+            and isinstance(runtime.state, dict)
+        ):
             # Try nested call_context first
             call_context = runtime.state.get("call_context")
             if call_context:
-                logger.info(f"[BOOK_ROOM] Found call_context in runtime.state: {call_context}")
+                logger.info(
+                    f"[BOOK_ROOM] Found call_context in runtime.state: {call_context}"
+                )
                 if hasattr(call_context, "user_phone"):
                     user_phone = call_context.user_phone
-                    logger.info(f"[BOOK_ROOM] Extracted user_phone from state.call_context object: {user_phone}")
+                    logger.info(
+                        f"[BOOK_ROOM] Extracted user_phone from state.call_context object: {user_phone}"
+                    )
                 elif isinstance(call_context, dict):
                     user_phone = call_context.get("user_phone")
-                    logger.info(f"[BOOK_ROOM] Extracted user_phone from state.call_context dict: {user_phone}")
+                    logger.info(
+                        f"[BOOK_ROOM] Extracted user_phone from state.call_context dict: {user_phone}"
+                    )
 
             # Try direct state.user_phone if still not found
             if user_phone is None:
                 user_phone = runtime.state.get("user_phone")
                 if user_phone:
-                    logger.info(f"[BOOK_ROOM] Extracted user_phone directly from runtime.state: {user_phone}")
+                    logger.info(
+                        f"[BOOK_ROOM] Extracted user_phone directly from runtime.state: {user_phone}"
+                    )
 
         if user_phone:
             # Preserve E.164 format (e.g., +1234567890)
             customer_info["phone"] = user_phone
-            logger.info(f"[BOOK_ROOM] Using user_phone (E.164 format preserved): {user_phone}")
+            logger.info(
+                f"[BOOK_ROOM] Using user_phone (E.164 format preserved): {user_phone}"
+            )
         else:
-            logger.warning("[BOOK_ROOM] user_phone not found in runtime.context or runtime.state")
+            logger.warning(
+                "[BOOK_ROOM] user_phone not found in runtime.context or runtime.state"
+            )
             # If no phone found, validation below will catch it if required by payment type
-    
+
     # Generate session_id if not provided
     if not session_id:
         session_id = str(uuid.uuid4())

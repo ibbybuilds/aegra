@@ -140,7 +140,9 @@ async def query_vfs(
     if not search_id and destination and destination.startswith("details:"):
         # Format: "details:39615853"
         search_id = destination.split("details:")[1].strip()
-        logger.info(f"[QUERY_VFS] Detected hotel details lookup, extracted search_id: {search_id}")
+        logger.info(
+            f"[QUERY_VFS] Detected hotel details lookup, extracted search_id: {search_id}"
+        )
 
     # Resolve search_id from regular destination (non-room search) if needed
     if not search_id and destination:
@@ -359,13 +361,17 @@ async def query_vfs(
                 # Rewrite $.results[...] → $.rooms[...]
                 jsonpath = jsonpath.replace("$.results", "$.rooms")
                 jsonpath_rewritten = True
-                logger.info(f"[QUERY_VFS] Auto-rewriting JSONPath: '{original_jsonpath}' → '{jsonpath}'")
+                logger.info(
+                    f"[QUERY_VFS] Auto-rewriting JSONPath: '{original_jsonpath}' → '{jsonpath}'"
+                )
             elif redis_key.startswith("search:"):
                 # search:* keys are direct arrays: [{hotel1}, {hotel2}, ...]
                 # Rewrite $.results[...] → $[...]
                 jsonpath = jsonpath.replace("$.results", "$")
                 jsonpath_rewritten = True
-                logger.info(f"[QUERY_VFS] Auto-rewriting JSONPath: '{original_jsonpath}' → '{jsonpath}'")
+                logger.info(
+                    f"[QUERY_VFS] Auto-rewriting JSONPath: '{original_jsonpath}' → '{jsonpath}'"
+                )
             # details:* keys are single objects, no rewrite needed
 
         # Get data using Redis JSON with JSONPath
@@ -468,7 +474,9 @@ async def query_vfs(
             if jsonpath_rewritten:
                 rewrite_msg = f"JSONPath was auto-corrected from '{original_jsonpath}' to '{jsonpath}'. "
                 if redis_key.startswith("rooms:"):
-                    rewrite_msg += "For room queries, use $.rooms[...] not $.results[...]."
+                    rewrite_msg += (
+                        "For room queries, use $.rooms[...] not $.results[...]."
+                    )
                 elif redis_key.startswith("search:"):
                     rewrite_msg += "For hotel queries, use $[...] not $.results[...] (direct array)."
 

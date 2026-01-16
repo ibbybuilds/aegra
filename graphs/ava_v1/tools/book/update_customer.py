@@ -43,14 +43,16 @@ def update_customer_details(
         # Simple regex for email validation
         email_pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
         if not re.match(email_pattern, value.strip()):
-            return json.dumps({
-                "status": "error",
-                "message": f"Invalid email format: {value}. Please verify spelling.",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Invalid email format: {value}. Please verify spelling.",
+                }
+            )
 
     # Prepare state update
     update = {field: value.strip()}
-    
+
     logger.info(f"[UPDATE_CUSTOMER] State update committed for {field}: {update}")
 
     if runtime is None:

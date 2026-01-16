@@ -123,63 +123,70 @@ async def get_geo_coordinates(destination: str) -> str:
     endpoint = f"{cache_worker_url}/v1/search/geo"
 
     logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
-    logger.info(f"[GEO_COORDINATES] Calling cache-worker for destination: {destination}")
+    logger.info(
+        f"[GEO_COORDINATES] Calling cache-worker for destination: {destination}"
+    )
 
     try:
         logger.info(f"[DEBUG] Creating httpx.AsyncClient for geocode request")
         async with httpx.AsyncClient() as client:
             logger.info(f"[DEBUG] Sending GET request to {endpoint}")
             response = await client.get(
-                endpoint,
-                params={"destination": destination},
-                timeout=10.0
+                endpoint, params={"destination": destination}, timeout=10.0
             )
-            logger.info(f"[DEBUG] Received response with status: {response.status_code}")
+            logger.info(
+                f"[DEBUG] Received response with status: {response.status_code}"
+            )
             response.raise_for_status()
             data = response.json()
             logger.info(f"[DEBUG] Parsed response JSON successfully")
 
-            logger.info(f"[GEO_COORDINATES] Cache {'HIT' if data.get('status') == 'cached' else 'MISS'}")
+            logger.info(
+                f"[GEO_COORDINATES] Cache {'HIT' if data.get('status') == 'cached' else 'MISS'}"
+            )
 
             # Extract coordinates (format unchanged for downstream code)
             geo_data = {
                 "latitude": data["latitude"],
                 "longitude": data["longitude"],
-                "formatted_address": data["formatted_address"]
+                "formatted_address": data["formatted_address"],
             }
 
             logger.info(f"[DEBUG] get_geo_coordinates() returning successfully")
             return json.dumps(geo_data, indent=2)
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"[DEBUG] HTTPStatusError in get_geo_coordinates: {type(e).__name__}: {str(e)}")
-        logger.error(f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}")
+        logger.error(
+            f"[DEBUG] HTTPStatusError in get_geo_coordinates: {type(e).__name__}: {str(e)}"
+        )
+        logger.error(
+            f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}"
+        )
         if e.response.status_code == 404:
             error_response = {
                 "error": "location_not_found",
-                "message": f"Could not find coordinates for '{destination}'"
+                "message": f"Could not find coordinates for '{destination}'",
             }
         else:
             error_response = {
                 "error": "geocode_error",
-                "message": f"Geocode API error: {str(e)}"
+                "message": f"Geocode API error: {str(e)}",
             }
         return json.dumps(error_response, indent=2)
 
     except httpx.TimeoutException as e:
         logger.error(f"[DEBUG] TimeoutException in get_geo_coordinates: {str(e)}")
-        error_response = {
-            "error": "timeout",
-            "message": "Geocode request timed out"
-        }
+        error_response = {"error": "timeout", "message": "Geocode request timed out"}
         return json.dumps(error_response, indent=2)
 
     except Exception as e:
-        logger.error(f"[DEBUG] Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[DEBUG] Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}"
+        )
         logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
         error_response = {
             "error": "unexpected_error",
-            "message": f"Unexpected geocode error: {str(e)}"
+            "message": f"Unexpected geocode error: {str(e)}",
         }
         return json.dumps(error_response, indent=2)
 
@@ -210,8 +217,7 @@ def _generate_jwt_token() -> str:
 
 
 async def _start_hotel_search(
-    search: dict[str, Any],
-    geo_data: dict[str, Any]
+    search: dict[str, Any], geo_data: dict[str, Any]
 ) -> dict[str, Any]:
     """Send hotel search request to cache-worker.
 
@@ -235,8 +241,8 @@ async def _start_hotel_search(
         "occupancy": search["occupancy"],
         "geoCoordinates": {
             "latitude": geo_data["latitude"],
-            "longitude": geo_data["longitude"]
-        }
+            "longitude": geo_data["longitude"],
+        },
     }
 
     logger.info(f"[DEBUG] _start_hotel_search() called")
@@ -248,7 +254,9 @@ async def _start_hotel_search(
         async with httpx.AsyncClient() as client:
             logger.info(f"[DEBUG] Sending POST request to cache-worker")
             response = await client.post(endpoint, json=request_body, timeout=30.0)
-            logger.info(f"[DEBUG] Received response with status: {response.status_code}")
+            logger.info(
+                f"[DEBUG] Received response with status: {response.status_code}"
+            )
             response.raise_for_status()
             data = response.json()
             logger.info(f"[DEBUG] Parsed response JSON successfully")
@@ -258,7 +266,9 @@ async def _start_hotel_search(
 
         return data
     except Exception as e:
-        logger.error(f"[DEBUG] Exception in _start_hotel_search: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[DEBUG] Exception in _start_hotel_search: {type(e).__name__}: {str(e)}"
+        )
         logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
         raise
 
@@ -410,9 +420,13 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
         # Generate hint based on status
         if search_result["status"] == "cached":
             count = result.get("hotelCount", 0)
-            result["hint"] = f'Found {count} hotels. Call query_vfs(destination="{destination}") to retrieve and present results to the user.'
+            result["hint"] = (
+                f'Found {count} hotels. Call query_vfs(destination="{destination}") to retrieve and present results to the user.'
+            )
         elif search_result["status"] == "polling":
-            result["hint"] = f'Hotel search initiated. Ask user about preferences (budget, star rating) while search runs. Call query_vfs(destination="{destination}") after {search_result.get("estimatedSeconds", 8)}s.'
+            result["hint"] = (
+                f'Hotel search initiated. Ask user about preferences (budget, star rating) while search runs. Call query_vfs(destination="{destination}") after {search_result.get("estimatedSeconds", 8)}s.'
+            )
 
         # Add resolved hotel_id if name lookup was performed
         if resolved_hotel_id:
@@ -475,12 +489,18 @@ async def start_hotel_search(
         logger.info(f"[DEBUG] Conversion successful")
 
         # Process all searches in parallel
-        logger.info(f"[DEBUG] Starting parallel processing of {len(search_dicts)} searches")
+        logger.info(
+            f"[DEBUG] Starting parallel processing of {len(search_dicts)} searches"
+        )
         search_tasks = [_process_single_search(search) for search in search_dicts]
         search_results = await asyncio.gather(*search_tasks)
-        logger.info(f"[DEBUG] Parallel processing completed, got {len(search_results)} results")
+        logger.info(
+            f"[DEBUG] Parallel processing completed, got {len(search_results)} results"
+        )
     except Exception as e:
-        logger.error(f"[DEBUG] Exception in start_hotel_search: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[DEBUG] Exception in start_hotel_search: {type(e).__name__}: {str(e)}"
+        )
         logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
         raise
 

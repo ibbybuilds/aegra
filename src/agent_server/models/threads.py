@@ -134,7 +134,7 @@ class ThreadStateUpdate(BaseModel):
     )
     context: dict[str, Any] | None = Field(
         None,
-        description="Optional context for dynamic prompt customization (e.g., call_context for ava_v1)"
+        description="Optional context for dynamic prompt customization (e.g., call_context for ava_v1)",
     )
     checkpoint: dict[str, Any] | None = Field(
         None, description="The checkpoint to update the state of"

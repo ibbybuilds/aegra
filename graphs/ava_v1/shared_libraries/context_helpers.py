@@ -46,7 +46,11 @@ def prepare_hotel_list_push(
 
     # Pop RoomList, HotelList, or HotelDetails from top
     new_stack = context_stack.copy()
-    while new_stack and new_stack[-1].get("type") in ["RoomList", "HotelList", "HotelDetails"]:
+    while new_stack and new_stack[-1].get("type") in [
+        "RoomList",
+        "HotelList",
+        "HotelDetails",
+    ]:
         new_stack.pop()
 
     return new_context, new_stack

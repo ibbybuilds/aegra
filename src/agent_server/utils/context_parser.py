@@ -26,7 +26,9 @@ def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) 
     logger.info("=" * 80)
     logger.info(f"[CONTEXT_MIGRATION] context_parser.parse_context_for_graph() called")
     logger.info(f"[CONTEXT_MIGRATION] graph_id: {graph_id}")
-    logger.info(f"[CONTEXT_MIGRATION] context_dict keys: {list(context_dict.keys()) if context_dict else None}")
+    logger.info(
+        f"[CONTEXT_MIGRATION] context_dict keys: {list(context_dict.keys()) if context_dict else None}"
+    )
     logger.info("=" * 80)
 
     if context_dict is None:
@@ -39,7 +41,9 @@ def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) 
     if graph_id in ("ava", "ava_v1"):
         # Check if it's already the direct format (has 'type' field at top level)
         if "type" in context_dict:
-            logger.info(f"[CONTEXT_MIGRATION] ✓ Using direct context format (NEW /state pattern)")
+            logger.info(
+                f"[CONTEXT_MIGRATION] ✓ Using direct context format (NEW /state pattern)"
+            )
             logger.info(f"[CONTEXT_MIGRATION] Context type: {context_dict.get('type')}")
             return context_dict
         # Otherwise, check for nested call_context (OLD /runs pattern)
@@ -47,8 +51,12 @@ def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) 
             call_context = context_dict["call_context"]
             # Ensure it's a dict (not already a dataclass instance)
             if isinstance(call_context, dict):
-                logger.info(f"[CONTEXT_MIGRATION] ✓ Extracted nested call_context (OLD /runs pattern)")
-                logger.info(f"[CONTEXT_MIGRATION] Extracted call_context type: {call_context.get('type')}")
+                logger.info(
+                    f"[CONTEXT_MIGRATION] ✓ Extracted nested call_context (OLD /runs pattern)"
+                )
+                logger.info(
+                    f"[CONTEXT_MIGRATION] Extracted call_context type: {call_context.get('type')}"
+                )
                 return call_context
             else:
                 # If it's already a dataclass, convert to dict
@@ -66,7 +74,9 @@ def parse_context_for_graph(graph_id: str, context_dict: dict[str, Any] | None) 
                     )
                     return call_context
         else:
-            logger.warning(f"[CONTEXT_MIGRATION] No 'type' or 'call_context' field found in context_dict for {graph_id}")
+            logger.warning(
+                f"[CONTEXT_MIGRATION] No 'type' or 'call_context' field found in context_dict for {graph_id}"
+            )
             logger.warning(f"[CONTEXT_MIGRATION] Passing through raw context as-is")
 
     # For other graphs, pass through the raw context dict

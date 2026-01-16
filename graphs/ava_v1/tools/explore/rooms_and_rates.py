@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _start_rooms_search(
-    hotel_id: str,
-    search_params: dict[str, Any]
+    hotel_id: str, search_params: dict[str, Any]
 ) -> dict[str, Any]:
     """Send room search request to cache-worker.
 
@@ -193,7 +192,9 @@ async def start_room_search(
 
         # Cache HIT - return metadata
         if search_result["status"] == "cached":
-            logger.info(f"[ROOMS_AND_RATES] Cache HIT! {search_result.get('roomCount', 0)} rooms available")
+            logger.info(
+                f"[ROOMS_AND_RATES] Cache HIT! {search_result.get('roomCount', 0)} rooms available"
+            )
 
             result = {
                 "hotelId": hotel_id,
@@ -212,12 +213,15 @@ async def start_room_search(
 
             # Add hint for next action
             result["hint"] = (
-                f'Room data cached. Ask user about room preferences (refundable/non-refundable, bed type), '
+                f"Room data cached. Ask user about room preferences (refundable/non-refundable, bed type), "
                 f'then call query_vfs(destination="{search_key}:rooms:{hotel_id}") to retrieve complete room list.'
             )
 
             # Update active_searches with roomSearchId
-            updated_search_meta = {**search_meta, "roomSearchId": search_result["roomSearchId"]}
+            updated_search_meta = {
+                **search_meta,
+                "roomSearchId": search_result["roomSearchId"],
+            }
 
         # Cache MISS - return polling status
         else:
@@ -233,13 +237,16 @@ async def start_room_search(
                 "occupancy": search_params["occupancy"],
                 "estimatedSeconds": search_result.get("estimatedSeconds", 5),
                 "hint": (
-                    f'Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type) '
+                    f"Room search initiated. Ask user about room preferences (refundable/non-refundable, bed type) "
                     f'while search runs. Call query_vfs(destination="{search_key}:rooms:{hotel_id}") after user responds.'
                 ),
             }
 
             # Update active_searches with roomSearchId
-            updated_search_meta = {**search_meta, "roomSearchId": search_result["roomSearchId"]}
+            updated_search_meta = {
+                **search_meta,
+                "roomSearchId": search_result["roomSearchId"],
+            }
 
         if runtime is None:
             return json.dumps(result, indent=2)
@@ -274,7 +281,9 @@ async def start_room_search(
         return Command(update=update_dict)
 
     except Exception as e:
-        logger.error(f"[ROOMS_AND_RATES] Cache-worker error: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[ROOMS_AND_RATES] Cache-worker error: {type(e).__name__}: {str(e)}"
+        )
         error_result = {
             "status": "error",
             "error": {

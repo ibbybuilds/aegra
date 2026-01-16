@@ -63,7 +63,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         and request.runtime.context is not None
     ):
         call_context = request.runtime.context
-        logger.info("[CONTEXT_AUTO_DERIVE] Found explicit call_context via runtime.context")
+        logger.info(
+            "[CONTEXT_AUTO_DERIVE] Found explicit call_context via runtime.context"
+        )
 
     # Check state.call_context as fallback
     if (
@@ -74,7 +76,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         raw_context = request.state.get("call_context")
         if raw_context is not None:
             call_context = raw_context
-            logger.info("[CONTEXT_AUTO_DERIVE] Found explicit call_context via state.call_context")
+            logger.info(
+                "[CONTEXT_AUTO_DERIVE] Found explicit call_context via state.call_context"
+            )
 
     # Convert dict to CallContext if needed
     if isinstance(call_context, dict):
@@ -94,8 +98,14 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         call_context = CallContext(**filtered_context)
 
     # If explicit context exists and is external type, use it as-is
-    if call_context and call_context.type in ["payment_return", "abandoned_payment", "session"]:
-        logger.info(f"[CONTEXT_AUTO_DERIVE] Using explicit external context type: {call_context.type}")
+    if call_context and call_context.type in [
+        "payment_return",
+        "abandoned_payment",
+        "session",
+    ]:
+        logger.info(
+            f"[CONTEXT_AUTO_DERIVE] Using explicit external context type: {call_context.type}"
+        )
         return call_context
 
     # Step 2: Auto-derive from state
@@ -106,10 +116,14 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         messages = state.get("messages", [])
 
         # Extract metadata from state or existing call_context
-        user_phone = state.get("user_phone") or (call_context.user_phone if call_context else None)
-        call_reference = state.get("call_reference") or (call_context.call_reference if call_context else None)
-        thread_id = (call_context.thread_id if call_context else None)
-        dial_map_session_id = (call_context.dial_map_session_id if call_context else None)
+        user_phone = state.get("user_phone") or (
+            call_context.user_phone if call_context else None
+        )
+        call_reference = state.get("call_reference") or (
+            call_context.call_reference if call_context else None
+        )
+        thread_id = call_context.thread_id if call_context else None
+        dial_map_session_id = call_context.dial_map_session_id if call_context else None
 
         # Check active_searches for property/booking info
         hotel_id = None
@@ -121,32 +135,44 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
                 # Check for hotel_id (property-specific search)
                 if "hotelId" in search_data or "hotel_id" in search_data:
                     hotel_id = search_data.get("hotelId") or search_data.get("hotel_id")
-                    hotel_name = search_data.get("hotelName") or search_data.get("hotel_name") or search_key
+                    hotel_name = (
+                        search_data.get("hotelName")
+                        or search_data.get("hotel_name")
+                        or search_key
+                    )
 
                 # Check for booking parameters (dates, occupancy)
                 # Support both camelCase (from API) and snake_case (from tools)
-                if "dates" in search_data or "occupancy" in search_data or "checkIn" in search_data:
+                if (
+                    "dates" in search_data
+                    or "occupancy" in search_data
+                    or "checkIn" in search_data
+                ):
                     dates = search_data.get("dates", {})
                     occupancy = search_data.get("occupancy", {})
 
                     # Extract dates - check both camelCase and snake_case
                     check_in = (
-                        search_data.get("checkIn") or
-                        dates.get("check_in") or
-                        dates.get("checkIn") or
-                        ""
+                        search_data.get("checkIn")
+                        or dates.get("check_in")
+                        or dates.get("checkIn")
+                        or ""
                     )
                     check_out = (
-                        search_data.get("checkOut") or
-                        dates.get("check_out") or
-                        dates.get("checkOut") or
-                        ""
+                        search_data.get("checkOut")
+                        or dates.get("check_out")
+                        or dates.get("checkOut")
+                        or ""
                     )
 
                     # Extract occupancy - check both camelCase and snake_case
                     rooms = occupancy.get("rooms") or occupancy.get("numOfRooms") or 1
-                    adults = occupancy.get("adults") or occupancy.get("numOfAdults") or 2
-                    children = occupancy.get("children") or occupancy.get("numOfChildren") or 0
+                    adults = (
+                        occupancy.get("adults") or occupancy.get("numOfAdults") or 2
+                    )
+                    children = (
+                        occupancy.get("children") or occupancy.get("numOfChildren") or 0
+                    )
 
                     booking_info = DialMapBookingContext(
                         destination=search_data.get("destination", search_key),
@@ -155,9 +181,11 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
                         rooms=rooms,
                         adults=adults,
                         children=children,
-                        hotel_id=hotel_id
+                        hotel_id=hotel_id,
                     )
-                    logger.info(f"[CONTEXT_AUTO_DERIVE] Extracted booking info: check_in={check_in}, check_out={check_out}, rooms={rooms}, adults={adults}")
+                    logger.info(
+                        f"[CONTEXT_AUTO_DERIVE] Extracted booking info: check_in={check_in}, check_out={check_out}, rooms={rooms}, adults={adults}"
+                    )
 
         # Fallback: Check context_stack for property info
         if not hotel_id and context_stack:
@@ -173,18 +201,30 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
         if hotel_id and booking_info:
             derived_type = "property_booking_hybrid"
-            property_info = PropertyInfo(property_name=hotel_name or "", hotel_id=hotel_id)
-            logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_booking_hybrid (hotel_id={hotel_id}, dates present)")
+            property_info = PropertyInfo(
+                property_name=hotel_name or "", hotel_id=hotel_id
+            )
+            logger.info(
+                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_booking_hybrid (hotel_id={hotel_id}, dates present)"
+            )
         elif hotel_id:
             derived_type = "property_specific"
-            property_info = PropertyInfo(property_name=hotel_name or "", hotel_id=hotel_id)
-            logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_specific (hotel_id={hotel_id})")
+            property_info = PropertyInfo(
+                property_name=hotel_name or "", hotel_id=hotel_id
+            )
+            logger.info(
+                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_specific (hotel_id={hotel_id})"
+            )
         elif booking_info:
             derived_type = "booking"
-            logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)")
+            logger.info(
+                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)"
+            )
         elif len(messages) > 2:  # Has conversation history
             derived_type = "thread_continuation"
-            logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: thread_continuation (message history exists)")
+            logger.info(
+                "[CONTEXT_AUTO_DERIVE] Auto-derived type: thread_continuation (message history exists)"
+            )
         else:
             logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: general (default)")
 
@@ -201,10 +241,14 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     # Step 3: No state available, return general or existing context
     if call_context:
-        logger.info(f"[CONTEXT_AUTO_DERIVE] Using existing context type: {call_context.type}")
+        logger.info(
+            f"[CONTEXT_AUTO_DERIVE] Using existing context type: {call_context.type}"
+        )
         return call_context
 
-    logger.info("[CONTEXT_AUTO_DERIVE] No context or state available, defaulting to general")
+    logger.info(
+        "[CONTEXT_AUTO_DERIVE] No context or state available, defaulting to general"
+    )
     return CallContext(type="general")
 
 
@@ -262,16 +306,20 @@ class ForcedRetryMiddleware(AgentMiddleware):
                 # Handle potential non-JSON content gracefully
                 if content_str.strip().startswith("{"):
                     data = json.loads(content_str)
-                    
+
                     # Check for error status
                     if isinstance(data, dict) and data.get("status") == "error":
                         error_info = data.get("error", {})
-                        error_type = error_info.get("type") if isinstance(error_info, dict) else None
-                        
+                        error_type = (
+                            error_info.get("type")
+                            if isinstance(error_info, dict)
+                            else None
+                        )
+
                         # Check if this is a "fixable" error
                         if error_type in FIXABLE_ERRORS:
                             error_msg = error_info.get("message", "Unknown error")
-                            
+
                             # Construct the strict silent-retry instruction
                             retry_instruction = (
                                 f"\n\nSYSTEM INSTRUCTION: The previous tool call failed with error type '{error_type}': {error_msg}. "
@@ -279,7 +327,7 @@ class ForcedRetryMiddleware(AgentMiddleware):
                                 "DO NOT output any text, apology, or explanation. "
                                 "Output ONLY the corrected Tool Call."
                             )
-                            
+
                             # Append to system message (ephemeral override)
                             current_system = request.system_message
                             if current_system:
@@ -287,7 +335,7 @@ class ForcedRetryMiddleware(AgentMiddleware):
                                 request = request.override(
                                     system_message=SystemMessage(content=new_content),
                                     # Force tool use to discourage chatter
-                                    tool_choice="any" 
+                                    tool_choice="any",
                                 )
             except Exception:
                 # If parsing fails or any other error, pass through normally

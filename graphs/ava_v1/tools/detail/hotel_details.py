@@ -155,7 +155,9 @@ async def hotel_details(
                 "status": "error",
                 "error": {
                     "type": "name_lookup_failed",
-                    "message": lookup_result.get("message", "Failed to lookup hotel by name"),
+                    "message": lookup_result.get(
+                        "message", "Failed to lookup hotel by name"
+                    ),
                 },
             }
             return _wrap_response(result, "", runtime)
@@ -169,7 +171,9 @@ async def hotel_details(
             if hotels and len(hotels) > 0:
                 resolved_hotel_id = hotels[0].get("id")
                 resolved_hotel_name = hotels[0].get("name")
-                logger.info(f"[HOTEL_DETAILS] Resolved '{hotel_name}' to hotel_id={resolved_hotel_id} ({resolved_hotel_name})")
+                logger.info(
+                    f"[HOTEL_DETAILS] Resolved '{hotel_name}' to hotel_id={resolved_hotel_id} ({resolved_hotel_name})"
+                )
             else:
                 result = {
                     "status": "error",
@@ -201,7 +205,11 @@ async def hotel_details(
             return _wrap_response(result, "", runtime)
 
     # Validate resolved hotel_id
-    if not resolved_hotel_id or not isinstance(resolved_hotel_id, str) or not resolved_hotel_id.strip():
+    if (
+        not resolved_hotel_id
+        or not isinstance(resolved_hotel_id, str)
+        or not resolved_hotel_id.strip()
+    ):
         result = {
             "status": "error",
             "error": {
@@ -215,14 +223,18 @@ async def hotel_details(
     endpoint = f"{cache_worker_url}/v1/search/details/{resolved_hotel_id}"
 
     logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
-    logger.info(f"[HOTEL_DETAILS] Calling cache-worker for hotel_id: {resolved_hotel_id}")
+    logger.info(
+        f"[HOTEL_DETAILS] Calling cache-worker for hotel_id: {resolved_hotel_id}"
+    )
 
     try:
         logger.info(f"[DEBUG] Creating httpx.AsyncClient for hotel details")
         async with httpx.AsyncClient() as client:
             logger.info(f"[DEBUG] Sending GET request to {endpoint}")
             response = await client.get(endpoint, timeout=10.0)
-            logger.info(f"[DEBUG] Received response with status: {response.status_code}")
+            logger.info(
+                f"[DEBUG] Received response with status: {response.status_code}"
+            )
             response.raise_for_status()
             data = response.json()
             logger.info(f"[DEBUG] Parsed response JSON successfully")
@@ -232,8 +244,8 @@ async def hotel_details(
             result = {
                 "status": "success",
                 "hotelId": resolved_hotel_id,
-                "message": f"Hotel details cached. Call query_vfs(destination=\"details:{resolved_hotel_id}\") to retrieve full details.",
-                "cached": True
+                "message": f'Hotel details cached. Call query_vfs(destination="details:{resolved_hotel_id}") to retrieve full details.',
+                "cached": True,
             }
 
             # Include hotel name if it was resolved
@@ -244,16 +256,20 @@ async def hotel_details(
             return _wrap_response(result, resolved_hotel_id, runtime)
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"[DEBUG] HTTPStatusError in hotel_details: {type(e).__name__}: {str(e)}")
-        logger.error(f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}")
+        logger.error(
+            f"[DEBUG] HTTPStatusError in hotel_details: {type(e).__name__}: {str(e)}"
+        )
+        logger.error(
+            f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}"
+        )
         if e.response.status_code == 404:
             result = {
                 "status": "error",
                 "hotelId": resolved_hotel_id,
                 "error": {
                     "type": "hotel_not_found",
-                    "message": f"Hotel with ID '{resolved_hotel_id}' not found"
-                }
+                    "message": f"Hotel with ID '{resolved_hotel_id}' not found",
+                },
             }
         else:
             result = {
@@ -261,20 +277,22 @@ async def hotel_details(
                 "hotelId": resolved_hotel_id,
                 "error": {
                     "type": "api_error",
-                    "message": f"Hotel details API error: {str(e)}"
-                }
+                    "message": f"Hotel details API error: {str(e)}",
+                },
             }
         return _wrap_response(result, resolved_hotel_id, runtime)
 
     except Exception as e:
-        logger.error(f"[DEBUG] Unexpected exception in hotel_details: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[DEBUG] Unexpected exception in hotel_details: {type(e).__name__}: {str(e)}"
+        )
         logger.error(f"[DEBUG] Exception traceback:", exc_info=True)
         result = {
             "status": "error",
             "hotelId": resolved_hotel_id,
             "error": {
                 "type": "unexpected_error",
-                "message": f"Unexpected error: {str(e)}"
-            }
+                "message": f"Unexpected error: {str(e)}",
+            },
         }
         return _wrap_response(result, resolved_hotel_id, runtime)

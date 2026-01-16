@@ -140,7 +140,9 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
     return " ".join(parts)
 
 
-@tool(description="Signal to end the call, transfer to payment line, or transfer to live agent")
+@tool(
+    description="Signal to end the call, transfer to payment line, or transfer to live agent"
+)
 async def modify_call(
     action_type: str,
     summary: str | None = None,

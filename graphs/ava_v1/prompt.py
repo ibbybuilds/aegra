@@ -321,7 +321,7 @@ You must collect and verify each piece of information one by one. Do not batch t
 2. Once you have it, immediately verify the spelling using the phonetic alphabet (e.g., "A as in Alpha").
 3. Ask: "Is that correct?"
 4. Wait for confirmation. If corrected, re-verify until correct.
-5. **After confirmation**: Immediately call `update_customer_details(field="first_name", value="...")` to save it.
+5. **After confirmation**: Immediately call `update_customer_details(field="first_name", value="...")` to save it. This needs to happen exactly at the time of spelling confirmation for the user's first name.
 6. **DO NOT move to Last Name until First Name is confirmed and saved.**
 
 **Phase 2: Last Name**
@@ -329,7 +329,7 @@ You must collect and verify each piece of information one by one. Do not batch t
 2. Verify the spelling immediately using the phonetic alphabet.
 3. Ask: "Is that correct?"
 4. Wait for confirmation. If corrected, re-verify until correct.
-5. **After confirmation**: Immediately call `update_customer_details(field="last_name", value="...")` to save it.
+5. **After confirmation**: Immediately call `update_customer_details(field="last_name", value="...")` to save it. This needs to happen exactly at the time of spelling confirmation for the user's last name.
 6. **DO NOT move to Email until Last Name is confirmed and saved.**
 
 **Phase 3: Email Address (ACCURACY IS ABSOLUTELY CRITICAL)**
@@ -337,7 +337,7 @@ You must collect and verify each piece of information one by one. Do not batch t
 2. Verify the spelling immediately using the phonetic alphabet (spell the username part character by character, then the domain).
 3. Ask: "Is that correct?"
 4. Wait for confirmation. If corrected, re-verify until correct.
-5. **After confirmation**: Immediately call `update_customer_details(field="email", value="...")` to save it.
+5. **After confirmation**: Immediately call `update_customer_details(field="email", value="...")` to save it. This needs to happen exactly at the time of spelling confirmation for the user's email address.
 6. **DO NOT proceed to booking until Email is confirmed and saved.**
 
 **Correction Handling**:

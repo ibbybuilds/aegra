@@ -106,7 +106,9 @@ async def stream_graph_events(
     Yields:
         Tuples of (mode, payload) where mode is the stream mode and payload is the event data
     """
-    run_id = str(config.get("run_id", uuid.uuid4()))
+    # Get run_id from configurable (where create_run_config places it)
+    configurable = config.get("configurable", {})
+    run_id = str(configurable.get("run_id") or config.get("run_id") or uuid.uuid4())
 
     # Prepare stream modes
     stream_modes_set: set[str] = set(stream_mode) - {"events"}

@@ -65,6 +65,8 @@ dependencies = [
     "markdownify>=1.2.0",
     "email-validator>=2.3.0",
     "langchain-huggingface>=1.2.0",
+    "aiofiles>=23.0.0",
+    "aiohttp>=3.9.0",
 ]
 
 [project.urls]

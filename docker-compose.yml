@@ -28,7 +28,7 @@ services:
       - "host.docker.internal:host-gateway"  # 允许容器访问主机服务
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra  # 容器内仍是 5432
-      - AUTH_TYPE=noop
+      - AUTH_TYPE=custom
       - DEBUG=true
       - PORT=${PORT:-2024}  # 服务监听 2024
       # Data directories - 容器内路径
@@ -38,10 +38,19 @@ services:
       # DinD (Docker-in-Docker) 宿主机路径 - 用于 Docker 卷挂载
       # 当 aegra 容器调用 Docker API 创建 backtestlite 容器时，需要使用宿主机路径
       # 通过环境变量配置，方便分发。运行 setup_environment.sh 自动配置
-      - HOST_BASE_DATA_DIR=${HOST_BASE_DATA_DIR:-../data}
-      - HOST_WORKSPACE_DIR=${HOST_WORKSPACE_DIR:-../data/workspace}
+      # 如果未设置，使用容器内路径（/app/data），假设主机与容器共享相同路径
+      - HOST_BASE_DATA_DIR=/home/whlu/ALAGENT/deepagents-quickstarts/data
+      - HOST_WORKSPACE_DIR=/home/whlu/ALAGENT/deepagents-quickstarts/data/workspace
+      # Docker 执行配置 - 用于 execute_backtest 工具
+      - DOCKER_IMAGE=${DOCKER_IMAGE:-backtestlite-slave:latest}
+      - DOCKER_TIMEOUT=${DOCKER_TIMEOUT:-300}
+      - DOCKER_MEMORY_LIMIT=${DOCKER_MEMORY_LIMIT:-4g}
       # User Database - 连接到内网 IP 的 PostgreSQL (端口 5435)
       - USER_DATABASE_URL=postgresql+asyncpg://alagent:alagent@202.45.128.237:5435/alagent
+      # LangGraph isolated event loops - DISABLED after full async refactor
+      # All code is now async, no sync blocking operations remain
+      # Keeping this true would serialize runs and prevent true concurrency
+      - BG_JOB_ISOLATED_LOOPS=false
       # Langfuse - 连接到内网 IP 的 Langfuse 服务
       - LANGFUSE_HOST=http://202.45.128.237:7312
     depends_on:
@@ -58,12 +67,14 @@ services:
       - ../quantitative_strategy_agent:/app/quantitative_strategy_agent:ro
       # Mount data directories for persistence
       - ../data:/app/data  # 持久化 workspace 和 memories
+      # DinD: 挂载 Docker socket，允许容器内调用 Docker API
+      - /var/run/docker.sock:/var/run/docker.sock
     command: >
       sh -c "
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-2024} --reload
+        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-2024} --reload --reload-dir /app/src --reload-dir /app/graphs --reload-dir /app/quantitative_strategy_agent
       "
 
   # Redis (optional - for advanced queuing in future phases)

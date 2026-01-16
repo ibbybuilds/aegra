@@ -310,6 +310,7 @@ async def create_and_stream_run(
     await _validate_resume_command(session, thread_id, request.command)
 
     run_id = str(uuid4())
+    logger.info(f"[create_and_stream_run] GENERATED run_id={run_id}")
 
     # Get LangGraph service
     langgraph_service = get_langgraph_service()
@@ -382,6 +383,7 @@ async def create_and_stream_run(
     )
     session.add(run_orm)
     await session.commit()
+    logger.info(f"[create_and_stream_run] COMMITTED run_id={run_id} to DB")
 
     # Build response model for stream context
     run = Run(
@@ -863,14 +865,30 @@ async def cancel_run_endpoint(
     logger.info(
         f"[cancel_run] fetch run run_id={run_id} thread_id={thread_id} user={user.identity}"
     )
+    
+    # Debug: Check if run exists without user filter
+    debug_run = await session.scalar(
+        select(RunORM).where(
+            RunORM.run_id == str(run_id),
+            RunORM.thread_id == thread_id,
+        )
+    )
+    if debug_run:
+        logger.info(f"[cancel_run] DEBUG: Run exists with user_id={debug_run.user_id}")
+    else:
+        logger.warning(f"[cancel_run] DEBUG: Run not found in DB at all")
+    
     run_orm = await session.scalar(
         select(RunORM).where(
-            RunORM.run_id == run_id,
+            RunORM.run_id == str(run_id),
             RunORM.thread_id == thread_id,
             RunORM.user_id == user.identity,
         )
     )
     if not run_orm:
+        logger.error(
+            f"[cancel_run] Run not found: run_id={run_id} thread_id={thread_id} user={user.identity}"
+        )
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     # CRITICAL: Cancel the asyncio task FIRST to stop the agent execution

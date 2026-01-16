@@ -62,7 +62,6 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
         # Build context based on focus type
         if ctx_type == "BookingPending":
             # Customer has a pending booking
-            booking_hash = current_context.get("booking_hash", "")
             amount = current_context.get("amount", 0)
             parts.append("Customer booking")
             if property_name:

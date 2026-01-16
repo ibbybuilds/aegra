@@ -217,7 +217,7 @@ async def book_room(
         return json.dumps(room_error, indent=2)
 
     # Validate customer info
-    customer_error = _validate_customer_info(customer_info, payment_type)
+    customer_error = _validate_customer_info(customer_info)
     if customer_error:
         return json.dumps(customer_error, indent=2)
 

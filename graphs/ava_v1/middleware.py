@@ -191,7 +191,10 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         # Fallback: Check context_stack for property info
         if not hotel_id and context_stack:
             top_context = context_stack[-1]
-            if isinstance(top_context, dict) and top_context.get("type") == "HotelDetails":
+            if (
+                isinstance(top_context, dict)
+                and top_context.get("type") == "HotelDetails"
+            ):
                 hotel_id = top_context.get("hotel_id")
                 hotel_name = top_context.get("hotel_name")
 

@@ -138,7 +138,7 @@ async def query_vfs(
 
     # Check if destination is a hotel details lookup - handle "details:" prefix
     if not search_id and destination and destination.startswith("details:"):
-        # Format: "details:39615853"
+        # Format: "details:39615853"  # noqa: ERA001
         search_id = destination.split("details:")[1].strip()
         logger.info(
             f"[QUERY_VFS] Detected hotel details lookup, extracted search_id: {search_id}"

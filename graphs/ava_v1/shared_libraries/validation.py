@@ -92,13 +92,12 @@ def _validate_room_object(room: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _validate_customer_info(
-    customer_info: dict[str, Any], payment_type: str
+    customer_info: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Validate customer info has all required fields.
 
     Args:
         customer_info: Customer information dict (must include phone)
-        payment_type: Payment type (phone or sms)
 
     Returns:
         Error dict if invalid, None if valid

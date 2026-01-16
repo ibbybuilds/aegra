@@ -13,17 +13,26 @@ logger = logging.getLogger(__name__)
 
 
 @tool(
-    description="Update verified customer details (first name, last name, email) in the system state"
+    description="CRITICAL: Save verified customer details (first_name, last_name, or email) IMMEDIATELY after spelling confirmation. Call this tool RIGHT AFTER the user confirms each field - do NOT wait to collect all three fields. Save first_name, THEN last_name, THEN email in separate sequential calls."
 )
 def update_customer_details(
     field: Literal["first_name", "last_name", "email"],
     value: str,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Update a specific field in the customer's verified details.
+    """Save a verified customer detail to persistent state.
 
-    Use this tool immediately after the user confirms the spelling of their
-    first name, last name, or email address during the verification phase.
+    CRITICAL TIMING: Call this tool IMMEDIATELY after the user confirms the spelling
+    of their first name, last name, or email address. Do NOT batch - save each field
+    individually as soon as it's confirmed.
+
+    WORKFLOW:
+    1. Ask for first name → spell verify → user confirms → CALL THIS TOOL with field="first_name"
+    2. Ask for last name → spell verify → user confirms → CALL THIS TOOL with field="last_name"
+    3. Ask for email → spell verify → user confirms → CALL THIS TOOL with field="email"
+
+    PURPOSE: Saves data to state immediately to avoid relying on conversation context/memory.
+    This prevents data loss during long conversations or message summarization.
 
     Args:
         field: The field to update ("first_name", "last_name", or "email")

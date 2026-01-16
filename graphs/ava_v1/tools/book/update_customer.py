@@ -48,6 +48,20 @@ def update_customer_details(
     if not value or not value.strip():
         return json.dumps({"status": "error", "message": "Value cannot be empty"})
 
+    # Validate first_name and last_name: only letters, spaces, hyphens, apostrophes
+    if field in ["first_name", "last_name"]:
+        # Allow: letters (a-z, A-Z), spaces, hyphens (-), apostrophes (')
+        # Reject: numbers (0-9), special characters (!@#$%^&*, etc.)
+        name_pattern = r"^[a-zA-Z\s\-']+$"
+        if not re.match(name_pattern, value.strip()):
+            field_display = field.replace("_", " ")
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Invalid {field_display}: contains numbers or special characters. Only letters, spaces, hyphens, and apostrophes are allowed. Please ask the customer to spell their name again.",
+                }
+            )
+
     if field == "email":
         # Simple regex for email validation
         email_pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"

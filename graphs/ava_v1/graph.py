@@ -41,8 +41,8 @@ agent: CompiledStateGraph = create_agent(
     middleware=[
         SummarizationMiddleware(
             model=summarization_model,
-            max_tokens_before_summary=4000,
-            messages_to_keep=10,
+            max_tokens_before_summary=20000,
+            messages_to_keep=15,
         ),
         ModelFallbackMiddleware(
             "anthropic:claude-haiku-3-5",

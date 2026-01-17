@@ -34,7 +34,7 @@ Welcome to Aegra! This guide will help you get started with development, whether
 # 1. Clone and setup
 git clone https://github.com/ibbybuilds/aegra.git
 cd aegra
-uv install
+uv sync
 
 # 2. Activate environment (IMPORTANT!)
 source .venv/bin/activate  # Mac/Linux
@@ -53,11 +53,13 @@ Aegra uses automated code quality enforcement to maintain high standards and con
 ### Setup
 
 **Option 1: Using Make (Recommended - installs hooks automatically)**
+
 ```bash
 make dev-install     # Installs dependencies + git hooks
 ```
 
 **Option 2: Using uv directly**
+
 ```bash
 uv sync
 uv run pre-commit install
@@ -69,6 +71,7 @@ The hooks will check your code before every commit.
 ### What Gets Checked Automatically
 
 When you commit, these checks run automatically:
+
 - ✅ **Code formatting** (Ruff) - Auto-formats your code
 - ✅ **Linting** (Ruff) - Checks code quality
 - ✅ **Type checking** (mypy) - Validates type hints
@@ -115,6 +118,7 @@ make ci-check
 ```
 
 📖 **For detailed information**, see:
+
 - [Code Quality Quick Reference](code-quality.md) - Commands and troubleshooting
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Complete contribution guide
 
@@ -317,6 +321,16 @@ def downgrade() -> None:
 - **downgrade()**: What to do when rolling back the migration
 
 ## 🚨 Common Issues & Solutions
+
+### Database Version Upgrade (Postgres 15 -> 18)
+
+**Problem**: Container fails with `FATAL: database files are incompatible with server`
+
+This happens because we upgraded to PostgreSQL 18, but your Docker volume still contains data formatted for PostgreSQL 15.
+
+**Solution**:
+You need to remove the old volume and (optionally) restore your data.
+Please follow the **[Migration Guide in README](../README.md#%EF%B8%8F-important-upgrade-to-postgresql-18)**.
 
 ### Migration Issues in Docker
 
@@ -618,8 +632,9 @@ python3 scripts/migrate.py upgrade
 
 ### Troubleshooting Quick Reference
 
-| Problem                   | Solution                              |
-| ------------------------- | ------------------------------------- |
+| Problem                   | Solution                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| **Incompatible DB version** | **See [Migration Guide](../README.md#%EF%B8%8F-important-upgrade-to-postgresql-18)** |
 | Can't connect to database | `docker compose up postgres -d`       |
 | Migration fails           | `python3 scripts/migrate.py current`  |
 | Permission denied         | `chmod +x scripts/migrate.py`         |
@@ -635,7 +650,7 @@ source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 
 # Install dependencies
-uv install
+uv sync
 
 # Start everything
 docker compose up aegra
@@ -649,7 +664,7 @@ source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 
 # Install dependencies
-uv install
+uv sync
 
 # Start database
 docker compose up postgres -d

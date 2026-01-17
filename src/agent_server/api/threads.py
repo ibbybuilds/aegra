@@ -28,6 +28,7 @@ from ..models import (
     ThreadState,
     ThreadStateUpdate,
     ThreadStateUpdateResponse,
+    ThreadUpdate,
     User,
 )
 from ..services.streaming_service import streaming_service
@@ -55,9 +56,38 @@ async def create_thread(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Create a new conversation thread"""
+    """Create a new conversation thread
 
-    thread_id = str(uuid4())
+    Supports idempotent creation via optional threadId and ifExists parameters:
+    - threadId: Client-provided thread ID (auto-generated if not provided)
+    - ifExists: Behavior when thread exists - 'raise' (default, returns 409) or 'do_nothing' (returns existing)
+    """
+
+    # Use client-provided ID or generate new one
+    thread_id = request.thread_id or str(uuid4())
+
+    # Check for existing thread if client provided an ID
+    if request.thread_id:
+        existing_stmt = select(ThreadORM).where(
+            ThreadORM.thread_id == thread_id,
+            ThreadORM.user_id == user.identity,
+        )
+        existing = await session.scalar(existing_stmt)
+
+        if existing:
+            if request.if_exists == "do_nothing":
+                # Return existing thread without modification
+                return Thread.model_validate(
+                    {
+                        **{
+                            c.name: getattr(existing, c.name)
+                            for c in existing.__table__.columns
+                        },
+                        "metadata": existing.metadata_json,
+                    }
+                )
+            else:  # "raise" (default)
+                raise HTTPException(409, f"Thread '{thread_id}' already exists")
 
     # Build metadata with required fields
     metadata = request.metadata or {}
@@ -117,12 +147,17 @@ async def create_thread(
     if not isinstance(coerced_created_at, datetime):
         coerced_created_at = datetime.now(UTC)
 
+    coerced_updated_at = getattr(thread_orm, "updated_at", None)
+    if not isinstance(coerced_updated_at, datetime):
+        coerced_updated_at = datetime.now(UTC)
+
     thread_dict: dict[str, Any] = {
         "thread_id": coerced_thread_id,
         "status": coerced_status,
         "metadata": coerced_metadata,
         "user_id": coerced_user_id,
         "created_at": coerced_created_at,
+        "updated_at": coerced_updated_at,
     }
 
     return Thread.model_validate(thread_dict)
@@ -161,6 +196,53 @@ async def get_thread(
     thread = await session.scalar(stmt)
     if not thread:
         raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+    return Thread.model_validate(
+        {
+            **{c.name: getattr(thread, c.name) for c in thread.__table__.columns},
+            "metadata": thread.metadata_json,
+        }
+    )
+
+
+@router.patch("/threads/{thread_id}", response_model=Thread)
+async def update_thread(
+    thread_id: str,
+    request: ThreadUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Update a thread's metadata and timestamp.
+
+    This performs a deep merge of the provided metadata into the existing metadata
+    and updates the 'updated_at' timestamp.
+    """
+    # 1. Fetch thread
+    stmt = select(ThreadORM).where(
+        ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
+    )
+    thread = await session.scalar(stmt)
+
+    if not thread:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+    # 2. Update timestamp
+    thread.updated_at = datetime.now(UTC)
+
+    # 3. Merge metadata
+    if request.metadata:
+        # Ensure we work with a dict
+        current_metadata = dict(thread.metadata_json or {})
+
+        # Merge new values (updates existing keys, adds new ones)
+        current_metadata.update(request.metadata)
+
+        thread.metadata_json = current_metadata
+
+    # 4. Save and return
+    await session.commit()
+    await session.refresh(thread)
 
     return Thread.model_validate(
         {

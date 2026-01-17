@@ -1,5 +1,7 @@
 import pytest
 
+from src.agent_server.settings import settings
+
 # Match import style used by other e2e tests when run as top-level modules
 from tests.e2e._utils import elog, get_e2e_client
 
@@ -158,8 +160,6 @@ async def test_runs_wait_stateful_e2e():
       3) Verify output is returned directly (not a Run object)
       4) Verify run was created and completed
     """
-    import os
-
     from httpx import AsyncClient
 
     client = get_e2e_client()
@@ -178,8 +178,9 @@ async def test_runs_wait_stateful_e2e():
     thread_id = thread["thread_id"]
 
     # 2) Call wait endpoint directly via HTTP client
-    base_url = os.getenv("AEGRA_BASE_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=120.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=120.0
+    ) as http_client:
         response = await http_client.post(
             f"/threads/{thread_id}/runs/wait",
             json={
@@ -232,8 +233,6 @@ async def test_runs_wait_with_interrupts_e2e():
 
     This test uses interrupt_before to force an interrupt.
     """
-    import os
-
     from httpx import AsyncClient
 
     client = get_e2e_client()
@@ -251,8 +250,9 @@ async def test_runs_wait_with_interrupts_e2e():
 
     # Call wait endpoint with interrupt_before to force interruption
     # Note: This will interrupt before a specific node executes
-    base_url = os.getenv("AEGRA_BASE_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=120.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=120.0
+    ) as http_client:
         response = await http_client.post(
             f"/threads/{thread_id}/runs/wait",
             json={

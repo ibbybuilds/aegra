@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, mock_open, patch
+from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
@@ -13,21 +13,27 @@ from agent_server.services.langgraph_service import (
     inject_user_context,
 )
 
+# Import the settings singleton directly to patch it
+from src.agent_server.settings import settings
+
 
 class TestLangGraphServiceInit:
     """Test LangGraphService initialization"""
 
     def test_init_default_config_path(self):
         """Test initialization with default config path"""
-        service = LangGraphService()
-        assert service.config_path == Path("aegra.json")
-        assert service.config is None
-        assert service._graph_registry == {}
-        assert service._graph_cache == {}
+        # Ensure AEGRA_CONFIG is None so it defaults to aegra.json
+        with patch.object(settings.app, "AEGRA_CONFIG", None):
+            service = LangGraphService()
+            assert service.config_path == Path("aegra.json")
+            assert service.config is None
+            assert service._graph_registry == {}
+            assert service._graph_cache == {}
 
     def test_init_custom_config_path(self):
         """Test initialization with custom config path"""
         custom_path = "custom.json"
+        # Explicit path passed to constructor overrides everything
         service = LangGraphService(custom_path)
         assert service.config_path == Path(custom_path)
         assert service.config is None
@@ -45,15 +51,15 @@ class TestLangGraphServiceConfig:
     """Test configuration loading and management"""
 
     @pytest.mark.asyncio
-    async def test_initialize_env_var_override(self, monkeypatch):
+    async def test_initialize_env_var_override(self):
         """Test config loading with AEGRA_CONFIG env var"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
+        env_path = "/env/path/config.json"
 
-        # Mock environment variable
-        monkeypatch.setenv("AEGRA_CONFIG", "/env/path/config.json")
-
-        # Mock file operations and database dependencies
+        # Patch the settings object directly. This ensures the service sees the change
+        # without needing to reload modules.
         with (
+            patch.object(settings.app, "AEGRA_CONFIG", env_path),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
@@ -64,13 +70,14 @@ class TestLangGraphServiceConfig:
             await service.initialize()
 
             assert service.config == config_data
-            assert service.config_path == Path("/env/path/config.json")
+            assert service.config_path == Path(env_path)
 
     @pytest.mark.asyncio
     async def test_initialize_explicit_path_exists(self):
         """Test config loading with existing explicit path"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
 
+        # Even if config is set, explicit path (arg) should win
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
@@ -85,14 +92,13 @@ class TestLangGraphServiceConfig:
             assert service.config_path == Path("explicit.json")
 
     @pytest.mark.asyncio
-    async def test_initialize_aegra_json_fallback(self, monkeypatch):
+    async def test_initialize_aegra_json_fallback(self):
         """Test config loading with aegra.json fallback"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
 
-        # Clear AEGRA_CONFIG
-        monkeypatch.delenv("AEGRA_CONFIG", raising=False)
-
+        # Ensure AEGRA_CONFIG is None so it falls back to default
         with (
+            patch.object(settings.app, "AEGRA_CONFIG", None),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
@@ -106,14 +112,13 @@ class TestLangGraphServiceConfig:
             assert service.config_path == Path("aegra.json")
 
     @pytest.mark.asyncio
-    async def test_initialize_langgraph_json_fallback(self, monkeypatch):
+    async def test_initialize_langgraph_json_fallback(self):
         """Test config loading with langgraph.json fallback"""
         config_data = {"graphs": {"test": "./graphs/test.py:graph"}}
 
-        # Clear AEGRA_CONFIG
-        monkeypatch.delenv("AEGRA_CONFIG", raising=False)
-
+        # Ensure AEGRA_CONFIG is None
         with (
+            patch.object(settings.app, "AEGRA_CONFIG", None),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch(
@@ -124,16 +129,16 @@ class TestLangGraphServiceConfig:
             await service.initialize()
 
             assert service.config == config_data
-            # Since we're mocking exists to return True, it will find aegra.json first
+            # Since we mock exists=True, logic finds aegra.json first in this mock setup
             assert service.config_path == Path("aegra.json")
 
     @pytest.mark.asyncio
-    async def test_initialize_no_config_file_found(self, monkeypatch):
+    async def test_initialize_no_config_file_found(self):
         """Test error when no config file is found"""
-        # Clear AEGRA_CONFIG
-        monkeypatch.delenv("AEGRA_CONFIG", raising=False)
-
-        with patch("pathlib.Path.exists", return_value=False):
+        with (
+            patch.object(settings.app, "AEGRA_CONFIG", None),
+            patch("pathlib.Path.exists", return_value=False),
+        ):
             service = LangGraphService()
 
             with pytest.raises(ValueError, match="Configuration file not found"):
@@ -214,8 +219,9 @@ class TestLangGraphServiceGraphs:
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
             # Mock database manager
-            mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
-            mock_db_manager.get_store = AsyncMock(return_value="store")
+            # FIX: Changed AsyncMock to Mock for synchronous getters
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
 
             # Mock graph compilation
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
@@ -272,8 +278,10 @@ class TestLangGraphServiceGraphs:
             ) as mock_load,
             patch("agent_server.core.database.db_manager") as mock_db_manager,
         ):
-            mock_db_manager.get_checkpointer = AsyncMock(return_value="checkpointer")
-            mock_db_manager.get_store = AsyncMock(return_value="store")
+            # FIX: Changed AsyncMock to Mock
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
+
             # Make new_graph a StateGraph-like instance to hit compile path
             import agent_server.services.langgraph_service as lgs_module
 
@@ -738,12 +746,14 @@ async def test_get_graph_compiles_stategraph(monkeypatch):
 
     monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
 
-    # Provide a fake db_manager with async get_checkpointer/get_store
+    # Provide a fake db_manager with get_checkpointer/get_store
     class FakeDBManager:
-        async def get_checkpointer(self):
+        # FIX: Removed async def
+        def get_checkpointer(self):
             return "cp"
 
-        async def get_store(self):
+        # FIX: Removed async def
+        def get_store(self):
             return "store"
 
     import agent_server.core.database as dbmod
@@ -770,10 +780,12 @@ async def test_get_graph_precompiled_copy(monkeypatch):
     monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
 
     class FakeDBManager2:
-        async def get_checkpointer(self):
+        # FIX: Removed async def
+        def get_checkpointer(self):
             return "cp2"
 
-        async def get_store(self):
+        # FIX: Removed async def
+        def get_store(self):
             return "store2"
 
     import agent_server.core.database as dbmod
@@ -782,3 +794,136 @@ async def test_get_graph_precompiled_copy(monkeypatch):
 
     compiled = await service.get_graph("g2")
     assert compiled == "copied:cp2:store2"
+
+
+class TestSetupDependencies:
+    """Tests for _setup_dependencies() method"""
+
+    def test_setup_dependencies_adds_paths(self, tmp_path):
+        """Test that dependencies are added to sys.path"""
+        import sys
+
+        # Create a test dependency directory
+        dep_dir = tmp_path / "my_utils"
+        dep_dir.mkdir()
+
+        # Create config with dependency
+        config = {"graphs": {}, "dependencies": [str(dep_dir)]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            service._setup_dependencies()
+            assert str(dep_dir) in sys.path
+        finally:
+            sys.path = original_path
+
+    def test_setup_dependencies_relative_path(self, tmp_path):
+        """Test that relative paths are resolved from config directory"""
+        import sys
+
+        # Create structure: config_dir/shared_utils/
+        config_dir = tmp_path / "project"
+        config_dir.mkdir()
+        utils_dir = config_dir / "shared_utils"
+        utils_dir.mkdir()
+
+        config = {"graphs": {}, "dependencies": ["./shared_utils"]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = config_dir / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            service._setup_dependencies()
+            assert str(utils_dir) in sys.path
+        finally:
+            sys.path = original_path
+
+    def test_setup_dependencies_missing_path_warns(self, tmp_path, caplog, capsys):
+        """Test that missing dependency paths log a warning"""
+        config = {"graphs": {}, "dependencies": ["./nonexistent"]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        with caplog.at_level("WARNING"):
+            service._setup_dependencies()
+
+        # structlog may output to stdout (dev) or caplog (CI), check both
+        captured = capsys.readouterr()
+        assert "does not exist" in caplog.text or "does not exist" in captured.out
+
+    def test_setup_dependencies_empty_config(self):
+        """Test that empty dependencies is handled gracefully"""
+        config = {"graphs": {}}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = Path("aegra.json")
+
+        # Should not raise
+        service._setup_dependencies()
+
+    def test_setup_dependencies_no_duplicates(self, tmp_path):
+        """Test that paths are not added twice to sys.path"""
+        import sys
+
+        # Create a test dependency directory
+        dep_dir = tmp_path / "my_utils"
+        dep_dir.mkdir()
+
+        config = {"graphs": {}, "dependencies": [str(dep_dir)]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            # Call twice
+            service._setup_dependencies()
+            service._setup_dependencies()
+
+            # Should only appear once
+            count = sys.path.count(str(dep_dir))
+            assert count == 1
+        finally:
+            sys.path = original_path
+
+    def test_setup_dependencies_preserves_order(self, tmp_path):
+        """Test that dependencies are added in config order (first = highest priority)"""
+        import sys
+
+        # Create test dependency directories
+        dep1 = tmp_path / "dep1"
+        dep1.mkdir()
+        dep2 = tmp_path / "dep2"
+        dep2.mkdir()
+
+        config = {"graphs": {}, "dependencies": [str(dep1), str(dep2)]}
+
+        service = LangGraphService()
+        service.config = config
+        service.config_path = tmp_path / "aegra.json"
+
+        original_path = sys.path.copy()
+
+        try:
+            service._setup_dependencies()
+
+            # dep2 should be inserted first (index 0), then dep1 at index 0
+            # So dep1 should be before dep2 in sys.path
+            idx1 = sys.path.index(str(dep1))
+            idx2 = sys.path.index(str(dep2))
+            assert idx1 < idx2  # dep1 has higher priority (lower index)
+        finally:
+            sys.path = original_path

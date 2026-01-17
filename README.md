@@ -25,11 +25,55 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 
 ## 🆕 What's New
 
+- **🗂️ [Semantic Store](docs/semantic-store.md)**: Vector embeddings with pgvector for semantic similarity search in your agent memory
+- **📦 [Dependencies Config](docs/dependencies.md)**: Add shared utility modules to Python path for graph imports
 - **🎨 LangGraph Studio Support**: Full compatibility with LangGraph Studio for visual graph debugging and development
 - **🤖 AG-UI / CopilotKit Support**: Seamless integration with AG-UI and CopilotKit-based clients for enhanced user experiences
 - **⬆️ LangGraph v1.0.0**: Upgraded to LangGraph and LangChain v1.0.0 with latest features and improvements
 - **🤝 Human-in-the-Loop**: Interactive agent workflows with approval gates and user intervention points
 - **📊 [Langfuse Integration](docs/langfuse-usage.md)**: Complete observability and tracing for your agent runs
+
+
+## ⚠️ Important: Upgrade to PostgreSQL 18
+
+**Update (Jan 2026):** We have upgraded the database from PostgreSQL 15 to 18. This is a **breaking change** for existing local environments.
+
+If you are a **new user**, simply run `docker compose up` and ignore this section.
+
+If you have **existing data**, you must migrate your database, otherwise, the container will fail to start.
+
+### 🔄 Migration Guide (Preserve Data)
+
+**1. Backup your data (Before pulling new changes)**
+While your v15 container is still running:
+```bash
+docker compose exec -T postgres pg_dumpall -c -U user > dump.sql
+```
+**2. Remove the old volume The internal file structure has changed in v18. You must delete the old volume to let Docker create a fresh one.**
+```
+# Option A: Delete all volumes (Simplest)
+docker compose down -v
+
+# Option B: Delete only Postgres volume (If you need to keep Redis data)
+docker volume rm aegra_postgres_data
+
+# ⚠️ This deletes the old database volume. Ensure you have the dump from Step 1.
+```
+**3. Update and Start DB Only Pull the changes and start only the database. Do not start the full app yet, or it will create empty tables and conflict with your restore.**
+```
+git pull origin main
+docker compose up -d postgres
+```
+**4. Restore Data Wait a few seconds for the database to initialize, then restore your data:**
+```
+cat dump.sql | docker compose exec -T postgres psql -U user -d postgres
+```
+**5. Start Application Now that the data is restored, stop the temporary session and start the full stack:**
+```
+docker compose down
+docker compose up -d
+```
+
 
 ## 🔥 Why Aegra vs LangGraph Platform?
 
@@ -123,6 +167,8 @@ python3 run_server.py
 python3 scripts/migrate.py revision --autogenerate -m "Add new feature"
 ```
 
+> **Note**: The current `docker-compose.yml` is optimized for **development** with hot-reload, volume mounts, and debug settings. For production deployment considerations, see [production-docker-setup.md](docs/production-docker-setup.md).
+
 ## 🧪 Try the Example Agent
 
 Use the **same LangGraph Client SDK** you're already familiar with:
@@ -185,12 +231,87 @@ SDK      API    Management      Storage
 - **Agent Protocol**: Open-source specification for LLM agent APIs
 - **Config-driven**: `aegra.json` for graph definitions
 
+## 🛣️ Custom Routes
+
+Aegra supports adding custom FastAPI endpoints to extend your server with additional functionality. This is useful for webhooks, admin panels, custom UI, or any other endpoints you need.
+
+### Configuration
+
+Add custom routes by configuring the `http.app` field in your `aegra.json` or `langgraph.json`:
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/react_agent/graph.py:graph"
+  },
+  "http": {
+    "app": "./custom_routes.py:app",
+    "enable_custom_route_auth": false,
+    "cors": {
+      "allow_origins": ["https://example.com"],
+      "allow_credentials": true
+    }
+  }
+}
+```
+
+### Creating Custom Routes
+
+Create a Python file (e.g., `custom_routes.py`) with your FastAPI app:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/custom/hello")
+async def hello():
+    return {"message": "Hello from custom route!"}
+
+@app.post("/custom/webhook")
+async def webhook(data: dict):
+    return {"received": data, "status": "processed"}
+
+# You can override shadowable routes like the root
+@app.get("/")
+async def custom_root():
+    return {"message": "Custom Aegra Server", "custom": True}
+```
+
+### Route Priority
+
+Custom routes follow this priority order:
+
+1. **Unshadowable routes**: `/health`, `/ready`, `/live`, `/docs`, `/openapi.json` - always accessible
+2. **Custom user routes**: Your endpoints take precedence
+3. **Shadowable routes**: `/`, `/info` - can be overridden by custom routes
+4. **Protected core routes**: `/assistants`, `/threads`, `/runs`, `/store` - cannot be overridden
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `app` | `string` | `None` | Import path to custom FastAPI/Starlette app (format: `"path/to/file.py:variable"`) |
+| `enable_custom_route_auth` | `boolean` | `false` | Apply Aegra's authentication middleware to custom routes |
+| `cors` | `object` | `None` | Custom CORS configuration |
+
+### Example Use Cases
+
+- **Webhooks**: Add endpoints to receive external webhooks
+- **Admin Panel**: Build custom admin interfaces
+- **Custom UI**: Serve additional frontend applications
+- **Metrics**: Add custom monitoring endpoints
+- **Integration**: Connect with third-party services
+
+See [`custom_routes_example.py`](custom_routes_example.py) for a complete example.
+
 ## 📁 Project Structure
 
 ```text
 aegra/
 ├── aegra.json           # Graph configuration
 ├── auth.py              # Authentication setup
+├── custom_routes.py     # Custom FastAPI endpoints (optional)
 ├── graphs/              # Agent definitions
 │   └── react_agent/     # Example ReAct agent
 ├── src/agent_server/    # FastAPI application
@@ -214,20 +335,41 @@ cp .env.example .env
 ```
 
 ```bash
-# Database
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
+# --- Application Settings ---
+PROJECT_NAME=Aegra
+VERSION="0.1.0"
+DEBUG=true
 
-# Streaming transport (optional)
-REDIS_URL=redis://localhost:6379/0
-STREAMING_BROKER=auto  # auto, redis, memory
+# [MANDATORY] Path to the main agent configuration file
+AEGRA_CONFIG=
+
+# Database
+POSTGRES_USER=user
+POSTGRES_PASSWORD=password
+POSTGRES_DB=aegra
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
+DATABASE_ECHO=false
+
+# --- Connection Pools ---
+# SQLAlchemy (Metadata & App)
+SQLALCHEMY_POOL_SIZE=2
+SQLALCHEMY_MAX_OVERFLOW=0
+
+# LangGraph (Agent Runtime)
+LANGGRAPH_MIN_POOL_SIZE=1
+LANGGRAPH_MAX_POOL_SIZE=6
 
 # Authentication (extensible)
 AUTH_TYPE=noop  # noop, custom
 
-# Server
+# Server Configuration
 HOST=0.0.0.0
 PORT=8000
 DEBUG=true
+SERVER_URL=http://localhost:8000
 
 # Logging
 LOG_LEVEL=INFO
@@ -239,7 +381,8 @@ OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=...
 # TOGETHER_API_KEY=...
 
-LANGFUSE_LOGGING=true
+# --- Observability (Langfuse) ---
+LANGFUSE_LOGGING=false
 LANGFUSE_SECRET_KEY=sk-...
 LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_HOST=https://cloud.langfuse.com
@@ -257,6 +400,51 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 }
 ```
 
+### Dependencies (Optional)
+
+Add shared utility modules to the Python path for graph imports:
+
+```json
+{
+  "graphs": { ... },
+  "dependencies": [
+    "./shared",
+    "./libs/common"
+  ]
+}
+```
+
+Paths are resolved relative to the config file. This matches LangGraph CLI behavior.
+
+📚 **[Full Documentation](docs/dependencies.md)** - Path resolution, use cases, and examples.
+
+### Semantic Store (Optional)
+
+Enable semantic similarity search for your agent's memory using pgvector:
+
+```json
+{
+  "graphs": { ... },
+  "store": {
+    "index": {
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
+    }
+  }
+}
+```
+
+**Options:** `dims` (required), `embed` (required), `fields` (optional, default `["$"]`)
+
+**Supported embedding providers:**
+- `openai:text-embedding-3-small` (1536 dims)
+- `openai:text-embedding-3-large` (3072 dims)
+- `bedrock:amazon.titan-embed-text-v2:0` (1024 dims)
+- `cohere:embed-english-v3.0` (1024 dims)
+
+📚 **[Full Documentation](docs/semantic-store.md)** - Configuration, usage examples, and troubleshooting.
+
 ## 🎯 What You Get
 
 ### ✅ **Core Features**
@@ -271,11 +459,13 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ### ✅ **Production Ready**
 
-- Docker containerization
+- Docker containerization (development-focused setup; production considerations documented)
 - Database migrations with Alembic
 - Comprehensive test suite
 - Authentication framework (JWT/OAuth ready)
 - Health checks and monitoring endpoints
+
+> **Production Deployment**: The included `docker-compose.yml` is optimized for development. For production deployment guidance, see [production-docker-setup.md](docs/production-docker-setup.md).
 
 ### ✅ **Developer Experience**
 
@@ -285,13 +475,6 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 - Extensible architecture
 - **📚 [Developer Guide](docs/developer-guide.md)** - Complete setup, migrations, and development workflow
 - **⚡ [Migration Cheatsheet](docs/migration-cheatsheet.md)** - Quick reference for common commands
-
-## 🧪 Streaming Diagnostics
-
-- Use Redis by setting `REDIS_URL` and `STREAMING_BROKER=redis` in your `.env`
-- Benchmark streaming latency with `uv run python test_sdk_integration.py --prompt "ping"`
-- Pass `--print-chunks` to inspect raw events from the LangGraph SDK client
-- Compare `first_chunk_latency` and `mean_delta` metrics to isolate remote DB slowness
 
 ## Star History
 

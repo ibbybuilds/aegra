@@ -1,10 +1,9 @@
 """E2E tests for POST /threads/{thread_id}/state endpoint"""
 
-import os
-
 import pytest
 from httpx import AsyncClient
 
+from src.agent_server.settings import settings
 from tests.e2e._utils import elog, get_e2e_client
 
 
@@ -44,8 +43,9 @@ async def test_post_state_query_like_e2e():
     assert "values" in state_get
 
     # 4. Get state via POST (query-like, no values)
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         post_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={},  # No values - should behave like GET
@@ -115,8 +115,9 @@ async def test_post_state_update_e2e():
     }
     updated_messages = current_messages + [new_message]
 
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         update_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={
@@ -191,8 +192,9 @@ async def test_post_state_update_with_as_node_e2e():
     await client.runs.join(thread_id, run["run_id"])
 
     # 3. Update state with as_node parameter
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         update_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={
@@ -248,8 +250,9 @@ async def test_post_state_update_with_values_none_e2e():
     elog("GET state", state_get)
 
     # 4. POST with values=None (should delegate to GET handler)
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         post_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={"values": None},  # Explicitly None
@@ -298,8 +301,9 @@ async def test_post_state_update_with_list_values_e2e():
     await client.runs.join(thread_id, run["run_id"])
 
     # 3. Update state with values as a list of dicts
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         update_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={
@@ -328,8 +332,9 @@ async def test_post_state_update_thread_not_found_e2e():
     Test POST /threads/{thread_id}/state with non-existent thread.
     Should return 404 (covers thread not found error handling).
     """
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         response = await http_client.post(
             "/threads/non-existent-thread-id/state",
             json={"values": {"messages": [{"type": "human", "content": "test"}]}},
@@ -355,8 +360,9 @@ async def test_post_state_update_no_graph_id_e2e():
     thread_id = thread["thread_id"]
 
     # 2. Try to update state (should fail because no graph_id)
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={"values": {"messages": [{"type": "human", "content": "test"}]}},
@@ -400,8 +406,9 @@ async def test_post_state_update_with_checkpoint_config_e2e():
 
     # 3. Update state with checkpoint configuration
     # Test checkpoint_id handling (checkpoint_ns might not be fully supported, so we'll test checkpoint_id)
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         update_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={
@@ -462,8 +469,9 @@ async def test_post_state_update_with_checkpoint_e2e():
     checkpoint_id = history[0]["checkpoint"]["checkpoint_id"]
 
     # 3. Update state from a specific checkpoint
-    base_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    async with AsyncClient(base_url=base_url, timeout=30.0) as http_client:
+    async with AsyncClient(
+        base_url=settings.app.SERVER_URL, timeout=30.0
+    ) as http_client:
         update_response = await http_client.post(
             f"/threads/{thread_id}/state",
             json={

@@ -7,28 +7,16 @@ import pytest
 
 from src.agent_server.core.sse import SSEEvent
 from src.agent_server.services.event_store import EventStore
+from src.agent_server.settings import settings
 
 
 @pytest.fixture(scope="session")
 def database_available():
     """Check if database is available for integration tests"""
-    import os
-
-    from dotenv import load_dotenv
     from sqlalchemy import create_engine, text
 
-    load_dotenv()
-    database_url = os.getenv("DATABASE_URL")
-
-    if not database_url:
-        yield False
-        return
-
-    # Use psycopg2 for Supabase/pgbouncer compatibility
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-
     try:
-        engine = create_engine(sync_url, echo=False)
+        engine = create_engine(settings.db.database_url_sync, echo=False)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         yield True
@@ -42,19 +30,12 @@ def database_available():
 @pytest.fixture
 def clean_event_store_tables(database_available):
     """Clean up event store tables before and after tests"""
-    import os
-
-    from dotenv import load_dotenv
     from sqlalchemy import create_engine, text
 
     if not database_available:
         pytest.skip("Database not available for integration tests")
 
-    load_dotenv()
-    database_url = os.getenv("DATABASE_URL")
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-
-    engine = create_engine(sync_url, echo=False)
+    engine = create_engine(settings.db.database_url_sync, echo=False)
 
     # Clean up before test
     with engine.connect() as conn:
@@ -74,18 +55,12 @@ def clean_event_store_tables(database_available):
 @pytest.fixture
 def event_store(clean_event_store_tables):
     """Create EventStore instance with real database"""
-    import os
     from unittest.mock import patch
 
-    from dotenv import load_dotenv
     from sqlalchemy import create_engine
 
-    load_dotenv()
-    database_url = os.getenv("DATABASE_URL")
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-
     # Create a sync engine for testing
-    sync_engine = create_engine(sync_url, echo=False)
+    sync_engine = create_engine(settings.db.database_url_sync, echo=False)
 
     # Patch db_manager.get_engine to return our sync engine wrapped for async
     class AsyncEngineWrapper:

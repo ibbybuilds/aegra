@@ -1,10 +1,8 @@
 """Alembic environment configuration for Aegra database migrations."""
 
 import asyncio
-import os
 from logging.config import fileConfig
 
-from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -17,12 +15,19 @@ from src.agent_server.core.orm import Base
 # Import RAG models to ensure they're registered with Base
 from src.agent_server.tools.rag.models import CourseChunk, IndexingStatus  # noqa: F401
 
-# Load environment variables from a .env file if present
-load_dotenv()
+# Import settings from the new settings system
+from src.agent_server.settings import settings
 
 # This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+section = config.config_ini_section
+config.set_section_option(section, "DB_HOST", settings.db.POSTGRES_HOST)
+config.set_section_option(section, "DB_PORT", settings.db.POSTGRES_PORT)
+config.set_section_option(section, "DB_USER", settings.db.POSTGRES_USER)
+config.set_section_option(section, "DB_NAME", settings.db.POSTGRES_DB)
+config.set_section_option(section, "DB_PASS", settings.db.POSTGRES_PASSWORD)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -39,11 +44,6 @@ target_metadata = Base.metadata
 # ... etc.
 
 
-def get_url():
-    """Get database URL from environment or config."""
-    return os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
-
-
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -56,9 +56,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = get_url()
     context.configure(
-        url=url,
+        url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -82,7 +81,7 @@ async def run_async_migrations() -> None:
 
     """
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = get_url()
+    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
 
     connectable = async_engine_from_config(
         configuration,

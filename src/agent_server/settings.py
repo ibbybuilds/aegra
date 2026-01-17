@@ -94,12 +94,22 @@ class LangfuseSettings(EnvBase):
     LANGFUSE_LOGGING: bool
 
 
+class RedisSettings(EnvBase):
+    """Redis configuration settings."""
+
+    REDIS_URL: str | None = None
+    REDIS_ENABLED: bool = False
+    REDIS_CACHE_TTL: int = 3600
+    REDIS_STREAM_BUFFERS: bool = True
+
+
 class Settings:
     def __init__(self):
         self.app = AppSettings()
         self.db = DatabaseSettings()
         self.pool = PoolSettings()
         self.langfuse = LangfuseSettings()
+        self.redis = RedisSettings()
 
 
 settings = Settings()

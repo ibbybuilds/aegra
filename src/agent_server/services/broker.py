@@ -7,6 +7,8 @@ from typing import Any
 
 import structlog
 
+from src.agent_server.settings import settings
+
 from .base_broker import BaseBrokerManager, BaseRunBroker
 
 logger = structlog.getLogger(__name__)
@@ -81,17 +83,23 @@ class BrokerManager(BaseBrokerManager):
     """Manages multiple RunBroker instances"""
 
     def __init__(self) -> None:
-        self._brokers: dict[str, RunBroker] = {}
+        self._brokers: dict[str, BaseRunBroker] = {}
         self._cleanup_task: asyncio.Task | None = None
 
-    def get_or_create_broker(self, run_id: str) -> RunBroker:
+    def get_or_create_broker(self, run_id: str) -> BaseRunBroker:
         """Get or create a broker for a run"""
         if run_id not in self._brokers:
-            self._brokers[run_id] = RunBroker(run_id)
-            logger.debug(f"Created new broker for run {run_id}")
+            if settings.redis.REDIS_ENABLED and settings.redis.REDIS_STREAM_BUFFERS:
+                from .redis_broker import RedisRunBroker
+
+                self._brokers[run_id] = RedisRunBroker(run_id)
+                logger.debug(f"Created new Redis broker for run {run_id}")
+            else:
+                self._brokers[run_id] = RunBroker(run_id)
+                logger.debug(f"Created new broker for run {run_id}")
         return self._brokers[run_id]
 
-    def get_broker(self, run_id: str) -> RunBroker | None:
+    def get_broker(self, run_id: str) -> BaseRunBroker | None:
         """Get an existing broker or None"""
         return self._brokers.get(run_id)
 

@@ -51,6 +51,7 @@ from .observability.base import get_observability_manager
 from .observability.langfuse_integration import _langfuse_provider
 from .services.event_store import event_store
 from .services.langgraph_service import get_langgraph_service
+from .services.redis_service import redis_service
 from .utils.setup_logging import setup_logging
 
 # Task management for run cancellation
@@ -74,6 +75,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     langgraph_service = get_langgraph_service()
     await langgraph_service.initialize()
 
+    # Initialize Redis service
+    await redis_service.initialize()
+
     # Initialize event store cleanup task
     await event_store.start_cleanup_task()
 
@@ -86,6 +90,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     # Stop event store cleanup task
     await event_store.stop_cleanup_task()
+
+    # Close Redis service
+    await redis_service.close()
 
     await db_manager.close()
 

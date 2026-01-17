@@ -25,9 +25,13 @@ services:
       - .env
     environment:
       - POSTGRES_HOST=postgres
+      # Override REDIS_URL for internal docker networking
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ./aegra.json:/app/aegra.json:ro
       - ./graphs:/app/graphs:ro
@@ -52,8 +56,6 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    profiles:
-      - redis
 
 volumes:
   postgres_data:

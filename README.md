@@ -33,7 +33,6 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 - **🤝 Human-in-the-Loop**: Interactive agent workflows with approval gates and user intervention points
 - **📊 [Langfuse Integration](docs/langfuse-usage.md)**: Complete observability and tracing for your agent runs
 
-
 ## ⚠️ Important: Upgrade to PostgreSQL 18
 
 **Update (Jan 2026):** We have upgraded the database from PostgreSQL 15 to 18. This is a **breaking change** for existing local environments.
@@ -46,10 +45,13 @@ If you have **existing data**, you must migrate your database, otherwise, the co
 
 **1. Backup your data (Before pulling new changes)**
 While your v15 container is still running:
+
 ```bash
 docker compose exec -T postgres pg_dumpall -c -U user > dump.sql
 ```
+
 **2. Remove the old volume The internal file structure has changed in v18. You must delete the old volume to let Docker create a fresh one.**
+
 ```
 # Option A: Delete all volumes (Simplest)
 docker compose down -v
@@ -59,21 +61,26 @@ docker volume rm aegra_postgres_data
 
 # ⚠️ This deletes the old database volume. Ensure you have the dump from Step 1.
 ```
+
 **3. Update and Start DB Only Pull the changes and start only the database. Do not start the full app yet, or it will create empty tables and conflict with your restore.**
+
 ```
 git pull origin main
 docker compose up -d postgres
 ```
+
 **4. Restore Data Wait a few seconds for the database to initialize, then restore your data:**
+
 ```
 cat dump.sql | docker compose exec -T postgres psql -U user -d postgres
 ```
+
 **5. Start Application Now that the data is restored, stop the temporary session and start the full stack:**
+
 ```
 docker compose down
 docker compose up -d
 ```
-
 
 ## 🔥 Why Aegra vs LangGraph Platform?
 
@@ -289,11 +296,11 @@ Custom routes follow this priority order:
 
 ### Configuration Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `app` | `string` | `None` | Import path to custom FastAPI/Starlette app (format: `"path/to/file.py:variable"`) |
-| `enable_custom_route_auth` | `boolean` | `false` | Apply Aegra's authentication middleware to custom routes |
-| `cors` | `object` | `None` | Custom CORS configuration |
+| Option                     | Type      | Default | Description                                                                        |
+| -------------------------- | --------- | ------- | ---------------------------------------------------------------------------------- |
+| `app`                      | `string`  | `None`  | Import path to custom FastAPI/Starlette app (format: `"path/to/file.py:variable"`) |
+| `enable_custom_route_auth` | `boolean` | `false` | Apply Aegra's authentication middleware to custom routes                           |
+| `cors`                     | `object`  | `None`  | Custom CORS configuration                                                          |
 
 ### Example Use Cases
 
@@ -333,6 +340,61 @@ Copy `.env.example` to `.env` and configure values:
 ```bash
 cp .env.example .env
 ```
+
+````bash
+# --- Application Settings ---
+PROJECT_NAME=Aegra
+VERSION="0.1.0"
+DEBUG=true
+
+# [MANDATORY] Path to the main agent configuration file
+AEGRA_CONFIG=
+
+# Database
+POSTGRES_USER=user
+POSTGRES_PASSWORD=password
+POSTGRES_DB=aegra
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
+DATABASE_ECHO=false
+
+# --- Connection Pools ---
+# SQLAlchemy (Metadata & App)
+SQLALCHEMY_POOL_SIZE=2
+SQLALCHEMY_MAX_OVERFLOW=0
+
+# LangGraph (Agent Runtime)
+LANGGRAPH_MIN_POOL_SIZE=1
+LANGGRAPH_MAX_POOL_SIZE=6
+
+# Authentication (extensible)
+AUTH_TYPE=noop  # noop, custom
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
+DEBUG=true
+SERVER_URL=http://localhost:8000
+
+# Logging
+LOG_LEVEL=INFO
+ENV_MODE=LOCAL # DEVELOPMENT, PRODUCTION, LOCAL (PRODUCTION outputs JSON logs)
+LOG_VERBOSITY=standard # standard, verbose (verbose outputs request-id for each request)
+
+# LLM Providers
+OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=...
+# TOGETHER_API_KEY=...
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and configure values:
+
+```bash
+cp .env.example .env
+````
 
 ```bash
 # --- Application Settings ---
@@ -386,6 +448,12 @@ LANGFUSE_LOGGING=false
 LANGFUSE_SECRET_KEY=sk-...
 LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_HOST=https://cloud.langfuse.com
+
+# --- Redis (Optional) ---
+REDIS_URL=redis://localhost:6379/0
+REDIS_ENABLED=false
+REDIS_CACHE_TTL=3600
+REDIS_STREAM_BUFFERS=true
 ```
 
 ### Graph Configuration
@@ -438,6 +506,7 @@ Enable semantic similarity search for your agent's memory using pgvector:
 **Options:** `dims` (required), `embed` (required), `fields` (optional, default `["$"]`)
 
 **Supported embedding providers:**
+
 - `openai:text-embedding-3-small` (1536 dims)
 - `openai:text-embedding-3-large` (3072 dims)
 - `bedrock:amazon.titan-embed-text-v2:0` (1024 dims)
@@ -496,12 +565,11 @@ Enable semantic similarity search for your agent's memory using pgvector:
 - Authentication framework
 - Human-in-the-loop support
 - Langfuse integration
+- Redis-backed streaming buffers (Optional)
 
 **🎯 Next**
 
-- Custom HTTP endpoints support
 - Generative user interfaces support
-- Redis-backed streaming buffers
 - Advanced deployment recipes
 
 **🚀 Future**

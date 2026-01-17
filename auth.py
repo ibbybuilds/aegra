@@ -8,6 +8,7 @@ This module provides environment-based authentication switching between:
 Set AUTH_TYPE environment variable to choose authentication mode.
 """
 
+import os
 from typing import Any
 
 import structlog

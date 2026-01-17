@@ -15,19 +15,29 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # Builder stage
 # -----------------------------
 FROM base AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project metadata and source
-COPY pyproject.toml ./
-COPY README.md ./
+# Copy project metadata and readme
+COPY pyproject.toml README.md ./
+
+# Install dependencies defined in pyproject.toml first.
+# By doing this before copying the source code, we leverage Docker layer caching:
+# if pyproject.toml hasn't changed, this heavy installation step is cached.
+RUN uv pip install --system --compile-bytecode -r pyproject.toml
+
+# Copy the actual project source code
 COPY src/ ./src/
 
-# Install project (builds wheel and installs dependencies specified in pyproject)
-RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir .
+# Install the project package itself.
+# The '--no-deps' flag ensures we don't re-resolve or re-download dependencies,
+# since they were already installed in the previous layer.
+RUN uv pip install --system --compile-bytecode --no-deps .
 
 # -----------------------------
 # Final, minimal runtime image
@@ -61,5 +71,3 @@ USER app
 
 # Leave default CMD empty so docker-compose command can run migrations then start uvicorn
 # CMD ["uvicorn", "src.agent_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-

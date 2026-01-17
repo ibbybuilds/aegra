@@ -48,6 +48,14 @@ class AppSettings(EnvBase):
     LOG_LEVEL: UpperStr = "INFO"
     LOG_VERBOSITY: LowerStr = "verbose"
 
+    # Custom LMS Integration
+    LMS_JWT_SECRET: str | None = None
+    LMS_URL: str
+    ADMIN_TOKEN: str | None = None
+
+    # Title Generator
+    TITLE_GENERATOR_MODEL: str = "openai/gpt-4o-mini"
+
 
 class DatabaseSettings(EnvBase):
     """Database connection settings."""
@@ -94,12 +102,20 @@ class LangfuseSettings(EnvBase):
     LANGFUSE_LOGGING: bool
 
 
+class RedisSettings(EnvBase):
+    """Redis streaming settings."""
+
+    REDIS_URL: str | None = None
+    STREAMING_BROKER: LowerStr = "auto"
+
+
 class Settings:
     def __init__(self):
         self.app = AppSettings()
         self.db = DatabaseSettings()
         self.pool = PoolSettings()
         self.langfuse = LangfuseSettings()
+        self.redis = RedisSettings()
 
 
 settings = Settings()

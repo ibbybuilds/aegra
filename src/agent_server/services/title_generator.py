@@ -1,16 +1,17 @@
 """Service for generating AI-powered thread titles."""
 
-import os
 from typing import Any
 
 import structlog
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from ..settings import settings
+
 logger = structlog.getLogger(__name__)
 
 # Default model for title generation (lightweight and fast)
-DEFAULT_TITLE_MODEL = os.getenv("TITLE_GENERATOR_MODEL", "openai/gpt-4o-mini")
+DEFAULT_TITLE_MODEL = settings.app.TITLE_GENERATOR_MODEL
 
 
 def extract_first_user_message(input_data: dict[str, Any]) -> str | None:

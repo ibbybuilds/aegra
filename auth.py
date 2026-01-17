@@ -8,6 +8,7 @@ This module provides environment-based authentication switching between:
 Set AUTH_TYPE environment variable to choose authentication mode.
 """
 
+import os
 from typing import Any
 
 import structlog
@@ -50,8 +51,8 @@ elif AUTH_TYPE == "custom":
     import jwt
     from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
-    # Get JWT secret from environment
-    JWT_SECRET = os.getenv("LMS_JWT_SECRET")
+    # Get JWT secret from settings
+    JWT_SECRET = settings.app.LMS_JWT_SECRET
     if not JWT_SECRET:
         raise ValueError(
             "LMS_JWT_SECRET environment variable is required for custom auth"

@@ -39,13 +39,14 @@ class TestRedisService:
         with (
             patch("src.agent_server.services.redis_service.settings") as mock_settings,
             patch(
-                "src.agent_server.services.redis_service.aioredis.from_url"
-            ) as mock_redis_cls,
+                "src.agent_server.services.redis_service.aioredis"
+            ) as mock_aioredis,
         ):
             mock_settings.redis.REDIS_ENABLED = True
             mock_settings.redis.REDIS_URL = "redis://localhost"
+            
             mock_redis = AsyncMock()
-            mock_redis_cls.return_value = mock_redis
+            mock_aioredis.from_url.return_value = mock_redis
 
             service = RedisService()
             await service.initialize()
@@ -60,14 +61,15 @@ class TestRedisService:
         with (
             patch("src.agent_server.services.redis_service.settings") as mock_settings,
             patch(
-                "src.agent_server.services.redis_service.aioredis.from_url"
-            ) as mock_redis_cls,
+                "src.agent_server.services.redis_service.aioredis"
+            ) as mock_aioredis,
         ):
             mock_settings.redis.REDIS_ENABLED = True
             mock_settings.redis.REDIS_URL = "redis://localhost"
+            
             mock_redis = AsyncMock()
             mock_redis.ping.side_effect = Exception("Connection fail")
-            mock_redis_cls.return_value = mock_redis
+            mock_aioredis.from_url.return_value = mock_redis
 
             service = RedisService()
             await service.initialize()

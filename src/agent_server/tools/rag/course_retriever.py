@@ -6,7 +6,6 @@ relevant course information based on semantic similarity.
 """
 
 import hashlib
-import os
 from datetime import datetime
 from typing import Any, Optional
 
@@ -14,6 +13,7 @@ from langchain_openai import OpenAIEmbeddings
 from sqlalchemy import and_, create_engine, select
 from sqlalchemy.orm import sessionmaker
 
+from agent_server.settings import settings
 from agent_server.tools.rag.chunker import CourseContentChunker
 from agent_server.tools.rag.models import CourseChunk, IndexingStatus
 
@@ -33,7 +33,7 @@ class CourseRetriever:
             database_url: PostgreSQL connection string
             embedding_model: OpenAI embedding model to use
         """
-        self.database_url = database_url or os.getenv("DATABASE_URL")
+        self.database_url = database_url or settings.db.database_url
         if not self.database_url:
             raise ValueError("DATABASE_URL is required")
 

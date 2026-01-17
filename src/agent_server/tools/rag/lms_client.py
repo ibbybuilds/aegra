@@ -7,11 +7,12 @@ This module handles communication with the LMS API to retrieve:
 - Video transcripts
 """
 
-import os
 from typing import Any, Optional
 
 import httpx
 from pydantic import BaseModel
+
+from agent_server.settings import settings
 
 
 class CourseData(BaseModel):
@@ -49,8 +50,8 @@ class LMSClient:
             base_url: Base URL for the LMS API
             admin_token: Admin JWT token for authentication
         """
-        self.base_url = base_url or os.getenv("LMS_URL", "http://localhost:5000")
-        self.admin_token = admin_token or os.getenv("ADMIN_TOKEN")
+        self.base_url = base_url or settings.app.LMS_URL
+        self.admin_token = admin_token or settings.app.ADMIN_TOKEN
 
         if not self.admin_token:
             raise ValueError("ADMIN_TOKEN is required for LMS API access")

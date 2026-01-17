@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import os
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +22,7 @@ import structlog
 
 from ..core.redis import redis_manager
 from ..core.serializers import GeneralSerializer
+from ..settings import settings
 from .base_broker import BaseBrokerManager, BaseRunBroker
 
 try:  # pragma: no cover - optional dependency at runtime
@@ -410,7 +410,7 @@ class HybridBrokerManager(BaseBrokerManager):
         self._memory_backend = InMemoryBrokerManager()
         self._redis_backend: RedisBrokerManager | None = None
         self._redis_enabled_logged = False
-        raw_mode = os.getenv("STREAMING_BROKER", "auto")
+        raw_mode = settings.redis.STREAMING_BROKER
         mode = raw_mode.strip().lower()
         if mode not in {"auto", "redis", "memory"}:
             logger.warning(

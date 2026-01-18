@@ -153,6 +153,18 @@ class StreamingService:
                     "final_output": event_payload.get("final_output"),
                 },
             )
+        elif stream_mode_label == "custom":
+            # Custom events from get_stream_writer() - used for pipeline progress, etc.
+            await store_sse_event(
+                run_id,
+                event_id,
+                "custom",
+                {
+                    "type": "custom_event",
+                    "payload": event_payload,
+                    "node_path": node_path,
+                },
+            )
         # Add other stream modes as needed
 
     async def signal_run_cancelled(self, run_id: str):

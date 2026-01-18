@@ -31,6 +31,11 @@ services:
       - AUTH_TYPE=custom
       - DEBUG=true
       - PORT=${PORT:-2024}  # 服务监听 2024
+      # Database connection pool settings
+      - SA_POOL_SIZE=10  # SQLAlchemy pool size (increased from default 2)
+      - SA_MAX_OVERFLOW=5  # Allow 5 additional connections when pool is exhausted
+      - LG_POOL_SIZE=20  # LangGraph pool size (increased from default 6)
+      - LG_MIN_POOL_SIZE=5  # LangGraph minimum pool size (increased from default 1)
       # Data directories - 容器内路径
       - BASE_DATA_DIR=/app/data
       - WORKSPACE_DIR=/app/data/workspace

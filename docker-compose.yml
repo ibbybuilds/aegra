@@ -31,6 +31,7 @@ services:
       - AUTH_TYPE=custom
       - DEBUG=true
       - PORT=${PORT:-2024}  # 服务监听 2024
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_credentials.json
       # Data directories - 容器内路径
       - BASE_DATA_DIR=/app/data
       - WORKSPACE_DIR=/app/data/workspace
@@ -69,6 +70,7 @@ services:
       - ../data:/app/data  # 持久化 workspace 和 memories
       # DinD: 挂载 Docker socket，允许容器内调用 Docker API
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${GCP_ADC_PATH:-/dev/null}:/app/gcp_credentials.json:ro
     command: >
       sh -c "
         echo 'Running database migrations...' &&

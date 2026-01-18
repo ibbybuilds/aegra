@@ -31,6 +31,7 @@ services:
       - AUTH_TYPE=custom
       - DEBUG=true
       - PORT=${PORT:-2024}  # 服务监听 2024
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_credentials.json
       # Database connection pool settings
       - SA_POOL_SIZE=10  # SQLAlchemy pool size (increased from default 2)
       - SA_MAX_OVERFLOW=5  # Allow 5 additional connections when pool is exhausted
@@ -74,6 +75,7 @@ services:
       - ../data:/app/data  # 持久化 workspace 和 memories
       # DinD: 挂载 Docker socket，允许容器内调用 Docker API
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${GCP_ADC_PATH:-/dev/null}:/app/gcp_credentials.json:ro
     command: >
       sh -c "
         echo 'Running database migrations...' &&

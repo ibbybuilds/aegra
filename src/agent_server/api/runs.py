@@ -482,6 +482,56 @@ async def get_run(
     )
 
 
+@router.get("/threads/{thread_id}/runs/{run_id}/events")
+async def get_run_events(
+    thread_id: str,
+    run_id: str,
+    event_type: str | None = Query(None, description="Filter by event type (e.g., 'custom')"),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Get stored events for a run - useful for history recovery.
+    
+    Returns events in sequence order (oldest first).
+    Use event_type='custom' to get only custom events like pipeline_progress.
+    """
+    # Verify run belongs to user
+    run_orm = await session.scalar(
+        select(RunORM).where(
+            RunORM.run_id == str(run_id),
+            RunORM.thread_id == thread_id,
+            RunORM.user_id == user.identity,
+        )
+    )
+    if not run_orm:
+        raise HTTPException(404, f"Run '{run_id}' not found")
+    
+    # Import event_store here to avoid circular imports
+    from ..services.event_store import event_store
+    
+    # Get stored events (already ordered by seq ASC)
+    stored_events = await event_store.get_all_events(run_id)
+    
+    # Filter by type if specified
+    if event_type:
+        stored_events = [e for e in stored_events if e.event == event_type]
+    
+    logger.info(
+        f"[get_run_events] returning {len(stored_events)} events "
+        f"(type_filter={event_type}) for run_id={run_id}"
+    )
+    
+    return [
+        {
+            "id": e.id,
+            "event": e.event,
+            "data": e.data,
+            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+        }
+        for e in stored_events
+    ]
+
+
 @router.get("/threads/{thread_id}/runs", response_model=list[Run])
 async def list_runs(
     thread_id: str,

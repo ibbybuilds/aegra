@@ -416,7 +416,15 @@ async def query_vfs(
                     logger.warning(f"Warning: Failed to sort by {sort_by}: {e}")
 
             # Calculate total count before limiting
-            total_count = len(results) if isinstance(results, list) else 1
+            # Handle different result types:
+            # - Hotel searches: results is a list
+            # - Room searches: results is a dict with "rooms" array
+            if isinstance(results, list):
+                total_count = len(results)
+            elif isinstance(results, dict) and "rooms" in results:
+                total_count = len(results.get("rooms", []))
+            else:
+                total_count = 1
 
             # Apply limit if specified
             if limit and isinstance(results, list):
@@ -433,7 +441,8 @@ async def query_vfs(
             if room_token:
                 response["token"] = room_token
                 # Add hint for room searches
-                if isinstance(results, list) and len(results) > 0:
+                # Room results are dict with "rooms" array
+                if isinstance(results, dict) and isinstance(results.get("rooms"), list) and len(results.get("rooms", [])) > 0:
                     response["hint"] = (
                         "Room search complete. Present room options to user with prices and refund policies. When user selects a room, use this response to build the room object for book_room() - extract token from top level and rate_key from the room object."
                     )

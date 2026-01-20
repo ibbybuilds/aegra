@@ -116,6 +116,28 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         context_stack = state.get("context_stack", [])
         messages = state.get("messages", [])
 
+        # STATE_INIT_DEBUG: Uncomment to diagnose empty values in active_searches
+        # try:
+        #     if active_searches:  # Only log when there's data to inspect
+        #         logger.info("[STATE_INIT_DEBUG] active_searches inspection:")
+        #         for search_key, search_data in active_searches.items():
+        #             if isinstance(search_data, dict):
+        #                 # Check for empty/zero values that might indicate initialization issues
+        #                 empty_fields = []
+        #                 for field, value in search_data.items():
+        #                     if value == "" or (isinstance(value, (int, float)) and value == 0):
+        #                         empty_fields.append(field)
+        #
+        #                 if empty_fields:
+        #                     logger.warning(
+        #                         f"[STATE_INIT_DEBUG] active_searches['{search_key}'] has empty fields: {empty_fields} | Full data: {search_data}"
+        #                     )
+        #                 else:
+        #                     logger.info(f"[STATE_INIT_DEBUG] active_searches['{search_key}']: {search_data}")
+        # except Exception as e:
+        #     # Silent fail - don't let logging break anything
+        #     logger.debug(f"[STATE_INIT_DEBUG] Logging error (non-critical): {e}")
+
         # Extract metadata from state or existing call_context
         user_phone = state.get("user_phone") or (
             call_context.user_phone if call_context else None

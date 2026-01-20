@@ -308,6 +308,29 @@ async def update_thread_state(
         logger.info(
             f"[DEBUG] request.values keys: {list(request.values.keys()) if isinstance(request.values, dict) else 'not a dict'}"
         )
+
+        # STATE_INIT_DEBUG: Uncomment to diagnose empty values in active_searches
+        # if isinstance(request.values, dict):
+        #     # Log active_searches if present
+        #     if "active_searches" in request.values:
+        #         logger.info("[STATE_INIT_DEBUG] Incoming payload contains 'active_searches':")
+        #         active_searches_payload = request.values["active_searches"]
+        #         if isinstance(active_searches_payload, dict):
+        #             for search_key, search_data in active_searches_payload.items():
+        #                 logger.info(f"[STATE_INIT_DEBUG]   Payload active_searches['{search_key}']: {search_data}")
+        #         else:
+        #             logger.warning(f"[STATE_INIT_DEBUG]   Unexpected active_searches type: {type(active_searches_payload)}")
+        #
+        #     # Log other state fields for context
+        #     other_keys = [k for k in request.values.keys() if k != "active_searches"]
+        #     if other_keys:
+        #         logger.info(f"[STATE_INIT_DEBUG] Other incoming state keys: {other_keys}")
+        #
+        #     # Log dial_map_session_id if present in context
+        #     if request.context and isinstance(request.context, dict):
+        #         dial_map_id = request.context.get("dial_map_session_id")
+        #         if dial_map_id:
+        #             logger.info(f"[STATE_INIT_DEBUG] dial_map_session_id from context: {dial_map_id}")
     logger.info("=" * 80)
 
     # If no values provided, treat this as a GET-like query via POST

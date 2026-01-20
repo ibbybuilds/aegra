@@ -541,7 +541,8 @@ Tools may return these statuses:
   - API endpoints or system architecture
   - Internal system errors or stack traces
   - Redis cache keys or storage mechanisms
-
+  - Never mention "search key, rate key, token, hotel id, etc."
+  
   **ONLY expose to customers**:
   - Hotel names and brand information
   - Star ratings and customer reviews

@@ -16,27 +16,43 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # -----------------------------
 FROM base AS builder
 
+# Retrieve the uv binary directly from the official image.
+# This is the recommended installation method for Docker builds.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
+# Install system build dependencies required for compiling Python extensions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project metadata and readme
-COPY pyproject.toml README.md ./
+# Copy dependency definition files ONLY.
+# We explicitly exclude README.md and src/ at this stage.
+# This ensures that changes to documentation or source code do not invalidate
+# the heavy dependency installation layer cached by Docker.
+COPY pyproject.toml uv.lock ./
 
-# Install dependencies defined in pyproject.toml first.
-# By doing this before copying the source code, we leverage Docker layer caching:
-# if pyproject.toml hasn't changed, this heavy installation step is cached.
-RUN uv pip install --system --compile-bytecode -r pyproject.toml
+# Install dependencies strictly from uv.lock.
+# 1. `uv export`: Converts uv.lock into a requirements.txt format with pinned versions.
+#    - `--frozen`: Ensures the lockfile is in sync with pyproject.toml (fails otherwise).
+#    - `--no-emit-project`: Excludes the current project from installation (we install it later).
+# 2. `uv pip install`: Installs the dependencies into the system site-packages.
+RUN uv export --frozen --no-dev --no-emit-project --format=requirements-txt > requirements.txt && \
+    uv pip install --system --compile-bytecode -r requirements.txt
 
-# Copy the actual project source code
+# Copy project metadata (README).
+# This is copied in a separate layer after dependencies are installed.
+# We need it for the final project installation (if referenced in pyproject.toml),
+# but changing it should not trigger a re-download of PyPI packages.
+COPY README.md ./
+
+# Copy the actual project source code.
 COPY src/ ./src/
 
 # Install the project package itself.
-# The '--no-deps' flag ensures we don't re-resolve or re-download dependencies,
-# since they were already installed in the previous layer.
+# - `--no-deps`: Critical flag. Prevents uv from re-resolving or checking PyPI,
+#   as all dependencies are already guaranteed to be installed in the previous layer.
+# - `--compile-bytecode`: Optimizes startup time by pre-compiling .pyc files.
 RUN uv pip install --system --compile-bytecode --no-deps .
 
 # -----------------------------
@@ -49,7 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed Python packages and console scripts from builder
+# Copy installed Python packages from the builder stage.
 COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 

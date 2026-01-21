@@ -7,11 +7,11 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: aegra
     ports:
-      - "5442:5432"  # 外部端口 5442，避免与 Langfuse 冲突
+      - "5442:5432" # 外部端口 5442，避免与 Langfuse 冲突
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d aegra"]
+      test: [ "CMD-SHELL", "pg_isready -U user -d aegra" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,22 +21,22 @@ services:
     build:
       context: .
       dockerfile: deployments/docker/Dockerfile
-    user: "0:0"  # Run as root to install dependencies
+    user: "0:0" # Run as root to install dependencies
     ports:
-      - "0.0.0.0:${PORT:-2024}:${PORT:-2024}"  # 绑定到所有网络接口，内网可访问
+      - "0.0.0.0:${PORT:-2024}:${PORT:-2024}" # 绑定到所有网络接口，内网可访问
     extra_hosts:
-      - "host.docker.internal:host-gateway"  # 允许容器访问主机服务
+      - "host.docker.internal:host-gateway" # 允许容器访问主机服务
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra  # 容器内仍是 5432
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra # 容器内仍是 5432
       - AUTH_TYPE=custom
       - DEBUG=true
-      - PORT=${PORT:-2024}  # 服务监听 2024
+      - PORT=${PORT:-2024} # 服务监听 2024
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp_credentials.json
       # Database connection pool settings
-      - SA_POOL_SIZE=10  # SQLAlchemy pool size (increased from default 2)
-      - SA_MAX_OVERFLOW=5  # Allow 5 additional connections when pool is exhausted
-      - LG_POOL_SIZE=20  # LangGraph pool size (increased from default 6)
-      - LG_MIN_POOL_SIZE=5  # LangGraph minimum pool size (increased from default 1)
+      - SA_POOL_SIZE=10 # SQLAlchemy pool size (increased from default 2)
+      - SA_MAX_OVERFLOW=5 # Allow 5 additional connections when pool is exhausted
+      - LG_POOL_SIZE=20 # LangGraph pool size (increased from default 6)
+      - LG_MIN_POOL_SIZE=5 # LangGraph minimum pool size (increased from default 1)
       # Data directories - 容器内路径
       - BASE_DATA_DIR=/app/data
       - WORKSPACE_DIR=/app/data/workspace
@@ -59,11 +59,13 @@ services:
       - BG_JOB_ISOLATED_LOOPS=false
       # Langfuse - 连接到内网 IP 的 Langfuse 服务
       - LANGFUSE_HOST=http://202.45.128.237:7312
+      # Redis - Connect to local Redis service on host (port 6380)
+      - REDIS_URL=redis://host.docker.internal:6380/0
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ./aegra.docker.json:/app/aegra.json:ro  # 使用 Docker 专用配置
+      - ./aegra.docker.json:/app/aegra.json:ro # 使用 Docker 专用配置
       - ./graphs:/app/graphs:ro
       - ./src:/app/src:ro # for hot reload support of server
       - ./auth.py:/app/auth.py:ro
@@ -72,7 +74,7 @@ services:
       # Mount quantitative_strategy_agent for graph loading
       - ../quantitative_strategy_agent:/app/quantitative_strategy_agent:ro
       # Mount data directories for persistence
-      - ../data:/app/data  # 持久化 workspace 和 memories
+      - ../data:/app/data # 持久化 workspace 和 memories
       # DinD: 挂载 Docker socket，允许容器内调用 Docker API
       - /var/run/docker.sock:/var/run/docker.sock
       - ${GCP_ADC_PATH:-/dev/null}:/app/gcp_credentials.json:ro

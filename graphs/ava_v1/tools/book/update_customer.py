@@ -8,12 +8,23 @@ from typing import Annotated, Literal
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 
+class UpdateCustomerDetailsInput(BaseModel):
+    """Input schema for updating customer details."""
+
+    field: Literal["first_name", "last_name", "email"] = Field(
+        description="Field to update: 'first_name', 'last_name', or 'email'"
+    )
+    value: str = Field(description="Verified value for the field")
+
+
 @tool(
-    description="CRITICAL: Save verified customer details (first_name, last_name, or email) IMMEDIATELY after spelling confirmation. Call this tool RIGHT AFTER the user confirms each field - do NOT wait to collect all three fields. Save first_name, THEN last_name, THEN email in separate sequential calls."
+    args_schema=UpdateCustomerDetailsInput,
+    description="CRITICAL: Save verified customer details (first_name, last_name, or email) IMMEDIATELY after spelling confirmation. Call this tool RIGHT AFTER the user confirms each field - do NOT wait to collect all three fields. Save first_name, THEN last_name, THEN email in separate sequential calls.",
 )
 def update_customer_details(
     field: Literal["first_name", "last_name", "email"],

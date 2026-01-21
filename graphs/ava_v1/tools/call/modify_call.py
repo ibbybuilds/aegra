@@ -2,9 +2,10 @@
 
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +140,21 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
     return " ".join(parts)
 
 
+class ModifyCallInput(BaseModel):
+    """Input schema for modifying call state."""
+
+    action_type: Literal["end-call", "pay-transfer", "live-handoff"] = Field(
+        description="Action type: 'end-call' to end conversation, 'pay-transfer' to transfer to payment line, or 'live-handoff' to transfer to live agent"
+    )
+    summary: str | None = Field(
+        default=None,
+        description="Optional for live-handoff. Additional context/reason for transfer (auto-extracted context is included)",
+    )
+
+
 @tool(
-    description="Signal to end the call, transfer to payment line, or transfer to live agent"
+    args_schema=ModifyCallInput,
+    description="Signal to end the call, transfer to payment line, or transfer to live agent",
 )
 async def modify_call(
     action_type: str,

@@ -9,6 +9,7 @@ import httpx
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_details_push
 from ava_v1.shared_libraries.lookup_id import lookup_id
@@ -54,7 +55,27 @@ def _wrap_response(
     return Command(update=update_dict)
 
 
-@tool(description="Retrieve detailed information about a specific hotel by ID or name")
+class HotelDetailsInput(BaseModel):
+    """Input schema for retrieving hotel details."""
+
+    hotel_id: str | None = Field(
+        default=None,
+        description="Hotel ID from query_vfs results (the 'id' field). Required if hotel_name not provided.",
+    )
+    hotel_name: str | None = Field(
+        default=None,
+        description="Hotel name for lookup (e.g., 'JW Marriott'). Optional alternative to hotel_id.",
+    )
+    destination: str | None = Field(
+        default=None,
+        description="Destination/city hint for name resolution (e.g., 'Miami'). Required if hotel_name provided.",
+    )
+
+
+@tool(
+    args_schema=HotelDetailsInput,
+    description="Retrieve detailed information about a specific hotel by ID or name",
+)
 async def hotel_details(
     hotel_id: str | None = None,
     hotel_name: str | None = None,

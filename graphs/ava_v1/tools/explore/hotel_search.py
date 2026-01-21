@@ -438,7 +438,7 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
 
 
 @tool(
-    description="Start hotel search - initiates search and returns status (does not return hotel results)"
+    description="Start hotel search after confirming all required parameters with user"
 )
 async def start_hotel_search(
     searches: list[HotelSearchParams],
@@ -446,27 +446,33 @@ async def start_hotel_search(
 ) -> Command | str:
     """Start hotel search - initiates search but does NOT return hotel results.
 
+    BEFORE CALLING THIS TOOL:
+        1. Gather parameters in order: dates → occupancy (adults, children) → rooms (only ask if 2+ adults, default to 1)
+        2. MUST confirm ALL parameters with user in natural conversational language
+        3. Wait for explicit confirmation ("yes", "correct", "that's right") before calling
+        4. Example confirmation: "So you're looking for Miami on February first to second for one adult in one room, is that right?"
+        5. NEVER use bullet points or robotic lists when confirming - speak naturally
+
     PURPOSE:
-        Initiate hotel searches for a destination. This tool does NOT wait for complete
-        results - it returns immediately with a status. Use query_vfs() tool after engaging
-        the user to retrieve and filter results.
+        Initiate hotel searches for a destination. This tool returns immediately with status.
+        Use query_vfs() after engaging the user to retrieve and present results.
 
-        If user provides a hotel name (e.g., "JW Marriott"), this tool will attempt
-        to resolve it directly, allowing you to skip straight to start_room_search().
+    REQUIRED PARAMETERS:
+        - destination: City or region (e.g., "Miami, Florida")
+        - checkIn: Check-in date in YYYY-MM-DD format
+        - checkOut: Check-out date in YYYY-MM-DD format
+        - occupancy: Dict with numOfAdults (required), numOfRooms (default 1), childAges (if applicable)
+        - name: Optional hotel name for direct lookup (e.g., "JW Marriott")
 
-    PARAMETERS:
-        searches: List of search dictionaries, each containing:
-            - Destination (required, str): Destination city/location
-            - checkIn (required, str): Check-in date in YYYY-MM-DD format
-            - checkOut (required, str): Check-out date in YYYY-MM-DD format
-            - occupancy (required, dict): Occupancy details
-            - name (optional, str): Hotel name for direct lookup
+    HOTEL NAME LOOKUP:
+        If user provides a hotel name, this tool resolves it directly, allowing you to skip
+        straight to start_room_search() with the resolvedHotelId.
 
     RETURNS:
         Command with state updates containing search metadata
 
     Args:
-        searches: List of search parameters
+        searches: List of HotelSearchParams objects
         runtime: Injected tool runtime for accessing agent state
     """
     logger.info("=" * 80)

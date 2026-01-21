@@ -6,6 +6,7 @@ from typing import Annotated
 
 import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
+from pydantic import BaseModel, Field
 
 # Import redis_client
 from ava_v1.shared_libraries.redis_client import get_redis_pool
@@ -16,7 +17,39 @@ logger = logging.getLogger(__name__)
 MAX_RESULTS_LIMIT = 5
 
 
-@tool(description="Query and filter search results from Redis JSON cache")
+class QueryVfsInput(BaseModel):
+    """Input schema for querying virtual file system."""
+
+    search_id: str | None = Field(
+        default=None, description="Direct search ID to query results for"
+    )
+    destination: str | None = Field(
+        default=None,
+        description="Destination name or composite key (e.g., 'Miami' or 'Miami:JW Marriott')",
+    )
+    jsonpath: str | None = Field(
+        default=None,
+        description="JSONPath query for filtering results (e.g., '$.results[?(@.rating >= 4)]')",
+    )
+    sort_by: str | None = Field(
+        default=None,
+        description="Field name to sort results by (e.g., 'price', 'rating')",
+    )
+    sort_order: str = Field(
+        default="asc",
+        description="Sort order: 'asc' for ascending or 'desc' for descending",
+    )
+    limit: int | None = Field(
+        default=None,
+        description="Maximum number of results to return (capped at 5)",
+        le=5,
+    )
+
+
+@tool(
+    args_schema=QueryVfsInput,
+    description="Query and filter search results from Redis JSON cache",
+)
 async def query_vfs(
     search_id: str = None,
     destination: str = None,

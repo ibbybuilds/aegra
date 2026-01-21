@@ -5,6 +5,7 @@ import logging
 import os
 
 from langchain.tools import tool
+from pydantic import BaseModel, Field
 from tavily import TavilyClient
 
 logger = logging.getLogger(__name__)
@@ -28,8 +29,23 @@ def _get_tavily_client() -> TavilyClient:
     return TavilyClient(api_key=api_key)
 
 
+class InternetSearchInput(BaseModel):
+    """Input schema for internet search."""
+
+    query: str = Field(
+        description="Search query for hotel booking related information"
+    )
+    max_results: int = Field(
+        default=3,
+        description="Maximum number of search results to return (max 5)",
+        ge=1,
+        le=5,
+    )
+
+
 @tool(
-    description="Search the internet for hotel booking related information such as weather, events, or hotel reviews"
+    args_schema=InternetSearchInput,
+    description="Search the internet for hotel booking related information such as weather, events, or hotel reviews",
 )
 def internet_search(
     query: str,

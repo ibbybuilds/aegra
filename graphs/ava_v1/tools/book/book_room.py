@@ -6,12 +6,13 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from ava_v1.shared_libraries.context_helpers import prepare_booking_pending_push
 from ava_v1.shared_libraries.hashing import _generate_booking_hash
@@ -31,8 +32,39 @@ from ava_v1.shared_libraries.validation import (
 logger = logging.getLogger(__name__)
 
 
+class RoomDict(BaseModel):
+    """Room object structure for booking."""
+
+    hotel_id: str = Field(description="Hotel ID from query_vfs results")
+    rate_key: str = Field(description="Rate key from room object in query_vfs")
+    token: str = Field(description="Token from TOP LEVEL of query_vfs response")
+    refundable: bool = Field(description="Whether the rate is refundable")
+    expected_price: float = Field(
+        description="Expected price for price verification", gt=0
+    )
+
+
+class BookRoomInput(BaseModel):
+    """Input schema for booking a hotel room."""
+
+    room: RoomDict = Field(
+        description="Complete room object built from query_vfs response"
+    )
+    payment_type: Literal["phone", "sms"] = Field(
+        description="Payment method: 'phone' for phone payment or 'sms' for SMS link"
+    )
+    session_id: str | None = Field(
+        default=None, description="Optional session ID for tracking"
+    )
+    price_confirmation_token: str | None = Field(
+        default=None,
+        description="Token from previous call if price changed and user confirmed",
+    )
+
+
 @tool(
-    description="Initiate hotel room booking with price verification and payment setup"
+    args_schema=BookRoomInput,
+    description="Initiate hotel room booking with price verification and payment setup",
 )
 async def book_room(
     room: dict[str, Any],

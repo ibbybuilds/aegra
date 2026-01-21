@@ -9,11 +9,20 @@ consider implementing more robust and specialized tools tailored to your needs.
 from collections.abc import Callable
 from typing import Any
 
+from langchain.tools import tool
 from langgraph.runtime import get_runtime
+from pydantic import BaseModel, Field
 
 from react_agent.context import Context
 
 
+class SearchInput(BaseModel):
+    """Input schema for search tool."""
+
+    query: str = Field(description="Search query for general web results")
+
+
+@tool(args_schema=SearchInput, description="Search for general web results")
 async def search(query: str) -> dict[str, Any] | None:
     """Search for general web results.
 

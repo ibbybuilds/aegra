@@ -64,7 +64,36 @@ class BookRoomInput(BaseModel):
 
 @tool(
     args_schema=BookRoomInput,
-    description="Initiate hotel room booking with price verification and payment setup",
+    description="""Initiate hotel room booking with price verification and payment setup.
+
+PREREQUISITES (must complete in order):
+1. Call start_room_search(hotel_id, search_key) to initiate room search
+2. Engage user while search runs
+3. Call query_vfs(destination, sort_by) to get complete room data with token and rate_key
+4. User selects a room
+5. Verify customer details via update_customer_details (first_name, last_name, email) - call sequentially for each field
+
+CRITICAL - Room Object Structure:
+Must be built from query_vfs response (NOT from firstRoom preview):
+{
+  "hotel_id": vfs_response["results"][0]["hotel_id"],
+  "rate_key": vfs_response["results"][0]["rate_key"],     // FROM room object
+  "token": vfs_response["token"],                          // FROM TOP LEVEL
+  "refundable": vfs_response["results"][0]["refundable_rate"] != null,
+  "expected_price": vfs_response["results"][0]["refundable_rate"] or non_refundable_rate
+}
+
+WARNING: FirstRoom preview from start_room_search is INCOMPLETE - it lacks token and complete rate_key. NEVER use firstRoom for booking - you MUST call query_vfs first.
+
+Behavior:
+- Creates 10-minute prebook hold with price verification
+- If price changed: Returns price_confirmation_token (call again with token after user confirms)
+- If success: Returns payment_pending status (then call modify_call with action_type="pay-transfer")
+- Validates all customer details are verified before proceeding
+
+Payment Types:
+- "phone": Transfer to phone payment line
+- "sms": Send SMS payment link""",
 )
 async def book_room(
     room: dict[str, Any],
@@ -75,38 +104,18 @@ async def book_room(
 ) -> Command | str:
     """Initiate hotel room booking with price verification and payment setup.
 
-    PURPOSE:
-        Complete the booking process by creating a 10-minute prebook hold and
-        preparing payment. CRITICAL: You MUST call query_vfs first to obtain
-        complete room data with token and rate_key. The firstRoom preview from
-        start_room_search is incomplete and CANNOT be used.
+    Creates a 10-minute prebook hold and prepares payment. Requires complete room data from query_vfs
+    and verified customer details from update_customer_details.
 
-    PREREQUISITE:
-        Before calling this tool, you MUST:
-        1. Call start_room_search() to initiate room search
-        2. Engage user and wait for response
-        3. Call query_vfs() to get complete room data with token
-        4. Extract token from TOP LEVEL and rate_key from room object
-        5. Verify customer details (first name, last name, email) sequentially using update_customer_details tool
-
-    PARAMETERS:
-        room (dict): Room object built from query_vfs response
-            CRITICAL STRUCTURE:
-            {
-                "hotel_id": vfs_response["results"][0]["hotel_id"],
-                "rate_key": vfs_response["results"][0]["rate_key"],
-                "token": vfs_response["token"],  # FROM TOP LEVEL
-                "refundable": True or False,
-                "expected_price": vfs_response["results"][0]["refundable_rate"]
-            }
-
-        payment_type (str): Payment method - "phone" or "sms"
-        session_id (str, optional): Session ID for tracking
-        price_confirmation_token (str, optional): Token from previous call if price changed
+    Args:
+        room: Room object built from query_vfs response (must include hotel_id, rate_key, token, refundable, expected_price)
+        payment_type: Payment method - "phone" or "sms"
+        session_id: Optional session ID for tracking
+        price_confirmation_token: Token from previous call if price changed and user confirmed
         runtime: Injected tool runtime for accessing agent state
 
-    RETURNS:
-        Command with state updates containing booking metadata
+    Returns:
+        Command with state updates or JSON string with booking status
     """
     logger.info("=" * 80)
     logger.info("[BOOK_ROOM] Tool called with:")

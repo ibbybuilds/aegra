@@ -121,32 +121,17 @@ async def start_room_search(
     search_key: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Start room search - initiates room search but does NOT return room results.
+    """Start room search - initiates room search but does not return complete room results.
 
-    PURPOSE:
-        Initiate room search for a specific hotel. This tool does NOT return room results -
-        it returns immediately with a status and optional firstRoom preview. CRITICAL: The
-        firstRoom preview is INCOMPLETE and CANNOT be used for booking. You MUST call
-        query_vfs() after engaging the user to get complete room data with token and rate_key.
+    Returns immediately with status. Must call query_vfs() next to get complete room data with token.
 
-    PARAMETERS:
-        hotel_id (str): Hotel ID from either:
-            - query_vfs results after hotel search (the "id" field)
-            - start_hotel_search resolvedHotelId (when name_resolved status)
-        search_key (str): Search key from start_hotel_search response
-            - Simple format: "Miami" (for full destination searches)
-            - Composite format: "Miami:JW Marriott" (for name-resolved searches)
-            - IMPORTANT: Use the exact searchKey from start_hotel_search response
+    Args:
+        hotel_id: Hotel ID from query_vfs or start_hotel_search resolvedHotelId
+        search_key: Search key from start_hotel_search response (use exact value)
         runtime: Injected tool runtime for accessing agent state
 
-    RETURNS:
-        Command with state updates containing room search metadata
-
-    CRITICAL WARNINGS:
-        - The firstRoom field (when status="cached") is a PREVIEW ONLY
-        - firstRoom does NOT contain the token or complete rate_key needed for booking
-        - DO NOT attempt to book using firstRoom data
-        - You MUST call query_vfs() after this tool to get complete room data
+    Returns:
+        Command with state updates or JSON string with search status
     """
     logger.info("=" * 80)
     logger.info("[ROOMS_AND_RATES] Tool called with:")

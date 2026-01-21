@@ -74,7 +74,31 @@ class HotelDetailsInput(BaseModel):
 
 @tool(
     args_schema=HotelDetailsInput,
-    description="Retrieve detailed information about a specific hotel by ID or name",
+    description="""Retrieve detailed information about a specific hotel (two-step process).
+
+TWO-STEP PROCESS:
+Step 1: This tool triggers cache-worker to cache hotel details in Redis
+Step 2: Call query_vfs(destination="details:{hotel_id}") to retrieve the cached data
+
+This tool returns immediately with status. You MUST call query_vfs after to get the actual hotel details (amenities, photos, description, reviews, policies, etc.).
+
+Supports Both Lookups:
+- By hotel_id: Direct lookup using ID from query_vfs results (e.g., hotel_id="39615853")
+- By hotel_name: Requires destination hint (e.g., hotel_name="JW Marriott", destination="Miami")
+
+Name Resolution:
+If hotel_name provided, tool resolves it via Pinecone search before caching.
+- High confidence (single match): Returns success with hotelId for next step
+- Low confidence (multiple matches): Returns clarification_needed with hotel list
+
+Next Action:
+After success response, always call query_vfs(destination="details:{hotelId}") to retrieve full details.
+
+Example Flow:
+1. hotel_details(hotel_id="39615853")
+2. Response: {"status": "success", "hotelId": "39615853", "message": "...call query_vfs..."}
+3. query_vfs(destination="details:39615853")
+4. Response: Full hotel details with amenities, photos, policies, etc.""",
 )
 async def hotel_details(
     hotel_id: str | None = None,
@@ -82,50 +106,18 @@ async def hotel_details(
     destination: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Retrieve detailed information about a specific hotel.
+    """Retrieve detailed hotel information in two steps: cache trigger + query_vfs retrieval.
 
-    Triggers cache-worker to cache hotel details. The agent must then call
-    query_vfs to retrieve the actual data from Redis.
-
-    Supports both hotel ID and hotel name lookups. If hotel_name is provided,
-    it will be resolved to an ID via Pinecone search before fetching details.
+    Triggers cache-worker to cache hotel details, then requires query_vfs call to retrieve data.
 
     Args:
-        hotel_id: Hotel ID from query_vfs results (the 'id' field). Required if hotel_name not provided.
+        hotel_id: Hotel ID from query_vfs results. Required if hotel_name not provided.
         hotel_name: Hotel name for lookup (e.g., "JW Marriott"). Optional alternative to hotel_id.
-        destination: Destination/city hint for name resolution (e.g., "Miami"). Required if hotel_name provided.
+        destination: City hint for name resolution (e.g., "Miami"). Required if hotel_name provided.
         runtime: Injected tool runtime for context management
 
     Returns:
-        JSON string or Command with status metadata
-
-    Example Success Response:
-        {
-            "status": "success",
-            "hotelId": "39615853",
-            "hotelName": "JW Marriott Miami",
-            "message": "Hotel details cached. Call query_vfs(destination=\"details:39615853\") to retrieve full details.",
-            "cached": True
-        }
-
-    Example Name Resolution Response (multiple matches):
-        {
-            "status": "clarification_needed",
-            "hotels": [
-                {"id": "123", "name": "JW Marriott Miami", "address": "..."},
-                {"id": "456", "name": "JW Marriott Downtown Miami", "address": "..."}
-            ],
-            "message": "Found 2 hotels matching 'JW Marriott'."
-        }
-
-    Example Error Response:
-        {
-            "status": "error",
-            "error": {
-                "type": "hotel_not_found" | "api_error" | "name_lookup_failed" | "unexpected_error",
-                "message": "..."
-            }
-        }
+        JSON string or Command with status (always call query_vfs after for actual details)
     """
     logger.info("=" * 80)
     logger.info("[DEBUG] hotel_details() ENTRY POINT - Tool called")

@@ -31,27 +31,15 @@ def update_customer_details(
     value: str,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Save a verified customer detail to persistent state.
-
-    CRITICAL TIMING: Call this tool IMMEDIATELY after the user confirms the spelling
-    of their first name, last name, or email address. Do NOT batch - save each field
-    individually as soon as it's confirmed.
-
-    WORKFLOW:
-    1. Ask for first name → spell verify → user confirms → CALL THIS TOOL with field="first_name"
-    2. Ask for last name → spell verify → user confirms → CALL THIS TOOL with field="last_name"
-    3. Ask for email → spell verify → user confirms → CALL THIS TOOL with field="email"
-
-    PURPOSE: Saves data to state immediately to avoid relying on conversation context/memory.
-    This prevents data loss during long conversations or message summarization.
+    """Save verified customer detail to persistent state immediately after user confirms spelling.
 
     Args:
-        field: The field to update ("first_name", "last_name", or "email")
-        value: The verified value (e.g., "John", "Smith", "john@example.com")
+        field: Field to update ("first_name", "last_name", or "email")
+        value: Verified value (e.g., "John", "Smith", "john@example.com")
         runtime: Injected runtime for state updates
 
     Returns:
-        Confirmation message
+        Command with state update or JSON string with confirmation
     """
     logger.info(f"[UPDATE_CUSTOMER] Updating {field} = {value}")
 

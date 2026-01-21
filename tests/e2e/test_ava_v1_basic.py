@@ -1,44 +1,44 @@
 """E2E tests for ava_v1 graph."""
 
 import pytest
-from httpx import AsyncClient
+
+from tests.e2e._utils import get_e2e_client
 
 
+@pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_ava_v1_graph_registered(client: AsyncClient):
+async def test_ava_v1_graph_registered():
     """Test that ava_v1 graph is registered."""
-    response = await client.get("/assistants")
-    assert response.status_code == 200
+    client = get_e2e_client()
 
-    assistants = response.json()
+    assistants = await client.assistants.search()
     graph_ids = [a["graph_id"] for a in assistants]
     assert "ava_v1" in graph_ids, "ava_v1 graph should be registered"
 
 
+@pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_ava_v1_with_context(client: AsyncClient):
+async def test_ava_v1_with_context():
     """Test ava_v1 with call_context."""
+    client = get_e2e_client()
+
     # Create thread
-    thread_response = await client.post("/threads", json={})
-    assert thread_response.status_code == 201
-    thread_id = thread_response.json()["thread_id"]
+    thread = await client.threads.create()
+    thread_id = thread["thread_id"]
 
     # Create run with context
-    run_response = await client.post(
-        f"/threads/{thread_id}/runs",
-        json={
-            "assistant_id": "ava_v1",
-            "input": {"messages": [{"role": "user", "content": "Hello"}]},
-            "context": {
-                "call_context": {
-                    "type": "general",
-                    "user_phone": "+1234567890",
-                }
-            },
+    run = await client.runs.create(
+        thread_id=thread_id,
+        assistant_id="ava_v1",
+        input={"messages": [{"role": "user", "content": "Hello"}]},
+        context={
+            "call_context": {
+                "type": "general",
+                "user_phone": "+1234567890",
+            }
         },
     )
-    assert run_response.status_code == 200
-    run_id = run_response.json()["run_id"]
+    run_id = run["run_id"]
 
     # Verify run was created
     assert run_id is not None

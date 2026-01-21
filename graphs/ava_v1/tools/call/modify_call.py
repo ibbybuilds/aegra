@@ -154,75 +154,50 @@ class ModifyCallInput(BaseModel):
 
 @tool(
     args_schema=ModifyCallInput,
-    description="Signal to end the call, transfer to payment line, or transfer to live agent",
+    description="""Signal to end the call, transfer to payment line, or transfer to live agent.
+
+Action Types:
+1. 'end-call': End conversation naturally (no additional parameters needed)
+2. 'pay-transfer': Transfer to payment line after successful booking
+3. 'live-handoff': Transfer to live agent for complex requests
+
+Auto-Extraction (NO manual parameters needed):
+- 'pay-transfer': Automatically retrieves booking details from most recent BookingPending context in context_stack
+  - Extracts: booking_hash, s3_key, amount, currency
+  - Returns error if no pending booking found (call book_room first)
+
+- 'live-handoff': Automatically extracts conversation context from context_stack
+  - Extracts: current activity, property name, destination, dates, occupancy, booking status
+  - Optional 'summary' parameter: Add agent's notes/reason for transfer (e.g., "customer wants group booking for 10+ rooms")
+  - Auto-extracted context is ALWAYS included, 'summary' adds additional context
+
+Usage Examples:
+- End call: modify_call(action_type="end-call")
+- Transfer to payment: modify_call(action_type="pay-transfer")  [auto-extracts booking]
+- Transfer to agent: modify_call(action_type="live-handoff")  [auto-extracts context]
+- Transfer with notes: modify_call(action_type="live-handoff", summary="wants corporate discount")
+
+Typical Flow:
+1. book_room() completes successfully
+2. Explain payment process to customer
+3. modify_call(action_type="pay-transfer")  [booking details auto-retrieved]""",
 )
 async def modify_call(
     action_type: str,
     summary: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> str:
-    """Signal to end the call, transfer to payment line, or transfer to live agent.
+    """Signal call modification: end call, transfer to payment, or transfer to live agent.
 
-    This is a tool that triggers call modification events. For pay-transfer,
-    automatically retrieves booking details from the most recent BookingPending
-    context in the context_stack. For live-handoff, automatically extracts
-    conversation context and optionally includes agent-provided summary.
+    Automatically extracts booking details (pay-transfer) and conversation context (live-handoff).
 
     Args:
-        action_type: Action type - "end-call", "pay-transfer", or "live-handoff"
-        summary: Optional for live-handoff. Additional context/reason for transfer (auto-extracted context is included)
+        action_type: "end-call", "pay-transfer", or "live-handoff"
+        summary: Optional for live-handoff. Additional notes/reason for transfer (auto-context always included)
         runtime: Injected tool runtime for accessing agent state
 
     Returns:
-        JSON string with status:
-
-        Success (end-call):
-        {
-            "status": "success",
-            "type": "end-call",
-            "message": str
-        }
-
-        Success (pay-transfer):
-        {
-            "status": "success",
-            "type": "pay-transfer",
-            "message": str,
-            "booking_hash": str,
-            "s3_key": str,
-            "amount": float,
-            "currency": str
-        }
-
-        Success (live-handoff):
-        {
-            "status": "success",
-            "type": "live-handoff",
-            "message": "Transferring to live agent",
-            "summary": str,
-            "url": str (optional)
-        }
-
-        Error:
-        {
-            "status": "error",
-            "error": {
-                "type": str,
-                "message": str,
-                "hint": str (optional)
-            }
-        }
-
-    Examples:
-        End call:
-        >>> modify_call(action_type="end-call")
-
-        Transfer to payment (retrieves details from context_stack):
-        >>> modify_call(action_type="pay-transfer")
-
-        Transfer to live agent (auto-extracts context):
-        >>> modify_call(action_type="live-handoff")
-        >>> modify_call(action_type="live-handoff", summary="wants group booking for 10+ rooms")
+        JSON string with status and action details
     """
     logger.info("=" * 80)
     logger.info("[MODIFY_CALL] Tool called with:")

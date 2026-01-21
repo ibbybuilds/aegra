@@ -48,7 +48,35 @@ class QueryVfsInput(BaseModel):
 
 @tool(
     args_schema=QueryVfsInput,
-    description="Query and filter search results from Redis JSON cache",
+    description="""PRIMARY tool for retrieving complete hotel/room search results from Redis cache.
+
+CRITICAL - Token Placement:
+- 'token' field is at TOP LEVEL of response (required for book_room)
+- 'rate_key' is INSIDE each room object (required for book_room)
+- NEVER fabricate these values - they must come from query_vfs response
+- The firstRoom preview from start_room_search is INCOMPLETE (lacks token/rate_key) - CANNOT be used for booking
+
+Usage Patterns:
+- After start_hotel_search: query_vfs(destination="Miami") to retrieve hotel list
+- After start_room_search: query_vfs(destination="Miami", sort_by="price") to retrieve room list with token
+- After hotel_details: query_vfs(destination="details:hotel_123") to retrieve hotel details
+
+Status Meanings:
+- 'cached': Results ready and complete
+- 'not_ready': Still searching (wait 2-3 seconds and retry)
+- 'expired': Search data expired (run new search)
+- 'partial': Incomplete results (some data available)
+
+Validation Rules:
+If response lacks token or rate_key:
+1. Check 'status' field
+2. If 'not_ready', wait and retry (max 3 times)
+3. If 'expired', inform user and offer new search
+4. NEVER proceed to book_room without valid token AND rate_key
+
+Structure Examples:
+Hotel search response: {"searchId": "abc", "results": [{"id": 123, "name": "Hotel", "price": 250}], "count": 5}
+Room search response: {"searchId": "def", "token": "TOP_LEVEL_TOKEN", "results": [{"rate_key": "IN_ROOM", "hotel_id": 123, "price": 250}], "count": 3}""",
 )
 async def query_vfs(
     search_id: str = None,
@@ -61,71 +89,19 @@ async def query_vfs(
 ) -> str:
     """Query and filter search results from Redis JSON cache.
 
-    PURPOSE:
-        This is the PRIMARY tool for retrieving complete search results with all fields
-        required for booking. CRITICAL: The firstRoom preview from start_room_search is
-        incomplete and CANNOT be used for booking - you MUST call query_vfs to get
-        complete room data with token and rate_key before calling book_room.
+    Primary tool for retrieving complete search results with token and rate_key required for booking.
 
-    PARAMETERS:
-        search_id (str, optional): Direct search ID from previous search response
-            - Example: "abc123" (the searchId field from start_hotel_search or start_room_search)
-        destination (str, optional): Destination name or composite key
-            - Simple format: "Miami" (resolves to hotel search results)
-            - Composite format: "Miami:rooms:15335119" (resolves to room search results)
-            - Details format: "details:39615853" (resolves to hotel details by hotel_id)
-        jsonpath (str, optional): JSONPath query for filtering
-            - Hotels: "$.[?(@.price <= 300)]" filters by price
-            - Rooms: "$.rooms[?(@.refundable_rate)]" filters refundable rooms
-            - Default: "$" (returns all results)
-        sort_by (str, optional): Field name to sort by (e.g., "price", "rating")
-        sort_order (str, optional): Sort order - "asc" (default) or "desc"
-        limit (int, optional): Maximum number of results to return
+    Args:
+        search_id: Direct search ID from previous search response
+        destination: Destination name or composite key (e.g., "Miami", "Miami:rooms:123", "details:456")
+        jsonpath: JSONPath query for filtering results
+        sort_by: Field name to sort by (e.g., "price", "rating")
+        sort_order: Sort order - "asc" or "desc"
+        limit: Maximum number of results to return (capped at 5)
         runtime: Injected tool runtime for accessing agent state
 
-    RETURNS:
-        For hotel searches (search:* keys):
-        {
-            "searchId": "abc123",
-            "results": [
-                {"id": 15335119, "name": "Hotel Name", "price": 250.00, ...}
-            ],
-            "count": 5
-        }
-
-        For room searches (rooms:* keys) - CRITICAL STRUCTURE:
-        {
-            "searchId": "def456",
-            "token": "actual_token_here",  # ← TOP LEVEL - required for book_room
-            "results": [
-                {
-                    "rate_key": "actual_rate_key",  # ← IN ROOM OBJECT - required for book_room
-                    "hotel_id": 15335119,
-                    "refundable_rate": 275.15,
-                    "non_refundable_rate": 250.00,
-                    "room_type": "Deluxe King",
-                    ...
-                }
-            ],
-            "count": 1
-        }
-
-    VALIDATION:
-        NEVER fabricate token or rate_key values such as:
-        - "assumed_token", "inferred_token", "placeholder_token"
-        - "assumed_rate_key", "inferred_rate_key", "placeholder_rate_key"
-
-        If response does not contain token or rate_key fields:
-        1. Check the "status" field in response
-        2. If status is "not_ready", wait 2-3 seconds and retry (max 3 times)
-        3. If status is "expired", inform user and offer to run new search
-        4. NEVER proceed to book_room without valid token and rate_key
-
-    CRITICAL WARNINGS:
-        - Token is at TOP LEVEL of response, NOT inside room objects
-        - rate_key is INSIDE each room object in results array
-        - To book a room, you need BOTH: response.token AND response.results[0].rate_key
-        - The firstRoom field from start_room_search is a PREVIEW ONLY - it lacks token
+    Returns:
+        JSON string with search results, including token for room searches
     """
     logger.info("=" * 80)
     logger.info("[QUERY_VFS] Tool called with:")

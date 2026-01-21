@@ -12,7 +12,7 @@ from typing import cast
 from jinja2 import Environment, FileSystemLoader, Template
 
 from ava_v1.context import CallContext
-from ava_v1.prompt import TRAVEL_ASSISTANT_PROMPT
+from ava_v1.prompt import (TRAVEL_ASSISTANT_PROMPT, HOME_PAGE_PROMPT)
 
 # Singleton template instance (compiled once, cached forever)
 _template_cache: Template | None = None
@@ -167,6 +167,7 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
             context=call_context,
             dates=dates,
             base_prompt=TRAVEL_ASSISTANT_PROMPT,
+            home_page_prompt=HOME_PAGE_PROMPT,
         ),
     )
 

@@ -122,11 +122,11 @@ async def query_vfs(
         parts = destination.split(":rooms:")
         if len(parts) == 2:
             _, hotel_id = parts
-            # Look in context_stack for matching hotel_id with roomSearchId
+            # Look in context_stack for matching hotel_id with room_search_id
             context_stack = runtime.state.get("context_stack", []) if runtime else []
             for ctx in reversed(context_stack):  # Search from most recent
-                if ctx.get("hotel_id") == hotel_id and "roomSearchId" in ctx:
-                    search_id = ctx["roomSearchId"]
+                if ctx.get("hotel_id") == hotel_id and "room_search_id" in ctx:
+                    search_id = ctx["room_search_id"]
                     break
 
             if not search_id:

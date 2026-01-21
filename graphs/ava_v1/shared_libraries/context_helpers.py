@@ -77,7 +77,7 @@ def prepare_room_list_push(
         "type": "RoomList",
         "search_key": search_key,
         "hotel_id": hotel_id,
-        "roomSearchId": room_search_id,
+        "room_search_id": room_search_id,
     }
 
     # Check if already at top (idempotent)

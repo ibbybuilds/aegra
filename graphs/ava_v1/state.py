@@ -78,7 +78,8 @@ class AvaV1State(MessagesState):
                      "numOfAdults": 2, "numOfRooms": 1, "childAges": []}
 
         context_stack: Conversational focus tracking stack
-            Format: [{"type": "HotelList", "search_key": "Miami"}, ...]
+            Format: [{"type": "HotelList", "search_key": "Miami"},
+                     {"type": "RoomList", "search_key": "Miami", "hotel_id": "...", "room_search_id": "..."}]
             Types: HotelList, RoomList, HotelDetails, RoomSelected, BookingPending
 
         user_phone: User's phone number in E.164 format (e.g., +12125551234)

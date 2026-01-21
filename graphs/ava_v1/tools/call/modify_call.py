@@ -56,8 +56,8 @@ def _extract_handoff_context(runtime: ToolRuntime | None) -> str:
         check_in = search_params.get("checkIn", "")
         check_out = search_params.get("checkOut", "")
         occupancy = search_params.get("occupancy", {})
-        adults = occupancy.get("adults", 0) if occupancy else 0
-        rooms = occupancy.get("rooms", 0) if occupancy else 0
+        adults = occupancy.get("numOfAdults", 0) if occupancy else 0
+        rooms = occupancy.get("numOfRooms", 0) if occupancy else 0
 
         # Build context based on focus type
         if ctx_type == "BookingPending":

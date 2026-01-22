@@ -61,6 +61,16 @@ async def test_chat_streaming_e2e():
                 if content:
                     token_count += 1
 
+    # Check for blocking if no tokens received
+    if token_count == 0:
+        runs = await client.runs.list(thread_id)
+        if runs:
+            last_run = runs[0]
+            if last_run["status"] == "error":
+                msg = str(last_run.get("error_message", "")).lower()
+                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
+                    pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+
     # Enforce streaming behavior: at least one event received
     assert event_count > 0, "Expected at least one event from streaming run"
     assert token_count > 0, (

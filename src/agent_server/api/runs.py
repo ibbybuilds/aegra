@@ -180,9 +180,6 @@ async def create_run(
     # Get LangGraph service
     langgraph_service = get_langgraph_service()
     logger.info(
-        f"create_run: scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
-    )
-    logger.info(
         f"[create_run] scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
     )
 
@@ -253,20 +250,7 @@ async def create_run(
     await session.commit()
 
     # Build response from ORM -> Pydantic
-    run = Run(
-        run_id=run_id,
-        thread_id=thread_id,
-        assistant_id=resolved_assistant_id,
-        status="pending",
-        input=request.input or {},
-        config=config,
-        context=context,
-        user_id=user.identity,
-        created_at=now,
-        updated_at=now,
-        output=None,
-        error_message=None,
-    )
+    run = Run.model_validate(run_orm)
 
     # Start execution asynchronously
     # Don't pass the session to avoid transaction conflicts
@@ -384,20 +368,7 @@ async def create_and_stream_run(
     await session.commit()
 
     # Build response model for stream context
-    run = Run(
-        run_id=run_id,
-        thread_id=thread_id,
-        assistant_id=resolved_assistant_id,
-        status="running",
-        input=request.input or {},
-        config=config,
-        context=context,
-        user_id=user.identity,
-        created_at=now,
-        updated_at=now,
-        output=None,
-        error_message=None,
-    )
+    run = Run.model_validate(run_orm)
 
     # Start background execution that will populate the broker
     # Don't pass the session to avoid transaction conflicts
@@ -475,9 +446,7 @@ async def get_run(
         f"[get_run] found run status={run_orm.status} user={user.identity} thread_id={thread_id} run_id={run_id}"
     )
     # Convert to Pydantic
-    return Run.model_validate(
-        {c.name: getattr(run_orm, c.name) for c in run_orm.__table__.columns}
-    )
+    return Run.model_validate(run_orm)
 
 
 @router.get("/threads/{thread_id}/runs", response_model=list[Run])
@@ -504,10 +473,7 @@ async def list_runs(
     logger.info(f"[list_runs] querying DB thread_id={thread_id} user={user.identity}")
     result = await session.scalars(stmt)
     rows = result.all()
-    runs = [
-        Run.model_validate({c.name: getattr(r, c.name) for c in r.__table__.columns})
-        for r in rows
-    ]
+    runs = [Run.model_validate(r) for r in rows]
     logger.info(
         f"[list_runs] total={len(runs)} user={user.identity} thread_id={thread_id}"
     )
@@ -560,9 +526,7 @@ async def update_run(
     if run_orm:
         # Refresh to ensure we have the latest data after our own update
         await session.refresh(run_orm)
-    return Run.model_validate(
-        {c.name: getattr(run_orm, c.name) for c in run_orm.__table__.columns}
-    )
+    return Run.model_validate(run_orm)
 
 
 @router.get("/threads/{thread_id}/runs/{run_id}/join")
@@ -820,9 +784,7 @@ async def stream_run(
     # Stream active or pending runs via broker
 
     # Build a lightweight Pydantic Run from ORM for streaming context (IDs already strings)
-    run_model = Run.model_validate(
-        {c.name: getattr(run_orm, c.name) for c in run_orm.__table__.columns}
-    )
+    run_model = Run.model_validate(run_orm)
 
     return StreamingResponse(
         streaming_service.stream_run_execution(
@@ -915,9 +877,7 @@ async def cancel_run_endpoint(
     )
     if not run_orm:
         raise HTTPException(404, f"Run '{run_id}' not found after cancellation")
-    return Run.model_validate(
-        {c.name: getattr(run_orm, c.name) for c in run_orm.__table__.columns}
-    )
+    return Run.model_validate(run_orm)
 
 
 async def execute_run_async(

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from src.agent_server.settings import settings
 
 try:
@@ -24,3 +26,11 @@ def get_e2e_client():
     server_url = settings.app.SERVER_URL
     print(f"[E2E] Using SERVER_URL={server_url}")
     return get_client(url=server_url)
+
+
+def skip_if_blocked(run_data: dict):
+    """Helper to skip test if run failed due to OpenAI geo-blocking."""
+    if run_data.get("status") == "error":
+        msg = str(run_data.get("error_message", "")).lower()
+        if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
+            pytest.skip(f"⛔️ Skipped: OpenAI Geo-block detected. ({msg[:60]}...)")

@@ -1,6 +1,6 @@
 """Tests for thread status API functions."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,7 +13,8 @@ class TestSetThreadStatus:
     @pytest.mark.asyncio
     async def test_set_thread_status_validates_status(self):
         """Test that set_thread_status validates status before updating."""
-        session = AsyncMock()
+        # We use MagicMock for the session so that synchronous attributes are not coroutines.
+        session = MagicMock()
         session.execute = AsyncMock()
         session.commit = AsyncMock()
 
@@ -25,7 +26,10 @@ class TestSetThreadStatus:
     @pytest.mark.asyncio
     async def test_set_thread_status_rejects_invalid_status(self):
         """Test that set_thread_status rejects invalid status values."""
-        session = AsyncMock()
+        # Using MagicMock
+        session = MagicMock()
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
 
         with pytest.raises(ValueError, match="Invalid thread status"):
             await set_thread_status(session, "thread-123", "invalid_status")
@@ -37,21 +41,26 @@ class TestSetThreadStatus:
     @pytest.mark.asyncio
     async def test_set_thread_status_all_valid_statuses(self):
         """Test that set_thread_status accepts all valid statuses."""
-        session = AsyncMock()
+        # Using MagicMock
+        session = MagicMock()
         session.execute = AsyncMock()
         session.commit = AsyncMock()
 
         valid_statuses = ["idle", "busy", "interrupted", "error"]
         for status in valid_statuses:
-            session.reset_mock()
+            session.execute.reset_mock()
+            session.commit.reset_mock()
+
             await set_thread_status(session, "thread-123", status)
+
             session.execute.assert_called_once()
             session.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_set_thread_status_imports_validation(self):
         """Test that set_thread_status imports and uses validation."""
-        session = AsyncMock()
+        # Using MagicMock
+        session = MagicMock()
         session.execute = AsyncMock()
         session.commit = AsyncMock()
 

@@ -4,6 +4,7 @@ This module handles Jinja2 template compilation, caching, and rendering
 with a 5-level priority system for context-based prompt customization.
 """
 
+import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +14,8 @@ from jinja2 import Environment, FileSystemLoader, Template
 
 from ava_v1.context import CallContext
 from ava_v1.prompt import (TRAVEL_ASSISTANT_PROMPT, HOME_PAGE_PROMPT)
+
+logger = logging.getLogger(__name__)
 
 # Singleton template instance (compiled once, cached forever)
 _template_cache: Template | None = None
@@ -133,6 +136,7 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
 
     # If no context provided or context is not valid, use default prompt
     if call_context is None or not isinstance(call_context, CallContext):
+        logger.info("[PROMPT_SELECTION] No context provided - using default TRAVEL_ASSISTANT_PROMPT")
         return TRAVEL_ASSISTANT_PROMPT
 
     # Get date context (cached)
@@ -140,6 +144,19 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
 
     # Determine priority
     priority = _determine_priority(call_context)
+
+    # Log prompt selection details
+    context_summary = {
+        "type": call_context.type,
+        "site_name": call_context.site_name,
+        "has_property": bool(call_context.property),
+        "has_booking": bool(call_context.booking),
+        "has_payment": bool(call_context.payment),
+        "has_abandoned_payment": bool(call_context.abandoned_payment),
+    }
+    logger.info(
+        f"[PROMPT_SELECTION] Context: {context_summary} → Priority: {priority}"
+    )
 
     # Get compiled template (cached)
     template = _get_template()

@@ -246,13 +246,62 @@ REDIS_DB=0
 }
 ```
 
-**Context Types:**
-- `general`: New conversations
-- `property_specific`: Specific hotel inquiries
-- `payment_return`: Post-payment confirmation
-- `thread_continuation`: Resuming conversations
-- `booking`: Dial map integration
-- `abandoned_payment`: Payment recovery flows
+**Context Types (5-level priority system):**
+- `general`: New conversations (homepage, no specific context)
+- `property_specific`: Specific hotel inquiries (Google Ad clicks, direct links to hotel page)
+- `dated_property`: Hotel page with dates pre-filled (user clicked "Book Now" with date picker)
+- `payment_return`: Post-payment confirmation (redirected after Stripe payment)
+- `abandoned_payment`: Payment recovery flows (customer didn't complete payment)
+
+**Setting Context via /state Endpoint:**
+```bash
+# Example 1: Property-specific context (GA call extension)
+POST /threads/{thread_id}/state
+{
+  "context": {
+    "type": "property_specific",
+    "property": {
+      "property_name": "JW Marriott Miami",
+      "hotel_id": "123abc"
+    }
+  }
+}
+
+# Example 2: Dated property context
+POST /threads/{thread_id}/state
+{
+  "context": {
+    "type": "dated_property",
+    "property": {
+      "property_name": "JW Marriott Miami",
+      "hotel_id": "123abc"
+    },
+    "booking": {
+      "destination": "Miami",
+      "check_in": "2026-02-01",
+      "check_out": "2026-02-03",
+      "rooms": 1,
+      "adults": 2,
+      "children": 0
+    }
+  }
+}
+
+# Example 3: Abandoned payment context
+POST /threads/{thread_id}/state
+{
+  "context": {
+    "type": "abandoned_payment",
+    "abandoned_payment": {
+      "timestamp": "2026-01-22T10:25:00Z",
+      "amount": 299.99,
+      "currency": "USD",
+      "minutes_ago": 10,
+      "reason": "timeout"
+    }
+  }
+}
+```
 
 ## Development Patterns
 

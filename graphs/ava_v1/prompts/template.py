@@ -1,7 +1,7 @@
 """Template management for dynamic prompt customization.
 
 This module handles Jinja2 template compilation, caching, and rendering
-with an 8-level priority system for context-based prompt customization.
+with a 5-level priority system for context-based prompt customization.
 """
 
 from datetime import datetime, timedelta
@@ -74,19 +74,16 @@ def _get_date_context() -> dict[str, str]:
 
 
 def _determine_priority(context: CallContext) -> str:
-    """Determine prompt priority based on context (8-level system).
+    """Determine prompt priority based on context (5-level system).
 
     Uses early returns for performance optimization.
 
     Priority Order (highest to lowest):
-    1. Abandoned Payment + Thread Continuation
-    2. Property + Booking (hybrid)
-    3. Property-Specific only
-    4. Booking only
-    5. Payment Return
-    6. Session Context
-    7. Thread Continuation
-    8. General (default)
+    1. Abandoned Payment (with optional thread continuation)
+    2. Property + Booking (dated property)
+    3. Property-Specific (GA call extension)
+    4. Payment Return
+    5. General (default)
 
     Args:
         context: CallContext instance with runtime context

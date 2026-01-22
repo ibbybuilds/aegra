@@ -18,7 +18,7 @@ FROM base AS builder
 
 # Retrieve the uv binary directly from the official image.
 # This is the recommended installation method for Docker builds.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
 
 # Install system build dependencies required for compiling Python extensions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,7 +38,8 @@ COPY pyproject.toml uv.lock ./
 #    - `--no-emit-project`: Excludes the current project from installation (we install it later).
 # 2. `uv pip install`: Installs the dependencies into the system site-packages.
 RUN uv export --frozen --no-dev --no-emit-project --format=requirements-txt > requirements.txt && \
-    uv pip install --system --compile-bytecode -r requirements.txt
+    uv pip install --system --compile-bytecode -r requirements.txt && \
+    rm requirements.txt
 
 # Copy project metadata (README).
 # This is copied in a separate layer after dependencies are installed.

@@ -25,6 +25,9 @@ class StoreSearchRequest(BaseModel):
     """Request model for searching store items"""
 
     namespace_prefix: list[str] = Field(..., description="Namespace prefix to search")
+    filter: dict[str, Any] | None = Field(
+        None, description="Optional dictionary of key-value pairs to filter results."
+    )
     query: str | None = Field(None, description="Search query")
     limit: int | None = Field(20, le=100, ge=1, description="Maximum results")
     offset: int | None = Field(0, ge=0, description="Results offset")

@@ -128,6 +128,7 @@ async def search_store_items(
     results = await store.asearch(
         tuple(scoped_prefix),
         query=request.query,
+        filter=request.filter,
         limit=request.limit or 20,
         offset=request.offset or 0,
     )

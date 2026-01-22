@@ -200,12 +200,14 @@ class TestSearchStoreItems:
             DummyStoreItem("key2", {"data": "value2"}, ("test", "ns")),
         ]
         mock_store.asearch.return_value = mock_results
+        filter_payload = {"type": "note", "status": "active"}
 
         resp = client.post(
             "/store/items/search",
             json={
                 "namespace_prefix": ["test"],
                 "query": None,
+                "filter": filter_payload,
                 "limit": 10,
                 "offset": 0,
             },
@@ -218,6 +220,9 @@ class TestSearchStoreItems:
         assert data["total"] == 2
         assert data["limit"] == 10
         assert data["offset"] == 0
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] == filter_payload
 
     def test_search_items_empty(self, client, mock_store):
         """Test searching with no results"""
@@ -232,6 +237,9 @@ class TestSearchStoreItems:
         data = resp.json()
         assert data["items"] == []
         assert data["total"] == 0
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
 
     def test_search_items_with_query(self, client, mock_store):
         """Test searching with a query string"""
@@ -254,6 +262,30 @@ class TestSearchStoreItems:
         data = resp.json()
         assert len(data["items"]) == 1
         assert data["items"][0]["key"] == "matching-key"
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
+
+    def test_search_items_with_filter_only(self, client, mock_store):
+        """Test searching with filter only"""
+        mock_results = [
+            DummyStoreItem("filtered-key", {"data": "value"}, ("test",)),
+        ]
+        mock_store.asearch.return_value = mock_results
+        filter_payload = {"tag": "important"}
+
+        resp = client.post(
+            "/store/items/search",
+            json={"namespace_prefix": ["test"], "filter": filter_payload},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["key"] == "filtered-key"
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] == filter_payload
 
     def test_search_items_with_pagination(self, client, mock_store):
         """Test searching with pagination"""
@@ -271,6 +303,9 @@ class TestSearchStoreItems:
         data = resp.json()
         assert data["limit"] == 5
         assert data["offset"] == 10
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
 
     def test_search_items_default_limit(self, client, mock_store):
         """Test search uses default limit when not provided"""
@@ -286,6 +321,9 @@ class TestSearchStoreItems:
         # Default limit should be 20
         assert data["limit"] == 20
         assert data["offset"] == 0
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
 
 
 class TestNamespaceScoping:

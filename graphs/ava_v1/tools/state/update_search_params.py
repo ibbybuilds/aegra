@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,33 @@ def _validate_date_range(check_in: str, check_out: str) -> bool:
         return False
 
 
+class UpdateSearchParamsInput(BaseModel):
+    """Input schema for updating search parameters."""
+
+    field: Literal["checkIn", "checkOut", "numOfAdults", "numOfRooms", "childAges"] = (
+        Field(
+            description=(
+                "Field name to update:\n"
+                "- checkIn: Check-in date (YYYY-MM-DD format)\n"
+                "- checkOut: Check-out date (YYYY-MM-DD format)\n"
+                "- numOfAdults: Number of adults (integer >= 1)\n"
+                "- numOfRooms: Number of rooms (integer >= 1, default: 1)\n"
+                "- childAges: Ages of children (list of integers 0-17)"
+            )
+        )
+    )
+    value: str | int | list[int] = Field(
+        description=(
+            "Value to set (type depends on field):\n"
+            "- For checkIn/checkOut: string in YYYY-MM-DD format (e.g., '2026-02-01')\n"
+            "- For numOfAdults/numOfRooms: integer >= 1 (e.g., 2)\n"
+            "- For childAges: list of integers 0-17 (e.g., [5, 8] or [])"
+        )
+    )
+
+
 @tool(
+    args_schema=UpdateSearchParamsInput,
     description=(
         "Update search parameters (dates, occupancy) one field at a time. "
         "Use this immediately after user confirms each field value. "

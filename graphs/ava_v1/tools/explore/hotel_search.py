@@ -481,6 +481,51 @@ async def start_hotel_search(
         search_dicts = [search.model_dump(by_alias=False) for search in searches]
         logger.info("[DEBUG] Conversion successful")
 
+        # Get search_params from state (staging area for missing fields)
+        search_params_staging = runtime.state.get("search_params", {}) if runtime else {}
+        if search_params_staging is None:
+            search_params_staging = {}
+
+        logger.info("=" * 80)
+        logger.info("[HOTEL_SEARCH] search_params state:")
+        logger.info(f"  search_params_staging: {search_params_staging}")
+        logger.info("=" * 80)
+
+        # Track whether we used search_params (so we can clear it later)
+        used_search_params = False
+
+        # Backfill missing fields from search_params
+        for search in search_dicts:
+            # Backfill checkIn
+            if ("checkIn" not in search or not search["checkIn"]) and "checkIn" in search_params_staging:
+                search["checkIn"] = search_params_staging["checkIn"]
+                used_search_params = True
+                logger.info(f"[HOTEL_SEARCH] Backfilled checkIn from search_params: {search['checkIn']}")
+
+            # Backfill checkOut
+            if ("checkOut" not in search or not search["checkOut"]) and "checkOut" in search_params_staging:
+                search["checkOut"] = search_params_staging["checkOut"]
+                used_search_params = True
+                logger.info(f"[HOTEL_SEARCH] Backfilled checkOut from search_params: {search['checkOut']}")
+
+            # Backfill occupancy (construct from flattened fields with defaults)
+            # Only backfill if occupancy is missing AND we have at least numOfAdults
+            if ("occupancy" not in search or not search["occupancy"]) and "numOfAdults" in search_params_staging:
+                search["occupancy"] = {
+                    "numOfAdults": search_params_staging["numOfAdults"],  # Required field
+                    "numOfRooms": search_params_staging.get("numOfRooms", 1),  # Default: 1 room
+                    "childAges": search_params_staging.get("childAges", []),  # Default: no children
+                }
+                used_search_params = True
+                logger.info(f"[HOTEL_SEARCH] Backfilled occupancy from search_params (with defaults): {search['occupancy']}")
+
+        logger.info("=" * 80)
+        logger.info("[HOTEL_SEARCH] Backfill complete. Final search dicts:")
+        for i, search in enumerate(search_dicts):
+            logger.info(f"  Search {i+1}: {search}")
+        logger.info(f"  used_search_params: {used_search_params}")
+        logger.info("=" * 80)
+
         # Process all searches in parallel
         logger.info(
             f"[DEBUG] Starting parallel processing of {len(search_dicts)} searches"
@@ -591,6 +636,11 @@ async def start_hotel_search(
         ],
         "active_searches": active_searches,  # Will be merged by merge_dicts reducer
     }
+
+    # Clear search_params if we used it
+    if used_search_params:
+        update_dict["search_params"] = None
+        logger.info("[HOTEL_SEARCH] Cleared search_params after successful use")
 
     if first_search_key:
         context_to_push, new_stack = prepare_hotel_list_push(

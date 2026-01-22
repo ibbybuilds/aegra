@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 async def book_room(
     room: dict[str, Any],
     payment_type: str,
-    session_id: str = None,
-    price_confirmation_token: str = None,
+    session_id: str | None = None,
+    price_confirmation_token: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
     """Initiate hotel room booking with price verification and payment setup.
@@ -86,7 +86,13 @@ async def book_room(
     logger.info("=" * 80)
 
     # Sanitize input to handle malformed JSON keys
-    room = sanitize_tool_input(room)
+    sanitized_room = sanitize_tool_input(room)
+    if not isinstance(sanitized_room, dict):
+        return json.dumps({
+            "error": "invalid_room_data",
+            "message": "Room data must be a dictionary object"
+        }, indent=2)
+    room = sanitized_room
     logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
 
     # Extract verified customer details from state
@@ -224,10 +230,12 @@ async def book_room(
     # Generate booking hash
     booking_hash = _generate_booking_hash(room)
 
+    # Initialize idempotency_key (used later for caching results)
+    idempotency_key = f"booking_attempt:{booking_hash}:{session_id}"
+
     # Check idempotency - prevent duplicate bookings
     try:
         get_redis_client()
-        idempotency_key = f"booking_attempt:{booking_hash}:{session_id}"
 
         # Check if this exact booking attempt already exists
         existing_attempt = await redis_get_json(idempotency_key)

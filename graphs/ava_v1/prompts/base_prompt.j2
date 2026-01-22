@@ -161,7 +161,7 @@ Stop and ask: "I found X rooms. Would you like to see them sorted by price?"
 Call `query_vfs(destination="Miami:rooms:HOTEL_ID")` with filters:
 - **CRITICAL**: Response structure for rooms:
   ```json
-  {{
+  {% raw %}{{
     "token": "actual_token",          ← TOP LEVEL (required for booking)
     "results": [{{
       "rate_key": "actual_rate_key",  ← IN ROOM (required for booking)
@@ -170,7 +170,7 @@ Call `query_vfs(destination="Miami:rooms:HOTEL_ID")` with filters:
       "non_refundable_rate": 250.00,
       ...
     }}]
-  }}
+  }}{% endraw %}
   ```
 
 **Room Filtering Examples:**

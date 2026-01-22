@@ -140,7 +140,6 @@ hotel booking related queries. Use it when:
 - Cite sources when presenting important facts: "According to [source]..."
 - Keep it concise - extract only relevant information for hotel decision
 
-
 === HOTEL DETAILS ===
 
 Call `hotel_details(hotel_id)` or `hotel_details(hotel_name, destination)` for property information:

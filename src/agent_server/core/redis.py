@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 from typing import TYPE_CHECKING, Any
 
 from ..settings import settings
@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - optional dependency during install
     _Redis: Any = None  # type: ignore[no-redef]
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class RedisManager:
@@ -50,13 +50,12 @@ class RedisManager:
         """Create the Redis client if configuration is present."""
 
         if not self.is_configured():
-            logger.info("Redis URL not configured; streaming will use in-memory broker")
+            logger.info("Redis URL not configured; using in-memory broker")
             return
 
         if _Redis is None:
             logger.error(
-                "redis package is not installed but REDIS_URL is set; streaming will"
-                " fall back to in-memory broker"
+                "Redis package missing, falling back to in-memory broker"
             )
             return
 
@@ -73,7 +72,9 @@ class RedisManager:
                 await self._client.ping()
             except Exception as exc:  # pragma: no cover - network failure path
                 logger.error(
-                    "Failed to connect to Redis at %s: %s", self._redis_url, exc
+                    "Failed to connect to Redis",
+                    url=self._redis_url,
+                    error=str(exc)
                 )
                 await self._safe_close()
                 self._client = None
@@ -81,7 +82,7 @@ class RedisManager:
                 return
 
             self._available = True
-            logger.info("Connected to Redis for streaming: %s", self._redis_url)
+            logger.info("Connected to Redis for streaming", url=self._redis_url)
 
     async def close(self) -> None:
         """Cleanly close the Redis client if it exists."""
@@ -96,7 +97,7 @@ class RedisManager:
         try:
             await self._client.close()
         except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Error closing Redis client: %s", exc)
+            logger.warning("Error closing Redis client", error=str(exc))
 
     def get_client(self) -> Redis:
         """Return the live Redis client or raise if unavailable."""

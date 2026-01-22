@@ -11,6 +11,7 @@ from alembic import context
 
 # Import your SQLAlchemy models here
 from src.agent_server.core.orm import Base
+from src.agent_server.core.accountability_orm import ActionItem, Notification, UserPreferences
 
 # Import RAG models to ensure they're registered with Base
 from src.agent_server.tools.rag.models import CourseChunk, IndexingStatus  # noqa: F401

@@ -37,6 +37,7 @@ from .api.management import router as management_router
 from .api.runs import router as runs_router
 from .api.store import router as store_router
 from .api.threads import router as threads_router
+from .api.accountability import router as accountability_router
 from .config import HttpConfig, load_http_config
 from .core.app_loader import load_custom_app
 from .core.auth_middleware import get_auth_backend, on_auth_error
@@ -55,6 +56,7 @@ from .observability.base import get_observability_manager
 from .observability.langfuse_integration import _langfuse_provider
 from .services.event_store import event_store
 from .services.langgraph_service import get_langgraph_service
+from .services.scheduler import scheduler_service
 from .utils.setup_logging import setup_logging
 
 # Task management for run cancellation
@@ -84,9 +86,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Initialize event store cleanup task
     await event_store.start_cleanup_task()
 
+    # Start Scheduler
+    scheduler_service.start()
+
     yield
 
     # Shutdown: Clean up connections and cancel active runs
+    scheduler_service.shutdown()
+
     for task in active_runs.values():
         if not task.done():
             task.cancel()
@@ -199,6 +206,7 @@ for router in [
     activity_logs_router,
     management_router,
     career_advisors_router,
+    accountability_router,
 ]:
     protected_routes.extend(router.routes)
 
@@ -339,6 +347,7 @@ else:
     app.include_router(activity_logs_router, prefix="", tags=["Activity Logs"])
     app.include_router(management_router, prefix="", tags=["Management"])
     app.include_router(career_advisors_router, prefix="", tags=["Career Advisors"])
+    app.include_router(accountability_router, prefix="", tags=["Accountability"])
 
     # Add exception handlers
     for exc_type, handler in exception_handlers.items():

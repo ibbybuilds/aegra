@@ -1,6 +1,6 @@
 """Service for managing activity logs and analytics"""
 
-import logging
+import structlog
 from datetime import datetime
 from typing import Any
 
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.orm import ActivityLog as ActivityLogORM
 from ..models.activity_logs import ActivityLog
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 class ActivityService:
@@ -58,12 +58,10 @@ class ActivityService:
         await session.flush()
 
         logger.info(
-            f"Activity logged: {action_type} by user {user_id}",
-            extra={
-                "action_type": action_type,
-                "user_id": user_id,
-                "activity_id": activity.activity_id,
-            },
+            "Activity logged",
+            action_type=action_type,
+            user_id=user_id,
+            activity_id=activity.activity_id,
         )
 
         return ActivityLog.model_validate(activity)

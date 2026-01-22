@@ -1,6 +1,6 @@
 """Management dashboard endpoints for analytics and insights"""
 
-import logging
+import structlog
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,7 +17,7 @@ from ..models import User
 
 router = APIRouter(prefix="/api/v1/management", tags=["Management Dashboard"])
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 def require_admin_role(user: User = Depends(get_current_user)) -> User:

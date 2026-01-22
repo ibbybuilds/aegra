@@ -102,31 +102,19 @@ def _determine_priority(context: CallContext) -> str:
             else "abandoned_payment"
         )
 
-    # Priority 2: Property + Booking hybrid
+    # Priority 2: Property + Booking hybrid (dated property)
     if context.property and context.booking:
-        return "property_booking_hybrid"
+        return "dated_property"
 
-    # Priority 3: Property-specific
+    # Priority 3: Property-specific (GA call extension)
     if context.type == "property_specific" and context.property:
-        return "property_specific"
+        return "ga_call_extension"
 
-    # Priority 4: Booking
-    if context.booking:
-        return "booking"
-
-    # Priority 5: Payment return
+    # Priority 4: Payment return
     if context.type == "payment_return" and context.payment:
         return "payment_return"
 
-    # Priority 6: Session
-    if context.session:
-        return "session"
-
-    # Priority 7: Thread continuation
-    if context.type == "thread_continuation" and context.thread_id:
-        return "thread_continuation"
-
-    # Priority 8: General (default)
+    # Priority 5: General (default)
     return "general"
 
 

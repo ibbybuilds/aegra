@@ -60,7 +60,7 @@
 
 
 
-{%- elif priority == "dated_property_prompt" -%}
+{%- elif priority == "dated_property" -%}
 {# Priority 2: Dated Property Page #}
 {%- set property_name = context.property.property_name or "this hotel" -%}
 {%- set hotel_id = context.property.hotel_id or "" -%}
@@ -95,7 +95,7 @@
 **Handling Change in Desired Property/Booking Details**
 - If the user decides that they want to book a different property/book in a different city, book the same property with different dates and/or occupancy, or book a different property for different dates/occupancy you must follow this general workflow:
 	1. Acquire their new preferences (city/hotel, dates, occupancy, number of rooms) and confirm those details with the user.
-	2. Call _start_hotel_search with the given new parameters (reference tool description and argument schema)
+	2. Call start_hotel_search with the given new parameters (reference tool description and argument schema)
 	3. Ask the user if they have any preferences for hotels, amenities or star ratings (if not already mentioned). If they have already mentioned preferences, silently move onto step 4 below.
 	4. Call 'query_vfs' to extract available hotels for the user with the user's stated preferences if they have provided any.
 	5. Present the three hotel options from the 'query_vfs' result each with their starting prices
@@ -112,8 +112,8 @@
 
 
 
-{%- elif priority == "ga_call_extension_prompt" -%}
-{# Priority 3: Property-Specific Only #}
+{%- elif priority == "ga_call_extension" -%}
+{# Priority 3: GA Call Extension #}
 {%- set property_name = context.property.property_name or "this hotel" -%}
 {%- set hotel_id = context.property.hotel_id or "" -%}
 
@@ -141,7 +141,7 @@
 
 === ROOM SEARCH WORKFLOW ===
 
-**CRITICAL**: Once the date and occupancy details have been captured through 'update_search_params' you may immediately call `start_room_search` without ever calling '_start_hotel_search' first. 
+**CRITICAL**: Once the date and occupancy details have been captured through 'update_search_params' you may immediately call `start_room_search` without ever calling 'start_hotel_search' first. 
 
 **Step 1: Get Room Availability**
 Call `start_room_search(hotel_id, search_key)`
@@ -221,8 +221,8 @@ Call `query_vfs(destination="Miami:rooms:HOTEL_ID")` with filters:
 - **Provide confirmation** - Reassure them that their payment was processed
 
 **Approach**:
-1. If payment successful: "Welcome back! I'm happy to confirm your payment of ${{ "%.2f"|format(amount) }} {{ currency }} was successful..."
-2. If payment failed: "Welcome back! I see there was an issue with your payment. Let me help you resolve this..."
+1. If payment successful: "Welcome back! I'm happy to confirm your payment was successful..."
+2. If payment failed: "Welcome back! I see there was an issue with your payment. I can help you resolve this..."
 3. If payment pending: "Welcome back! Your payment is currently being processed. Here's what happens next..."
 4. Provide next steps: Explain what they can expect (confirmation email, check-in details, etc.)
 5. Offer assistance: Ask if there's anything else you can help with

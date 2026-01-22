@@ -282,7 +282,7 @@ def customize_agent_prompt(request: ModelRequest) -> str:
     """Dynamically customize system prompt based on runtime context.
 
     This middleware accesses call_context from runtime.context (preferred) or state (fallback)
-    and uses it to customize the agent's system prompt according to the 8-level priority system.
+    and uses it to customize the agent's system prompt according to the 5-level priority system.
 
     According to LangChain docs:
     - @dynamic_prompt REPLACES the entire system prompt

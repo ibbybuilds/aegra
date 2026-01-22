@@ -2,11 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 import structlog
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -100,13 +100,15 @@ def load_config() -> dict | None:
     Returns:
         Full config dict or None if not found
     """
+    from typing import cast
+
     config_path = _resolve_config_path()
     if not config_path:
         return None
 
     try:
         with config_path.open() as f:
-            return json.load(f)
+            return cast(dict[Any, Any], json.load(f))
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}")
         return None
@@ -128,7 +130,7 @@ def load_http_config() -> HttpConfig | None:
     if http_config:
         config_path = _resolve_config_path()
         logger.info(f"Loaded HTTP config from {config_path}")
-        return http_config
+        return cast(HttpConfig, http_config)
 
     return None
 
@@ -149,6 +151,6 @@ def load_store_config() -> StoreConfig | None:
     if store_config:
         config_path = _resolve_config_path()
         logger.info(f"Loaded store config from {config_path}")
-        return store_config
+        return cast(StoreConfig, store_config)
 
     return None

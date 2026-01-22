@@ -16,7 +16,7 @@ applied to other APIs (runs, threads, crons) as part of ongoing refactoring.
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import Depends, HTTPException
@@ -50,7 +50,7 @@ def to_pydantic(row: AssistantORM) -> Assistant:
     return Assistant.model_validate(row, from_attributes=True)
 
 
-def _state_jsonschema(graph) -> dict | None:
+def _state_jsonschema(graph: Any) -> dict[str, Any] | None:
     """Extract state schema from graph channels"""
     from typing import Any
 
@@ -67,7 +67,7 @@ def _state_jsonschema(graph) -> dict | None:
     return create_model(graph.get_name("State"), **fields).model_json_schema()
 
 
-def _get_configurable_jsonschema(graph) -> dict:
+def _get_configurable_jsonschema(graph: Any) -> dict[str, Any]:
     """Get the JSON schema for the configurable part of the graph"""
     from pydantic import TypeAdapter
 
@@ -94,7 +94,7 @@ def _get_configurable_jsonschema(graph) -> dict:
     return {}
 
 
-def _extract_graph_schemas(graph) -> dict:
+def _extract_graph_schemas(graph: Any) -> dict[str, Any]:
     """Extract schemas from a compiled LangGraph graph object"""
     try:
         input_schema = graph.get_input_jsonschema()
@@ -159,8 +159,8 @@ class AssistantService:
         except Exception as e:
             raise HTTPException(400, f"Failed to load graph: {str(e)}") from e
 
-        config = request.config
-        context = request.context
+        config: dict[str, Any] = request.config or {}
+        context: dict[str, Any] = request.context or {}
 
         if config.get("configurable") and context:
             raise HTTPException(
@@ -317,15 +317,15 @@ class AssistantService:
         if not assistant:
             raise HTTPException(404, f"Assistant '{assistant_id}' not found")
 
-        return to_pydantic(assistant)
+        return to_pydantic(cast(AssistantORM, assistant))
 
     async def update_assistant(
         self, assistant_id: str, request: AssistantUpdate, user_identity: str
     ) -> Assistant:
         """Update assistant by ID"""
         metadata = request.metadata or {}
-        config = request.config or {}
-        context = request.context or {}
+        config: dict[str, Any] = request.config or {}
+        context: dict[str, Any] = request.context or {}
 
         if config.get("configurable") and context:
             raise HTTPException(
@@ -389,7 +389,7 @@ class AssistantService:
         await self.session.execute(assistant_update)
         await self.session.commit()
         updated_assistant = await self.session.scalar(stmt)
-        return to_pydantic(updated_assistant)
+        return to_pydantic(cast(AssistantORM, updated_assistant))
 
     async def delete_assistant(self, assistant_id: str, user_identity: str) -> dict:
         """Delete assistant by ID"""
@@ -448,7 +448,7 @@ class AssistantService:
         await self.session.execute(assistant_update)
         await self.session.commit()
         updated_assistant = await self.session.scalar(stmt)
-        return to_pydantic(updated_assistant)
+        return to_pydantic(cast(AssistantORM, updated_assistant))
 
     async def list_assistant_versions(
         self, assistant_id: str, user_identity: str
@@ -464,12 +464,12 @@ class AssistantService:
         if not assistant:
             raise HTTPException(404, f"Assistant '{assistant_id}' not found")
 
-        stmt = (
+        version_stmt = (
             select(AssistantVersionORM)
             .where(AssistantVersionORM.assistant_id == assistant_id)
             .order_by(AssistantVersionORM.version.desc())
         )
-        result = await self.session.scalars(stmt)
+        result = await self.session.scalars(version_stmt)
         versions = result.all()
 
         if not versions:
@@ -551,7 +551,7 @@ class AssistantService:
                     if (data := node.get("data")) and isinstance(data, dict):
                         data.pop("id", None)
 
-                return json_graph
+                return cast(dict[str, Any], json_graph)
             except NotImplementedError as e:
                 raise HTTPException(
                     422, detail="The graph does not support visualization"
@@ -568,7 +568,7 @@ class AssistantService:
         namespace: str | None,
         recurse: bool,
         user_identity: str,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Get subgraphs of an assistant"""
         stmt = select(AssistantORM).where(
             AssistantORM.assistant_id == assistant_id,
@@ -585,7 +585,7 @@ class AssistantService:
             graph = await self.langgraph_service.get_graph(assistant.graph_id)
 
             try:
-                subgraphs = {
+                subgraphs: dict[str, Any] = {
                     ns: _extract_graph_schemas(subgraph)
                     async for ns, subgraph in graph.aget_subgraphs(
                         namespace=namespace, recurse=recurse

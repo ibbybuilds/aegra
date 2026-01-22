@@ -105,7 +105,7 @@ Examples:
         ]
 
         response = await llm.ainvoke(messages)
-        title = response.content.strip()
+        title = str(response.content).strip()
 
         # Ensure title is not too long
         if len(title) > 50:

@@ -3,6 +3,7 @@
 import sys
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 import structlog
 from starlette.applications import Starlette
@@ -79,7 +80,7 @@ def merge_lifespans(user_app: Starlette, core_lifespan: Callable) -> Starlette:
         )
 
     @asynccontextmanager
-    async def combined_lifespan(app):
+    async def combined_lifespan(app: Any) -> AsyncIterator[None]:
         async with core_lifespan(app):
             if user_lifespan:
                 async with user_lifespan(app):

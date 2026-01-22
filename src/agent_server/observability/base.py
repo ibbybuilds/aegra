@@ -1,10 +1,11 @@
 """Base observability interface for extensible tracing and monitoring."""
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.getLogger(__name__)
 
 
 class ObservabilityProvider(ABC):
@@ -57,7 +58,9 @@ class ObservabilityManager:
                 callbacks.extend(provider.get_callbacks())
             except Exception as e:
                 logger.error(
-                    f"Failed to get callbacks from {provider.__class__.__name__}: {e}"
+                    "Failed to get callbacks",
+                    provider=provider.__class__.__name__,
+                    error=str(e),
                 )
         return callbacks
 
@@ -74,7 +77,9 @@ class ObservabilityManager:
                 metadata.update(provider_metadata)
             except Exception as e:
                 logger.error(
-                    f"Failed to get metadata from {provider.__class__.__name__}: {e}"
+                    "Failed to get metadata",
+                    provider=provider.__class__.__name__,
+                    error=str(e),
                 )
         return metadata
 

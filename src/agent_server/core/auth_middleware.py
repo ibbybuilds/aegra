@@ -8,7 +8,7 @@ using Starlette's AuthenticationMiddleware.
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from langgraph_sdk import Auth
@@ -22,7 +22,7 @@ from starlette.authentication import (
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 from ..models.errors import AgentProtocolError
 
@@ -48,19 +48,20 @@ class LangGraphUser(BaseUser):
 
     @property
     def display_name(self) -> str:
-        return self._user_data.get("display_name", self.identity)
+        return cast(str, cast(dict[str, Any], self._user_data).get("display_name", self.identity))  # type: ignore[literal-required]
 
     def __getattr__(self, name: str) -> Any:
         """Allow access to any additional fields from auth data"""
         if name in self._user_data:
-            return self._user_data[name]
+            return self._user_data[name]  # type: ignore[literal-required]
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
 
     def to_dict(self) -> MinimalUserDict:
         """Return the underlying user data dict"""
-        return self._user_data.copy()
+        # Return the data directly as it matches the TypedDict structure
+        return self._user_data  # type: ignore[return-value]
 
 
 class LangGraphAuthBackend(AuthenticationBackend):
@@ -181,7 +182,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
 
             # Create Starlette-compatible user and credentials
             credentials = AuthCredentials(permissions)
-            user = LangGraphUser(user_data)
+            user = LangGraphUser(cast(MinimalUserDict, user_data))
 
             logger.debug(f"Successfully authenticated user: {user.identity}")
             return credentials, user

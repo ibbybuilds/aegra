@@ -55,6 +55,8 @@ dependencies = [
     "structlog>=25.4.0",
     "asgi-correlation-id>=4.3.4",
     "pydantic-settings>=2.12.0",
+    "apscheduler>=3.11.2",
+    "python-dateutil>=2.9.0.post0",
 ]
 
 [project.urls]
@@ -117,9 +119,13 @@ line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.11"
+plugins = ["pydantic.mypy"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
+namespace_packages = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

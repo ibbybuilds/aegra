@@ -2,7 +2,7 @@ from typing import Any
 
 import structlog
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 from .base import ObservabilityProvider
 
@@ -60,7 +60,7 @@ class LangfuseProvider(ObservabilityProvider):
 
     def is_enabled(self) -> bool:
         """Check if Langfuse is enabled."""
-        return settings.langfuse.LANGFUSE_LOGGING
+        return bool(settings.langfuse.LANGFUSE_LOGGING)
 
 
 # Create and register the Langfuse provider

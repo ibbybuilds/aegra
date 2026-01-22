@@ -4,11 +4,12 @@ import asyncio
 import contextlib
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from langchain_core.runnables import RunnableConfig
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,7 +56,7 @@ async def create_thread(
     request: ThreadCreate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> Thread:
     """Create a new conversation thread
 
     Supports idempotent creation via optional threadId and ifExists parameters:
@@ -166,7 +167,7 @@ async def create_thread(
 @router.get("/threads", response_model=ThreadList)
 async def list_threads(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
-):
+) -> ThreadList:
     """List user's threads"""
     stmt = select(ThreadORM).where(ThreadORM.user_id == user.identity)
     result = await session.scalars(stmt)
@@ -188,7 +189,7 @@ async def get_thread(
     thread_id: str,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> Thread:
     """Get thread by ID"""
     stmt = select(ThreadORM).where(
         ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
@@ -211,7 +212,7 @@ async def update_thread(
     request: ThreadUpdate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> Thread:
     """
     Update a thread's metadata and timestamp.
 
@@ -261,7 +262,7 @@ async def get_thread_state(
     ),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> ThreadState:
     """Get state for a thread (i.e. latest checkpoint)"""
     try:
         stmt = select(ThreadORM).where(
@@ -315,9 +316,11 @@ async def get_thread_state(
                 500, f"Failed to load graph '{graph_id}': {str(e)}"
             ) from e
 
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config_dict: dict[str, Any] = create_thread_config(thread_id, user, {})
         if checkpoint_ns:
-            config["configurable"]["checkpoint_ns"] = checkpoint_ns
+            config_dict["configurable"]["checkpoint_ns"] = checkpoint_ns
+        
+        config = cast(RunnableConfig, config_dict)
 
         try:
             agent = agent.with_config(config)
@@ -377,7 +380,7 @@ async def update_thread_state(
     request: ThreadStateUpdate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> ThreadState | ThreadStateUpdateResponse:
     """Update thread state or get state via POST.
 
     If 'values' is provided, updates the state. Otherwise, behaves like GET to retrieve state.
@@ -426,15 +429,17 @@ async def update_thread_state(
                 500, f"Failed to load graph '{graph_id}': {str(e)}"
             ) from e
 
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config_dict: dict[str, Any] = create_thread_config(thread_id, user, {})
 
         # Apply checkpoint configuration
         if request.checkpoint_id:
-            config["configurable"]["checkpoint_id"] = request.checkpoint_id
+            config_dict["configurable"]["checkpoint_id"] = request.checkpoint_id
         if request.checkpoint:
-            config["configurable"].update(request.checkpoint)
+            config_dict["configurable"].update(request.checkpoint)
         if request.checkpoint_ns:
-            config["configurable"]["checkpoint_ns"] = request.checkpoint_ns
+            config_dict["configurable"]["checkpoint_ns"] = request.checkpoint_ns
+
+        config = cast(RunnableConfig, config_dict)
 
         try:
             # Update state using aupdate_state method
@@ -447,13 +452,13 @@ async def update_thread_state(
                 # If it's a list, use the first dict or convert to dict
                 if update_values and isinstance(update_values[0], dict):
                     # Merge all dicts in the list
-                    merged = {}
+                    merged: dict[str, Any] = {}
                     for item in update_values:
                         if isinstance(item, dict):
                             merged.update(item)
                     update_values = merged
                 else:
-                    update_values = update_values[0] if update_values else None
+                    update_values = update_values[0] if update_values else None  # type: ignore
 
             # Update the state using aupdate_state
             # aupdate_state signature: aupdate_state(config, values, as_node=None)
@@ -530,7 +535,7 @@ async def get_thread_state_at_checkpoint(
     ),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> ThreadState:
     """Get thread state at a specific checkpoint"""
     try:
         # Verify the thread exists and belongs to the user
@@ -565,10 +570,12 @@ async def get_thread_state_at_checkpoint(
             ) from e
 
         # Build config with user context and thread_id
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
-        config["configurable"]["checkpoint_id"] = checkpoint_id
+        config_dict: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config_dict["configurable"]["checkpoint_id"] = checkpoint_id
         if checkpoint_ns:
-            config["configurable"]["checkpoint_ns"] = checkpoint_ns
+            config_dict["configurable"]["checkpoint_ns"] = checkpoint_ns
+        
+        config = cast(RunnableConfig, config_dict)
 
         # Fetch state at checkpoint
         try:
@@ -619,7 +626,7 @@ async def get_thread_state_at_checkpoint_post(
     request: ThreadCheckpointPostRequest,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> ThreadState:
     """Get thread state at a specific checkpoint (POST method - for SDK compatibility)
 
     Supports full checkpoint configuration including:
@@ -654,7 +661,7 @@ async def get_thread_history_post(
     request: ThreadHistoryRequest,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> list[ThreadState]:
     """Get thread checkpoint history (POST method - for SDK compatibility)"""
 
     try:
@@ -724,15 +731,17 @@ async def get_thread_history_post(
             ) from e
 
         # Build config with user context and thread_id
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config_dict: dict[str, Any] = create_thread_config(thread_id, user, {})
         # Merge checkpoint and namespace if provided
         if checkpoint:
             cfg_cp = checkpoint.copy()
             if checkpoint_ns is not None:
                 cfg_cp.setdefault("checkpoint_ns", checkpoint_ns)
-            config["configurable"].update(cfg_cp)
+            config_dict["configurable"].update(cfg_cp)
         elif checkpoint_ns is not None:
-            config["configurable"]["checkpoint_ns"] = checkpoint_ns
+            config_dict["configurable"]["checkpoint_ns"] = checkpoint_ns  # type: ignore[assignment]
+        
+        config = cast(RunnableConfig, config_dict)
 
         # Fetch state history
         state_snapshots = []
@@ -742,17 +751,17 @@ async def get_thread_history_post(
         }
         # The runtime may expect metadata filter under "filter" or "metadata"; try "metadata"
         if metadata is not None:
-            kwargs["metadata"] = metadata  # type: ignore[index]
+            kwargs["metadata"] = metadata  # type: ignore[assignment]
 
         # Some LangGraph versions support subgraphs flag; pass if available
         try:
             async for snapshot in agent.aget_state_history(
                 config, subgraphs=subgraphs, **kwargs
-            ):
+            ):  # type: ignore
                 state_snapshots.append(snapshot)
         except TypeError:
             # Fallback if subgraphs not supported in this version
-            async for snapshot in agent.aget_state_history(config, **kwargs):
+            async for snapshot in agent.aget_state_history(config, **kwargs):  # type: ignore
                 state_snapshots.append(snapshot)
 
         # Convert snapshots to ThreadState using service
@@ -786,7 +795,7 @@ async def get_thread_history_get(
     metadata: str | None = Query(None, description="JSON-encoded metadata filter"),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> list[ThreadState]:
     """Get thread checkpoint history (GET method - SDK compatibility)"""
     # Reuse POST logic by constructing a ThreadHistoryRequest-like object
     # Parse metadata JSON string if provided
@@ -814,7 +823,7 @@ async def delete_thread(
     thread_id: str,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> dict[str, str]:
     """
     Delete thread by ID.
 
@@ -877,7 +886,7 @@ async def search_threads(
     request: ThreadSearchRequest,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-):
+) -> list[Thread]:
     """Search threads with filters"""
 
     stmt = select(ThreadORM).where(ThreadORM.user_id == user.identity)

@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextvars
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 from langgraph_sdk import Auth  # type: ignore
 from starlette.authentication import AuthCredentials, BaseUser
@@ -58,7 +59,7 @@ async def with_auth_ctx(
     else:
         token = _AuthCtx.set(
             Auth.types.BaseAuthContext(  # type: ignore[attr-defined]
-                user=user, permissions=scopes
+                user=cast(Any, user), permissions=scopes
             )
         )
     try:

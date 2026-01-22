@@ -28,7 +28,7 @@ from .base_broker import BaseBrokerManager, BaseRunBroker
 try:  # pragma: no cover - optional dependency at runtime
     from redis.exceptions import ConnectionError as RedisConnectionError
 except Exception:  # pragma: no cover - fallback when redis absent
-    RedisConnectionError = ()
+    RedisConnectionError = ()  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper
     from redis.asyncio import Redis

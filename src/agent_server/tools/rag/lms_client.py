@@ -7,12 +7,12 @@ This module handles communication with the LMS API to retrieve:
 - Video transcripts
 """
 
-from typing import Any, Optional
+from typing import Any, cast
 
 import httpx
 from pydantic import BaseModel
 
-from agent_server.settings import settings
+from agent_server.settings import settings  # type: ignore[import-untyped]
 
 
 class CourseData(BaseModel):
@@ -20,7 +20,7 @@ class CourseData(BaseModel):
 
     course_id: str
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     levels: list[dict[str, Any]] = []
 
 
@@ -40,8 +40,8 @@ class LMSClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        admin_token: Optional[str] = None,
+        base_url: str | None = None,
+        admin_token: str | None = None,
     ):
         """
         Initialize LMS client.
@@ -61,7 +61,7 @@ class LMSClient:
             "Content-Type": "application/json",
         }
 
-    async def get_course(self, course_id: str) -> Optional[CourseData]:
+    async def get_course(self, course_id: str) -> CourseData | None:
         """
         Fetch course data by ID.
 
@@ -166,7 +166,7 @@ class LMSClient:
         level_title: str,
         module_index: int,
         lesson_index: int,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Fetch lesson details including materials.
 
@@ -187,7 +187,7 @@ class LMSClient:
                     timeout=30.0,
                 )
                 response.raise_for_status()
-                return response.json()
+                return cast(dict[str, Any], response.json())
             except httpx.HTTPError as e:
                 print(f"Error fetching lesson details: {e}")
                 return None
@@ -210,8 +210,8 @@ class LMSClient:
                     timeout=30.0,
                 )
                 response.raise_for_status()
-                data = response.json()
-                return data.get("lessons", [])
+                data = cast(dict[str, Any], response.json())
+                return cast(list[dict[str, Any]], data.get("lessons", []))
             except httpx.HTTPError as e:
                 print(f"Error fetching lessons for course {course_id}: {e}")
                 return []

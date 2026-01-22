@@ -1,8 +1,8 @@
 """Activity log endpoints for retrieving student activity and metrics"""
 
-import logging
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,7 @@ from ..services.activity_service import ActivityService
 
 router = APIRouter(prefix="/api/v1/activity-logs", tags=["Activity Logs"])
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 
 def require_admin_role(user: User = Depends(get_current_user)) -> User:

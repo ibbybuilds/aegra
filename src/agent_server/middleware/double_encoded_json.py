@@ -1,4 +1,5 @@
 import json
+from typing import Any, cast
 
 import structlog
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -82,11 +83,11 @@ class DoubleEncodedJSONMiddleware:
                                             )
                                             scope["headers"] = new_headers
 
-                                        return {
+                                        return cast(dict[str, Any], {
                                             "type": "http.request",
                                             "body": new_body,
                                             "more_body": False,
-                                        }
+                                        })
                             except (
                                 json.JSONDecodeError,
                                 ValueError,
@@ -97,7 +98,7 @@ class DoubleEncodedJSONMiddleware:
                                     f"Could not parse/fix JSON payload: {e}. Passing through unchanged."
                                 )
 
-                return message
+                return message  # type: ignore[return-value]
 
             await self.app(scope, receive_wrapper, send)
         else:

@@ -21,7 +21,7 @@ router = APIRouter()
 @router.put("/store/items")
 async def put_store_item(
     request: StorePutRequest, user: User = Depends(get_current_user)
-):
+) -> dict[str, str]:
     """Store an item in the LangGraph store"""
 
     # Apply user namespace scoping
@@ -44,7 +44,7 @@ async def get_store_item(
     key: str,
     namespace: Union[str, list[str], None] = Query(None),
     user: User = Depends(get_current_user),
-):
+) -> StoreGetResponse:
     """Get an item from the LangGraph store"""
 
     # Accept SDK-style dotted namespaces or list
@@ -78,7 +78,7 @@ async def delete_store_item(
     key: str | None = Query(None),
     namespace: list[str] | None = Query(None),
     user: User = Depends(get_current_user),
-):
+) -> dict[str, str]:
     """Delete an item from the LangGraph store.
 
     Compatible with SDK which sends JSON body {namespace, key}.
@@ -110,7 +110,7 @@ async def delete_store_item(
 @router.post("/store/items/search", response_model=StoreSearchResponse)
 async def search_store_items(
     request: StoreSearchRequest, user: User = Depends(get_current_user)
-):
+) -> StoreSearchResponse:
     """Search items in the LangGraph store"""
 
     # Apply user namespace scoping

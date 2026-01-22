@@ -26,9 +26,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Mapped, declarative_base, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Assistant(Base):
@@ -222,9 +224,24 @@ def _get_session_maker() -> async_sessionmaker[AsyncSession]:
     if async_session_maker is None:
         from .database import db_manager
 
-        engine = db_manager.get_engine()
-        async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        # Ensure database is initialized before getting engine
+        if not db_manager.engine:
+            raise RuntimeError(
+                "Database not initialized. Call db_manager.initialize() during app startup."
+            )
+        async_session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
     return async_session_maker
+
+
+def initialize_session_maker() -> None:
+    """Initialize the session maker during app startup."""
+    _get_session_maker()
+
+
+def reset_session_maker() -> None:
+    """Reset the session maker cache on shutdown."""
+    global async_session_maker
+    async_session_maker = None
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

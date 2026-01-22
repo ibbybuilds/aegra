@@ -9,7 +9,7 @@ This module defines the PostgreSQL tables for storing:
 
 from datetime import datetime
 
-from pgvector.sqlalchemy import Vector
+from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
 from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, Text
 
 from agent_server.core.orm import Base

@@ -67,7 +67,7 @@ class DatabaseSettings(EnvBase):
     POSTGRES_DB: str
     DB_ECHO_LOG: bool = False
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
         """Async URL for SQLAlchemy (asyncpg)."""
@@ -76,7 +76,7 @@ class DatabaseSettings(EnvBase):
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url_sync(self) -> str:
         """Sync URL for LangGraph/Psycopg (postgresql://)."""
@@ -110,7 +110,7 @@ class RedisSettings(EnvBase):
 
 
 class Settings:
-    def __init__(self):
+    def __init__(self) -> None:
         self.app = AppSettings()
         self.db = DatabaseSettings()
         self.pool = PoolSettings()

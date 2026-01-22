@@ -11,11 +11,11 @@ Cache Strategy:
 
 import asyncio
 import json
-import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
+import structlog
 
 from ..core.redis import redis_manager
 from ..data.career_advisors import (
@@ -24,7 +24,7 @@ from ..data.career_advisors import (
 )
 from ..settings import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.getLogger(__name__)
 
 # Cache TTL in seconds (1 hour)
 LEARNING_TRACK_CACHE_TTL = 3600
@@ -55,9 +55,9 @@ async def _get_from_redis(key: str) -> str | None:
     try:
         client = redis_manager.get_client()
         value = await client.get(key)
-        return value
+        return cast(str | None, value)
     except Exception as e:
-        logger.warning(f"Redis get failed: {e}")
+        logger.warning("Redis get failed", error=str(e))
         return None
 
 
@@ -73,7 +73,7 @@ async def _set_in_redis(
         await client.setex(key, ttl, value)
         return True
     except Exception as e:
-        logger.warning(f"Redis set failed: {e}")
+        logger.warning("Redis set failed", error=str(e))
         return False
 
 
@@ -83,7 +83,7 @@ async def _get_from_memory(user_id: str) -> str | None:
         if user_id in _memory_cache:
             track, expiry = _memory_cache[user_id]
             if time.time() < expiry:
-                return track
+                return cast(str | None, track)
             else:
                 # Expired, remove from cache
                 del _memory_cache[user_id]
@@ -112,19 +112,23 @@ async def _fetch_learning_track_from_lms(token: str) -> str | None:
 
             # Extract learning track from onboarding data
             onboarding_data = data.get("onboarding", {})
-            learning_track = onboarding_data.get("learningTrack")
+            learning_track = cast(str | None, onboarding_data.get("learningTrack"))
 
-            logger.info(f"Fetched learning track from LMS: {learning_track}")
+            logger.info(
+                "Fetched learning track from LMS", learning_track=learning_track
+            )
             return learning_track
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error fetching learning track: {e.response.status_code}")
+        logger.error(
+            "HTTP error fetching learning track", status_code=e.response.status_code
+        )
         return None
     except httpx.TimeoutException:
         logger.error("Timeout while fetching learning track")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error fetching learning track: {e}")
+        logger.error("Unexpected error fetching learning track", error=str(e))
         return None
 
 
@@ -148,17 +152,17 @@ async def get_cached_learning_track(user_id: str, token: str) -> str | None:
     # Try Redis first
     cached = await _get_from_redis(cache_key)
     if cached is not None:
-        logger.debug(f"Learning track cache hit (Redis) for user {user_id}")
+        logger.debug("Learning track cache hit (Redis)", user_id=user_id)
         return cached if cached != "__none__" else None
 
     # Try in-memory cache
     cached = await _get_from_memory(user_id)
     if cached is not None:
-        logger.debug(f"Learning track cache hit (memory) for user {user_id}")
+        logger.debug("Learning track cache hit (memory)", user_id=user_id)
         return cached
 
     # Cache miss - fetch from LMS
-    logger.info(f"Learning track cache miss for user {user_id}, fetching from LMS")
+    logger.info("Learning track cache miss, fetching from LMS", user_id=user_id)
     learning_track = await _fetch_learning_track_from_lms(token)
 
     # Cache the result (even if None, to avoid repeated failed lookups)
@@ -188,7 +192,7 @@ async def get_cached_advisor(
     if cached_advisor:
         try:
             advisor_data = json.loads(cached_advisor)
-            logger.debug(f"Advisor cache hit (Redis) for user {user_id}")
+            logger.debug("Advisor cache hit (Redis)", user_id=user_id)
             return advisor_data["advisor"], advisor_data.get("learning_track")
         except (json.JSONDecodeError, KeyError):
             pass
@@ -230,15 +234,15 @@ async def invalidate_user_cache(user_id: str) -> None:
         try:
             client = redis_manager.get_client()
             await client.delete(track_key, advisor_key)
-            logger.info(f"Invalidated Redis cache for user {user_id}")
+            logger.info("Invalidated Redis cache", user_id=user_id)
         except Exception as e:
-            logger.warning(f"Failed to invalidate Redis cache: {e}")
+            logger.warning("Failed to invalidate Redis cache", error=str(e))
 
     # Clear in-memory cache
     async with _cache_lock:
         _memory_cache.pop(user_id, None)
 
-    logger.info(f"Invalidated all caches for user {user_id}")
+    logger.info("Invalidated all caches", user_id=user_id)
 
 
 def clear_memory_cache() -> None:

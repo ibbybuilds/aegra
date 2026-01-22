@@ -4,7 +4,7 @@ from typing import Any
 
 import structlog
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 
 def get_logging_config() -> dict[str, Any]:
@@ -39,7 +39,7 @@ def get_logging_config() -> dict[str, Any]:
     # Determine the final renderer based on the environment
     # Use a colorful console renderer for local development, and JSON for production.
     if env_mode in ("LOCAL", "DEVELOPMENT"):
-        final_renderer = structlog.dev.ConsoleRenderer(colors=True, pad_level=True)
+        final_renderer: Any = structlog.dev.ConsoleRenderer(colors=True, pad_level=True)
     else:
         final_renderer = structlog.processors.JSONRenderer()
 
@@ -87,7 +87,7 @@ def get_logging_config() -> dict[str, Any]:
     }
 
 
-def setup_logging():
+def setup_logging() -> None:
     """
     Configures both standard logging and structlog based on the
     dictionary from get_logging_config(). This should be called

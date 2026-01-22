@@ -7,15 +7,16 @@ relevant course information based on semantic similarity.
 
 import hashlib
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy import and_, create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from agent_server.settings import settings
-from agent_server.tools.rag.chunker import CourseContentChunker
-from agent_server.tools.rag.models import CourseChunk, IndexingStatus
+from agent_server.core.orm import Base  # type: ignore
+from agent_server.settings import settings  # type: ignore[import-untyped]
+from agent_server.tools.rag.chunker import CourseContentChunker  # type: ignore[import-untyped]
+from agent_server.tools.rag.models import CourseChunk, IndexingStatus  # type: ignore[import-untyped]
 
 
 class CourseRetriever:
@@ -23,7 +24,7 @@ class CourseRetriever:
 
     def __init__(
         self,
-        database_url: Optional[str] = None,
+        database_url: str | None = None,
         embedding_model: str = "text-embedding-3-small",
     ):
         """
@@ -51,6 +52,10 @@ class CourseRetriever:
 
         # Initialize chunker
         self.chunker = CourseContentChunker()
+
+    def initialize_schema(self) -> None:
+        """Initialize database schema."""
+        Base.metadata.create_all(self.engine)
 
     def _generate_chunk_id(
         self,
@@ -104,9 +109,9 @@ class CourseRetriever:
                 )
                 session.add(status)
             else:
-                status.status = "processing"
-                status.started_at = datetime.utcnow()
-                status.error_message = None
+                status.status = "processing"  # type: ignore[assignment]
+                status.started_at = datetime.utcnow()  # type: ignore[assignment]
+                status.error_message = None  # type: ignore[assignment]
 
             session.commit()
 
@@ -115,8 +120,8 @@ class CourseRetriever:
             chunks = await self.chunker.chunk_course_content(course_data)
 
             if not chunks:
-                status.status = "failed"
-                status.error_message = "No content to index"
+                status.status = "failed"  # type: ignore[assignment]
+                status.error_message = "No content to index"  # type: ignore[assignment]
                 session.commit()
                 return {
                     "course_id": course_id,
@@ -124,7 +129,7 @@ class CourseRetriever:
                     "error": "No content to index",
                 }
 
-            status.total_chunks = len(chunks)
+            status.total_chunks = len(chunks)  # type: ignore[assignment]
             session.commit()
 
             # Generate embeddings and store
@@ -152,10 +157,10 @@ class CourseRetriever:
 
                     if existing:
                         # Update existing chunk
-                        existing.content = chunk_data["content"]
-                        existing.embedding = embedding
-                        existing.chunk_metadata = chunk_data["metadata"]
-                        existing.updated_at = datetime.utcnow()
+                        existing.content = chunk_data["content"]  # type: ignore[assignment]
+                        existing.embedding = embedding  # type: ignore[assignment]
+                        existing.chunk_metadata = chunk_data["metadata"]  # type: ignore[assignment]
+                        existing.updated_at = datetime.utcnow()  # type: ignore[assignment]
                     else:
                         # Create new chunk
                         chunk = CourseChunk(
@@ -180,7 +185,7 @@ class CourseRetriever:
                         session.add(chunk)
 
                     indexed_count += 1
-                    status.indexed_chunks = indexed_count
+                    status.indexed_chunks = indexed_count  # type: ignore[assignment]
 
                     # Commit in batches
                     if indexed_count % 10 == 0:
@@ -195,8 +200,8 @@ class CourseRetriever:
             session.commit()
 
             # Update status
-            status.status = "completed"
-            status.completed_at = datetime.utcnow()
+            status.status = "completed"  # type: ignore[assignment]
+            status.completed_at = datetime.utcnow()  # type: ignore[assignment]
             session.commit()
 
             print(
@@ -215,8 +220,8 @@ class CourseRetriever:
 
             # Update status
             if status:
-                status.status = "failed"
-                status.error_message = str(e)
+                status.status = "failed"  # type: ignore[assignment]
+                status.error_message = str(e)  # type: ignore[assignment]
                 session.commit()
 
             return {
@@ -231,8 +236,8 @@ class CourseRetriever:
     async def search(
         self,
         query: str,
-        course_id: Optional[str] = None,
-        content_type: Optional[str] = None,
+        course_id: str | None = None,
+        content_type: str | None = None,
         k: int = 5,
     ) -> list[dict[str, Any]]:
         """
@@ -291,7 +296,7 @@ class CourseRetriever:
         finally:
             session.close()
 
-    def get_indexing_status(self, course_id: str) -> Optional[dict[str, Any]]:
+    def get_indexing_status(self, course_id: str) -> dict[str, Any] | None:
         """Get indexing status for a course."""
         session = self.Session()
 
@@ -321,7 +326,7 @@ class CourseRetriever:
             session.close()
 
 
-def setup_rag_tool():
+def setup_rag_tool() -> CourseRetriever:
     """Setup function to initialize RAG components."""
     retriever = CourseRetriever()
     retriever.initialize_schema()

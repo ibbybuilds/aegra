@@ -8,15 +8,20 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from src.agent_server.core.accountability_orm import (  # noqa: F401
+    ActionItem,
+    Notification,
+    UserPreferences,
+)
 
 # Import your SQLAlchemy models here
 from src.agent_server.core.orm import Base
 
-# Import RAG models to ensure they're registered with Base
-from src.agent_server.tools.rag.models import CourseChunk, IndexingStatus  # noqa: F401
-
 # Import settings from the new settings system
 from src.agent_server.settings import settings
+
+# Import RAG models to ensure they're registered with Base
+from src.agent_server.tools.rag.models import CourseChunk, IndexingStatus  # noqa: F401
 
 # This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

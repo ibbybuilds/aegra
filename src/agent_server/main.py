@@ -5,6 +5,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Callable, cast
 
 from dotenv import load_dotenv
 
@@ -28,8 +29,9 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount, Route
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
+from .api.accountability import router as accountability_router
 from .api.activity_logs import router as activity_logs_router
 from .api.assistants import router as assistants_router
 from .api.career_advisors import router as career_advisors_router
@@ -55,6 +57,7 @@ from .observability.base import get_observability_manager
 from .observability.langfuse_integration import _langfuse_provider
 from .services.event_store import event_store
 from .services.langgraph_service import get_langgraph_service
+from .services.scheduler import scheduler_service
 from .utils.setup_logging import setup_logging
 
 # Task management for run cancellation
@@ -84,9 +87,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Initialize event store cleanup task
     await event_store.start_cleanup_task()
 
+    # Start Scheduler
+    scheduler_service.start()
+
     yield
 
     # Shutdown: Clean up connections and cancel active runs
+    scheduler_service.shutdown()
+
     for task in active_runs.values():
         if not task.done():
             task.cancel()
@@ -199,6 +207,7 @@ for router in [
     activity_logs_router,
     management_router,
     career_advisors_router,
+    accountability_router,
 ]:
     protected_routes.extend(router.routes)
 
@@ -242,7 +251,7 @@ if user_app:
     app = merge_lifespans(app, lifespan)
 
     # Merge exception handlers
-    app = merge_exception_handlers(app, exception_handlers)
+    app = merge_exception_handlers(app, cast(dict[Any, Callable[..., Any]], exception_handlers))
 
     # Update OpenAPI spec if FastAPI
     update_openapi_spec(app)
@@ -339,10 +348,11 @@ else:
     app.include_router(activity_logs_router, prefix="", tags=["Activity Logs"])
     app.include_router(management_router, prefix="", tags=["Management"])
     app.include_router(career_advisors_router, prefix="", tags=["Career Advisors"])
+    app.include_router(accountability_router, prefix="", tags=["Accountability"])
 
     # Add exception handlers
     for exc_type, handler in exception_handlers.items():
-        app.exception_handler(exc_type)(handler)
+        app.exception_handler(exc_type)(cast(Callable[..., Any], handler))
 
     # Add root endpoint
     @app.get("/")

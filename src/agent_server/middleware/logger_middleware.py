@@ -1,12 +1,12 @@
 import time
-from typing import TypedDict
+from typing import Any, MutableMapping, TypedDict, cast
 
 import structlog
 from asgi_correlation_id import correlation_id
 from starlette.types import ASGIApp, Receive, Scope, Send
 from uvicorn.protocols.utils import get_path_with_query_string
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 app_logger = structlog.stdlib.get_logger("app.app_logs")
 access_logger = structlog.stdlib.get_logger("app.access_logs")
@@ -33,7 +33,7 @@ class StructLogMiddleware:
         info = AccessInfo()
 
         # Inner send function
-        async def inner_send(message):
+        async def inner_send(message: MutableMapping[str, Any]) -> None:
             if message.get("type") == "http.response.start":
                 info["status_code"] = message.get("status", 500)
             await send(message)
@@ -56,7 +56,7 @@ class StructLogMiddleware:
             client_host, client_port = scope["client"]
             http_method = scope["method"]
             http_version = scope["http_version"]
-            url = get_path_with_query_string(scope)
+            url = get_path_with_query_string(cast(Any, scope))
 
             # Recreate the Uvicorn access log format, but add all parameters as structured information
             log_data = {

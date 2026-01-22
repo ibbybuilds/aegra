@@ -11,11 +11,11 @@ Cache Strategy:
 
 import asyncio
 import json
-import structlog
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
+import structlog
 
 from ..core.redis import redis_manager
 from ..data.career_advisors import (
@@ -55,7 +55,7 @@ async def _get_from_redis(key: str) -> str | None:
     try:
         client = redis_manager.get_client()
         value = await client.get(key)
-        return value
+        return cast(str | None, value)
     except Exception as e:
         logger.warning("Redis get failed", error=str(e))
         return None
@@ -83,7 +83,7 @@ async def _get_from_memory(user_id: str) -> str | None:
         if user_id in _memory_cache:
             track, expiry = _memory_cache[user_id]
             if time.time() < expiry:
-                return track
+                return cast(str | None, track)
             else:
                 # Expired, remove from cache
                 del _memory_cache[user_id]
@@ -112,13 +112,17 @@ async def _fetch_learning_track_from_lms(token: str) -> str | None:
 
             # Extract learning track from onboarding data
             onboarding_data = data.get("onboarding", {})
-            learning_track = onboarding_data.get("learningTrack")
+            learning_track = cast(str | None, onboarding_data.get("learningTrack"))
 
-            logger.info("Fetched learning track from LMS", learning_track=learning_track)
+            logger.info(
+                "Fetched learning track from LMS", learning_track=learning_track
+            )
             return learning_track
 
     except httpx.HTTPStatusError as e:
-        logger.error("HTTP error fetching learning track", status_code=e.response.status_code)
+        logger.error(
+            "HTTP error fetching learning track", status_code=e.response.status_code
+        )
         return None
     except httpx.TimeoutException:
         logger.error("Timeout while fetching learning track")

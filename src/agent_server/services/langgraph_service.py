@@ -4,14 +4,14 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from uuid import uuid5
 
 import structlog
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 from ..constants import ASSISTANT_NAMESPACE_UUID
 from ..observability.base import get_tracing_callbacks, get_tracing_metadata
@@ -30,7 +30,7 @@ class LangGraphService:
         self._graph_registry: dict[str, Any] = {}
         self._graph_cache: dict[str, Any] = {}
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Load configuration file and setup graph registry.
 
         Uses shared config loading logic to ensure consistency.
@@ -81,9 +81,9 @@ class LangGraphService:
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
 
-    def _load_graph_registry(self):
+    def _load_graph_registry(self) -> None:
         """Load graph definitions from aegra.json"""
-        graphs_config = self.config.get("graphs", {})
+        graphs_config = (self.config or {}).get("graphs", {})
 
         for graph_id, graph_path in graphs_config.items():
             # Parse path format: "./graphs/weather_agent.py:graph"
@@ -102,7 +102,7 @@ class LangGraphService:
         Supports paths from the 'dependencies' config key, similar to LangGraph CLI.
         Paths are resolved relative to the config file location.
         """
-        dependencies = self.config.get("dependencies", [])
+        dependencies = (self.config or {}).get("dependencies", [])
         if not dependencies:
             return
 
@@ -177,7 +177,7 @@ class LangGraphService:
         finally:
             await session.close()
 
-    async def get_graph(self, graph_id: str, force_reload: bool = False) -> Pregel:
+    async def get_graph(self, graph_id: str, force_reload: bool = False) -> Any:
         """Get a compiled graph by ID with caching and LangGraph integration"""
         if graph_id not in self._graph_registry:
             raise ValueError(f"Graph not found: {graph_id}")
@@ -225,7 +225,7 @@ class LangGraphService:
 
         return compiled_graph
 
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]):
+    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Any:
         """Load graph from filesystem"""
         file_path = Path(graph_info["file_path"])
         if not file_path.exists():
@@ -263,7 +263,7 @@ class LangGraphService:
             for graph_id, info in self._graph_registry.items()
         }
 
-    def invalidate_cache(self, graph_id: str = None):
+    def invalidate_cache(self, graph_id: str | None = None) -> None:
         """Invalidate graph cache for hot-reload"""
         if graph_id:
             self._graph_cache.pop(graph_id, None)
@@ -274,11 +274,11 @@ class LangGraphService:
         """Get loaded configuration"""
         return self.config
 
-    def get_dependencies(self) -> list:
+    def get_dependencies(self) -> list[str]:
         """Get dependencies from config"""
         if self.config is None:
             return []
-        return self.config.get("dependencies", [])
+        return cast(list[str], self.config.get("dependencies", []))
 
     def get_http_config(self) -> dict[str, Any] | None:
         """Get HTTP configuration from loaded config file.
@@ -303,7 +303,7 @@ def get_langgraph_service() -> LangGraphService:
     return _langgraph_service
 
 
-def inject_user_context(user, base_config: dict = None) -> dict:
+def inject_user_context(user: Any, base_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Inject user context into LangGraph configuration for user isolation"""
     config = (base_config or {}).copy()
     config["configurable"] = config.get("configurable", {})
@@ -329,7 +329,7 @@ def inject_user_context(user, base_config: dict = None) -> dict:
     return config
 
 
-def create_thread_config(thread_id: str, user, additional_config: dict = None) -> dict:
+def create_thread_config(thread_id: str, user: Any, additional_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create LangGraph configuration for a specific thread with user context"""
     base_config = {"configurable": {"thread_id": thread_id}}
 
@@ -342,10 +342,10 @@ def create_thread_config(thread_id: str, user, additional_config: dict = None) -
 def create_run_config(
     run_id: str,
     thread_id: str,
-    user,
-    additional_config: dict = None,
-    checkpoint: dict | None = None,
-) -> dict:
+    user: Any,
+    additional_config: dict[str, Any] | None = None,
+    checkpoint: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Create LangGraph configuration for a specific run with full context.
 
     The function is *additive*: it never removes or renames anything the client

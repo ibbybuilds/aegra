@@ -1,9 +1,9 @@
 """Service for managing activity logs and analytics"""
 
-import structlog
 from datetime import datetime
 from typing import Any
 
+import structlog
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

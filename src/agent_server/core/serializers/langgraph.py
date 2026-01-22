@@ -1,7 +1,7 @@
 """LangGraph-specific serialization"""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -14,7 +14,7 @@ logger = structlog.getLogger(__name__)
 class LangGraphSerializer(Serializer):
     """Handles serialization of LangGraph objects (tasks, interrupts, snapshots)"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.general_serializer = GeneralSerializer()
 
     def serialize(self, obj: Any) -> Any:
@@ -26,7 +26,7 @@ class LangGraphSerializer(Serializer):
         try:
             if hasattr(task, "id") and hasattr(task, "name"):
                 # Proper task object
-                task_dict = {
+                task_dict: dict[str, Any] = {
                     "id": getattr(task, "id", ""),
                     "name": getattr(task, "name", ""),
                     "error": getattr(task, "error", None),
@@ -45,7 +45,7 @@ class LangGraphSerializer(Serializer):
                 # Raw task data - serialize as-is but safely
                 serialized_task = self.serialize(task)
                 if isinstance(serialized_task, dict):
-                    return serialized_task
+                    return cast(dict[str, Any], serialized_task)
                 else:
                     raise SerializationError(
                         f"Task serialization resulted in non-dict: {type(serialized_task)}",
@@ -60,8 +60,10 @@ class LangGraphSerializer(Serializer):
 
     def serialize_interrupt(self, interrupt: Any) -> dict[str, Any]:
         """Serialize a LangGraph interrupt"""
+        from typing import cast
+
         try:
-            return self.serialize(interrupt)
+            return cast(dict[str, Any], self.serialize(interrupt))
         except Exception as e:
             raise SerializationError(
                 f"Failed to serialize interrupt: {str(e)}",
@@ -71,7 +73,7 @@ class LangGraphSerializer(Serializer):
 
     def extract_tasks_from_snapshot(self, snapshot: Any) -> list[dict[str, Any]]:
         """Extract and serialize tasks from a snapshot"""
-        tasks = []
+        tasks: list[dict[str, Any]] = []
 
         if not (hasattr(snapshot, "tasks") and snapshot.tasks):
             return tasks
@@ -94,7 +96,7 @@ class LangGraphSerializer(Serializer):
         interrupts = []
         if hasattr(snapshot, "interrupts") and snapshot.interrupts:
             try:
-                interrupts = self.serialize(snapshot.interrupts)
+                interrupts = cast(list[dict[str, Any]], self.serialize(snapshot.interrupts))
                 if interrupts:
                     return interrupts
             except Exception as e:

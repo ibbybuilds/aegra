@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -19,7 +19,7 @@ logger = structlog.getLogger(__name__)
 class StreamingService:
     """Service to handle SSE streaming orchestration"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.event_counters: dict[str, int] = {}
         self.event_converter = EventConverter()
         self._store_locks: dict[str, asyncio.Lock] = {}
@@ -43,7 +43,7 @@ class StreamingService:
         run_id: str,
         event_id: str,
         raw_event: Any,
-    ):
+    ) -> None:
         """Put an event into the run's broker queue for live consumers
 
         Note: Events from graph_streaming are already filtered, so they pass through as-is.
@@ -57,7 +57,7 @@ class StreamingService:
         run_id: str,
         event_id: str,
         raw_event: Any,
-    ):
+    ) -> None:
         """Convert raw event to stored format and store it
 
         Note: Events from graph_streaming are already filtered, so they pass through as-is.
@@ -141,10 +141,11 @@ class StreamingService:
             }
             self._schedule_store_event(run_id, event_id, "values", store_payload)
         elif stream_mode_label == "end":
+            payload_dict = cast(dict[str, Any], event_payload or {})
             store_payload = {
                 "type": "run_complete",
-                "status": event_payload.get("status", "success"),
-                "final_output": event_payload.get("final_output"),
+                "status": payload_dict.get("status", "success"),
+                "final_output": payload_dict.get("final_output"),
             }
             self._schedule_store_event(run_id, event_id, "end", store_payload)
         # Add other stream modes as needed
@@ -183,7 +184,7 @@ class StreamingService:
 
         task.add_done_callback(_finalize)
 
-    async def signal_run_cancelled(self, run_id: str):
+    async def signal_run_cancelled(self, run_id: str) -> None:
         """Signal that a run was cancelled"""
         counter = self.event_counters.get(run_id, 0) + 1
         self.event_counters[run_id] = counter
@@ -196,7 +197,7 @@ class StreamingService:
         broker_manager.cleanup_broker(run_id)
         await self._drain_store_tasks(run_id)
 
-    async def signal_run_error(self, run_id: str, error_message: str):
+    async def signal_run_error(self, run_id: str, error_message: str) -> None:
         """Signal that a run encountered an error"""
         counter = self.event_counters.get(run_id, 0) + 1
         self.event_counters[run_id] = counter
@@ -283,7 +284,7 @@ class StreamingService:
                     yield sse_event
                     last_sent_sequence = current_sequence
 
-    def _cancel_background_task(self, run_id: str):
+    def _cancel_background_task(self, run_id: str) -> None:
         """Cancel background task on disconnect"""
         try:
             from ..api.runs import active_runs
@@ -321,8 +322,8 @@ class StreamingService:
             return False
 
     async def _update_run_status(
-        self, run_id: str, status: str, output: Any = None, error: str = None
-    ):
+        self, run_id: str, status: str, output: Any = None, error: str | None = None
+    ) -> None:
         """Update run status in database using the shared updater."""
         try:
             # Lazy import to avoid cycles
@@ -337,12 +338,12 @@ class StreamingService:
         broker = broker_manager.get_broker(run_id)
         return broker is not None and not broker.is_finished()
 
-    async def cleanup_run(self, run_id: str):
+    async def cleanup_run(self, run_id: str) -> None:
         """Clean up streaming resources for a run"""
         broker_manager.cleanup_broker(run_id)
         await self._drain_store_tasks(run_id)
 
-    def _stored_event_to_sse(self, run_id: str, ev) -> str | None:
+    def _stored_event_to_sse(self, run_id: str, ev: Any) -> str | None:
         """Convert stored event object to SSE string"""
         return self.event_converter.convert_stored_to_sse(ev, run_id)
 

@@ -1,8 +1,9 @@
 """Base observability interface for extensible tracing and monitoring."""
 
-import structlog
 from abc import ABC, abstractmethod
 from typing import Any
+
+import structlog
 
 logger = structlog.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class ObservabilityManager:
                 logger.error(
                     "Failed to get callbacks",
                     provider=provider.__class__.__name__,
-                    error=str(e)
+                    error=str(e),
                 )
         return callbacks
 
@@ -78,7 +79,7 @@ class ObservabilityManager:
                 logger.error(
                     "Failed to get metadata",
                     provider=provider.__class__.__name__,
-                    error=str(e)
+                    error=str(e),
                 )
         return metadata
 

@@ -1,5 +1,7 @@
 """Authentication dependencies for FastAPI endpoints"""
 
+from typing import Callable
+
 from fastapi import Depends, HTTPException, Request
 
 from ..models.auth import User
@@ -57,7 +59,7 @@ def get_user_id(user: User = Depends(get_current_user)) -> str:
     return user.identity
 
 
-def require_permission(permission: str):
+def require_permission(permission: str) -> Callable[[User], User]:
     """
     Create a dependency that requires a specific permission.
 

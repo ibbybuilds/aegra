@@ -1,8 +1,8 @@
 """Activity log endpoints for retrieving student activity and metrics"""
 
-import structlog
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 

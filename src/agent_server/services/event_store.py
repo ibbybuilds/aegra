@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 from datetime import UTC, datetime
+from typing import cast
 
 import structlog
 from psycopg.types.json import Jsonb
@@ -88,7 +89,10 @@ class EventStore:
 
         return [
             SSEEvent(
-                id=r["id"], event=r["event"], data=r["data"], timestamp=r["created_at"]
+                id=cast(dict, r)["id"],
+                event=cast(dict, r)["event"],
+                data=cast(dict, r)["data"],
+                timestamp=cast(dict, r)["created_at"],
             )
             for r in rows
         ]
@@ -111,7 +115,10 @@ class EventStore:
 
         return [
             SSEEvent(
-                id=r["id"], event=r["event"], data=r["data"], timestamp=r["created_at"]
+                id=cast(dict, r)["id"],
+                event=cast(dict, r)["event"],
+                data=cast(dict, r)["data"],
+                timestamp=cast(dict, r)["created_at"],
             )
             for r in rows
         ]
@@ -128,7 +135,7 @@ class EventStore:
 
     async def get_run_info(self, run_id: str) -> dict | None:
         if not db_manager.lg_pool:
-            return
+            return None
 
         async with db_manager.lg_pool.connection() as conn, conn.cursor() as cur:
             # 1. Fetch sequence range
@@ -142,7 +149,7 @@ class EventStore:
             )
             row = await cur.fetchone()
 
-            if not row or row["last_seq"] is None:
+            if not row or cast(dict, row)["last_seq"] is None:
                 return None
 
             # 2. Fetch last event
@@ -153,18 +160,20 @@ class EventStore:
                 WHERE run_id = %(run_id)s AND seq = %(last_seq)s
                 LIMIT 1
                 """,
-                {"run_id": run_id, "last_seq": row["last_seq"]},
+                {"run_id": run_id, "last_seq": cast(dict, row)["last_seq"]},
             )
             last = await cur.fetchone()
 
+        row_dict = cast(dict, row)
+        last_dict = cast(dict, last) if last else None
         return {
             "run_id": run_id,
-            "event_count": int(row["last_seq"]) - int(row["first_seq"]) + 1
-            if row["first_seq"] is not None
+            "event_count": int(row_dict["last_seq"]) - int(row_dict["first_seq"]) + 1
+            if row_dict["first_seq"] is not None
             else 0,
             "first_event_time": None,
-            "last_event_time": last["created_at"] if last else None,
-            "last_event_id": last["id"] if last else None,
+            "last_event_time": last_dict["created_at"] if last_dict else None,
+            "last_event_id": last_dict["id"] if last_dict else None,
         }
 
     async def _cleanup_loop(self) -> None:

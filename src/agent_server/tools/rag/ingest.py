@@ -44,9 +44,9 @@ async def index_course(
     Returns:
         True if successful, False otherwise
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"📚 Indexing course: {course_id}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Fetch course data
     print("🔍 Fetching course data from LMS...")
@@ -115,7 +115,7 @@ async def index_all_courses(
     """
     print("\n{'='*60}")
     print("📚 Indexing ALL courses")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Fetch all courses
     print("🔍 Fetching all courses from LMS...")
@@ -146,13 +146,13 @@ async def index_all_courses(
             failed_count += 1
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("📊 INDEXING SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"✅ Successfully indexed: {success_count}")
     print(f"❌ Failed: {failed_count}")
     print(f"📚 Total courses: {len(courses)}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 def show_status(course_id: str, retriever: CourseRetriever) -> None:
@@ -163,9 +163,9 @@ def show_status(course_id: str, retriever: CourseRetriever) -> None:
         course_id: The course ID
         retriever: CourseRetriever instance
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"📊 Indexing Status for: {course_id}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     status = retriever.get_indexing_status(course_id)
 
@@ -186,10 +186,10 @@ def show_status(course_id: str, retriever: CourseRetriever) -> None:
     if status["error_message"]:
         print(f"\n❌ Error: {status['error_message']}")
 
-    print(f"\n{'='*60}\n")
+    print(f"\n{'=' * 60}\n")
 
 
-async def main():
+async def main() -> None:
     """Main CLI function."""
     parser = argparse.ArgumentParser(
         description="Index course content for RAG retrieval",

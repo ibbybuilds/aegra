@@ -11,6 +11,8 @@ Architecture:
 - Service Layer (assistant_service.py): Business logic, validation, orchestration
 """
 
+from typing import Any, cast
+
 from fastapi import APIRouter, Body, Depends
 
 from ..core.auth_deps import get_current_user
@@ -32,7 +34,7 @@ async def create_assistant(
     request: AssistantCreate,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> Assistant:
     """Create a new assistant"""
     return await service.create_assistant(request, user.identity)
 
@@ -41,7 +43,7 @@ async def create_assistant(
 async def list_assistants(
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> AssistantList:
     """List user's assistants"""
     assistants = await service.list_assistants(user.identity)
     return AssistantList(assistants=assistants, total=len(assistants))
@@ -54,7 +56,7 @@ async def search_assistants(
     request: AssistantSearchRequest,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> list[Assistant]:
     """Search assistants with filters"""
     return await service.search_assistants(request, user.identity)
 
@@ -64,7 +66,7 @@ async def count_assistants(
     request: AssistantSearchRequest,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> int:
     """Count assistants with filters"""
     return await service.count_assistants(request, user.identity)
 
@@ -78,7 +80,7 @@ async def get_assistant(
     assistant_id: str,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> Assistant:
     """Get assistant by ID"""
     return await service.get_assistant(assistant_id, user.identity)
 
@@ -93,7 +95,7 @@ async def update_assistant(
     request: AssistantUpdate,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> Assistant:
     """Update assistant by ID"""
     return await service.update_assistant(assistant_id, request, user.identity)
 
@@ -103,7 +105,7 @@ async def delete_assistant(
     assistant_id: str,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> dict[str, str]:
     """Delete assistant by ID"""
     return await service.delete_assistant(assistant_id, user.identity)
 
@@ -120,7 +122,7 @@ async def set_assistant_latest(
     ),
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> Assistant:
     """Set the given version as the latest version of an assistant"""
     return await service.set_assistant_latest(assistant_id, version, user.identity)
 
@@ -134,9 +136,10 @@ async def list_assistant_versions(
     assistant_id: str,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> list[Assistant]:
     """List all versions of an assistant"""
     return await service.list_assistant_versions(assistant_id, user.identity)
+
 
 
 @router.get("/assistants/{assistant_id}/schemas")
@@ -144,7 +147,7 @@ async def get_assistant_schemas(
     assistant_id: str,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> dict[str, Any]:
     """Get input, output, state, config and context schemas for an assistant"""
     return await service.get_assistant_schemas(assistant_id, user.identity)
 
@@ -155,7 +158,7 @@ async def get_assistant_graph(
     xray: bool | int | None = None,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> dict[str, Any]:
     """Get the graph structure for visualization"""
     # Default to False if not provided
     xray_value = xray if xray is not None else False
@@ -169,8 +172,8 @@ async def get_assistant_subgraphs(
     namespace: str | None = None,
     user: User = Depends(get_current_user),
     service: AssistantService = Depends(get_assistant_service),
-):
+) -> list[str]:
     """Get subgraphs of an assistant"""
-    return await service.get_assistant_subgraphs(
+    return cast(list[str], await service.get_assistant_subgraphs(
         assistant_id, namespace, recurse, user.identity
-    )
+    ))

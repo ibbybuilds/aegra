@@ -1,8 +1,10 @@
 """Management dashboard endpoints for analytics and insights"""
 
-import structlog
 from datetime import UTC, datetime, timedelta
 
+from typing import Any, Iterable, cast
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -257,7 +259,7 @@ async def get_user_statistics(
         run_user_query = run_user_query.where(and_(*run_conditions))
 
     run_user_results = await session.execute(run_user_query)
-    top_users_from_runs = dict(run_user_results)
+    top_users_from_runs: dict[str, int] = dict(cast(Iterable[tuple[str, int]], run_user_results.all()))
 
     # Merge results: activity logs first, then add missing users from runs
     top_users_dict = {}

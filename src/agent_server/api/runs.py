@@ -4,12 +4,13 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, Send
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -212,9 +213,6 @@ async def create_run(
     # Get LangGraph service
     langgraph_service = get_langgraph_service()
     logger.info(
-        f"create_run: scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
-    )
-    logger.info(
         f"[create_run] scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
     )
 
@@ -225,21 +223,21 @@ async def create_run(
     available_graphs = langgraph_service.list_graphs()
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
-    config = request.config
-    context = request.context or {}
+    config_dict = request.config
+    context_dict = request.context or {}
 
     # Extract token and user_id from Authorization header and inject into context
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split("Bearer ", 1)[1]
-        context["user_token"] = token
+        context_dict["user_token"] = token
         # Extract user_id from the authenticated user context
-        context["user_id"] = user.identity
+        context_dict["user_id"] = user.identity
 
         # Fetch advisor with caching (Redis + in-memory)
         advisor, learning_track = await get_cached_advisor(user.identity, token)
-        context["advisor"] = advisor
+        context_dict["advisor"] = advisor
         if learning_track:
-            context["learning_track"] = learning_track
+            context_dict["learning_track"] = learning_track
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -248,8 +246,8 @@ async def create_run(
     if not assistant:
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
-    config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
+    merged_config = _merge_jsonb(assistant.config or {}, config_dict or {})
+    merged_context = _merge_jsonb(assistant.context or {}, context_dict or {})
 
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
@@ -279,8 +277,8 @@ async def create_run(
         assistant_id=resolved_assistant_id,
         status="pending",
         input=request.input or {},
-        config=config,
-        context=context,
+        config=merged_config,
+        context=merged_context,
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -313,8 +311,8 @@ async def create_run(
         assistant_id=resolved_assistant_id,
         status="pending",
         input=request.input or {},
-        config=config,
-        context=context,
+        config=merged_config,
+        context=merged_context,
         user_id=user.identity,
         created_at=now,
         updated_at=now,
@@ -324,6 +322,11 @@ async def create_run(
 
     # Start execution asynchronously
     # Don't pass the session to avoid transaction conflicts
+    # Normalize stream_mode to list
+    stream_mode = request.stream_mode
+    if isinstance(stream_mode, str):
+        stream_mode = [stream_mode]
+
     task = asyncio.create_task(
         execute_run_async(
             run_id,
@@ -331,9 +334,9 @@ async def create_run(
             assistant.graph_id,
             request.input or {},
             user,
-            config,
-            context,
-            request.stream_mode,
+            merged_config,
+            merged_context,
+            stream_mode,
             None,  # Don't pass session to avoid conflicts
             request.checkpoint,
             request.command,
@@ -402,8 +405,8 @@ async def create_and_stream_run(
     if not assistant:
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
-    config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
+    config = _merge_jsonb(assistant.config or {}, config or {})
+    context = _merge_jsonb(assistant.context or {}, context or {})
 
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
@@ -705,7 +708,7 @@ async def wait_for_run(
     available_graphs = langgraph_service.list_graphs()
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
-    config = request.config
+    config = request.config or {}
     context = request.context
     configurable = config.get("configurable", {})
 
@@ -741,8 +744,8 @@ async def wait_for_run(
     if not assistant:
         raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
-    config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
+    config = _merge_jsonb(assistant.config or {}, config or {})
+    context = _merge_jsonb(assistant.context or {}, context or {})
 
     # Validate the assistant's graph exists
     available_graphs = langgraph_service.list_graphs()
@@ -828,11 +831,11 @@ async def wait_for_run(
             RunORM.thread_id == thread_id,
             RunORM.user_id == user.identity,
         )
-    )
+    )  # type: ignore[assignment]
     if not run_orm:
         raise HTTPException(500, f"Run '{run_id}' disappeared during execution")
 
-    await session.refresh(run_orm)
+    await session.refresh(cast(RunORM, run_orm))
 
     # Return output based on final status
     if run_orm.status == "success":
@@ -1009,7 +1012,7 @@ async def execute_run_async(
     user: User,
     config: dict | None = None,
     context: dict | None = None,
-    stream_mode: list[str] | None = None,
+    stream_mode: str | list[str] | None = None,
     session: AsyncSession | None = None,
     checkpoint: dict | None = None,
     command: dict[str, Any] | None = None,
@@ -1053,6 +1056,7 @@ async def execute_run_async(
         # It controls concurrent run behavior, not graph execution behavior
 
         # Determine input for execution (either input_data or command)
+        execution_input: dict[str, Any] | Command
         if command is not None:
             # When command is provided, it replaces input entirely
             execution_input = map_command_to_langgraph(command)
@@ -1073,15 +1077,15 @@ async def execute_run_async(
         else:
             stream_mode_list = stream_mode.copy()
 
-        async with with_auth_ctx(user, []):
+        async with with_auth_ctx(cast(Any, user), []):
             # Stream events using the graph_streaming service
             async for event_type, event_data in stream_graph_events(
                 graph=graph,
                 input_data=execution_input,
-                config=run_config,
+                config=cast(RunnableConfig, run_config),
                 stream_mode=stream_mode_list,
                 context=context,
-                subgraphs=subgraphs,
+                subgraphs=subgraphs or False,
                 on_checkpoint=lambda _: None,  # Can add checkpoint handling if needed
                 on_task_result=lambda _: None,  # Can add task result handling if needed
             ):
@@ -1234,7 +1238,7 @@ async def update_run_status(
         session = maker()  # type: ignore[assignment]
         owns_session = True
     try:
-        values = {"status": validated_status, "updated_at": datetime.now(UTC)}
+        values: dict[str, Any] = {"status": validated_status, "updated_at": datetime.now(UTC)}
         if output is not None:
             # Serialize output to ensure JSON compatibility
             try:

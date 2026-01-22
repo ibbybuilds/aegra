@@ -6,39 +6,52 @@ Works with a chat model with tool calling support.
 from datetime import UTC, datetime
 from typing import Literal, cast
 
+import structlog
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
+from pydantic import BaseModel, Field
 
 from react_agent.context import Context
 from react_agent.file_processor import process_multimodal_content
 from react_agent.state import InputState, State
 from react_agent.tools import TOOLS
 from react_agent.utils import load_chat_model
-from pydantic import BaseModel, Field
 from src.agent_server.core.accountability_orm import ActionItem
 from src.agent_server.core.orm import _get_session_maker
-import structlog
 
 logger = structlog.get_logger()
+
 
 async def extract_action_items(state: State, runtime: Runtime[Context]) -> dict:
     """Extract action items from the conversation and save to DB."""
     last_message = state.messages[-1]
-    
+
     # Only run on final Answer (AIMessage with no tool usage)
     if not isinstance(last_message, AIMessage) or last_message.tool_calls:
-        return {} # Don't update state
+        return {}  # Don't update state
 
     user_id = runtime.context.user_id
     if not user_id:
-        return {} # No user context
+        return {}  # No user context
 
     # Check for keywords to avoid expensive calls for every single message
     content_lower = str(last_message.content).lower()
-    keywords = ["i will", "try to", "goal", "plan", "schedule", "deadline", "by next", "tomorrow", "remind", "action", "task"]
-    
+    keywords = [
+        "i will",
+        "try to",
+        "goal",
+        "plan",
+        "schedule",
+        "deadline",
+        "by next",
+        "tomorrow",
+        "remind",
+        "action",
+        "task",
+    ]
+
     # Also check the last user message for intent
     user_intent = False
     if len(state.messages) > 1:
@@ -47,38 +60,45 @@ async def extract_action_items(state: State, runtime: Runtime[Context]) -> dict:
             user_content = str(user_msg.content).lower()
             if any(k in user_content for k in keywords):
                 user_intent = True
-    
+
     if not (any(k in content_lower for k in keywords) or user_intent):
         return {}
-    
+
     # Use a lightweight extraction schema
     class ActionItemDetail(BaseModel):
         description: str = Field(description="Concrete task description")
-        due_date: str | None = Field(description="Due date/time if mentioned (ISO format or relative words like 'tomorrow'), else null")
+        due_date: str | None = Field(
+            description="Due date/time if mentioned (ISO format or relative words like 'tomorrow'), else null"
+        )
 
     class ActionItemExtraction(BaseModel):
-        items: list[ActionItemDetail] = Field(description="List of extracted action items")
+        items: list[ActionItemDetail] = Field(
+            description="List of extracted action items"
+        )
 
-    # We reuse the same model configured for the agent for simplicity, 
+    # We reuse the same model configured for the agent for simplicity,
     # assuming it supports structured output.
     try:
-        model = load_chat_model(runtime.context.model).with_structured_output(ActionItemExtraction)
-        
+        model = load_chat_model(runtime.context.model).with_structured_output(
+            ActionItemExtraction
+        )
+
         prompt = f"""
         Analyze the last interaction to identify any specific action items, commitments, or tasks for the student.
         Focus on concrete tasks like "Complete SQL project", "Watch webinar", "Update resume".
         If a time is mentioned (e.g., "by Friday", "tomorrow"), try to interpret it relative to {datetime.now(UTC)}.
         Ignore general advice or vague encouragement.
-        
-        Last User Message: {state.messages[-2].content if len(state.messages) > 1 else ''}
+
+        Last User Message: {state.messages[-2].content if len(state.messages) > 1 else ""}
         Last AI Message: {last_message.content}
         """
-        
+
         result = await model.ainvoke(prompt)
         if result and result.items:
             # Simple date parser helper (very basic for MVP)
-            from dateutil import parser
             from datetime import timedelta
+
+            from dateutil import parser
 
             session_maker = _get_session_maker()
             async with session_maker() as session:
@@ -89,28 +109,35 @@ async def extract_action_items(state: State, runtime: Runtime[Context]) -> dict:
                         try:
                             # Use dateutil if available, or just rely on model's ISO capability
                             parsed_date = parser.parse(item_detail.due_date)
-                        except:
+                            if parsed_date.tzinfo is None:
+                                parsed_date = parsed_date.replace(tzinfo=UTC)
+                        except Exception:
                             # Fallback: simple logic for common terms if model returns them raw
                             lower_due = item_detail.due_date.lower()
                             if "tomorrow" in lower_due:
                                 parsed_date = datetime.now(UTC) + timedelta(days=1)
                             elif "next week" in lower_due:
                                 parsed_date = datetime.now(UTC) + timedelta(days=7)
-                    
+
                     item = ActionItem(
                         user_id=user_id,
                         description=item_detail.description,
                         status="pending",
                         due_date=parsed_date,
-                        source_message_id=str(last_message.id)
+                        source_message_id=str(last_message.id),
                     )
                     session.add(item)
-                    logger.info("action_item_extracted", user_id=user_id, description=item_detail.description)
+                    logger.info(
+                        "action_item_extracted",
+                        user_id=user_id,
+                        description=item_detail.description,
+                    )
                 await session.commit()
     except Exception as e:
         logger.error("action_item_extraction_failed", error=str(e))
-        
-    return {} # Return empty dict to merge into state (no changes)
+
+    return {}  # Return empty dict to merge into state (no changes)
+
 
 # Define the function that calls the model
 

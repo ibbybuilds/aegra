@@ -39,7 +39,7 @@ class CourseContentChunker:
     def chunk_text(
         self,
         text: str,
-        metadata: dict = None,
+        metadata: dict | None = None,
     ) -> list[Document]:
         """
         Chunk text into Document objects.

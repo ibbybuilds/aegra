@@ -7,7 +7,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
 from ..config import load_store_config
 
@@ -71,19 +71,25 @@ class DatabaseManager:
             f"Initializing LangGraph components with shared pool (max {lg_max} conns)..."
         )
 
-        self._checkpointer = AsyncPostgresSaver(conn=self.lg_pool)
+        self._checkpointer = AsyncPostgresSaver(conn=self.lg_pool)  # type: ignore[arg-type]
         await self._checkpointer.setup()  # Ensure tables exist
 
         # Load store configuration for semantic search (if configured)
         store_config = load_store_config()
         index_config = store_config.get("index") if store_config else None
 
-        self._store = AsyncPostgresStore(conn=self.lg_pool, index=index_config)
+        self._store = AsyncPostgresStore(
+            conn=self.lg_pool, index=index_config  # type: ignore[arg-type]
+        )
         await self._store.setup()  # Ensure tables exist
 
         if index_config:
             embed_model = index_config.get("embed", "unknown")
             logger.info(f"Semantic store enabled with embeddings: {embed_model}")
+
+        # Initialize the session maker for ORM operations
+        from .orm import initialize_session_maker
+        initialize_session_maker()
 
         logger.info("✅ Database and LangGraph components initialized")
 
@@ -100,6 +106,10 @@ class DatabaseManager:
             self.lg_pool = None
             self._checkpointer = None
             self._store = None
+
+        # Reset the session maker cache
+        from .orm import reset_session_maker
+        reset_session_maker()
 
         logger.info("✅ Database connections closed")
 

@@ -15,7 +15,7 @@ from ..core.sse import (
 class EventConverter:
     """Converts events to SSE format"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize event converter"""
         self.subgraphs: bool = False
 
@@ -28,7 +28,7 @@ class EventConverter:
         stream_mode, payload, namespace = self._parse_raw_event(raw_event)
         return self._create_sse_event(stream_mode, payload, event_id, namespace)
 
-    def convert_stored_to_sse(self, stored_event, run_id: str = None) -> str | None:
+    def convert_stored_to_sse(self, stored_event: Any, run_id: str | None = None) -> str | None:
         """Convert stored event to SSE format"""
         event_type = stored_event.event
         data = stored_event.data
@@ -45,7 +45,7 @@ class EventConverter:
             )
             return create_messages_event(message_data, event_id=event_id)
         elif event_type == "metadata":
-            return create_metadata_event(run_id, event_id)
+            return create_metadata_event(run_id or "", event_id)
         elif event_type == "debug":
             return create_debug_event(data.get("debug"), event_id)
         elif event_type == "end":

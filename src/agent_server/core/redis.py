@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING, cast, Any
+
 import structlog
-from typing import TYPE_CHECKING, Any
 
 from ..settings import settings
 
@@ -54,9 +55,7 @@ class RedisManager:
             return
 
         if _Redis is None:
-            logger.error(
-                "Redis package missing, falling back to in-memory broker"
-            )
+            logger.error("Redis package missing, falling back to in-memory broker")
             return
 
         async with self._init_lock:
@@ -65,16 +64,14 @@ class RedisManager:
 
             try:
                 self._client = _Redis.from_url(
-                    self._redis_url,
+                    cast(str, self._redis_url),
                     decode_responses=True,
                     health_check_interval=30,
                 )
-                await self._client.ping()
+                await self._client.ping()  # type: ignore[misc]
             except Exception as exc:  # pragma: no cover - network failure path
                 logger.error(
-                    "Failed to connect to Redis",
-                    url=self._redis_url,
-                    error=str(exc)
+                    "Failed to connect to Redis", url=self._redis_url, error=str(exc)
                 )
                 await self._safe_close()
                 self._client = None

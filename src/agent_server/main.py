@@ -5,6 +5,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Callable, cast
 
 from dotenv import load_dotenv
 
@@ -28,8 +29,9 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount, Route
 
-from src.agent_server.settings import settings
+from agent_server.settings import settings
 
+from .api.accountability import router as accountability_router
 from .api.activity_logs import router as activity_logs_router
 from .api.assistants import router as assistants_router
 from .api.career_advisors import router as career_advisors_router
@@ -37,7 +39,6 @@ from .api.management import router as management_router
 from .api.runs import router as runs_router
 from .api.store import router as store_router
 from .api.threads import router as threads_router
-from .api.accountability import router as accountability_router
 from .config import HttpConfig, load_http_config
 from .core.app_loader import load_custom_app
 from .core.auth_middleware import get_auth_backend, on_auth_error
@@ -250,7 +251,7 @@ if user_app:
     app = merge_lifespans(app, lifespan)
 
     # Merge exception handlers
-    app = merge_exception_handlers(app, exception_handlers)
+    app = merge_exception_handlers(app, cast(dict[Any, Callable[..., Any]], exception_handlers))
 
     # Update OpenAPI spec if FastAPI
     update_openapi_spec(app)
@@ -351,7 +352,7 @@ else:
 
     # Add exception handlers
     for exc_type, handler in exception_handlers.items():
-        app.exception_handler(exc_type)(handler)
+        app.exception_handler(exc_type)(cast(Callable[..., Any], handler))
 
     # Add root endpoint
     @app.get("/")

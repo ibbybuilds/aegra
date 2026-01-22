@@ -596,7 +596,7 @@ Response will include `call_context` in the state values.
 
 ## Related Documentation
 
-- [AVA Prompt Architecture](./AVA_PROMPT_ARCHITECTURE.md) - Priority system and workflow optimization
+- [AVA Prompt Architecture](./ava-prompt-architecture.md) - Priority system and workflow optimization
 - [CLAUDE.md](../CLAUDE.md) - Development patterns and examples
 - [context.py](../graphs/ava_v1/context.py) - CallContext dataclass definition
 - [template.py](../graphs/ava_v1/prompts/template.py) - Priority determination logic

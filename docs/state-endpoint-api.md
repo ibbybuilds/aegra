@@ -64,6 +64,195 @@ The `type` field determines which priority level and prompt template will be use
 
 **Note**: The actual priority is determined by `template.py::_determine_priority()` which checks for the **presence of objects** (e.g., `context.property` and `context.booking`), not just the type string. However, setting the correct type ensures consistency.
 
+---
+
+## Context Type Selection Guide
+
+This section explains **when to use each context type** and **how to choose** the right one for your use case.
+
+### When to Use Each Context Type
+
+#### 1. `abandoned_payment` (Priority 1 - Highest)
+
+**Use when**: Customer previously attempted payment but didn't complete the transaction.
+
+**Signals**:
+- User is being re-contacted after abandoning payment
+- You have previous payment attempt data (amount, timestamp)
+- Recovery/urgency is the primary goal
+
+**Required Objects**:
+- `abandoned_payment` object with timestamp and amount
+- Optional: `property` object with the hotel they were booking
+
+**Workflow Impact**: Agent adopts recovery-focused tone with urgency, references previous attempt, streamlines path to completion.
+
+**Example Use Cases**:
+- SMS reminder 10 minutes after cart abandonment
+- Email follow-up for incomplete payment
+- Proactive outreach for timed-out sessions
+
+---
+
+#### 2. `dated_property` (Priority 2)
+
+**Use when**: Customer is on a specific hotel page with dates already selected.
+
+**Signals**:
+- User clicked "Book Now" on a hotel page with date picker pre-filled
+- Landing page is a specific property with URL params containing dates
+- Both hotel and dates are known before conversation starts
+
+**Required Objects**:
+- `property` object (with hotel_id and property_name)
+- `booking` object (with check_in, check_out, and optionally rooms/adults/children)
+
+**Workflow Impact**: Agent skips hotel search API call, skips date collection, only asks for occupancy if needed. Goes directly to `start_room_search()`.
+
+**Example Use Cases**:
+- "Book Now" button on hotel detail page with dates pre-selected
+- Marketing campaign links with hotel + dates in URL
+- Retargeting campaigns for specific property + date combinations
+
+---
+
+#### 3. `property_specific` (Priority 3)
+
+**Use when**: Customer is interested in a specific hotel but dates are unknown.
+
+**Signals**:
+- User clicked Google Ad for specific hotel
+- Landing page is a hotel detail page without date parameters
+- GA call extension click for a specific property
+
+**Required Objects**:
+- `property` object (with hotel_id and property_name)
+- NO `booking` object (or booking without check_in/check_out)
+
+**Workflow Impact**: Agent acknowledges hotel, collects dates and occupancy, then calls `start_room_search()` directly. Skips hotel search API call.
+
+**Example Use Cases**:
+- Google Ads call extensions for specific hotels
+- "Call to Book" buttons on hotel detail pages
+- Direct hotel inquiry from website
+
+---
+
+#### 4. `payment_return` (Priority 4)
+
+**Use when**: Customer is returning after completing payment.
+
+**Signals**:
+- Redirect from payment processor (Stripe success/failure URL)
+- Post-payment confirmation flow
+- User checking payment status
+
+**Required Objects**:
+- `payment` object (with status, amount, transaction_id)
+- Optional: `property` object
+
+**Workflow Impact**: Agent confirms payment, provides next steps, offers assistance. No booking workflow needed.
+
+**Example Use Cases**:
+- Stripe redirect after successful payment
+- Payment failure handling
+- Payment status inquiry
+
+---
+
+#### 5. `general` (Priority 5 - Default)
+
+**Use when**: None of the above specialized contexts apply.
+
+**Signals**:
+- Homepage/landing page with no pre-filled information
+- User has dates/destination but no specific hotel (destination search)
+- Continuing existing conversation (thread continuation)
+- Any scenario that doesn't fit the specialized contexts above
+
+**Required Objects**:
+- No special objects required
+- May optionally include `booking` object with just destination/dates
+
+**Workflow Impact**: Agent follows standard workflow: greet → collect destination → collect dates → collect occupancy → confirm → `start_hotel_search()` → present hotels.
+
+**Example Use Cases**:
+- Homepage "Book a Hotel" button
+- General inquiry line
+- Destination search (e.g., "I want to visit Miami")
+- Continuing an existing conversation thread
+
+---
+
+## Refactoring History: 8-Type to 5-Type Consolidation
+
+The context type system was recently refactored from **8 types to 5 types** for simplicity and clarity. This section documents what changed and why.
+
+### Types That Were Consolidated
+
+#### `thread_continuation` → `general`
+
+**Reason**: Thread continuation doesn't require special workflow handling. Whether it's a new conversation or continuing an existing one, the agent should follow the same logic based on what information is already in state. The presence of message history alone doesn't warrant a different prompt strategy.
+
+**What Changed**:
+- Threads with message history (len(messages) > 2) now auto-derive to `type="general"` instead of `type="thread_continuation"`
+- No functional difference in agent behavior
+- Simplified middleware auto-derivation logic
+
+**Migration**: If you were explicitly setting `type="thread_continuation"`, change it to `type="general"`.
+
+---
+
+#### `booking` → `general`
+
+**Reason**: A booking context with just destination and dates (but no specific hotel) follows the exact same workflow as a general conversation. The agent collects any missing parameters and calls `start_hotel_search()`. There's no meaningful optimization or workflow difference to justify a separate type.
+
+**What Changed**:
+- Contexts with only `booking` object (no `property`) now map to `type="general"`
+- Agent behavior is identical: collect destination/dates if missing → search hotels
+- Auto-derivation treats booking-only contexts as general
+
+**Migration**: If you were explicitly setting `type="booking"`, change it to `type="general"`.
+
+---
+
+#### `property_booking_hybrid` → `dated_property` (Renamed)
+
+**Reason**: The term "hybrid" was confusing and didn't clearly communicate the use case. `dated_property` better describes what it represents: a specific property with dates already known.
+
+**What Changed**:
+- Type name only (not functionality)
+- All references in code updated to use `dated_property`
+- Middleware auto-derivation uses new name
+
+**Migration**: If you were explicitly setting `type="property_booking_hybrid"`, change it to `type="dated_property"`.
+
+---
+
+### Summary of Changes
+
+| Old Type (8-Type System) | New Type (5-Type System) | Change Type |
+|--------------------------|--------------------------|-------------|
+| `abandoned_payment` | `abandoned_payment` | Unchanged |
+| `property_booking_hybrid` | `dated_property` | Renamed |
+| `property_specific` | `property_specific` | Unchanged |
+| `payment_return` | `payment_return` | Unchanged |
+| `booking` | `general` | Consolidated |
+| `thread_continuation` | `general` | Consolidated |
+| `general` | `general` | Unchanged |
+
+**Benefits of Consolidation**:
+- Simpler mental model for developers (5 types vs 8)
+- Fewer edge cases to handle in middleware
+- Clearer type names that describe the actual use case
+- Maintains all functional workflow optimizations
+- No loss of capability (the important distinctions remain)
+- Easier to reason about which type to use
+
+**No Breaking Changes**: The middleware auto-derivation logic was updated to use the new 5-type system, so existing conversations continue to work correctly. Only explicit type assignments in API calls need to be updated.
+
+---
+
 ## Nested Object Schemas
 
 ### PropertyInfo

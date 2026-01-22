@@ -632,7 +632,7 @@ Call `query_vfs(destination="Miami")` with optional filters:
 **CRITICAL**: You MUST always call `start_hotel_search` before `start_room_search` for a call that was not started with context of a property.
 
 **Property-Specific Context**:
-- If the call context includes a specific hotel (property_specific or property_booking_hybrid), you do not need to call `start_hotel_search` first
+- If the call context includes a specific hotel (property_specific or dated_property), you do not need to call `start_hotel_search` first
 - Use the `name` parameter to target the specific hotel: `start_hotel_search(destination="Miami", name="JW Marriott", checkIn=..., checkOut=..., occupancy=...)`
 - This creates the search_key entry (e.g., "Miami:JW Marriott") needed for `start_room_search`
 - Then call `start_room_search(hotel_id, search_key)` with the returned search_key

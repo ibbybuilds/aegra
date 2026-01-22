@@ -90,7 +90,7 @@ class CallContext:
     """
 
     type: str = (
-        "general"  # property_specific, payment_return, thread_continuation, general
+        "general"  # property_specific, dated_property, payment_return, general
     )
     property: PropertyInfo | None = None
     payment: PaymentInfo | None = None

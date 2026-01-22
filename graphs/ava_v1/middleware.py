@@ -37,8 +37,8 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     This function implements smart context derivation:
     1. Check for explicit call_context (payment_return, abandoned_payment, session)
-    2. Auto-derive from active_searches (property_booking_hybrid, property_specific, booking)
-    3. Check message history for thread_continuation
+    2. Auto-derive from active_searches (dated_property, ga_call_extension)
+    3. Check message history for thread_continuation (used with abandoned_payment)
     4. Default to general
 
     Args:
@@ -225,12 +225,12 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         property_info = None
 
         if hotel_id and booking_info:
-            derived_type = "property_booking_hybrid"
+            derived_type = "dated_property"
             property_info = PropertyInfo(
                 property_name=hotel_name or "", hotel_id=hotel_id
             )
             logger.info(
-                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_booking_hybrid (hotel_id={hotel_id}, dates present)"
+                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: dated_property (hotel_id={hotel_id}, dates present)"
             )
         elif hotel_id:
             derived_type = "property_specific"
@@ -241,14 +241,14 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
                 f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_specific (hotel_id={hotel_id})"
             )
         elif booking_info:
-            derived_type = "booking"
+            derived_type = "general"
             logger.info(
-                "[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)"
+                "[CONTEXT_AUTO_DERIVE] Auto-derived type: general (dates present, no specific property)"
             )
         elif len(messages) > 2:  # Has conversation history
-            derived_type = "thread_continuation"
+            derived_type = "general"
             logger.info(
-                "[CONTEXT_AUTO_DERIVE] Auto-derived type: thread_continuation (message history exists)"
+                "[CONTEXT_AUTO_DERIVE] Auto-derived type: general (message history exists)"
             )
         else:
             logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: general (default)")

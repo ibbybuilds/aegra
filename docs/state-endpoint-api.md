@@ -38,6 +38,7 @@ POST /threads/{thread_id}/state
 ```typescript
 {
   "type": string,                         // Context type (see types below)
+  "site_name": string,                    // Website/brand domain (e.g., "reservationsportal.com")
   "property": PropertyInfo | null,        // Hotel/property information
   "payment": PaymentInfo | null,          // Payment status information
   "session": CallSessionContext | null,   // Multi-leg session data
@@ -63,6 +64,29 @@ The `type` field determines which priority level and prompt template will be use
 | `general` | 5 | general | Homepage, no specific context |
 
 **Note**: The actual priority is determined by `template.py::_determine_priority()` which checks for the **presence of objects** (e.g., `context.property` and `context.booking`), not just the type string. However, setting the correct type ensures consistency.
+
+### Site Name Configuration
+
+The `site_name` field allows you to customize the website/brand domain used in agent responses and generated URLs.
+
+**Default**: `"reservationsportal.com"` (if not provided)
+
+**Usage**:
+- Agent mentions the site in responses (e.g., "You can find our privacy policy at {site_name}")
+- URL generator uses this domain for reservation portal links (e.g., `https://{site_name}/property/123abc`)
+- Enables white-label deployments with custom branding
+
+**Example**:
+```json
+{
+  "context": {
+    "type": "general",
+    "site_name": "mybrand.com"
+  }
+}
+```
+
+The agent will say: "You can find our privacy policy at mybrand.com" and generate URLs like `https://mybrand.com/availability?...`
 
 ---
 
@@ -493,6 +517,7 @@ POST /threads/{thread_id}/state
   },
   "context": {
     "type": "property_specific",
+    "site_name": "mybrandhotels.com",
     "property": {
       "property_name": "JW Marriott Miami",
       "hotel_id": "123abc"
@@ -506,6 +531,8 @@ POST /threads/{thread_id}/state
 - Has all information pre-loaded
 - Can skip directly to room search
 - Customer details already collected
+- Uses custom site_name ("mybrandhotels.com") in responses
+- Generates reservation URLs with custom domain
 - Fastest path to booking
 
 ---

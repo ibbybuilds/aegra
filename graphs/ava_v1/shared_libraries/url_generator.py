@@ -54,7 +54,10 @@ def _format_dates_for_url(check_in: str, check_out: str) -> str | None:
 
 
 def _build_property_url(
-    hotel_id: str, dates: tuple[str, str] | None, occupancy: dict | None
+    hotel_id: str,
+    dates: tuple[str, str] | None,
+    occupancy: dict | None,
+    base_url: str | None = None,
 ) -> str:
     """Build property URL with optional dates and occupancy.
 
@@ -62,11 +65,13 @@ def _build_property_url(
         hotel_id: Hotel/property ID
         dates: Optional tuple of (check_in, check_out) in YYYY-MM-DD format
         occupancy: Optional occupancy dict with numOfAdults, rooms, numOfChildren
+        base_url: Optional base URL override (defaults to BASE_URL constant)
 
     Returns:
         Property URL string
     """
-    url = f"{BASE_URL}/property/{hotel_id}"
+    url_base = base_url if base_url else BASE_URL
+    url = f"{url_base}/property/{hotel_id}"
 
     # Add query parameters if dates and occupancy available
     if dates and occupancy:
@@ -82,17 +87,21 @@ def _build_property_url(
     return url
 
 
-def _build_location_url(geo_data: dict, dates: tuple[str, str], occupancy: dict) -> str:
+def _build_location_url(
+    geo_data: dict, dates: tuple[str, str], occupancy: dict, base_url: str | None = None
+) -> str:
     """Build location search URL.
 
     Args:
         geo_data: Geographic data with latitude, longitude, formattedAddress, countryCode
         dates: Tuple of (check_in, check_out) in YYYY-MM-DD format
         occupancy: Occupancy dict with numOfAdults, rooms, numOfChildren
+        base_url: Optional base URL override (defaults to BASE_URL constant)
 
     Returns:
         Location search URL string
     """
+    url_base = base_url if base_url else BASE_URL
     # Extract coordinates
     latitude = geo_data.get("latitude")
     longitude = geo_data.get("longitude")
@@ -117,7 +126,7 @@ def _build_location_url(geo_data: dict, dates: tuple[str, str], occupancy: dict)
 
     # Build URL with URL encoding for string parameters
     url = (
-        f"{BASE_URL}/availability?"
+        f"{url_base}/availability?"
         f"scrollOnSubmit=true&"
         f"propertyUrl=&"
         f"latitude={latitude}&"
@@ -407,6 +416,18 @@ async def generate_reservation_url(
         URL string or None if insufficient data
     """
     try:
+        # Use site_name from call_context if available, otherwise fall back to BASE_URL
+        base_url = BASE_URL
+        if call_context and call_context.site_name:
+            # Build URL from site_name (add protocol if not present)
+            site_name = call_context.site_name
+            if not site_name.startswith(("http://", "https://")):
+                base_url = f"https://{site_name}"
+            else:
+                base_url = site_name
+            logger.info(f"[url_generator] Using site_name from context: {base_url}")
+        else:
+            logger.info(f"[url_generator] Using default BASE_URL: {base_url}")
         # Extract URL data
         url_data = _extract_url_data(context_stack, active_searches, call_context)
 
@@ -424,7 +445,7 @@ async def generate_reservation_url(
         # Generate property URL (no dates)
         if url_type == "property":
             hotel_id = url_data["hotel_id"]
-            url = _build_property_url(hotel_id, None, None)
+            url = _build_property_url(hotel_id, None, None, base_url)
             logger.info(f"[url_generator] Generated property URL: {url}")
             return url
 
@@ -433,7 +454,7 @@ async def generate_reservation_url(
             hotel_id = url_data["hotel_id"]
             dates = url_data["dates"]
             occupancy = url_data["occupancy"]
-            url = _build_property_url(hotel_id, dates, occupancy)
+            url = _build_property_url(hotel_id, dates, occupancy, base_url)
             logger.info(f"[url_generator] Generated dated property URL: {url}")
             return url
 
@@ -462,7 +483,7 @@ async def generate_reservation_url(
                 logger.warning(f"[url_generator] Incomplete geo data: {geo_data}")
                 return None
 
-            url = _build_location_url(geo_data, dates, occupancy)
+            url = _build_location_url(geo_data, dates, occupancy, base_url)
             logger.info(f"[url_generator] Generated location URL: {url}")
             return url
 
@@ -498,7 +519,7 @@ async def generate_reservation_url(
                 )
                 return None
 
-            url = _build_location_url(geo_result, dates, occupancy)
+            url = _build_location_url(geo_result, dates, occupancy, base_url)
             logger.info(
                 f"[url_generator] Generated location URL from booking context: {url}"
             )

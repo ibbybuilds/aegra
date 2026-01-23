@@ -57,16 +57,17 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
     call_context: CallContext | dict[str, Any] | None = None
 
     # Check runtime.context first
+    context_source = None
     if (
         hasattr(request, "runtime")
         and request.runtime is not None
         and hasattr(request.runtime, "context")
         and request.runtime.context is not None
     ):
-        call_context = request.runtime.context
-        logger.info(
-            "[CONTEXT_AUTO_DERIVE] Found explicit call_context via runtime.context"
-        )
+        # runtime.context can be any type (BaseModel, TypedDict, dict, etc.)
+        # We handle type conversion below
+        call_context = request.runtime.context  # type: ignore[assignment]
+        context_source = "runtime.context"
 
     # Check state.call_context as fallback
     if (
@@ -77,9 +78,7 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         raw_context = request.state.get("call_context")
         if raw_context is not None:
             call_context = raw_context
-            logger.info(
-                "[CONTEXT_AUTO_DERIVE] Found explicit call_context via state.call_context"
-            )
+            context_source = "state.call_context"
 
     # Convert dict to CallContext if needed
     if isinstance(call_context, dict):
@@ -98,15 +97,12 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         filtered_context = {k: v for k, v in call_context.items() if k in valid_keys}
         call_context = CallContext(**filtered_context)
 
-    # If explicit context exists and is external type, use it as-is
-    if call_context and call_context.type in [
-        "payment_return",
-        "abandoned_payment",
-        "session",
-    ]:
-        logger.info(
-            f"[CONTEXT_AUTO_DERIVE] Using explicit external context type: {call_context.type}"
-        )
+    # If explicit context exists, use it as-is
+    if call_context and context_source:
+        logger.info(f"[CONTEXT_AUTO_DERIVE] Using explicit context: {call_context.type} (from {context_source})")
+        return call_context
+    elif call_context:
+        logger.info(f"[CONTEXT_AUTO_DERIVE] Using context type: {call_context.type}")
         return call_context
 
     # Step 2: Auto-derive from state
@@ -206,7 +202,7 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
                         children=children,
                         hotel_id=hotel_id,
                     )
-                    logger.info(
+                    logger.debug(
                         f"[CONTEXT_AUTO_DERIVE] Extracted booking info: check_in={check_in}, check_out={check_out}, rooms={rooms}, adults={adults}"
                     )
 
@@ -223,35 +219,28 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         # Derive context type based on what we found
         derived_type = "general"
         property_info = None
+        derivation_reason = "default"
 
         if hotel_id and booking_info:
             derived_type = "dated_property"
             property_info = PropertyInfo(
                 property_name=hotel_name or "", hotel_id=hotel_id
             )
-            logger.info(
-                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: dated_property (hotel_id={hotel_id}, dates present)"
-            )
+            derivation_reason = "hotel_id + dates"
         elif hotel_id:
             derived_type = "property_specific"
             property_info = PropertyInfo(
                 property_name=hotel_name or "", hotel_id=hotel_id
             )
-            logger.info(
-                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_specific (hotel_id={hotel_id})"
-            )
+            derivation_reason = "hotel_id only"
         elif booking_info:
             derived_type = "general"
-            logger.info(
-                "[CONTEXT_AUTO_DERIVE] Auto-derived type: general (dates present, no specific property)"
-            )
+            derivation_reason = "dates only"
         elif len(messages) > 2:  # Has conversation history
             derived_type = "general"
-            logger.info(
-                "[CONTEXT_AUTO_DERIVE] Auto-derived type: general (message history exists)"
-            )
-        else:
-            logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: general (default)")
+            derivation_reason = "message history"
+
+        logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived context: {derived_type} ({derivation_reason})")
 
         # Build derived CallContext
         return CallContext(
@@ -266,14 +255,10 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     # Step 3: No state available, return general or existing context
     if call_context:
-        logger.info(
-            f"[CONTEXT_AUTO_DERIVE] Using existing context type: {call_context.type}"
-        )
+        logger.debug(f"[CONTEXT_AUTO_DERIVE] Using existing context: {call_context.type}")
         return call_context
 
-    logger.info(
-        "[CONTEXT_AUTO_DERIVE] No context or state available, defaulting to general"
-    )
+    logger.info("[CONTEXT_AUTO_DERIVE] Defaulting to general (no state)")
     return CallContext(type="general")
 
 
@@ -354,11 +339,13 @@ class ForcedRetryMiddleware(AgentMiddleware):
                             )
 
                             # Append to system message (ephemeral override)
-                            current_system = request.system_message
+                            current_system = request.system_message  # type: ignore[attr-defined]
                             if current_system:
                                 new_content = current_system.content + retry_instruction
+                                # ModelRequest.override() supports system_message in recent LangChain versions
+                                # Type stubs may not be updated yet
                                 request = request.override(
-                                    system_message=SystemMessage(content=new_content),
+                                    system_message=SystemMessage(content=new_content),  # type: ignore[call-arg]
                                     # Force tool use to discourage chatter
                                     tool_choice="any",
                                 )

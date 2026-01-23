@@ -79,12 +79,12 @@ Hotel search response: {"searchId": "abc", "results": [{"id": 123, "name": "Hote
 Room search response: {"searchId": "def", "token": "TOP_LEVEL_TOKEN", "results": [{"rate_key": "IN_ROOM", "hotel_id": 123, "price": 250}], "count": 3}""",
 )
 async def query_vfs(
-    search_id: str = None,
-    destination: str = None,
-    jsonpath: str = None,
-    sort_by: str = None,
+    search_id: str | None = None,
+    destination: str | None = None,
+    jsonpath: str | None = None,
+    sort_by: str | None = None,
     sort_order: str = "asc",
-    limit: int = None,
+    limit: int | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> str:
     """Query and filter search results from Redis JSON cache.
@@ -103,27 +103,30 @@ async def query_vfs(
     Returns:
         JSON string with search results, including token for room searches
     """
-    logger.info("=" * 80)
-    logger.info("[QUERY_VFS] Tool called with:")
-    logger.info(f"  search_id: {search_id}")
-    logger.info(f"  destination: {destination}")
-    logger.info(f"  jsonpath: {jsonpath}")
-    logger.info(f"  sort_by: {sort_by}, sort_order: {sort_order}")
-    logger.info(f"  limit: {limit}")
+    # Get active_searches from runtime state
+    active_searches = runtime.state.get("active_searches", {}) if runtime else {}
 
     # Enforce maximum results limit for context preservation
     limit_capped = False
+    original_limit = limit
     if limit is None or limit > MAX_RESULTS_LIMIT:
         limit_capped = limit is not None and limit > MAX_RESULTS_LIMIT
-        original_limit = limit
         limit = MAX_RESULTS_LIMIT
-        if limit_capped:
-            logger.info(f"  limit capped from {original_limit} to {MAX_RESULTS_LIMIT}")
 
-    # Get active_searches from runtime state
-    active_searches = runtime.state.get("active_searches", {}) if runtime else {}
-    logger.info(f"  active_searches in state: {list(active_searches.keys())}")
-    logger.info("=" * 80)
+    logger.info("[QUERY_VFS] Querying VFS", extra={
+        "search_id_present": bool(search_id),
+        "destination": destination,
+        "limit": limit,
+        "limit_capped": limit_capped,
+        "active_searches_count": len(active_searches)
+    })
+    logger.debug("[QUERY_VFS] Query details", extra={
+        "search_id": search_id,
+        "jsonpath": jsonpath,
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+        "original_limit": original_limit
+    })
 
     # Check if destination is a room search composite key first - resolve from context_stack
     if not search_id and destination and ":rooms:" in destination:
@@ -264,11 +267,15 @@ async def query_vfs(
         if status_exists:
             import asyncio
 
+            # status_key is guaranteed to be str here (checked above)
+            assert status_key is not None
+
             max_retries = 4  # Check up to 4 times
             retry_delay = 0.5  # 0.5 seconds between retries = 2 seconds max
 
             for attempt in range(max_retries):
-                status_data = await redis_client.hgetall(status_key)
+                # redis.asyncio.Redis.hgetall is async, type stubs may not reflect this
+                status_data = await redis_client.hgetall(status_key)  # type: ignore[misc]
                 # Note: decode_responses=True in pool, so data is already decoded
                 # But hgetall returns dict with potentially bytes keys/values depending on config
                 # Ensure strings for safety
@@ -405,7 +412,9 @@ async def query_vfs(
                     if isinstance(full_data, list) and len(full_data) > 0:
                         full_data = full_data[0]
 
-                    room_token = full_data.get("token")
+                    # full_data is now dict after unwrapping
+                    if isinstance(full_data, dict):
+                        room_token = full_data.get("token")
 
             # Apply sorting if specified (only for lists)
             if sort_by and isinstance(results, list):
@@ -504,18 +513,17 @@ async def query_vfs(
                     response["note"] = rewrite_msg
 
             # Log what we're returning
-            logger.info("=" * 80)
-            logger.info(f"[QUERY_VFS] Returning {response['count']} results")
-
-            # Log token separately for room searches
-            if room_token:
-                logger.info(f"[QUERY_VFS] Room token (top-level): {room_token}")
-
+            logger.info(f"[QUERY_VFS] Returning {response['count']} results", extra={
+                "count": response['count'],
+                "has_room_token": bool(room_token),
+                "results_preview_count": min(len(results) if isinstance(results, list) else 0, 2)
+            })
             if isinstance(results, list) and len(results) > 0:
-                logger.info(f"[QUERY_VFS] First result: {results[0]}")
-                if len(results) > 1:
-                    logger.info(f"[QUERY_VFS] Second result: {results[1]}")
-            logger.info("=" * 80)
+                logger.debug(f"[QUERY_VFS] Results preview", extra={
+                    "first_result": results[0],
+                    "second_result": results[1] if len(results) > 1 else None,
+                    "room_token": room_token
+                })
 
             return json.dumps(response, indent=2)
         else:

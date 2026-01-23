@@ -236,7 +236,8 @@ async def pop_context(
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
-            "context_stack": {
+            # __replace__ is a special LangGraph pattern for state replacement
+            "context_stack": {  # type: ignore[dict-item]
                 "__replace__": new_stack
             },  # Signal replacement, not append
         }

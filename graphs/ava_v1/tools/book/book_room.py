@@ -117,14 +117,16 @@ async def book_room(
     Returns:
         Command with state updates or JSON string with booking status
     """
-    logger.info("=" * 80)
-    logger.info("[BOOK_ROOM] Tool called with:")
-    logger.info(f"  room: {room}")
-    # customer_info is no longer passed as argument
-    logger.info(f"  payment_type: {payment_type}")
-    logger.info(f"  session_id: {session_id}")
-    logger.info(f"  price_confirmation_token: {price_confirmation_token}")
-    logger.info("=" * 80)
+    logger.info("[BOOK_ROOM] Initiating booking", extra={
+        "payment_type": payment_type,
+        "has_session_id": bool(session_id),
+        "has_price_token": bool(price_confirmation_token)
+    })
+    logger.debug("[BOOK_ROOM] Booking details", extra={
+        "room": room,
+        "session_id": session_id,
+        "price_confirmation_token": price_confirmation_token
+    })
 
     # Sanitize input to handle malformed JSON keys
     sanitized_room = sanitize_tool_input(room)
@@ -512,7 +514,8 @@ async def book_room(
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
-            "context_stack": {"__replace__": new_stack + [context_to_push]},
+            # __replace__ is a special LangGraph pattern for state replacement
+            "context_stack": {"__replace__": new_stack + [context_to_push]},  # type: ignore[dict-item]
         }
 
         logger.info(

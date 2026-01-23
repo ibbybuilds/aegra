@@ -133,12 +133,6 @@ async def start_room_search(
     Returns:
         Command with state updates or JSON string with search status
     """
-    logger.info("=" * 80)
-    logger.info("[ROOMS_AND_RATES] Tool called with:")
-    logger.info(f"  hotel_id: {hotel_id}")
-    logger.info(f"  search_key: {search_key}")
-    logger.info("=" * 80)
-
     # Validate hotel_id
     if not hotel_id or not isinstance(hotel_id, str) or not hotel_id.strip():
         error_result = {
@@ -156,12 +150,17 @@ async def start_room_search(
     if search_params_staging is None:
         search_params_staging = {}
 
-    logger.info("=" * 80)
-    logger.info("[ROOMS_AND_RATES] State at entry:")
-    logger.info(f"  search_params: {search_params_staging}")
-    logger.info(f"  active_searches keys: {list(active_searches.keys())}")
-    logger.info(f"  search_key provided: {search_key}")
-    logger.info("=" * 80)
+    logger.info(f"[ROOMS_AND_RATES] Fetching rooms for hotel_id: {hotel_id}", extra={
+        "hotel_id": hotel_id,
+        "search_key_provided": bool(search_key),
+        "active_searches_count": len(active_searches),
+        "has_search_params": bool(search_params_staging)
+    })
+    logger.debug("[ROOMS_AND_RATES] State details", extra={
+        "search_key": search_key,
+        "active_searches_keys": list(active_searches.keys()),
+        "search_params": search_params_staging
+    })
 
     # Track whether we used search_params (so we can clear it later)
     clear_staging = False
@@ -225,23 +224,18 @@ async def start_room_search(
                 return json.dumps(error_result, indent=2)
 
             # Backfill missing fields with defaults
-            logger.info("=" * 80)
-            logger.info(f"[ROOMS_AND_RATES] PATH 1 - Backfilling {len(missing)} missing fields from search_params")
             if "checkIn" in missing:
                 search_meta["checkIn"] = search_params_staging["checkIn"]
-                logger.info(f"[ROOMS_AND_RATES]   Backfilled checkIn: {search_meta['checkIn']}")
             if "checkOut" in missing:
                 search_meta["checkOut"] = search_params_staging["checkOut"]
-                logger.info(f"[ROOMS_AND_RATES]   Backfilled checkOut: {search_meta['checkOut']}")
             if "occupancy" in missing:
                 search_meta["occupancy"] = {
                     "numOfAdults": search_params_staging["numOfAdults"],  # Required field
                     "numOfRooms": search_params_staging.get("numOfRooms", 1),  # Default: 1 room
                     "childAges": search_params_staging.get("childAges", []),  # Default: no children
                 }
-                logger.info(f"[ROOMS_AND_RATES]   Backfilled occupancy (with defaults): {search_meta['occupancy']}")
-            logger.info(f"[ROOMS_AND_RATES]   Updated search_meta: {search_meta}")
-            logger.info("=" * 80)
+            logger.info(f"[ROOMS_AND_RATES] Backfilled {len(missing)} field(s) from search_params")
+            logger.debug("[ROOMS_AND_RATES] Updated search_meta", extra={"search_meta": search_meta})
 
             clear_staging = True
 
@@ -306,8 +300,6 @@ async def start_room_search(
             return json.dumps(error_result, indent=2)
 
         # Extract search params from staging (construct occupancy object with defaults)
-        logger.info("=" * 80)
-        logger.info("[ROOMS_AND_RATES] PATH 2 - No search_key, constructing from search_params")
         search_params = {
             "checkIn": search_params_staging["checkIn"],
             "checkOut": search_params_staging["checkOut"],
@@ -317,8 +309,6 @@ async def start_room_search(
                 "childAges": search_params_staging.get("childAges", []),  # Default: no children
             },
         }
-        logger.info(f"[ROOMS_AND_RATES]   Constructed search_params: {search_params}")
-        logger.info("=" * 80)
 
         # Get hotel_name for active_searches key
         # Try: call_context.property.property_name, fallback to hotel_id
@@ -331,10 +321,9 @@ async def start_room_search(
         if not hotel_name:
             # Fallback: use hotel_id as key
             hotel_name = hotel_id
-            logger.warning(f"[ROOMS_AND_RATES] No hotel_name found, using hotel_id as search_key: {hotel_id}")
+            logger.warning(f"[ROOMS_AND_RATES] No hotel_name found, using hotel_id as search_key")
 
         search_key = hotel_name
-        logger.info(f"[ROOMS_AND_RATES]   Using search_key: '{search_key}'")
 
         # Create new active_searches entry
         search_meta = {
@@ -345,12 +334,12 @@ async def start_room_search(
             "occupancy": search_params["occupancy"],
         }
 
-        logger.info(f"[ROOMS_AND_RATES]   Created new active_searches entry: {search_meta}")
-        logger.info(f"[ROOMS_AND_RATES] PATH 2 complete - search_key: '{search_key}'")
+        logger.info(f"[ROOMS_AND_RATES] Constructed search from search_params (no search_key provided)")
+        logger.debug("[ROOMS_AND_RATES] PATH 2 details", extra={"search_key": search_key, "search_meta": search_meta})
 
         clear_staging = True
 
-    logger.info(f"[ROOMS_AND_RATES] Search params: {search_params}")
+    logger.debug("[ROOMS_AND_RATES] Final search params", extra={"search_params": search_params})
 
     # Call cache-worker (replaces hash generation, cache check, polling)
     try:
@@ -438,25 +427,20 @@ async def start_room_search(
         # Clear search_params if we used it
         if clear_staging:
             update_dict["search_params"] = None
-            logger.info("[ROOMS_AND_RATES] Cleared search_params after successful use")
-        else:
-            logger.info("[ROOMS_AND_RATES] search_params NOT cleared (not used)")
-
-        logger.info("=" * 80)
-        logger.info("[ROOMS_AND_RATES] Final state update:")
-        logger.info(f"  search_key: '{search_key}'")
-        logger.info(f"  roomSearchId: {search_result['roomSearchId']}")
-        logger.info(f"  clear_staging: {clear_staging}")
-        logger.info("=" * 80)
 
         if context_to_push:
             # Need to push - replace stack and append new context
-            update_dict["context_stack"] = {
+            # __replace__ is a special LangGraph pattern for state replacement
+            update_dict["context_stack"] = {  # type: ignore[assignment]
                 "__replace__": new_stack + [context_to_push]
             }
-            logger.info(
-                f"[ROOMS_AND_RATES] Pushing RoomList({search_key}, {hotel_id}) to context stack"
-            )
+
+        logger.info(f"[ROOMS_AND_RATES] Room search complete: {search_result['roomSearchId']}", extra={
+            "search_key": search_key,
+            "roomSearchId": search_result['roomSearchId'],
+            "clear_staging": clear_staging,
+            "context_pushed": bool(context_to_push)
+        })
 
         return Command(update=update_dict)
 

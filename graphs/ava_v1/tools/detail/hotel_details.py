@@ -47,7 +47,8 @@ def _wrap_response(
 
     if context_to_push:
         # Need to push - replace stack and append new context
-        update_dict["context_stack"] = {"__replace__": new_stack + [context_to_push]}
+        # __replace__ is a special LangGraph pattern for state replacement
+        update_dict["context_stack"] = {"__replace__": new_stack + [context_to_push]}  # type: ignore[assignment]
         logger.info(
             f"[HOTEL_DETAILS] Pushing HotelDetails({hotel_id}) to context stack"
         )
@@ -119,13 +120,11 @@ async def hotel_details(
     Returns:
         JSON string or Command with status (always call query_vfs after for actual details)
     """
-    logger.info("=" * 80)
     logger.info("[DEBUG] hotel_details() ENTRY POINT - Tool called")
     logger.info("[HOTEL_DETAILS] Tool called with:")
     logger.info(f"  hotel_id: {hotel_id}")
     logger.info(f"  hotel_name: {hotel_name}")
     logger.info(f"  destination: {destination}")
-    logger.info("=" * 80)
 
     # Validate that either hotel_id or hotel_name is provided
     if not hotel_id and not hotel_name:

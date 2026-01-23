@@ -199,11 +199,9 @@ async def modify_call(
     Returns:
         JSON string with status and action details
     """
-    logger.info("=" * 80)
     logger.info("[MODIFY_CALL] Tool called with:")
     logger.info(f"  action_type: {action_type}")
     logger.info(f"  summary: {summary}")
-    logger.info("=" * 80)
 
     # Validate action_type parameter
     valid_types = ["end-call", "pay-transfer", "live-handoff"]

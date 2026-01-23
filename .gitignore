@@ -33,3 +33,6 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# Local logs
+tmp/

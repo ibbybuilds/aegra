@@ -26,7 +26,7 @@ class UpdateCustomerDetailsInput(BaseModel):
     args_schema=UpdateCustomerDetailsInput,
     description="CRITICAL: Save verified customer details (first_name, last_name, or email) IMMEDIATELY after spelling confirmation. Call this tool RIGHT AFTER the user confirms each field - do NOT wait to collect all three fields. Save first_name, THEN last_name, THEN email in separate sequential calls.",
 )
-def update_customer_details(
+async def update_customer_details(
     field: Literal["first_name", "last_name", "email"],
     value: str,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,

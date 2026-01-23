@@ -83,7 +83,7 @@ class UpdateSearchParamsInput(BaseModel):
         "OPTIONAL: numOfRooms (default: 1), childAges (default: [])."
     )
 )
-def update_search_params(
+async def update_search_params(
     field: Literal[
         "checkIn",
         "checkOut",
@@ -125,18 +125,13 @@ def update_search_params(
     Returns:
         Command with state update on success, or error string on failure
     """
-    logger.info("=" * 80)
-    logger.info("[UPDATE_SEARCH_PARAMS] Tool called with:")
-    logger.info(f"  field: {field}")
-    logger.info(f"  value: {value}")
-
     # Get current search_params (may be None or empty dict)
     current_params = runtime.state.get("search_params", {}) if runtime else {}
     if current_params is None:
         current_params = {}
 
-    logger.info(f"  current search_params BEFORE update: {current_params}")
-    logger.info("=" * 80)
+    logger.info(f"[UPDATE_SEARCH_PARAMS] Updating field '{field}'", extra={"field": field, "has_current_params": bool(current_params)})
+    logger.debug(f"[UPDATE_SEARCH_PARAMS] Parameters", extra={"value": value, "current_params": current_params})
 
     # Validate field-specific constraints
     if field == "checkIn":
@@ -221,11 +216,7 @@ def update_search_params(
         "search_params": updated_params
     }
 
-    logger.info("=" * 80)
-    logger.info(f"[UPDATE_SEARCH_PARAMS] Successfully updated {field}")
-    logger.info(f"  search_params AFTER update (merged view): {updated_params}")
-    logger.info(f"  Returning Command update: {{{field}: {value}}}")
-    logger.info("=" * 80)
+    logger.info(f"[UPDATE_SEARCH_PARAMS] Successfully updated field '{field}'", extra={"field": field, "updated_params": updated_params})
 
     if runtime is None:
         return json.dumps(success_result, indent=2)

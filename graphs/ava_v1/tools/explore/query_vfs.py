@@ -197,170 +197,208 @@ async def query_vfs(
             return json.dumps(result, indent=2)
 
     try:
+        import asyncio
+
         pool = get_redis_pool()
         redis_client = redis_async.Redis(connection_pool=pool)
 
-        # Build Redis keys - detect room vs hotel vs details search
+        # Prepare key patterns
         redis_key_rooms = f"rooms:{search_id}"
         redis_key_search = f"search:{search_id}"
         redis_key_details = f"details:{search_id}"
 
-        # Check which key exists
-        exists_rooms = await redis_client.exists(redis_key_rooms)
-        exists_search = await redis_client.exists(redis_key_search)
-        exists_details = await redis_client.exists(redis_key_details)
+        # Unified retry loop with consolidated logic
+        max_retries = 4
+        retry_delay = 1.0  # 1 second between retries
+        partial_due_to_error = False
+        error_message = None
+        redis_key = None
+        status_key = None
 
-        if exists_details:
-            # Hotel details (no status key for details)
-            redis_key = redis_key_details
-            status_key = None
-        elif exists_rooms:
-            redis_key = redis_key_rooms
-            status_key = f"rooms:{search_id}:status"
-        elif exists_search:
-            redis_key = redis_key_search
-            status_key = f"search:{search_id}:status"
-        else:
-            # No data key exists - wait briefly and retry
-            import asyncio
-
+        for attempt in range(max_retries):
             logger.info(
-                "[QUERY_VFS] No data found yet, waiting 3 seconds for polling service..."
+                f"[QUERY_VFS] Attempt {attempt + 1}/{max_retries} for search_id={search_id}"
             )
-            await asyncio.sleep(3)
-            logger.info("[QUERY_VFS] Retrying after wait...")
 
-            # Retry: check again which key exists
+            # Check which key exists
+            exists_details = await redis_client.exists(redis_key_details)
             exists_rooms = await redis_client.exists(redis_key_rooms)
             exists_search = await redis_client.exists(redis_key_search)
-            exists_details = await redis_client.exists(redis_key_details)
 
+            # Determine which key to use
             if exists_details:
                 redis_key = redis_key_details
-                status_key = None
+                status_key = None  # No status for details
+                logger.info(f"[QUERY_VFS] Found details key for {search_id}")
+                break  # Data found, exit retry loop
             elif exists_rooms:
                 redis_key = redis_key_rooms
                 status_key = f"rooms:{search_id}:status"
+                logger.info(f"[QUERY_VFS] Found rooms key for {search_id}")
             elif exists_search:
                 redis_key = redis_key_search
                 status_key = f"search:{search_id}:status"
+                logger.info(f"[QUERY_VFS] Found search key for {search_id}")
             else:
-                # Still no data - check status keys to determine type
-                status_key_rooms = f"rooms:{search_id}:status"
-                status_key_search = f"search:{search_id}:status"
+                # No data key found yet
+                redis_key = None
+                status_key = f"search:{search_id}:status"  # Default assumption
 
-                exists_status_rooms = await redis_client.exists(status_key_rooms)
+            # If we found a data key, check status (if applicable)
+            if redis_key and status_key:
+                status_exists = await redis_client.exists(status_key)
+                if status_exists:
+                    # redis.asyncio.Redis.hgetall is async, type stubs may not reflect this
+                    status_data = await redis_client.hgetall(status_key)  # type: ignore[misc]
+                    # Ensure strings for safety (decode_responses may vary)
+                    if status_data and isinstance(next(iter(status_data.keys())), bytes):
+                        status_data = {
+                            k.decode(): v.decode() for k, v in status_data.items()
+                        }
 
-                if exists_status_rooms:
-                    redis_key = redis_key_rooms
-                    status_key = status_key_rooms
-                else:
-                    # Default to search pattern (might be polling or not found)
-                    redis_key = redis_key_search
-                    status_key = status_key_search
+                    state = status_data.get("state")
 
-        # Check status first (if available) with retry logic
-        # Skip status check for hotel details (no status key)
-        partial_due_to_error = False
-        error_message = None
-        status_exists = await redis_client.exists(status_key) if status_key else False
-        if status_exists:
-            import asyncio
-
-            # status_key is guaranteed to be str here (checked above)
-            assert status_key is not None
-
-            max_retries = 4  # Check up to 4 times
-            retry_delay = 0.5  # 0.5 seconds between retries = 2 seconds max
-
-            for attempt in range(max_retries):
-                # redis.asyncio.Redis.hgetall is async, type stubs may not reflect this
-                status_data = await redis_client.hgetall(status_key)  # type: ignore[misc]
-                # Note: decode_responses=True in pool, so data is already decoded
-                # But hgetall returns dict with potentially bytes keys/values depending on config
-                # Ensure strings for safety
-                if status_data and isinstance(next(iter(status_data.keys())), bytes):
-                    status_data = {
-                        k.decode(): v.decode() for k, v in status_data.items()
-                    }
-
-                state = status_data.get("state")
-
-                # Check for error state
-                if state == "error":
-                    error_msg = status_data.get("error_msg", "Unknown error occurred")
-
-                    # Check if partial data exists despite the error
-                    data_exists = await redis_client.exists(redis_key)
-                    if data_exists:
-                        # Partial results available - continue to return them with error note
-                        logger.info(
-                            f"[QUERY_VFS] Error state but partial data exists for {search_id}"
+                    # Handle error state
+                    if state == "error":
+                        error_msg = status_data.get(
+                            "error_msg", "Unknown error occurred"
                         )
-                        partial_due_to_error = True
-                        error_message = error_msg
-                        break  # Exit retry loop, proceed to query partial data
-                    else:
-                        # No data available, return error
-                        result = {
-                            "status": "error",
-                            "message": error_msg,
-                            "searchId": search_id,
-                        }
-                        return json.dumps(result, indent=2)
+                        # Check if partial data exists
+                        if await redis_client.exists(redis_key):
+                            logger.info(
+                                f"[QUERY_VFS] Error state but partial data exists for {search_id}"
+                            )
+                            partial_due_to_error = True
+                            error_message = error_msg
+                            break  # Use partial data
+                        else:
+                            # No data available, return error
+                            return json.dumps(
+                                {
+                                    "status": "error",
+                                    "message": error_msg,
+                                    "searchId": search_id,
+                                },
+                                indent=2,
+                            )
 
-                # Check if completed (data should be ready)
-                if state == "complete" or state == "completed":
-                    break  # Exit retry loop, proceed to query data
+                    # If complete, proceed
+                    if state in ("complete", "completed"):
+                        logger.info(f"[QUERY_VFS] Status is complete for {search_id}")
+                        break
 
-                # Check if still running
-                if state == "running" or state == "inprogress":
-                    # If not last attempt, wait and retry
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(retry_delay)
-                        # Re-check if data key exists now
-                        data_exists = await redis_client.exists(redis_key)
-                        if data_exists:
-                            break  # Data is ready, exit retry loop
-                        continue
-                    else:
-                        # Last attempt, return not_ready with expected count
-                        result = {
-                            "status": "not_ready",
-                            "message": "Search results not ready yet. Still polling...",
-                            "searchId": search_id,
-                            "expectedHotelCount": status_data.get("expected_count"),
-                            "lastUpdated": status_data.get("last_updated"),
-                        }
-                        return json.dumps(result, indent=2)
+                    # If running/inprogress, check if data is actually populated
+                    if state in ("running", "inprogress"):
+                        # Verify data key has actual content (not just empty placeholder)
+                        test_result = await redis_client.execute_command(
+                            "JSON.GET", redis_key, "$"
+                        )
+                        if test_result:
+                            test_data = json.loads(test_result)
+                            # Unwrap Redis JSON array response
+                            if isinstance(test_data, list) and len(test_data) > 0:
+                                test_data = test_data[0]
 
-        # Check if data exists
-        exists = await redis_client.exists(redis_key)
-        if not exists:
-            # Check if this is an expired search vs still polling
-            # If neither status nor data key exists, search likely expired
-            if not status_exists:
+                            # Check if data has content
+                            has_content = False
+                            if isinstance(test_data, list) and len(test_data) > 0:
+                                has_content = True
+                            elif isinstance(test_data, dict):
+                                # For rooms, check if rooms array exists and has items
+                                if "rooms" in test_data and len(test_data.get("rooms", [])) > 0:
+                                    has_content = True
+                                # For other dicts, consider any non-empty dict as having content
+                                elif len(test_data) > 0:
+                                    has_content = True
+
+                            if has_content:
+                                logger.info(
+                                    f"[QUERY_VFS] Status is {state}, data key has content, proceeding"
+                                )
+                                break
+                            else:
+                                logger.info(
+                                    f"[QUERY_VFS] Status is {state}, but data key is empty, will retry"
+                                )
+                                # Clear redis_key to force retry
+                                redis_key = None
+                        else:
+                            logger.info(
+                                f"[QUERY_VFS] Status is {state}, but no data yet, will retry"
+                            )
+                            # Clear redis_key to force retry
+                            redis_key = None
+
+                    # If status exists but not complete/running, or if running but no data,
+                    # and we haven't broken yet, break to proceed with empty results
+                    # (unless redis_key was cleared above for retry)
+                    if redis_key:
+                        logger.info(
+                            f"[QUERY_VFS] Data key exists with status, proceeding"
+                        )
+                        break
+                else:
+                    # Data key exists without status in Redis
+                    # Assume data is ready and proceed
+                    logger.info(
+                        f"[QUERY_VFS] Data key exists without status, proceeding"
+                    )
+                    break
+
+            # If we haven't broken out of the loop yet and data key exists without status check
+            if redis_key and not status_key:
+                # No status key pattern (e.g., details), proceed immediately
+                logger.info(f"[QUERY_VFS] Details key found, proceeding")
+                break
+
+            # No data key found yet (or cleared for retry) - wait and retry (unless last attempt)
+            if attempt < max_retries - 1:
+                logger.info(
+                    f"[QUERY_VFS] No data found yet, waiting {retry_delay}s before retry..."
+                )
+                await asyncio.sleep(retry_delay)
+            else:
+                # Last attempt failed - check if search is expired vs still polling
+                logger.info(
+                    f"[QUERY_VFS] Max retries reached, no data available for {search_id}"
+                )
+
                 # Check if search is tracked in active_searches
                 search_found = any(
                     s["searchId"] == search_id for s in active_searches.values()
                 )
 
                 if search_found:
-                    # Search was initiated but keys are gone - expired
-                    result = {
-                        "status": "expired",
-                        "message": "Search results have expired. Please run a new hotel search.",
-                        "searchId": search_id,
-                    }
-                    return json.dumps(result, indent=2)
+                    # Search was initiated but keys never appeared - likely expired
+                    return json.dumps(
+                        {
+                            "status": "expired",
+                            "message": "Search results have expired. Please run a new hotel search.",
+                            "searchId": search_id,
+                        },
+                        indent=2,
+                    )
+                else:
+                    # Not tracked, still polling
+                    return json.dumps(
+                        {
+                            "status": "not_ready",
+                            "message": "Search results not ready yet. Wait a moment and try again.",
+                            "searchId": search_id,
+                        },
+                        indent=2,
+                    )
 
-            # Still polling or very recent search
-            result = {
-                "status": "not_ready",
-                "message": "Search results not ready yet. Still polling...",
-                "searchId": search_id,
-            }
-            return json.dumps(result, indent=2)
+        # After the loop, redis_key should be set if data exists
+        if not redis_key:
+            return json.dumps(
+                {
+                    "status": "not_ready",
+                    "message": "Search results not ready yet. Still polling...",
+                    "searchId": search_id,
+                },
+                indent=2,
+            )
 
         # Default JSONPath: get all results
         if not jsonpath:

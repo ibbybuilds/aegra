@@ -96,7 +96,7 @@ Payment Types:
 - "sms": Send SMS payment link""",
 )
 async def book_room(
-    room: dict[str, Any],
+    room: RoomDict,
     payment_type: str,
     session_id: str | None = None,
     price_confirmation_token: str | None = None,
@@ -108,7 +108,7 @@ async def book_room(
     and verified customer details from update_customer_details.
 
     Args:
-        room: Room object built from query_vfs response (must include hotel_id, rate_key, token, refundable, expected_price)
+        room: RoomDict Pydantic model with validated booking data (converted to dict internally)
         payment_type: Payment method - "phone" or "sms"
         session_id: Optional session ID for tracking
         price_confirmation_token: Token from previous call if price changed and user confirmed
@@ -117,15 +117,8 @@ async def book_room(
     Returns:
         Command with state updates or JSON string with booking status
     """
-    # DEBUG: Check runtime injection status
-    logger.info(f"[BOOK_ROOM] DEBUG: runtime is None? {runtime is None}")
-    if runtime:
-        logger.info(f"[BOOK_ROOM] DEBUG: runtime type: {type(runtime)}")
-        logger.info(f"[BOOK_ROOM] DEBUG: runtime attributes: {dir(runtime)}")
-        logger.info(f"[BOOK_ROOM] DEBUG: has state? {hasattr(runtime, 'state')}")
-        logger.info(f"[BOOK_ROOM] DEBUG: has tool_call_id? {hasattr(runtime, 'tool_call_id')}")
-    else:
-        logger.info("[BOOK_ROOM] DEBUG: runtime is None - THIS IS THE BUG!")
+    # Convert Pydantic model to dict for downstream processing
+    room_dict = room.model_dump()
 
     logger.info(
         "[BOOK_ROOM] Initiating booking",
@@ -133,38 +126,18 @@ async def book_room(
             "payment_type": payment_type,
             "has_session_id": bool(session_id),
             "has_price_token": bool(price_confirmation_token),
+            "hotel_id": room_dict["hotel_id"],
         },
     )
-    logger.info(f"[BOOK_ROOM] DEBUG: room type: {type(room)}")
-    logger.info(f"[BOOK_ROOM] DEBUG: room value: {room}")
 
     logger.debug(
         "[BOOK_ROOM] Booking details",
         extra={
-            "room": room,
+            "room": room_dict,
             "session_id": session_id,
             "price_confirmation_token": price_confirmation_token,
         },
     )
-
-    # Sanitize input to handle malformed JSON keys
-    logger.info(f"[BOOK_ROOM] DEBUG: About to call sanitize_tool_input")
-    sanitized_room = sanitize_tool_input(room)
-    logger.info(f"[BOOK_ROOM] DEBUG: After sanitize - type: {type(sanitized_room)}, isinstance dict: {isinstance(sanitized_room, dict)}")
-    if not isinstance(sanitized_room, dict):
-        logger.info("[BOOK_ROOM] DEBUG: sanitized_room is NOT a dict - returning error")
-        error_result = json.dumps(
-            {
-                "error": "invalid_room_data",
-                "message": "Room data must be a dictionary object",
-            },
-            indent=2,
-        )
-        logger.info(f"[BOOK_ROOM] DEBUG: Returning error: {error_result}")
-        return error_result
-    logger.info("[BOOK_ROOM] DEBUG: sanitized_room IS a dict - continuing")
-    room = sanitized_room
-    logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
 
     # Extract verified customer details from state
     customer_details = {}
@@ -289,7 +262,7 @@ async def book_room(
         return json.dumps(error_result, indent=2)
 
     # Validate room object
-    room_error = _validate_room_object(room)
+    room_error = _validate_room_object(room_dict)
     if room_error:
         return json.dumps(room_error, indent=2)
 
@@ -299,7 +272,7 @@ async def book_room(
         return json.dumps(customer_error, indent=2)
 
     # Generate booking hash
-    booking_hash = _generate_booking_hash(room)
+    booking_hash = _generate_booking_hash(room_dict)
 
     # Initialize idempotency_key (used later for caching results)
     idempotency_key = f"booking_attempt:{booking_hash}:{session_id}"
@@ -365,7 +338,7 @@ async def book_room(
     endpoint = f"{cache_worker_url}/v1/book"
 
     request_body = {
-        "room": room,
+        "room": room_dict,
         "customer_info": customer_info,
         "hash": booking_hash,
         "session_id": session_id,

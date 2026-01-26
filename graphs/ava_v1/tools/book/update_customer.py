@@ -43,15 +43,6 @@ async def update_customer_details(
     """
     logger.info(f"[UPDATE_CUSTOMER] Updating {field} = {value}")
 
-    # DEBUG: Check runtime injection status
-    logger.info(f"[UPDATE_CUSTOMER] DEBUG: runtime is None? {runtime is None}")
-    if runtime:
-        logger.info(f"[UPDATE_CUSTOMER] DEBUG: runtime type: {type(runtime)}")
-        logger.info(f"[UPDATE_CUSTOMER] DEBUG: has state? {hasattr(runtime, 'state')}")
-        logger.info(f"[UPDATE_CUSTOMER] DEBUG: has tool_call_id? {hasattr(runtime, 'tool_call_id')}")
-    else:
-        logger.info("[UPDATE_CUSTOMER] DEBUG: runtime is None!")
-
     # Basic validation
     if not value or not value.strip():
         return json.dumps({"status": "error", "message": "Value cannot be empty"})

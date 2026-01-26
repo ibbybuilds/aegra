@@ -237,10 +237,12 @@ async def get_thread_state(
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
         try:
-            agent = agent.with_config(cast(RunnableConfig, config))
+            agent = agent.with_config(cast("RunnableConfig", config))
             # NOTE: LangGraph only exposes subgraph checkpoints while the run is
             # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
-            state_snapshot = await agent.aget_state(cast(RunnableConfig, config), subgraphs=subgraphs)
+            state_snapshot = await agent.aget_state(
+                cast("RunnableConfig", config), subgraphs=subgraphs
+            )
         except HTTPException:
             raise
         except Exception as e:
@@ -310,28 +312,6 @@ async def update_thread_state(
         )
 
         # STATE_INIT_DEBUG: Uncomment to diagnose empty values in active_searches
-        # if isinstance(request.values, dict):
-        #     # Log active_searches if present
-        #     if "active_searches" in request.values:
-        #         logger.info("[STATE_INIT_DEBUG] Incoming payload contains 'active_searches':")
-        #         active_searches_payload = request.values["active_searches"]
-        #         if isinstance(active_searches_payload, dict):
-        #             for search_key, search_data in active_searches_payload.items():
-        #                 logger.info(f"[STATE_INIT_DEBUG]   Payload active_searches['{search_key}']: {search_data}")
-        #         else:
-        #             logger.warning(f"[STATE_INIT_DEBUG]   Unexpected active_searches type: {type(active_searches_payload)}")
-        #
-        #     # Log other state fields for context
-        #     other_keys = [k for k in request.values.keys() if k != "active_searches"]
-        #     if other_keys:
-        #         logger.info(f"[STATE_INIT_DEBUG] Other incoming state keys: {other_keys}")
-        #
-        #     # Log dial_map_session_id if present in context
-        #     if request.context and isinstance(request.context, dict):
-        #         dial_map_id = request.context.get("dial_map_session_id")
-        #         if dial_map_id:
-        #             logger.info(f"[STATE_INIT_DEBUG] dial_map_session_id from context: {dial_map_id}")
-
     # If no values provided, treat this as a GET-like query via POST
     # This is what CopilotKit uses when regenerating messages
     if request.values is None:
@@ -410,19 +390,15 @@ async def update_thread_state(
             # Update state using aupdate_state method
             # This creates a new checkpoint with the updated values
             logger.debug("Creating agent with config")
-            agent = agent.with_config(cast(RunnableConfig, config))
+            agent = agent.with_config(cast("RunnableConfig", config))
             logger.debug("Agent with_config successful")
 
             # Handle values - can be dict or list of dicts
             update_values = request.values
-            logger.debug(
-                f"Processing update_values (type: {type(update_values)})"
-            )
+            logger.debug(f"Processing update_values (type: {type(update_values)})")
 
             if isinstance(update_values, list):
-                logger.debug(
-                    f"update_values is a list with {len(update_values)} items"
-                )
+                logger.debug(f"update_values is a list with {len(update_values)} items")
                 # If it's a list, use the first dict or convert to dict
                 if update_values and isinstance(update_values[0], dict):
                     # Merge all dicts in the list
@@ -523,7 +499,9 @@ async def update_thread_state(
                 # For state updates without as_node, we'll use None which should just update state
                 # without triggering execution, but the graph may still validate the state
                 updated_config = await agent.aupdate_state(
-                    cast(RunnableConfig, config), update_values, as_node=request.as_node
+                    cast("RunnableConfig", config),
+                    update_values,
+                    as_node=request.as_node,
                 )
                 logger.debug("agent.aupdate_state() completed successfully")
                 logger.debug(f"updated_config type: {type(updated_config)}")
@@ -587,9 +565,7 @@ async def update_thread_state(
         logger.debug("HTTPException in outer try block")
         raise
     except Exception as e:
-        logger.debug(
-            f"Exception in outer try block: {type(e).__name__}: {str(e)}"
-        )
+        logger.debug(f"Exception in outer try block: {type(e).__name__}: {str(e)}")
         logger.exception("Unexpected error updating state for thread '%s'", thread_id)
         raise HTTPException(500, f"Error updating thread state: {str(e)}") from e
 
@@ -646,9 +622,9 @@ async def get_thread_state_at_checkpoint(
 
         # Fetch state at checkpoint
         try:
-            agent = agent.with_config(cast(RunnableConfig, config))
+            agent = agent.with_config(cast("RunnableConfig", config))
             state_snapshot = await agent.aget_state(
-                cast(RunnableConfig, config), subgraphs=subgraphs or False
+                cast("RunnableConfig", config), subgraphs=subgraphs or False
             )
         except Exception as e:
             logger.exception(
@@ -821,12 +797,16 @@ async def get_thread_history_post(
         # Some LangGraph versions support subgraphs flag; pass if available
         try:
             async for snapshot in agent.aget_state_history(
-                cast(RunnableConfig, config), subgraphs=subgraphs, **kwargs  # type: ignore[call-arg]
+                cast("RunnableConfig", config),
+                subgraphs=subgraphs,
+                **kwargs,  # type: ignore[call-arg]
             ):
                 state_snapshots.append(snapshot)
         except TypeError:
             # Fallback if subgraphs not supported in this version
-            async for snapshot in agent.aget_state_history(cast(RunnableConfig, config), **kwargs):
+            async for snapshot in agent.aget_state_history(
+                cast("RunnableConfig", config), **kwargs
+            ):
                 state_snapshots.append(snapshot)
 
         # Convert snapshots to ThreadState using service

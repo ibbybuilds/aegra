@@ -57,15 +57,15 @@ async for chunk in client.runs.stream(
 
 ## 🔥 Why Aegra?
 
-| | LangGraph Platform | Aegra |
-|---|---|---|
+| Feature | LangGraph Platform | Aegra |
+|:--|:--|:--|
 | **Cost** | $$$+ per month | Free (self-hosted) |
-| **Data** | Third-party hosted | Your infrastructure |
-| **Lock-in** | High | Zero |
-| **Auth** | Limited | Custom (JWT/OAuth/Firebase) |
-| **Database** | Managed | Bring your own Postgres |
+| **Data Control** | Third-party hosted | Your infrastructure |
+| **Vendor Lock-in** | High dependency | Zero lock-in |
+| **Authentication** | Limited options | Custom (JWT/OAuth/Firebase) |
+| **Database** | Managed, no BYO | Bring your own Postgres |
 | **Tracing** | LangSmith only | Your choice (Langfuse, etc.) |
-| **SDK** | LangGraph SDK | Same LangGraph SDK |
+| **SDK Compatibility** | LangGraph SDK | Same LangGraph SDK |
 
 ## ✨ Features
 
@@ -112,7 +112,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) and check out [
 
 The best contribution is code, PRs, and bug reports - that's what makes open source thrive.
 
-For those who want to support Aegra financially, whether you're using it in production or just believe in what we're building, you can [become a sponsor](https://github.com/sponsors/ibbybuilds). Sponsorships help keep development active and the project healthy.
+For those who want to support Aegra financially, whether you're using it in production or just believe in what we're building, you can [become a sponsor](https://patreon.com/aegra). Sponsorships help keep development active and the project healthy.
 
 ## 📄 License
 

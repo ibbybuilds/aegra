@@ -113,20 +113,26 @@ async def query_vfs(
         limit_capped = limit is not None and limit > MAX_RESULTS_LIMIT
         limit = MAX_RESULTS_LIMIT
 
-    logger.info("[QUERY_VFS] Querying VFS", extra={
-        "search_id_present": bool(search_id),
-        "destination": destination,
-        "limit": limit,
-        "limit_capped": limit_capped,
-        "active_searches_count": len(active_searches)
-    })
-    logger.debug("[QUERY_VFS] Query details", extra={
-        "search_id": search_id,
-        "jsonpath": jsonpath,
-        "sort_by": sort_by,
-        "sort_order": sort_order,
-        "original_limit": original_limit
-    })
+    logger.info(
+        "[QUERY_VFS] Querying VFS",
+        extra={
+            "search_id_present": bool(search_id),
+            "destination": destination,
+            "limit": limit,
+            "limit_capped": limit_capped,
+            "active_searches_count": len(active_searches),
+        },
+    )
+    logger.debug(
+        "[QUERY_VFS] Query details",
+        extra={
+            "search_id": search_id,
+            "jsonpath": jsonpath,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "original_limit": original_limit,
+        },
+    )
 
     # Check if destination is a room search composite key first - resolve from context_stack
     if not search_id and destination and ":rooms:" in destination:
@@ -251,7 +257,9 @@ async def query_vfs(
                     # redis.asyncio.Redis.hgetall is async, type stubs may not reflect this
                     status_data = await redis_client.hgetall(status_key)  # type: ignore[misc]
                     # Ensure strings for safety (decode_responses may vary)
-                    if status_data and isinstance(next(iter(status_data.keys())), bytes):
+                    if status_data and isinstance(
+                        next(iter(status_data.keys())), bytes
+                    ):
                         status_data = {
                             k.decode(): v.decode() for k, v in status_data.items()
                         }
@@ -303,13 +311,15 @@ async def query_vfs(
                             has_content = False
                             if isinstance(test_data, list) and len(test_data) > 0:
                                 has_content = True
-                            elif isinstance(test_data, dict):
+                            elif isinstance(test_data, dict) and (
+                                (
+                                    "rooms" in test_data
+                                    and len(test_data.get("rooms", [])) > 0
+                                )
+                                or len(test_data) > 0
+                            ):
                                 # For rooms, check if rooms array exists and has items
-                                if "rooms" in test_data and len(test_data.get("rooms", [])) > 0:
-                                    has_content = True
-                                # For other dicts, consider any non-empty dict as having content
-                                elif len(test_data) > 0:
-                                    has_content = True
+                                has_content = True
 
                             if has_content:
                                 logger.info(
@@ -334,21 +344,21 @@ async def query_vfs(
                     # (unless redis_key was cleared above for retry)
                     if redis_key:
                         logger.info(
-                            f"[QUERY_VFS] Data key exists with status, proceeding"
+                            "[QUERY_VFS] Data key exists with status, proceeding"
                         )
                         break
                 else:
                     # Data key exists without status in Redis
                     # Assume data is ready and proceed
                     logger.info(
-                        f"[QUERY_VFS] Data key exists without status, proceeding"
+                        "[QUERY_VFS] Data key exists without status, proceeding"
                     )
                     break
 
             # If we haven't broken out of the loop yet and data key exists without status check
             if redis_key and not status_key:
                 # No status key pattern (e.g., details), proceed immediately
-                logger.info(f"[QUERY_VFS] Details key found, proceeding")
+                logger.info("[QUERY_VFS] Details key found, proceeding")
                 break
 
             # No data key found yet (or cleared for retry) - wait and retry (unless last attempt)
@@ -498,7 +508,11 @@ async def query_vfs(
                 response["token"] = room_token
                 # Add hint for room searches
                 # Room results are dict with "rooms" array
-                if isinstance(results, dict) and isinstance(results.get("rooms"), list) and len(results.get("rooms", [])) > 0:
+                if (
+                    isinstance(results, dict)
+                    and isinstance(results.get("rooms"), list)
+                    and len(results.get("rooms", [])) > 0
+                ):
                     response["hint"] = (
                         "Room search complete. Present room options to user with prices and refund policies. When user selects a room, use this response to build the room object for book_room() - extract token from top level and rate_key from the room object."
                     )
@@ -551,17 +565,25 @@ async def query_vfs(
                     response["note"] = rewrite_msg
 
             # Log what we're returning
-            logger.info(f"[QUERY_VFS] Returning {response['count']} results", extra={
-                "count": response['count'],
-                "has_room_token": bool(room_token),
-                "results_preview_count": min(len(results) if isinstance(results, list) else 0, 2)
-            })
+            logger.info(
+                f"[QUERY_VFS] Returning {response['count']} results",
+                extra={
+                    "count": response["count"],
+                    "has_room_token": bool(room_token),
+                    "results_preview_count": min(
+                        len(results) if isinstance(results, list) else 0, 2
+                    ),
+                },
+            )
             if isinstance(results, list) and len(results) > 0:
-                logger.debug(f"[QUERY_VFS] Results preview", extra={
-                    "first_result": results[0],
-                    "second_result": results[1] if len(results) > 1 else None,
-                    "room_token": room_token
-                })
+                logger.debug(
+                    "[QUERY_VFS] Results preview",
+                    extra={
+                        "first_result": results[0],
+                        "second_result": results[1] if len(results) > 1 else None,
+                        "room_token": room_token,
+                    },
+                )
 
             return json.dumps(response, indent=2)
         else:

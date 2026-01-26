@@ -135,6 +135,9 @@ async def book_room(
             "has_price_token": bool(price_confirmation_token),
         },
     )
+    logger.info(f"[BOOK_ROOM] DEBUG: room type: {type(room)}")
+    logger.info(f"[BOOK_ROOM] DEBUG: room value: {room}")
+
     logger.debug(
         "[BOOK_ROOM] Booking details",
         extra={
@@ -145,15 +148,21 @@ async def book_room(
     )
 
     # Sanitize input to handle malformed JSON keys
+    logger.info(f"[BOOK_ROOM] DEBUG: About to call sanitize_tool_input")
     sanitized_room = sanitize_tool_input(room)
+    logger.info(f"[BOOK_ROOM] DEBUG: After sanitize - type: {type(sanitized_room)}, isinstance dict: {isinstance(sanitized_room, dict)}")
     if not isinstance(sanitized_room, dict):
-        return json.dumps(
+        logger.info("[BOOK_ROOM] DEBUG: sanitized_room is NOT a dict - returning error")
+        error_result = json.dumps(
             {
                 "error": "invalid_room_data",
                 "message": "Room data must be a dictionary object",
             },
             indent=2,
         )
+        logger.info(f"[BOOK_ROOM] DEBUG: Returning error: {error_result}")
+        return error_result
+    logger.info("[BOOK_ROOM] DEBUG: sanitized_room IS a dict - continuing")
     room = sanitized_room
     logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
 

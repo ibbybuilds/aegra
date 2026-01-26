@@ -8,6 +8,7 @@ from ava_v1.tools.explore.hotel_search import start_hotel_search
 from ava_v1.tools.explore.query_vfs import query_vfs
 from ava_v1.tools.explore.rooms_and_rates import start_room_search
 from ava_v1.tools.search.internet_search import internet_search
+from ava_v1.tools.state.update_search_params import update_search_params
 
 __all__ = [
     # Explore tools
@@ -23,4 +24,6 @@ __all__ = [
     "modify_call",
     # Search tools
     "internet_search",
+    # State tools
+    "update_search_params",
 ]

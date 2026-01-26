@@ -30,3 +30,9 @@ htmlcov/
 
 # Pre-commit
 .pre-commit-cache/
+
+# macOS
+.DS_Store
+
+# Local logs
+tmp/

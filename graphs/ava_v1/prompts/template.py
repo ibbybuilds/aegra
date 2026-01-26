@@ -1,9 +1,10 @@
 """Template management for dynamic prompt customization.
 
 This module handles Jinja2 template compilation, caching, and rendering
-with an 8-level priority system for context-based prompt customization.
+with a 5-level priority system for context-based prompt customization.
 """
 
+import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -12,7 +13,9 @@ from typing import cast
 from jinja2 import Environment, FileSystemLoader, Template
 
 from ava_v1.context import CallContext
-from ava_v1.prompt import TRAVEL_ASSISTANT_PROMPT
+from ava_v1.prompt import HOME_PAGE_PROMPT, TRAVEL_ASSISTANT_PROMPT
+
+logger = logging.getLogger(__name__)
 
 # Singleton template instance (compiled once, cached forever)
 _template_cache: Template | None = None
@@ -74,19 +77,16 @@ def _get_date_context() -> dict[str, str]:
 
 
 def _determine_priority(context: CallContext) -> str:
-    """Determine prompt priority based on context (8-level system).
+    """Determine prompt priority based on context (5-level system).
 
     Uses early returns for performance optimization.
 
     Priority Order (highest to lowest):
-    1. Abandoned Payment + Thread Continuation
-    2. Property + Booking (hybrid)
-    3. Property-Specific only
-    4. Booking only
-    5. Payment Return
-    6. Session Context
-    7. Thread Continuation
-    8. General (default)
+    1. Abandoned Payment (with optional thread continuation)
+    2. Property + Booking (dated property)
+    3. Property-Specific (GA call extension)
+    4. Payment Return
+    5. General (default)
 
     Args:
         context: CallContext instance with runtime context
@@ -102,31 +102,19 @@ def _determine_priority(context: CallContext) -> str:
             else "abandoned_payment"
         )
 
-    # Priority 2: Property + Booking hybrid
+    # Priority 2: Property + Booking hybrid (dated property)
     if context.property and context.booking:
-        return "property_booking_hybrid"
+        return "dated_property"
 
-    # Priority 3: Property-specific
+    # Priority 3: Property-specific (GA call extension)
     if context.type == "property_specific" and context.property:
-        return "property_specific"
+        return "ga_call_extension"
 
-    # Priority 4: Booking
-    if context.booking:
-        return "booking"
-
-    # Priority 5: Payment return
+    # Priority 4: Payment return
     if context.type == "payment_return" and context.payment:
         return "payment_return"
 
-    # Priority 6: Session
-    if context.session:
-        return "session"
-
-    # Priority 7: Thread continuation
-    if context.type == "thread_continuation" and context.thread_id:
-        return "thread_continuation"
-
-    # Priority 8: General (default)
+    # Priority 5: General (default)
     return "general"
 
 
@@ -148,6 +136,9 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
 
     # If no context provided or context is not valid, use default prompt
     if call_context is None or not isinstance(call_context, CallContext):
+        logger.info(
+            "[PROMPT_SELECTION] No context provided - using default TRAVEL_ASSISTANT_PROMPT"
+        )
         return TRAVEL_ASSISTANT_PROMPT
 
     # Get date context (cached)
@@ -155,6 +146,17 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
 
     # Determine priority
     priority = _determine_priority(call_context)
+
+    # Log prompt selection details
+    context_summary = {
+        "type": call_context.type,
+        "site_name": call_context.site_name,
+        "has_property": bool(call_context.property),
+        "has_booking": bool(call_context.booking),
+        "has_payment": bool(call_context.payment),
+        "has_abandoned_payment": bool(call_context.abandoned_payment),
+    }
+    logger.info(f"[PROMPT_SELECTION] Context: {context_summary} → Priority: {priority}")
 
     # Get compiled template (cached)
     template = _get_template()
@@ -167,6 +169,7 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
             context=call_context,
             dates=dates,
             base_prompt=TRAVEL_ASSISTANT_PROMPT,
+            home_page_prompt=HOME_PAGE_PROMPT,
         ),
     )
 

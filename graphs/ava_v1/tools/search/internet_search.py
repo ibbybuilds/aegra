@@ -5,16 +5,17 @@ import logging
 import os
 
 from langchain.tools import tool
-from tavily import TavilyClient
+from pydantic import BaseModel, Field
+from tavily import AsyncTavilyClient
 
 logger = logging.getLogger(__name__)
 
 
-def _get_tavily_client() -> TavilyClient:
+def _get_tavily_client() -> AsyncTavilyClient:
     """Get or create Tavily client (lazy initialization).
 
     Returns:
-        TavilyClient instance
+        AsyncTavilyClient instance
 
     Raises:
         ValueError: If TAVILY_API_KEY is not set
@@ -25,13 +26,26 @@ def _get_tavily_client() -> TavilyClient:
             "TAVILY_API_KEY environment variable is required for internet search. "
             "Please set it in your .env file or environment."
         )
-    return TavilyClient(api_key=api_key)
+    return AsyncTavilyClient(api_key=api_key)
+
+
+class InternetSearchInput(BaseModel):
+    """Input schema for internet search."""
+
+    query: str = Field(description="Search query for hotel booking related information")
+    max_results: int = Field(
+        default=3,
+        description="Maximum number of search results to return (max 5)",
+        ge=1,
+        le=5,
+    )
 
 
 @tool(
-    description="Search the internet for hotel booking related information such as weather, events, or hotel reviews"
+    args_schema=InternetSearchInput,
+    description="Search the internet for hotel booking related information such as weather, events, or hotel reviews",
 )
-def internet_search(
+async def internet_search(
     query: str,
     max_results: int = 3,
 ) -> str:
@@ -48,11 +62,9 @@ def internet_search(
     Returns:
         JSON string with search results containing title, url, content, and score
     """
-    logger.info("=" * 80)
     logger.info("[INTERNET_SEARCH] Tool called with:")
     logger.info(f"  query: {query}")
     logger.info(f"  max_results: {max_results}")
-    logger.info("=" * 80)
 
     # Validate parameters
     if not query or not isinstance(query, str) or not query.strip():
@@ -77,7 +89,7 @@ def internet_search(
 
         # Perform search
         logger.info(f"[INTERNET_SEARCH] Searching Tavily for: {query}")
-        search_response = tavily_client.search(
+        search_response = await tavily_client.search(
             query=query,
             max_results=max_results,
             include_raw_content=False,  # Don't include full HTML content

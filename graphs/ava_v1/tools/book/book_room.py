@@ -6,12 +6,13 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from ava_v1.shared_libraries.context_helpers import prepare_booking_pending_push
 from ava_v1.shared_libraries.hashing import _generate_booking_hash
@@ -31,62 +32,119 @@ from ava_v1.shared_libraries.validation import (
 logger = logging.getLogger(__name__)
 
 
+class RoomDict(BaseModel):
+    """Room object structure for booking."""
+
+    hotel_id: str = Field(description="Hotel ID from query_vfs results")
+    rate_key: str = Field(description="Rate key from room object in query_vfs")
+    token: str = Field(description="Token from TOP LEVEL of query_vfs response")
+    refundable: bool = Field(description="Whether the rate is refundable")
+    expected_price: float = Field(
+        description="Expected price for price verification", gt=0
+    )
+
+
+class BookRoomInput(BaseModel):
+    """Input schema for booking a hotel room."""
+
+    room: RoomDict = Field(
+        description="Complete room object built from query_vfs response"
+    )
+    payment_type: Literal["phone", "sms"] = Field(
+        description="Payment method: 'phone' for phone payment or 'sms' for SMS link"
+    )
+    session_id: str | None = Field(
+        default=None, description="Optional session ID for tracking"
+    )
+    price_confirmation_token: str | None = Field(
+        default=None,
+        description="Token from previous call if price changed and user confirmed",
+    )
+
+
 @tool(
-    description="Initiate hotel room booking with price verification and payment setup"
+    args_schema=BookRoomInput,
+    description="""Initiate hotel room booking with price verification and payment setup.
+
+PREREQUISITES (must complete in order):
+1. Call start_room_search(hotel_id, search_key) to initiate room search
+2. Engage user while search runs
+3. Call query_vfs(destination, sort_by) to get complete room data with token and rate_key
+4. User selects a room
+5. Verify customer details via update_customer_details (first_name, last_name, email) - call sequentially for each field
+
+CRITICAL - Room Object Structure:
+Must be built from query_vfs response (NOT from firstRoom preview):
+{
+  "hotel_id": vfs_response["results"][0]["hotel_id"],
+  "rate_key": vfs_response["results"][0]["rate_key"],     // FROM room object
+  "token": vfs_response["token"],                          // FROM TOP LEVEL
+  "refundable": vfs_response["results"][0]["refundable_rate"] != null,
+  "expected_price": vfs_response["results"][0]["refundable_rate"] or non_refundable_rate
+}
+
+WARNING: FirstRoom preview from start_room_search is INCOMPLETE - it lacks token and complete rate_key. NEVER use firstRoom for booking - you MUST call query_vfs first.
+
+Behavior:
+- Creates 10-minute prebook hold with price verification
+- If price changed: Returns price_confirmation_token (call again with token after user confirms)
+- If success: Returns payment_pending status (then call modify_call with action_type="pay-transfer")
+- Validates all customer details are verified before proceeding
+
+Payment Types:
+- "phone": Transfer to phone payment line
+- "sms": Send SMS payment link""",
 )
 async def book_room(
     room: dict[str, Any],
     payment_type: str,
-    session_id: str = None,
-    price_confirmation_token: str = None,
+    session_id: str | None = None,
+    price_confirmation_token: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
     """Initiate hotel room booking with price verification and payment setup.
 
-    PURPOSE:
-        Complete the booking process by creating a 10-minute prebook hold and
-        preparing payment. CRITICAL: You MUST call query_vfs first to obtain
-        complete room data with token and rate_key. The firstRoom preview from
-        start_room_search is incomplete and CANNOT be used.
+    Creates a 10-minute prebook hold and prepares payment. Requires complete room data from query_vfs
+    and verified customer details from update_customer_details.
 
-    PREREQUISITE:
-        Before calling this tool, you MUST:
-        1. Call start_room_search() to initiate room search
-        2. Engage user and wait for response
-        3. Call query_vfs() to get complete room data with token
-        4. Extract token from TOP LEVEL and rate_key from room object
-        5. Verify customer details (first name, last name, email) sequentially using update_customer_details tool
-
-    PARAMETERS:
-        room (dict): Room object built from query_vfs response
-            CRITICAL STRUCTURE:
-            {
-                "hotel_id": vfs_response["results"][0]["hotel_id"],
-                "rate_key": vfs_response["results"][0]["rate_key"],
-                "token": vfs_response["token"],  # FROM TOP LEVEL
-                "refundable": True or False,
-                "expected_price": vfs_response["results"][0]["refundable_rate"]
-            }
-
-        payment_type (str): Payment method - "phone" or "sms"
-        session_id (str, optional): Session ID for tracking
-        price_confirmation_token (str, optional): Token from previous call if price changed
+    Args:
+        room: Room object built from query_vfs response (must include hotel_id, rate_key, token, refundable, expected_price)
+        payment_type: Payment method - "phone" or "sms"
+        session_id: Optional session ID for tracking
+        price_confirmation_token: Token from previous call if price changed and user confirmed
         runtime: Injected tool runtime for accessing agent state
 
-    RETURNS:
-        Command with state updates containing booking metadata
+    Returns:
+        Command with state updates or JSON string with booking status
     """
-    logger.info("=" * 80)
-    logger.info("[BOOK_ROOM] Tool called with:")
-    logger.info(f"  room: {room}")
-    # customer_info is no longer passed as argument
-    logger.info(f"  payment_type: {payment_type}")
-    logger.info(f"  session_id: {session_id}")
-    logger.info(f"  price_confirmation_token: {price_confirmation_token}")
-    logger.info("=" * 80)
+    logger.info(
+        "[BOOK_ROOM] Initiating booking",
+        extra={
+            "payment_type": payment_type,
+            "has_session_id": bool(session_id),
+            "has_price_token": bool(price_confirmation_token),
+        },
+    )
+    logger.debug(
+        "[BOOK_ROOM] Booking details",
+        extra={
+            "room": room,
+            "session_id": session_id,
+            "price_confirmation_token": price_confirmation_token,
+        },
+    )
 
     # Sanitize input to handle malformed JSON keys
-    room = sanitize_tool_input(room)
+    sanitized_room = sanitize_tool_input(room)
+    if not isinstance(sanitized_room, dict):
+        return json.dumps(
+            {
+                "error": "invalid_room_data",
+                "message": "Room data must be a dictionary object",
+            },
+            indent=2,
+        )
+    room = sanitized_room
     logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
 
     # Extract verified customer details from state
@@ -224,10 +282,12 @@ async def book_room(
     # Generate booking hash
     booking_hash = _generate_booking_hash(room)
 
+    # Initialize idempotency_key (used later for caching results)
+    idempotency_key = f"booking_attempt:{booking_hash}:{session_id}"
+
     # Check idempotency - prevent duplicate bookings
     try:
         get_redis_client()
-        idempotency_key = f"booking_attempt:{booking_hash}:{session_id}"
 
         # Check if this exact booking attempt already exists
         existing_attempt = await redis_get_json(idempotency_key)
@@ -463,7 +523,8 @@ async def book_room(
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
-            "context_stack": {"__replace__": new_stack + [context_to_push]},
+            # __replace__ is a special LangGraph pattern for state replacement
+            "context_stack": {"__replace__": new_stack + [context_to_push]},  # type: ignore[dict-item]
         }
 
         logger.info(

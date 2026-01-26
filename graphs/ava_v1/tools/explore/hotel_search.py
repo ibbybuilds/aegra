@@ -102,7 +102,7 @@ async def get_geo_coordinates(destination: str) -> str:
         {"error": "location_not_found", "message": "..."}
         {"error": "geocode_error", "message": "..."}
     """
-    logger.info(f"[DEBUG] get_geo_coordinates() called with destination: {destination}")
+    logger.debug(f"get_geo_coordinates() called with destination: {destination}")
 
     # Validate inputs
     if not destination or not destination.strip():
@@ -115,24 +115,22 @@ async def get_geo_coordinates(destination: str) -> str:
     cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
     endpoint = f"{cache_worker_url}/v1/search/geo"
 
-    logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
+    logger.debug(f"CACHE_WORKER_URL: {cache_worker_url}")
     logger.info(
         f"[GEO_COORDINATES] Calling cache-worker for destination: {destination}"
     )
 
     try:
-        logger.info("[DEBUG] Creating httpx.AsyncClient for geocode request")
+        logger.debug("Creating httpx.AsyncClient for geocode request")
         async with httpx.AsyncClient() as client:
-            logger.info(f"[DEBUG] Sending GET request to {endpoint}")
+            logger.debug(f"Sending GET request to {endpoint}")
             response = await client.get(
                 endpoint, params={"destination": destination}, timeout=10.0
             )
-            logger.info(
-                f"[DEBUG] Received response with status: {response.status_code}"
-            )
+            logger.debug(f"Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
-            logger.info("[DEBUG] Parsed response JSON successfully")
+            logger.debug("Parsed response JSON successfully")
 
             logger.info(
                 f"[GEO_COORDINATES] Cache {'HIT' if data.get('status') == 'cached' else 'MISS'}"
@@ -145,15 +143,15 @@ async def get_geo_coordinates(destination: str) -> str:
                 "formatted_address": data["formatted_address"],
             }
 
-            logger.info("[DEBUG] get_geo_coordinates() returning successfully")
+            logger.debug("get_geo_coordinates() returning successfully")
             return json.dumps(geo_data, indent=2)
 
     except httpx.HTTPStatusError as e:
-        logger.error(
-            f"[DEBUG] HTTPStatusError in get_geo_coordinates: {type(e).__name__}: {str(e)}"
+        logger.debug(
+            f"HTTPStatusError in get_geo_coordinates: {type(e).__name__}: {str(e)}"
         )
-        logger.error(
-            f"[DEBUG] Response status: {e.response.status_code}, body: {e.response.text[:200]}"
+        logger.debug(
+            f"Response status: {e.response.status_code}, body: {e.response.text[:200]}"
         )
         if e.response.status_code == 404:
             error_response = {
@@ -168,15 +166,15 @@ async def get_geo_coordinates(destination: str) -> str:
         return json.dumps(error_response, indent=2)
 
     except httpx.TimeoutException as e:
-        logger.error(f"[DEBUG] TimeoutException in get_geo_coordinates: {str(e)}")
+        logger.debug(f"TimeoutException in get_geo_coordinates: {str(e)}")
         error_response = {"error": "timeout", "message": "Geocode request timed out"}
         return json.dumps(error_response, indent=2)
 
     except Exception as e:
-        logger.error(
-            f"[DEBUG] Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}"
+        logger.debug(
+            f"Unexpected exception in get_geo_coordinates: {type(e).__name__}: {str(e)}"
         )
-        logger.error("[DEBUG] Exception traceback:", exc_info=True)
+        logger.debug("Exception traceback:", exc_info=True)
         error_response = {
             "error": "unexpected_error",
             "message": f"Unexpected geocode error: {str(e)}",
@@ -238,31 +236,27 @@ async def _start_hotel_search(
         },
     }
 
-    logger.info("[DEBUG] _start_hotel_search() called")
+    logger.debug("_start_hotel_search() called")
     logger.info(f"[HOTEL_SEARCH] Calling cache-worker: {endpoint}")
     logger.info(f"[HOTEL_SEARCH] Request body: {request_body}")
 
     try:
-        logger.info("[DEBUG] Creating httpx.AsyncClient for hotel search")
+        logger.debug("Creating httpx.AsyncClient for hotel search")
         async with httpx.AsyncClient() as client:
-            logger.info("[DEBUG] Sending POST request to cache-worker")
+            logger.debug("Sending POST request to cache-worker")
             response = await client.post(endpoint, json=request_body, timeout=30.0)
-            logger.info(
-                f"[DEBUG] Received response with status: {response.status_code}"
-            )
+            logger.debug(f"Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
-            logger.info("[DEBUG] Parsed response JSON successfully")
+            logger.debug("Parsed response JSON successfully")
 
         logger.info(f"[HOTEL_SEARCH] Response status: {data['status']}")
         logger.info(f"[HOTEL_SEARCH] Search ID: {data['searchId']}")
 
         return data
     except Exception as e:
-        logger.error(
-            f"[DEBUG] Exception in _start_hotel_search: {type(e).__name__}: {str(e)}"
-        )
-        logger.error("[DEBUG] Exception traceback:", exc_info=True)
+        logger.debug(f"Exception in _start_hotel_search: {type(e).__name__}: {str(e)}")
+        logger.debug("Exception traceback:", exc_info=True)
         raise
 
 
@@ -299,7 +293,7 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
     """
     # Normalize keys to prevent case mismatch errors
     search = _normalize_search_dict(search)
-    logger.info(f"[DEBUG] _process_single_search() called with search: {search}")
+    logger.debug(f"_process_single_search() called with search: {search}")
 
     # Validate required fields
     required_fields = ["destination", "checkIn", "checkOut", "occupancy"]
@@ -438,63 +432,133 @@ async def _process_single_search(search: dict[str, Any]) -> dict[str, Any] | Non
 
 
 @tool(
-    description="Start hotel search - initiates search and returns status (does not return hotel results)"
+    description="""Start hotel search - initiates search and returns status (does not return hotel results).
+
+BEFORE CALLING - Parameter Gathering Order:
+1. Dates: Get check-in and check-out dates first
+2. Occupancy: Get number of adults, then ask about children (if applicable)
+3. Rooms: Only ask if 2+ adults (default to 1 room otherwise)
+4. Confirm ALL parameters with user in NATURAL language (no bullet points, no robotic lists)
+5. Wait for explicit confirmation ("yes", "correct", "that's right") before calling this tool
+
+Example Confirmation:
+"So you're looking for Miami on February first to second for one adult in one room, is that right?"
+
+DO NOT confirm with bullet points or structured lists - speak naturally and conversationally.
+
+Hotel Name Lookup:
+If user provides hotel name (e.g., "JW Marriott"), this tool resolves it directly and returns resolvedHotelId.
+Skip query_vfs and call start_room_search(hotel_id=resolvedHotelId, search_key) directly.
+
+Returns:
+Search status (cached/polling). Then call query_vfs(destination) after engaging user to retrieve and present hotel results.
+
+Required Parameters:
+- destination: City or region (e.g., "Miami, Florida")
+- checkIn: Check-in date in YYYY-MM-DD format (e.g., "2026-01-04")
+- checkOut: Check-out date in YYYY-MM-DD format (e.g., "2026-01-06")
+- occupancy: Dict with numOfAdults (required), numOfRooms (default 1), childAges (if applicable)
+- name: Optional hotel name for direct lookup""",
 )
 async def start_hotel_search(
     searches: list[HotelSearchParams],
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
-    """Start hotel search - initiates search but does NOT return hotel results.
+    """Start hotel search - initiates search but does not return hotel results.
 
-    PURPOSE:
-        Initiate hotel searches for a destination. This tool does NOT wait for complete
-        results - it returns immediately with a status. Use query_vfs() tool after engaging
-        the user to retrieve and filter results.
-
-        If user provides a hotel name (e.g., "JW Marriott"), this tool will attempt
-        to resolve it directly, allowing you to skip straight to start_room_search().
-
-    PARAMETERS:
-        searches: List of search dictionaries, each containing:
-            - Destination (required, str): Destination city/location
-            - checkIn (required, str): Check-in date in YYYY-MM-DD format
-            - checkOut (required, str): Check-out date in YYYY-MM-DD format
-            - occupancy (required, dict): Occupancy details
-            - name (optional, str): Hotel name for direct lookup
-
-    RETURNS:
-        Command with state updates containing search metadata
+    Initiates hotel searches and returns status. Use query_vfs() after engaging the user
+    to retrieve and present actual hotel results.
 
     Args:
-        searches: List of search parameters
+        searches: List of HotelSearchParams objects with destination, dates, occupancy
         runtime: Injected tool runtime for accessing agent state
+
+    Returns:
+        Command with state updates containing search metadata or JSON string with search status
     """
-    logger.info("=" * 80)
-    logger.info("[DEBUG] start_hotel_search() ENTRY POINT - Tool called")
-    logger.info(f"[HOTEL_SEARCH] Tool called with {len(searches)} search(es)")
-    logger.info(f"[HOTEL_SEARCH] Searches: {searches}")
-    logger.info("=" * 80)
+    logger.info(f"[HOTEL_SEARCH] Starting search for {len(searches)} location(s)")
 
     try:
         # Convert Pydantic models to dicts
-        logger.info(f"[DEBUG] Converting {len(searches)} Pydantic models to dicts")
         search_dicts = [search.model_dump(by_alias=False) for search in searches]
-        logger.info("[DEBUG] Conversion successful")
+
+        # Get search_params from state (staging area for missing fields)
+        search_params_staging = (
+            runtime.state.get("search_params", {}) if runtime else {}
+        )
+        if search_params_staging is None:
+            search_params_staging = {}
+
+        logger.debug(
+            "[HOTEL_SEARCH] Input details",
+            extra={
+                "searches": searches,
+                "search_params_staging": search_params_staging,
+            },
+        )
+
+        # Track whether we used search_params (so we can clear it later)
+        used_search_params = False
+        backfilled_fields = []
+
+        # Backfill missing fields from search_params
+        for search in search_dicts:
+            # Backfill checkIn
+            if (
+                "checkIn" not in search or not search["checkIn"]
+            ) and "checkIn" in search_params_staging:
+                search["checkIn"] = search_params_staging["checkIn"]
+                used_search_params = True
+                backfilled_fields.append("checkIn")
+
+            # Backfill checkOut
+            if (
+                "checkOut" not in search or not search["checkOut"]
+            ) and "checkOut" in search_params_staging:
+                search["checkOut"] = search_params_staging["checkOut"]
+                used_search_params = True
+                backfilled_fields.append("checkOut")
+
+            # Backfill occupancy (construct from flattened fields with defaults)
+            # Only backfill if occupancy is missing AND we have at least numOfAdults
+            if (
+                "occupancy" not in search or not search["occupancy"]
+            ) and "numOfAdults" in search_params_staging:
+                search["occupancy"] = {
+                    "numOfAdults": search_params_staging[
+                        "numOfAdults"
+                    ],  # Required field
+                    "numOfRooms": search_params_staging.get(
+                        "numOfRooms", 1
+                    ),  # Default: 1 room
+                    "childAges": search_params_staging.get(
+                        "childAges", []
+                    ),  # Default: no children
+                }
+                used_search_params = True
+                backfilled_fields.append("occupancy")
+
+        if backfilled_fields:
+            logger.info(
+                f"[HOTEL_SEARCH] Backfilled {len(set(backfilled_fields))} field(s) from search_params"
+            )
+        logger.debug(
+            "[HOTEL_SEARCH] Prepared searches",
+            extra={
+                "search_dicts": search_dicts,
+                "used_search_params": used_search_params,
+            },
+        )
 
         # Process all searches in parallel
-        logger.info(
-            f"[DEBUG] Starting parallel processing of {len(search_dicts)} searches"
-        )
         search_tasks = [_process_single_search(search) for search in search_dicts]
         search_results = await asyncio.gather(*search_tasks)
-        logger.info(
-            f"[DEBUG] Parallel processing completed, got {len(search_results)} results"
+        logger.debug(
+            f"[HOTEL_SEARCH] Parallel processing completed with {len(search_results)} result(s)"
         )
     except Exception as e:
-        logger.error(
-            f"[DEBUG] Exception in start_hotel_search: {type(e).__name__}: {str(e)}"
-        )
-        logger.error("[DEBUG] Exception traceback:", exc_info=True)
+        logger.debug(f"Exception in start_hotel_search: {type(e).__name__}: {str(e)}")
+        logger.debug("Exception traceback:", exc_info=True)
         raise
 
     # Build response
@@ -550,14 +614,18 @@ async def start_hotel_search(
         searches_metadata.append(search_result)
 
     # Log what was stored
-    logger.info("=" * 80)
-    logger.info(f"[HOTEL_SEARCH] Stored {len(active_searches)} active search(es):")
-    for label, search_info in active_searches.items():
-        logger.info(
-            f"  Label: '{label}' -> searchId: {search_info.get('searchId')}, status: {search_info.get('status')}"
-        )
-    logger.info(f"[HOTEL_SEARCH] Returning {len(searches_metadata)} search result(s)")
-    logger.info("=" * 80)
+    logger.info(
+        f"[HOTEL_SEARCH] Search complete: {len(active_searches)} active, returning {len(searches_metadata)} result(s)"
+    )
+    logger.debug(
+        "[HOTEL_SEARCH] Active searches",
+        extra={
+            "active_searches": {
+                label: {"searchId": info.get("searchId"), "status": info.get("status")}
+                for label, info in active_searches.items()
+            }
+        },
+    )
 
     response_data = {"searches": searches_metadata}
 
@@ -592,13 +660,19 @@ async def start_hotel_search(
         "active_searches": active_searches,  # Will be merged by merge_dicts reducer
     }
 
+    # Clear search_params if we used it
+    if used_search_params:
+        update_dict["search_params"] = None
+        logger.info("[HOTEL_SEARCH] Cleared search_params after successful use")
+
     if first_search_key:
         context_to_push, new_stack = prepare_hotel_list_push(
             first_search_key, context_stack
         )
         if context_to_push:
             # Need to push - replace stack and append new context
-            update_dict["context_stack"] = {
+            # __replace__ is a special LangGraph pattern for state replacement
+            update_dict["context_stack"] = {  # type: ignore[assignment]
                 "__replace__": new_stack + [context_to_push]
             }
             logger.info(

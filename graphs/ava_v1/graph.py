@@ -3,6 +3,7 @@
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelFallbackMiddleware, SummarizationMiddleware
 from langchain.chat_models import init_chat_model
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langgraph.graph.state import CompiledStateGraph
 
 from ava_v1.middleware import ForcedRetryMiddleware, customize_agent_prompt
@@ -17,6 +18,7 @@ from ava_v1.tools import (
     start_hotel_search,
     start_room_search,
     update_customer_details,
+    update_search_params,
 )
 
 model = init_chat_model(
@@ -36,6 +38,7 @@ agent: CompiledStateGraph = create_agent(
         modify_call,
         internet_search,
         update_customer_details,
+        update_search_params,
     ],
     system_prompt=TRAVEL_ASSISTANT_PROMPT,  # Base prompt (will be replaced by dynamic prompt)
     middleware=[
@@ -49,6 +52,7 @@ agent: CompiledStateGraph = create_agent(
             "google_genai:gemini-2.5-flash-lite",
             "gpt-4o-mini",
         ),
+        AnthropicPromptCachingMiddleware(ttl="5m"),
         customize_agent_prompt,
         ForcedRetryMiddleware(),
     ],  # Dynamic prompt based on CallContext

@@ -37,8 +37,8 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     This function implements smart context derivation:
     1. Check for explicit call_context (payment_return, abandoned_payment, session)
-    2. Auto-derive from active_searches (property_booking_hybrid, property_specific, booking)
-    3. Check message history for thread_continuation
+    2. Auto-derive from active_searches (dated_property, ga_call_extension)
+    3. Check message history for thread_continuation (used with abandoned_payment)
     4. Default to general
 
     Args:
@@ -57,16 +57,17 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
     call_context: CallContext | dict[str, Any] | None = None
 
     # Check runtime.context first
+    context_source = None
     if (
         hasattr(request, "runtime")
         and request.runtime is not None
         and hasattr(request.runtime, "context")
         and request.runtime.context is not None
     ):
-        call_context = request.runtime.context
-        logger.info(
-            "[CONTEXT_AUTO_DERIVE] Found explicit call_context via runtime.context"
-        )
+        # runtime.context can be any type (BaseModel, TypedDict, dict, etc.)
+        # We handle type conversion below
+        call_context = request.runtime.context  # type: ignore[assignment]
+        context_source = "runtime.context"
 
     # Check state.call_context as fallback
     if (
@@ -77,9 +78,7 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         raw_context = request.state.get("call_context")
         if raw_context is not None:
             call_context = raw_context
-            logger.info(
-                "[CONTEXT_AUTO_DERIVE] Found explicit call_context via state.call_context"
-            )
+            context_source = "state.call_context"
 
     # Convert dict to CallContext if needed
     if isinstance(call_context, dict):
@@ -98,15 +97,14 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         filtered_context = {k: v for k, v in call_context.items() if k in valid_keys}
         call_context = CallContext(**filtered_context)
 
-    # If explicit context exists and is external type, use it as-is
-    if call_context and call_context.type in [
-        "payment_return",
-        "abandoned_payment",
-        "session",
-    ]:
+    # If explicit context exists, use it as-is
+    if call_context and context_source:
         logger.info(
-            f"[CONTEXT_AUTO_DERIVE] Using explicit external context type: {call_context.type}"
+            f"[CONTEXT_AUTO_DERIVE] Using explicit context: {call_context.type} (from {context_source})"
         )
+        return call_context
+    elif call_context:
+        logger.info(f"[CONTEXT_AUTO_DERIVE] Using context type: {call_context.type}")
         return call_context
 
     # Step 2: Auto-derive from state
@@ -115,28 +113,6 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         active_searches = state.get("active_searches", {})
         context_stack = state.get("context_stack", [])
         messages = state.get("messages", [])
-
-        # STATE_INIT_DEBUG: Uncomment to diagnose empty values in active_searches
-        # try:
-        #     if active_searches:  # Only log when there's data to inspect
-        #         logger.info("[STATE_INIT_DEBUG] active_searches inspection:")
-        #         for search_key, search_data in active_searches.items():
-        #             if isinstance(search_data, dict):
-        #                 # Check for empty/zero values that might indicate initialization issues
-        #                 empty_fields = []
-        #                 for field, value in search_data.items():
-        #                     if value == "" or (isinstance(value, (int, float)) and value == 0):
-        #                         empty_fields.append(field)
-        #
-        #                 if empty_fields:
-        #                     logger.warning(
-        #                         f"[STATE_INIT_DEBUG] active_searches['{search_key}'] has empty fields: {empty_fields} | Full data: {search_data}"
-        #                     )
-        #                 else:
-        #                     logger.info(f"[STATE_INIT_DEBUG] active_searches['{search_key}']: {search_data}")
-        # except Exception as e:
-        #     # Silent fail - don't let logging break anything
-        #     logger.debug(f"[STATE_INIT_DEBUG] Logging error (non-critical): {e}")
 
         # Extract metadata from state or existing call_context
         user_phone = state.get("user_phone") or (
@@ -206,7 +182,7 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
                         children=children,
                         hotel_id=hotel_id,
                     )
-                    logger.info(
+                    logger.debug(
                         f"[CONTEXT_AUTO_DERIVE] Extracted booking info: check_in={check_in}, check_out={check_out}, rooms={rooms}, adults={adults}"
                     )
 
@@ -223,35 +199,30 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         # Derive context type based on what we found
         derived_type = "general"
         property_info = None
+        derivation_reason = "default"
 
         if hotel_id and booking_info:
-            derived_type = "property_booking_hybrid"
+            derived_type = "dated_property"
             property_info = PropertyInfo(
                 property_name=hotel_name or "", hotel_id=hotel_id
             )
-            logger.info(
-                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_booking_hybrid (hotel_id={hotel_id}, dates present)"
-            )
+            derivation_reason = "hotel_id + dates"
         elif hotel_id:
             derived_type = "property_specific"
             property_info = PropertyInfo(
                 property_name=hotel_name or "", hotel_id=hotel_id
             )
-            logger.info(
-                f"[CONTEXT_AUTO_DERIVE] Auto-derived type: property_specific (hotel_id={hotel_id})"
-            )
+            derivation_reason = "hotel_id only"
         elif booking_info:
-            derived_type = "booking"
-            logger.info(
-                "[CONTEXT_AUTO_DERIVE] Auto-derived type: booking (dates present, no specific property)"
-            )
+            derived_type = "general"
+            derivation_reason = "dates only"
         elif len(messages) > 2:  # Has conversation history
-            derived_type = "thread_continuation"
-            logger.info(
-                "[CONTEXT_AUTO_DERIVE] Auto-derived type: thread_continuation (message history exists)"
-            )
-        else:
-            logger.info("[CONTEXT_AUTO_DERIVE] Auto-derived type: general (default)")
+            derived_type = "general"
+            derivation_reason = "message history"
+
+        logger.info(
+            f"[CONTEXT_AUTO_DERIVE] Auto-derived context: {derived_type} ({derivation_reason})"
+        )
 
         # Build derived CallContext
         return CallContext(
@@ -266,14 +237,12 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     # Step 3: No state available, return general or existing context
     if call_context:
-        logger.info(
-            f"[CONTEXT_AUTO_DERIVE] Using existing context type: {call_context.type}"
+        logger.debug(
+            f"[CONTEXT_AUTO_DERIVE] Using existing context: {call_context.type}"
         )
         return call_context
 
-    logger.info(
-        "[CONTEXT_AUTO_DERIVE] No context or state available, defaulting to general"
-    )
+    logger.info("[CONTEXT_AUTO_DERIVE] Defaulting to general (no state)")
     return CallContext(type="general")
 
 
@@ -282,7 +251,7 @@ def customize_agent_prompt(request: ModelRequest) -> str:
     """Dynamically customize system prompt based on runtime context.
 
     This middleware accesses call_context from runtime.context (preferred) or state (fallback)
-    and uses it to customize the agent's system prompt according to the 8-level priority system.
+    and uses it to customize the agent's system prompt according to the 5-level priority system.
 
     According to LangChain docs:
     - @dynamic_prompt REPLACES the entire system prompt
@@ -354,11 +323,13 @@ class ForcedRetryMiddleware(AgentMiddleware):
                             )
 
                             # Append to system message (ephemeral override)
-                            current_system = request.system_message
+                            current_system = request.system_message  # type: ignore[attr-defined]
                             if current_system:
                                 new_content = current_system.content + retry_instruction
+                                # ModelRequest.override() supports system_message in recent LangChain versions
+                                # Type stubs may not be updated yet
                                 request = request.override(
-                                    system_message=SystemMessage(content=new_content),
+                                    system_message=SystemMessage(content=new_content),  # type: ignore[call-arg]
                                     # Force tool use to discourage chatter
                                     tool_choice="any",
                                 )

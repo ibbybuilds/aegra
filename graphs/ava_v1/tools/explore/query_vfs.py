@@ -6,6 +6,7 @@ from typing import Annotated
 
 import redis.asyncio as redis_async
 from langchain.tools import InjectedToolArg, ToolRuntime, tool
+from pydantic import BaseModel, Field
 
 # Import redis_client
 from ava_v1.shared_libraries.redis_client import get_redis_pool
@@ -16,105 +17,122 @@ logger = logging.getLogger(__name__)
 MAX_RESULTS_LIMIT = 5
 
 
-@tool(description="Query and filter search results from Redis JSON cache")
+class QueryVfsInput(BaseModel):
+    """Input schema for querying virtual file system."""
+
+    search_id: str | None = Field(
+        default=None, description="Direct search ID to query results for"
+    )
+    destination: str | None = Field(
+        default=None,
+        description="Destination name or composite key (e.g., 'Miami' or 'Miami:JW Marriott')",
+    )
+    jsonpath: str | None = Field(
+        default=None,
+        description="JSONPath query for filtering results (e.g., '$.results[?(@.rating >= 4)]')",
+    )
+    sort_by: str | None = Field(
+        default=None,
+        description="Field name to sort results by (e.g., 'price', 'rating')",
+    )
+    sort_order: str = Field(
+        default="asc",
+        description="Sort order: 'asc' for ascending or 'desc' for descending",
+    )
+    limit: int | None = Field(
+        default=None,
+        description="Maximum number of results to return (capped at 5)",
+        le=5,
+    )
+
+
+@tool(
+    args_schema=QueryVfsInput,
+    description="""PRIMARY tool for retrieving complete hotel/room search results from Redis cache.
+
+CRITICAL - Token Placement:
+- 'token' field is at TOP LEVEL of response (required for book_room)
+- 'rate_key' is INSIDE each room object (required for book_room)
+- NEVER fabricate these values - they must come from query_vfs response
+- The firstRoom preview from start_room_search is INCOMPLETE (lacks token/rate_key) - CANNOT be used for booking
+
+Usage Patterns:
+- After start_hotel_search: query_vfs(destination="Miami") to retrieve hotel list
+- After start_room_search: query_vfs(destination="Miami", sort_by="price") to retrieve room list with token
+- After hotel_details: query_vfs(destination="details:hotel_123") to retrieve hotel details
+
+Status Meanings:
+- 'cached': Results ready and complete
+- 'not_ready': Still searching (wait 2-3 seconds and retry)
+- 'expired': Search data expired (run new search)
+- 'partial': Incomplete results (some data available)
+
+Validation Rules:
+If response lacks token or rate_key:
+1. Check 'status' field
+2. If 'not_ready', wait and retry (max 3 times)
+3. If 'expired', inform user and offer new search
+4. NEVER proceed to book_room without valid token AND rate_key
+
+Structure Examples:
+Hotel search response: {"searchId": "abc", "results": [{"id": 123, "name": "Hotel", "price": 250}], "count": 5}
+Room search response: {"searchId": "def", "token": "TOP_LEVEL_TOKEN", "results": [{"rate_key": "IN_ROOM", "hotel_id": 123, "price": 250}], "count": 3}""",
+)
 async def query_vfs(
-    search_id: str = None,
-    destination: str = None,
-    jsonpath: str = None,
-    sort_by: str = None,
+    search_id: str | None = None,
+    destination: str | None = None,
+    jsonpath: str | None = None,
+    sort_by: str | None = None,
     sort_order: str = "asc",
-    limit: int = None,
+    limit: int | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> str:
     """Query and filter search results from Redis JSON cache.
 
-    PURPOSE:
-        This is the PRIMARY tool for retrieving complete search results with all fields
-        required for booking. CRITICAL: The firstRoom preview from start_room_search is
-        incomplete and CANNOT be used for booking - you MUST call query_vfs to get
-        complete room data with token and rate_key before calling book_room.
+    Primary tool for retrieving complete search results with token and rate_key required for booking.
 
-    PARAMETERS:
-        search_id (str, optional): Direct search ID from previous search response
-            - Example: "abc123" (the searchId field from start_hotel_search or start_room_search)
-        destination (str, optional): Destination name or composite key
-            - Simple format: "Miami" (resolves to hotel search results)
-            - Composite format: "Miami:rooms:15335119" (resolves to room search results)
-            - Details format: "details:39615853" (resolves to hotel details by hotel_id)
-        jsonpath (str, optional): JSONPath query for filtering
-            - Hotels: "$.[?(@.price <= 300)]" filters by price
-            - Rooms: "$.rooms[?(@.refundable_rate)]" filters refundable rooms
-            - Default: "$" (returns all results)
-        sort_by (str, optional): Field name to sort by (e.g., "price", "rating")
-        sort_order (str, optional): Sort order - "asc" (default) or "desc"
-        limit (int, optional): Maximum number of results to return
+    Args:
+        search_id: Direct search ID from previous search response
+        destination: Destination name or composite key (e.g., "Miami", "Miami:rooms:123", "details:456")
+        jsonpath: JSONPath query for filtering results
+        sort_by: Field name to sort by (e.g., "price", "rating")
+        sort_order: Sort order - "asc" or "desc"
+        limit: Maximum number of results to return (capped at 5)
         runtime: Injected tool runtime for accessing agent state
 
-    RETURNS:
-        For hotel searches (search:* keys):
-        {
-            "searchId": "abc123",
-            "results": [
-                {"id": 15335119, "name": "Hotel Name", "price": 250.00, ...}
-            ],
-            "count": 5
-        }
-
-        For room searches (rooms:* keys) - CRITICAL STRUCTURE:
-        {
-            "searchId": "def456",
-            "token": "actual_token_here",  # ← TOP LEVEL - required for book_room
-            "results": [
-                {
-                    "rate_key": "actual_rate_key",  # ← IN ROOM OBJECT - required for book_room
-                    "hotel_id": 15335119,
-                    "refundable_rate": 275.15,
-                    "non_refundable_rate": 250.00,
-                    "room_type": "Deluxe King",
-                    ...
-                }
-            ],
-            "count": 1
-        }
-
-    VALIDATION:
-        NEVER fabricate token or rate_key values such as:
-        - "assumed_token", "inferred_token", "placeholder_token"
-        - "assumed_rate_key", "inferred_rate_key", "placeholder_rate_key"
-
-        If response does not contain token or rate_key fields:
-        1. Check the "status" field in response
-        2. If status is "not_ready", wait 2-3 seconds and retry (max 3 times)
-        3. If status is "expired", inform user and offer to run new search
-        4. NEVER proceed to book_room without valid token and rate_key
-
-    CRITICAL WARNINGS:
-        - Token is at TOP LEVEL of response, NOT inside room objects
-        - rate_key is INSIDE each room object in results array
-        - To book a room, you need BOTH: response.token AND response.results[0].rate_key
-        - The firstRoom field from start_room_search is a PREVIEW ONLY - it lacks token
+    Returns:
+        JSON string with search results, including token for room searches
     """
-    logger.info("=" * 80)
-    logger.info("[QUERY_VFS] Tool called with:")
-    logger.info(f"  search_id: {search_id}")
-    logger.info(f"  destination: {destination}")
-    logger.info(f"  jsonpath: {jsonpath}")
-    logger.info(f"  sort_by: {sort_by}, sort_order: {sort_order}")
-    logger.info(f"  limit: {limit}")
+    # Get active_searches from runtime state
+    active_searches = runtime.state.get("active_searches", {}) if runtime else {}
 
     # Enforce maximum results limit for context preservation
     limit_capped = False
+    original_limit = limit
     if limit is None or limit > MAX_RESULTS_LIMIT:
         limit_capped = limit is not None and limit > MAX_RESULTS_LIMIT
-        original_limit = limit
         limit = MAX_RESULTS_LIMIT
-        if limit_capped:
-            logger.info(f"  limit capped from {original_limit} to {MAX_RESULTS_LIMIT}")
 
-    # Get active_searches from runtime state
-    active_searches = runtime.state.get("active_searches", {}) if runtime else {}
-    logger.info(f"  active_searches in state: {list(active_searches.keys())}")
-    logger.info("=" * 80)
+    logger.info(
+        "[QUERY_VFS] Querying VFS",
+        extra={
+            "search_id_present": bool(search_id),
+            "destination": destination,
+            "limit": limit,
+            "limit_capped": limit_capped,
+            "active_searches_count": len(active_searches),
+        },
+    )
+    logger.debug(
+        "[QUERY_VFS] Query details",
+        extra={
+            "search_id": search_id,
+            "jsonpath": jsonpath,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "original_limit": original_limit,
+        },
+    )
 
     # Check if destination is a room search composite key first - resolve from context_stack
     if not search_id and destination and ":rooms:" in destination:
@@ -122,11 +140,11 @@ async def query_vfs(
         parts = destination.split(":rooms:")
         if len(parts) == 2:
             _, hotel_id = parts
-            # Look in context_stack for matching hotel_id with roomSearchId
+            # Look in context_stack for matching hotel_id with room_search_id
             context_stack = runtime.state.get("context_stack", []) if runtime else []
             for ctx in reversed(context_stack):  # Search from most recent
-                if ctx.get("hotel_id") == hotel_id and "roomSearchId" in ctx:
-                    search_id = ctx["roomSearchId"]
+                if ctx.get("hotel_id") == hotel_id and "room_search_id" in ctx:
+                    search_id = ctx["room_search_id"]
                     break
 
             if not search_id:
@@ -185,166 +203,212 @@ async def query_vfs(
             return json.dumps(result, indent=2)
 
     try:
+        import asyncio
+
         pool = get_redis_pool()
         redis_client = redis_async.Redis(connection_pool=pool)
 
-        # Build Redis keys - detect room vs hotel vs details search
+        # Prepare key patterns
         redis_key_rooms = f"rooms:{search_id}"
         redis_key_search = f"search:{search_id}"
         redis_key_details = f"details:{search_id}"
 
-        # Check which key exists
-        exists_rooms = await redis_client.exists(redis_key_rooms)
-        exists_search = await redis_client.exists(redis_key_search)
-        exists_details = await redis_client.exists(redis_key_details)
+        # Unified retry loop with consolidated logic
+        max_retries = 4
+        retry_delay = 1.0  # 1 second between retries
+        partial_due_to_error = False
+        error_message = None
+        redis_key = None
+        status_key = None
 
-        if exists_details:
-            # Hotel details (no status key for details)
-            redis_key = redis_key_details
-            status_key = None
-        elif exists_rooms:
-            redis_key = redis_key_rooms
-            status_key = f"rooms:{search_id}:status"
-        elif exists_search:
-            redis_key = redis_key_search
-            status_key = f"search:{search_id}:status"
-        else:
-            # No data key exists - wait briefly and retry
-            import asyncio
-
+        for attempt in range(max_retries):
             logger.info(
-                "[QUERY_VFS] No data found yet, waiting 3 seconds for polling service..."
+                f"[QUERY_VFS] Attempt {attempt + 1}/{max_retries} for search_id={search_id}"
             )
-            await asyncio.sleep(3)
-            logger.info("[QUERY_VFS] Retrying after wait...")
 
-            # Retry: check again which key exists
+            # Check which key exists
+            exists_details = await redis_client.exists(redis_key_details)
             exists_rooms = await redis_client.exists(redis_key_rooms)
             exists_search = await redis_client.exists(redis_key_search)
-            exists_details = await redis_client.exists(redis_key_details)
 
+            # Determine which key to use
             if exists_details:
                 redis_key = redis_key_details
-                status_key = None
+                status_key = None  # No status for details
+                logger.info(f"[QUERY_VFS] Found details key for {search_id}")
+                break  # Data found, exit retry loop
             elif exists_rooms:
                 redis_key = redis_key_rooms
                 status_key = f"rooms:{search_id}:status"
+                logger.info(f"[QUERY_VFS] Found rooms key for {search_id}")
             elif exists_search:
                 redis_key = redis_key_search
                 status_key = f"search:{search_id}:status"
+                logger.info(f"[QUERY_VFS] Found search key for {search_id}")
             else:
-                # Still no data - check status keys to determine type
-                status_key_rooms = f"rooms:{search_id}:status"
-                status_key_search = f"search:{search_id}:status"
+                # No data key found yet
+                redis_key = None
+                status_key = f"search:{search_id}:status"  # Default assumption
 
-                exists_status_rooms = await redis_client.exists(status_key_rooms)
+            # If we found a data key, check status (if applicable)
+            if redis_key and status_key:
+                status_exists = await redis_client.exists(status_key)
+                if status_exists:
+                    # redis.asyncio.Redis.hgetall is async, type stubs may not reflect this
+                    status_data = await redis_client.hgetall(status_key)  # type: ignore[misc]
+                    # Ensure strings for safety (decode_responses may vary)
+                    if status_data and isinstance(
+                        next(iter(status_data.keys())), bytes
+                    ):
+                        status_data = {
+                            k.decode(): v.decode() for k, v in status_data.items()
+                        }
 
-                if exists_status_rooms:
-                    redis_key = redis_key_rooms
-                    status_key = status_key_rooms
-                else:
-                    # Default to search pattern (might be polling or not found)
-                    redis_key = redis_key_search
-                    status_key = status_key_search
+                    state = status_data.get("state")
 
-        # Check status first (if available) with retry logic
-        # Skip status check for hotel details (no status key)
-        partial_due_to_error = False
-        error_message = None
-        status_exists = await redis_client.exists(status_key) if status_key else False
-        if status_exists:
-            import asyncio
-
-            max_retries = 4  # Check up to 4 times
-            retry_delay = 0.5  # 0.5 seconds between retries = 2 seconds max
-
-            for attempt in range(max_retries):
-                status_data = await redis_client.hgetall(status_key)
-                # Note: decode_responses=True in pool, so data is already decoded
-                # But hgetall returns dict with potentially bytes keys/values depending on config
-                # Ensure strings for safety
-                if status_data and isinstance(next(iter(status_data.keys())), bytes):
-                    status_data = {
-                        k.decode(): v.decode() for k, v in status_data.items()
-                    }
-
-                state = status_data.get("state")
-
-                # Check for error state
-                if state == "error":
-                    error_msg = status_data.get("error_msg", "Unknown error occurred")
-
-                    # Check if partial data exists despite the error
-                    data_exists = await redis_client.exists(redis_key)
-                    if data_exists:
-                        # Partial results available - continue to return them with error note
-                        logger.info(
-                            f"[QUERY_VFS] Error state but partial data exists for {search_id}"
+                    # Handle error state
+                    if state == "error":
+                        error_msg = status_data.get(
+                            "error_msg", "Unknown error occurred"
                         )
-                        partial_due_to_error = True
-                        error_message = error_msg
-                        break  # Exit retry loop, proceed to query partial data
-                    else:
-                        # No data available, return error
-                        result = {
-                            "status": "error",
-                            "message": error_msg,
-                            "searchId": search_id,
-                        }
-                        return json.dumps(result, indent=2)
+                        # Check if partial data exists
+                        if await redis_client.exists(redis_key):
+                            logger.info(
+                                f"[QUERY_VFS] Error state but partial data exists for {search_id}"
+                            )
+                            partial_due_to_error = True
+                            error_message = error_msg
+                            break  # Use partial data
+                        else:
+                            # No data available, return error
+                            return json.dumps(
+                                {
+                                    "status": "error",
+                                    "message": error_msg,
+                                    "searchId": search_id,
+                                },
+                                indent=2,
+                            )
 
-                # Check if completed (data should be ready)
-                if state == "complete" or state == "completed":
-                    break  # Exit retry loop, proceed to query data
+                    # If complete, proceed
+                    if state in ("complete", "completed"):
+                        logger.info(f"[QUERY_VFS] Status is complete for {search_id}")
+                        break
 
-                # Check if still running
-                if state == "running" or state == "inprogress":
-                    # If not last attempt, wait and retry
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(retry_delay)
-                        # Re-check if data key exists now
-                        data_exists = await redis_client.exists(redis_key)
-                        if data_exists:
-                            break  # Data is ready, exit retry loop
-                        continue
-                    else:
-                        # Last attempt, return not_ready with expected count
-                        result = {
-                            "status": "not_ready",
-                            "message": "Search results not ready yet. Still polling...",
-                            "searchId": search_id,
-                            "expectedHotelCount": status_data.get("expected_count"),
-                            "lastUpdated": status_data.get("last_updated"),
-                        }
-                        return json.dumps(result, indent=2)
+                    # If running/inprogress, check if data is actually populated
+                    if state in ("running", "inprogress"):
+                        # Verify data key has actual content (not just empty placeholder)
+                        test_result = await redis_client.execute_command(
+                            "JSON.GET", redis_key, "$"
+                        )
+                        if test_result:
+                            test_data = json.loads(test_result)
+                            # Unwrap Redis JSON array response
+                            if isinstance(test_data, list) and len(test_data) > 0:
+                                test_data = test_data[0]
 
-        # Check if data exists
-        exists = await redis_client.exists(redis_key)
-        if not exists:
-            # Check if this is an expired search vs still polling
-            # If neither status nor data key exists, search likely expired
-            if not status_exists:
+                            # Check if data has content
+                            has_content = False
+                            if isinstance(test_data, list) and len(test_data) > 0:
+                                has_content = True
+                            elif isinstance(test_data, dict) and (
+                                (
+                                    "rooms" in test_data
+                                    and len(test_data.get("rooms", [])) > 0
+                                )
+                                or len(test_data) > 0
+                            ):
+                                # For rooms, check if rooms array exists and has items
+                                has_content = True
+
+                            if has_content:
+                                logger.info(
+                                    f"[QUERY_VFS] Status is {state}, data key has content, proceeding"
+                                )
+                                break
+                            else:
+                                logger.info(
+                                    f"[QUERY_VFS] Status is {state}, but data key is empty, will retry"
+                                )
+                                # Clear redis_key to force retry
+                                redis_key = None
+                        else:
+                            logger.info(
+                                f"[QUERY_VFS] Status is {state}, but no data yet, will retry"
+                            )
+                            # Clear redis_key to force retry
+                            redis_key = None
+
+                    # If status exists but not complete/running, or if running but no data,
+                    # and we haven't broken yet, break to proceed with empty results
+                    # (unless redis_key was cleared above for retry)
+                    if redis_key:
+                        logger.info(
+                            "[QUERY_VFS] Data key exists with status, proceeding"
+                        )
+                        break
+                else:
+                    # Data key exists without status in Redis
+                    # Assume data is ready and proceed
+                    logger.info(
+                        "[QUERY_VFS] Data key exists without status, proceeding"
+                    )
+                    break
+
+            # If we haven't broken out of the loop yet and data key exists without status check
+            if redis_key and not status_key:
+                # No status key pattern (e.g., details), proceed immediately
+                logger.info("[QUERY_VFS] Details key found, proceeding")
+                break
+
+            # No data key found yet (or cleared for retry) - wait and retry (unless last attempt)
+            if attempt < max_retries - 1:
+                logger.info(
+                    f"[QUERY_VFS] No data found yet, waiting {retry_delay}s before retry..."
+                )
+                await asyncio.sleep(retry_delay)
+            else:
+                # Last attempt failed - check if search is expired vs still polling
+                logger.info(
+                    f"[QUERY_VFS] Max retries reached, no data available for {search_id}"
+                )
+
                 # Check if search is tracked in active_searches
                 search_found = any(
                     s["searchId"] == search_id for s in active_searches.values()
                 )
 
                 if search_found:
-                    # Search was initiated but keys are gone - expired
-                    result = {
-                        "status": "expired",
-                        "message": "Search results have expired. Please run a new hotel search.",
-                        "searchId": search_id,
-                    }
-                    return json.dumps(result, indent=2)
+                    # Search was initiated but keys never appeared - likely expired
+                    return json.dumps(
+                        {
+                            "status": "expired",
+                            "message": "Search results have expired. Please run a new hotel search.",
+                            "searchId": search_id,
+                        },
+                        indent=2,
+                    )
+                else:
+                    # Not tracked, still polling
+                    return json.dumps(
+                        {
+                            "status": "not_ready",
+                            "message": "Search results not ready yet. Wait a moment and try again.",
+                            "searchId": search_id,
+                        },
+                        indent=2,
+                    )
 
-            # Still polling or very recent search
-            result = {
-                "status": "not_ready",
-                "message": "Search results not ready yet. Still polling...",
-                "searchId": search_id,
-            }
-            return json.dumps(result, indent=2)
+        # After the loop, redis_key should be set if data exists
+        if not redis_key:
+            return json.dumps(
+                {
+                    "status": "not_ready",
+                    "message": "Search results not ready yet. Still polling...",
+                    "searchId": search_id,
+                },
+                indent=2,
+            )
 
         # Default JSONPath: get all results
         if not jsonpath:
@@ -396,7 +460,9 @@ async def query_vfs(
                     if isinstance(full_data, list) and len(full_data) > 0:
                         full_data = full_data[0]
 
-                    room_token = full_data.get("token")
+                    # full_data is now dict after unwrapping
+                    if isinstance(full_data, dict):
+                        room_token = full_data.get("token")
 
             # Apply sorting if specified (only for lists)
             if sort_by and isinstance(results, list):
@@ -442,7 +508,11 @@ async def query_vfs(
                 response["token"] = room_token
                 # Add hint for room searches
                 # Room results are dict with "rooms" array
-                if isinstance(results, dict) and isinstance(results.get("rooms"), list) and len(results.get("rooms", [])) > 0:
+                if (
+                    isinstance(results, dict)
+                    and isinstance(results.get("rooms"), list)
+                    and len(results.get("rooms", [])) > 0
+                ):
                     response["hint"] = (
                         "Room search complete. Present room options to user with prices and refund policies. When user selects a room, use this response to build the room object for book_room() - extract token from top level and rate_key from the room object."
                     )
@@ -495,18 +565,25 @@ async def query_vfs(
                     response["note"] = rewrite_msg
 
             # Log what we're returning
-            logger.info("=" * 80)
-            logger.info(f"[QUERY_VFS] Returning {response['count']} results")
-
-            # Log token separately for room searches
-            if room_token:
-                logger.info(f"[QUERY_VFS] Room token (top-level): {room_token}")
-
+            logger.info(
+                f"[QUERY_VFS] Returning {response['count']} results",
+                extra={
+                    "count": response["count"],
+                    "has_room_token": bool(room_token),
+                    "results_preview_count": min(
+                        len(results) if isinstance(results, list) else 0, 2
+                    ),
+                },
+            )
             if isinstance(results, list) and len(results) > 0:
-                logger.info(f"[QUERY_VFS] First result: {results[0]}")
-                if len(results) > 1:
-                    logger.info(f"[QUERY_VFS] Second result: {results[1]}")
-            logger.info("=" * 80)
+                logger.debug(
+                    "[QUERY_VFS] Results preview",
+                    extra={
+                        "first_result": results[0],
+                        "second_result": results[1] if len(results) > 1 else None,
+                        "room_token": room_token,
+                    },
+                )
 
             return json.dumps(response, indent=2)
         else:

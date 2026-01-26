@@ -35,7 +35,7 @@ def _context_matches(ctx1: dict[str, Any], ctx2: dict[str, Any]) -> bool:
 
 
 @tool(description="Push a new focus object onto the context_stack")
-def push_context(
+async def push_context(
     context_object: dict[str, Any],
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
@@ -81,10 +81,8 @@ def push_context(
         ...     "hotel_id": "H1024"
         ... })
     """
-    logger.info("=" * 80)
     logger.info("[PUSH_CONTEXT] Tool called with:")
     logger.info(f"  context_object: {context_object}")
-    logger.info("=" * 80)
 
     # Validate required type field
     if "type" not in context_object:
@@ -164,7 +162,7 @@ def push_context(
 
 
 @tool(description="Remove N objects from the top of the context_stack")
-def pop_context(
+async def pop_context(
     levels: int = 1,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
@@ -192,10 +190,8 @@ def pop_context(
             {"type": "HotelList", "search_key": "Miami"}
         ]
     """
-    logger.info("=" * 80)
     logger.info("[POP_CONTEXT] Tool called with:")
     logger.info(f"  levels: {levels}")
-    logger.info("=" * 80)
 
     # Validate levels parameter
     if levels < 1:
@@ -240,7 +236,8 @@ def pop_context(
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
-            "context_stack": {
+            # __replace__ is a special LangGraph pattern for state replacement
+            "context_stack": {  # type: ignore[dict-item]
                 "__replace__": new_stack
             },  # Signal replacement, not append
         }

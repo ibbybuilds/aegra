@@ -117,6 +117,16 @@ async def book_room(
     Returns:
         Command with state updates or JSON string with booking status
     """
+    # DEBUG: Check runtime injection status
+    logger.info(f"[BOOK_ROOM] DEBUG: runtime is None? {runtime is None}")
+    if runtime:
+        logger.info(f"[BOOK_ROOM] DEBUG: runtime type: {type(runtime)}")
+        logger.info(f"[BOOK_ROOM] DEBUG: runtime attributes: {dir(runtime)}")
+        logger.info(f"[BOOK_ROOM] DEBUG: has state? {hasattr(runtime, 'state')}")
+        logger.info(f"[BOOK_ROOM] DEBUG: has tool_call_id? {hasattr(runtime, 'tool_call_id')}")
+    else:
+        logger.info("[BOOK_ROOM] DEBUG: runtime is None - THIS IS THE BUG!")
+
     logger.info(
         "[BOOK_ROOM] Initiating booking",
         extra={

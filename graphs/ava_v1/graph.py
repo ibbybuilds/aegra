@@ -2,6 +2,7 @@
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelFallbackMiddleware, SummarizationMiddleware
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain.chat_models import init_chat_model
 from langgraph.graph.state import CompiledStateGraph
 
@@ -51,6 +52,7 @@ agent: CompiledStateGraph = create_agent(
             "google_genai:gemini-2.5-flash-lite",
             "gpt-4o-mini",
         ),
+        AnthropicPromptCachingMiddleware(ttl="5m"),
         customize_agent_prompt,
         ForcedRetryMiddleware(),
     ],  # Dynamic prompt based on CallContext

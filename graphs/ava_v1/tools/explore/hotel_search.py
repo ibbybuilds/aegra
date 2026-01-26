@@ -127,9 +127,7 @@ async def get_geo_coordinates(destination: str) -> str:
             response = await client.get(
                 endpoint, params={"destination": destination}, timeout=10.0
             )
-            logger.debug(
-                f"Received response with status: {response.status_code}"
-            )
+            logger.debug(f"Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             logger.debug("Parsed response JSON successfully")
@@ -247,9 +245,7 @@ async def _start_hotel_search(
         async with httpx.AsyncClient() as client:
             logger.debug("Sending POST request to cache-worker")
             response = await client.post(endpoint, json=request_body, timeout=30.0)
-            logger.debug(
-                f"Received response with status: {response.status_code}"
-            )
+            logger.debug(f"Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             logger.debug("Parsed response JSON successfully")
@@ -259,9 +255,7 @@ async def _start_hotel_search(
 
         return data
     except Exception as e:
-        logger.debug(
-            f"Exception in _start_hotel_search: {type(e).__name__}: {str(e)}"
-        )
+        logger.debug(f"Exception in _start_hotel_search: {type(e).__name__}: {str(e)}")
         logger.debug("Exception traceback:", exc_info=True)
         raise
 
@@ -489,14 +483,19 @@ async def start_hotel_search(
         search_dicts = [search.model_dump(by_alias=False) for search in searches]
 
         # Get search_params from state (staging area for missing fields)
-        search_params_staging = runtime.state.get("search_params", {}) if runtime else {}
+        search_params_staging = (
+            runtime.state.get("search_params", {}) if runtime else {}
+        )
         if search_params_staging is None:
             search_params_staging = {}
 
-        logger.debug("[HOTEL_SEARCH] Input details", extra={
-            "searches": searches,
-            "search_params_staging": search_params_staging
-        })
+        logger.debug(
+            "[HOTEL_SEARCH] Input details",
+            extra={
+                "searches": searches,
+                "search_params_staging": search_params_staging,
+            },
+        )
 
         # Track whether we used search_params (so we can clear it later)
         used_search_params = False
@@ -505,40 +504,60 @@ async def start_hotel_search(
         # Backfill missing fields from search_params
         for search in search_dicts:
             # Backfill checkIn
-            if ("checkIn" not in search or not search["checkIn"]) and "checkIn" in search_params_staging:
+            if (
+                "checkIn" not in search or not search["checkIn"]
+            ) and "checkIn" in search_params_staging:
                 search["checkIn"] = search_params_staging["checkIn"]
                 used_search_params = True
                 backfilled_fields.append("checkIn")
 
             # Backfill checkOut
-            if ("checkOut" not in search or not search["checkOut"]) and "checkOut" in search_params_staging:
+            if (
+                "checkOut" not in search or not search["checkOut"]
+            ) and "checkOut" in search_params_staging:
                 search["checkOut"] = search_params_staging["checkOut"]
                 used_search_params = True
                 backfilled_fields.append("checkOut")
 
             # Backfill occupancy (construct from flattened fields with defaults)
             # Only backfill if occupancy is missing AND we have at least numOfAdults
-            if ("occupancy" not in search or not search["occupancy"]) and "numOfAdults" in search_params_staging:
+            if (
+                "occupancy" not in search or not search["occupancy"]
+            ) and "numOfAdults" in search_params_staging:
                 search["occupancy"] = {
-                    "numOfAdults": search_params_staging["numOfAdults"],  # Required field
-                    "numOfRooms": search_params_staging.get("numOfRooms", 1),  # Default: 1 room
-                    "childAges": search_params_staging.get("childAges", []),  # Default: no children
+                    "numOfAdults": search_params_staging[
+                        "numOfAdults"
+                    ],  # Required field
+                    "numOfRooms": search_params_staging.get(
+                        "numOfRooms", 1
+                    ),  # Default: 1 room
+                    "childAges": search_params_staging.get(
+                        "childAges", []
+                    ),  # Default: no children
                 }
                 used_search_params = True
                 backfilled_fields.append("occupancy")
 
         if backfilled_fields:
-            logger.info(f"[HOTEL_SEARCH] Backfilled {len(set(backfilled_fields))} field(s) from search_params")
-        logger.debug("[HOTEL_SEARCH] Prepared searches", extra={"search_dicts": search_dicts, "used_search_params": used_search_params})
+            logger.info(
+                f"[HOTEL_SEARCH] Backfilled {len(set(backfilled_fields))} field(s) from search_params"
+            )
+        logger.debug(
+            "[HOTEL_SEARCH] Prepared searches",
+            extra={
+                "search_dicts": search_dicts,
+                "used_search_params": used_search_params,
+            },
+        )
 
         # Process all searches in parallel
         search_tasks = [_process_single_search(search) for search in search_dicts]
         search_results = await asyncio.gather(*search_tasks)
-        logger.debug(f"[HOTEL_SEARCH] Parallel processing completed with {len(search_results)} result(s)")
-    except Exception as e:
         logger.debug(
-            f"Exception in start_hotel_search: {type(e).__name__}: {str(e)}"
+            f"[HOTEL_SEARCH] Parallel processing completed with {len(search_results)} result(s)"
         )
+    except Exception as e:
+        logger.debug(f"Exception in start_hotel_search: {type(e).__name__}: {str(e)}")
         logger.debug("Exception traceback:", exc_info=True)
         raise
 
@@ -595,11 +614,18 @@ async def start_hotel_search(
         searches_metadata.append(search_result)
 
     # Log what was stored
-    logger.info(f"[HOTEL_SEARCH] Search complete: {len(active_searches)} active, returning {len(searches_metadata)} result(s)")
-    logger.debug("[HOTEL_SEARCH] Active searches", extra={
-        "active_searches": {label: {"searchId": info.get("searchId"), "status": info.get("status")}
-                           for label, info in active_searches.items()}
-    })
+    logger.info(
+        f"[HOTEL_SEARCH] Search complete: {len(active_searches)} active, returning {len(searches_metadata)} result(s)"
+    )
+    logger.debug(
+        "[HOTEL_SEARCH] Active searches",
+        extra={
+            "active_searches": {
+                label: {"searchId": info.get("searchId"), "status": info.get("status")}
+                for label, info in active_searches.items()
+            }
+        },
+    )
 
     response_data = {"searches": searches_metadata}
 

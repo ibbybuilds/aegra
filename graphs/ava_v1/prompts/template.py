@@ -13,7 +13,7 @@ from typing import cast
 from jinja2 import Environment, FileSystemLoader, Template
 
 from ava_v1.context import CallContext
-from ava_v1.prompt import (TRAVEL_ASSISTANT_PROMPT, HOME_PAGE_PROMPT)
+from ava_v1.prompt import HOME_PAGE_PROMPT, TRAVEL_ASSISTANT_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,9 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
 
     # If no context provided or context is not valid, use default prompt
     if call_context is None or not isinstance(call_context, CallContext):
-        logger.info("[PROMPT_SELECTION] No context provided - using default TRAVEL_ASSISTANT_PROMPT")
+        logger.info(
+            "[PROMPT_SELECTION] No context provided - using default TRAVEL_ASSISTANT_PROMPT"
+        )
         return TRAVEL_ASSISTANT_PROMPT
 
     # Get date context (cached)
@@ -154,9 +156,7 @@ def get_customized_prompt(call_context: CallContext | dict | None = None) -> str
         "has_payment": bool(call_context.payment),
         "has_abandoned_payment": bool(call_context.abandoned_payment),
     }
-    logger.info(
-        f"[PROMPT_SELECTION] Context: {context_summary} → Priority: {priority}"
-    )
+    logger.info(f"[PROMPT_SELECTION] Context: {context_summary} → Priority: {priority}")
 
     # Get compiled template (cached)
     template = _get_template()

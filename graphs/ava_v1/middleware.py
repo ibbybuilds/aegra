@@ -99,7 +99,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     # If explicit context exists, use it as-is
     if call_context and context_source:
-        logger.info(f"[CONTEXT_AUTO_DERIVE] Using explicit context: {call_context.type} (from {context_source})")
+        logger.info(
+            f"[CONTEXT_AUTO_DERIVE] Using explicit context: {call_context.type} (from {context_source})"
+        )
         return call_context
     elif call_context:
         logger.info(f"[CONTEXT_AUTO_DERIVE] Using context type: {call_context.type}")
@@ -111,28 +113,6 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
         active_searches = state.get("active_searches", {})
         context_stack = state.get("context_stack", [])
         messages = state.get("messages", [])
-
-        # STATE_INIT_DEBUG: Uncomment to diagnose empty values in active_searches
-        # try:
-        #     if active_searches:  # Only log when there's data to inspect
-        #         logger.info("[STATE_INIT_DEBUG] active_searches inspection:")
-        #         for search_key, search_data in active_searches.items():
-        #             if isinstance(search_data, dict):
-        #                 # Check for empty/zero values that might indicate initialization issues
-        #                 empty_fields = []
-        #                 for field, value in search_data.items():
-        #                     if value == "" or (isinstance(value, (int, float)) and value == 0):
-        #                         empty_fields.append(field)
-        #
-        #                 if empty_fields:
-        #                     logger.warning(
-        #                         f"[STATE_INIT_DEBUG] active_searches['{search_key}'] has empty fields: {empty_fields} | Full data: {search_data}"
-        #                     )
-        #                 else:
-        #                     logger.info(f"[STATE_INIT_DEBUG] active_searches['{search_key}']: {search_data}")
-        # except Exception as e:
-        #     # Silent fail - don't let logging break anything
-        #     logger.debug(f"[STATE_INIT_DEBUG] Logging error (non-critical): {e}")
 
         # Extract metadata from state or existing call_context
         user_phone = state.get("user_phone") or (
@@ -240,7 +220,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
             derived_type = "general"
             derivation_reason = "message history"
 
-        logger.info(f"[CONTEXT_AUTO_DERIVE] Auto-derived context: {derived_type} ({derivation_reason})")
+        logger.info(
+            f"[CONTEXT_AUTO_DERIVE] Auto-derived context: {derived_type} ({derivation_reason})"
+        )
 
         # Build derived CallContext
         return CallContext(
@@ -255,7 +237,9 @@ def extract_call_context(request: ModelRequest) -> CallContext | None:
 
     # Step 3: No state available, return general or existing context
     if call_context:
-        logger.debug(f"[CONTEXT_AUTO_DERIVE] Using existing context: {call_context.type}")
+        logger.debug(
+            f"[CONTEXT_AUTO_DERIVE] Using existing context: {call_context.type}"
+        )
         return call_context
 
     logger.info("[CONTEXT_AUTO_DERIVE] Defaulting to general (no state)")

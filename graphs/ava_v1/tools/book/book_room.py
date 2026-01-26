@@ -117,24 +117,33 @@ async def book_room(
     Returns:
         Command with state updates or JSON string with booking status
     """
-    logger.info("[BOOK_ROOM] Initiating booking", extra={
-        "payment_type": payment_type,
-        "has_session_id": bool(session_id),
-        "has_price_token": bool(price_confirmation_token)
-    })
-    logger.debug("[BOOK_ROOM] Booking details", extra={
-        "room": room,
-        "session_id": session_id,
-        "price_confirmation_token": price_confirmation_token
-    })
+    logger.info(
+        "[BOOK_ROOM] Initiating booking",
+        extra={
+            "payment_type": payment_type,
+            "has_session_id": bool(session_id),
+            "has_price_token": bool(price_confirmation_token),
+        },
+    )
+    logger.debug(
+        "[BOOK_ROOM] Booking details",
+        extra={
+            "room": room,
+            "session_id": session_id,
+            "price_confirmation_token": price_confirmation_token,
+        },
+    )
 
     # Sanitize input to handle malformed JSON keys
     sanitized_room = sanitize_tool_input(room)
     if not isinstance(sanitized_room, dict):
-        return json.dumps({
-            "error": "invalid_room_data",
-            "message": "Room data must be a dictionary object"
-        }, indent=2)
+        return json.dumps(
+            {
+                "error": "invalid_room_data",
+                "message": "Room data must be a dictionary object",
+            },
+            indent=2,
+        )
     room = sanitized_room
     logger.info(f"[BOOK_ROOM] Sanitized room: {room}")
 

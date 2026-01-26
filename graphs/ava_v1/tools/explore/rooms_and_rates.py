@@ -68,7 +68,7 @@ class StartRoomSearchInput(BaseModel):
     search_key: str | None = Field(
         default=None,
         description="Optional search key from start_hotel_search response (e.g., 'Miami' or 'Miami:JW Marriott'). "
-        "Omit for property_specific searches where params are collected via update_search_params."
+        "Omit for property_specific searches where params are collected via update_search_params.",
     )
 
 
@@ -150,17 +150,23 @@ async def start_room_search(
     if search_params_staging is None:
         search_params_staging = {}
 
-    logger.info(f"[ROOMS_AND_RATES] Fetching rooms for hotel_id: {hotel_id}", extra={
-        "hotel_id": hotel_id,
-        "search_key_provided": bool(search_key),
-        "active_searches_count": len(active_searches),
-        "has_search_params": bool(search_params_staging)
-    })
-    logger.debug("[ROOMS_AND_RATES] State details", extra={
-        "search_key": search_key,
-        "active_searches_keys": list(active_searches.keys()),
-        "search_params": search_params_staging
-    })
+    logger.info(
+        f"[ROOMS_AND_RATES] Fetching rooms for hotel_id: {hotel_id}",
+        extra={
+            "hotel_id": hotel_id,
+            "search_key_provided": bool(search_key),
+            "active_searches_count": len(active_searches),
+            "has_search_params": bool(search_params_staging),
+        },
+    )
+    logger.debug(
+        "[ROOMS_AND_RATES] State details",
+        extra={
+            "search_key": search_key,
+            "active_searches_keys": list(active_searches.keys()),
+            "search_params": search_params_staging,
+        },
+    )
 
     # Track whether we used search_params (so we can clear it later)
     clear_staging = False
@@ -230,12 +236,23 @@ async def start_room_search(
                 search_meta["checkOut"] = search_params_staging["checkOut"]
             if "occupancy" in missing:
                 search_meta["occupancy"] = {
-                    "numOfAdults": search_params_staging["numOfAdults"],  # Required field
-                    "numOfRooms": search_params_staging.get("numOfRooms", 1),  # Default: 1 room
-                    "childAges": search_params_staging.get("childAges", []),  # Default: no children
+                    "numOfAdults": search_params_staging[
+                        "numOfAdults"
+                    ],  # Required field
+                    "numOfRooms": search_params_staging.get(
+                        "numOfRooms", 1
+                    ),  # Default: 1 room
+                    "childAges": search_params_staging.get(
+                        "childAges", []
+                    ),  # Default: no children
                 }
-            logger.info(f"[ROOMS_AND_RATES] Backfilled {len(missing)} field(s) from search_params")
-            logger.debug("[ROOMS_AND_RATES] Updated search_meta", extra={"search_meta": search_meta})
+            logger.info(
+                f"[ROOMS_AND_RATES] Backfilled {len(missing)} field(s) from search_params"
+            )
+            logger.debug(
+                "[ROOMS_AND_RATES] Updated search_meta",
+                extra={"search_meta": search_meta},
+            )
 
             clear_staging = True
 
@@ -305,8 +322,12 @@ async def start_room_search(
             "checkOut": search_params_staging["checkOut"],
             "occupancy": {
                 "numOfAdults": search_params_staging["numOfAdults"],  # Required field
-                "numOfRooms": search_params_staging.get("numOfRooms", 1),  # Default: 1 room
-                "childAges": search_params_staging.get("childAges", []),  # Default: no children
+                "numOfRooms": search_params_staging.get(
+                    "numOfRooms", 1
+                ),  # Default: 1 room
+                "childAges": search_params_staging.get(
+                    "childAges", []
+                ),  # Default: no children
             },
         }
 
@@ -315,13 +336,19 @@ async def start_room_search(
         hotel_name = None
         if runtime and hasattr(runtime, "context"):
             call_context = runtime.context
-            if call_context and hasattr(call_context, "property") and call_context.property:
+            if (
+                call_context
+                and hasattr(call_context, "property")
+                and call_context.property
+            ):
                 hotel_name = call_context.property.property_name
 
         if not hotel_name:
             # Fallback: use hotel_id as key
             hotel_name = hotel_id
-            logger.warning(f"[ROOMS_AND_RATES] No hotel_name found, using hotel_id as search_key")
+            logger.warning(
+                "[ROOMS_AND_RATES] No hotel_name found, using hotel_id as search_key"
+            )
 
         search_key = hotel_name
 
@@ -334,12 +361,19 @@ async def start_room_search(
             "occupancy": search_params["occupancy"],
         }
 
-        logger.info(f"[ROOMS_AND_RATES] Constructed search from search_params (no search_key provided)")
-        logger.debug("[ROOMS_AND_RATES] PATH 2 details", extra={"search_key": search_key, "search_meta": search_meta})
+        logger.info(
+            "[ROOMS_AND_RATES] Constructed search from search_params (no search_key provided)"
+        )
+        logger.debug(
+            "[ROOMS_AND_RATES] PATH 2 details",
+            extra={"search_key": search_key, "search_meta": search_meta},
+        )
 
         clear_staging = True
 
-    logger.debug("[ROOMS_AND_RATES] Final search params", extra={"search_params": search_params})
+    logger.debug(
+        "[ROOMS_AND_RATES] Final search params", extra={"search_params": search_params}
+    )
 
     # Call cache-worker (replaces hash generation, cache check, polling)
     try:
@@ -435,12 +469,15 @@ async def start_room_search(
                 "__replace__": new_stack + [context_to_push]
             }
 
-        logger.info(f"[ROOMS_AND_RATES] Room search complete: {search_result['roomSearchId']}", extra={
-            "search_key": search_key,
-            "roomSearchId": search_result['roomSearchId'],
-            "clear_staging": clear_staging,
-            "context_pushed": bool(context_to_push)
-        })
+        logger.info(
+            f"[ROOMS_AND_RATES] Room search complete: {search_result['roomSearchId']}",
+            extra={
+                "search_key": search_key,
+                "roomSearchId": search_result["roomSearchId"],
+                "clear_staging": clear_staging,
+                "context_pushed": bool(context_to_push),
+            },
+        )
 
         return Command(update=update_dict)
 

@@ -89,9 +89,7 @@ class CallContext:
     system prompt based on call type, property, payment, session, etc.
     """
 
-    type: str = (
-        "general"  # Valid types: general, property_specific, dated_property, payment_return, abandoned_payment
-    )
+    type: str = "general"  # Valid types: general, property_specific, dated_property, payment_return, abandoned_payment
     site_name: str = "reservationsportal.com"  # Website/brand name for dynamic prompts
     property: PropertyInfo | None = None
     payment: PaymentInfo | None = None

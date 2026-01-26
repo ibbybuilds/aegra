@@ -81,7 +81,7 @@ class UpdateSearchParamsInput(BaseModel):
         "when hotel_search or room_search is called. "
         "REQUIRED: checkIn, checkOut, numOfAdults. "
         "OPTIONAL: numOfRooms (default: 1), childAges (default: [])."
-    )
+    ),
 )
 async def update_search_params(
     field: Literal[
@@ -130,93 +130,128 @@ async def update_search_params(
     if current_params is None:
         current_params = {}
 
-    logger.info(f"[UPDATE_SEARCH_PARAMS] Updating field '{field}'", extra={"field": field, "has_current_params": bool(current_params)})
-    logger.debug(f"[UPDATE_SEARCH_PARAMS] Parameters", extra={"value": value, "current_params": current_params})
+    logger.info(
+        f"[UPDATE_SEARCH_PARAMS] Updating field '{field}'",
+        extra={"field": field, "has_current_params": bool(current_params)},
+    )
+    logger.debug(
+        "[UPDATE_SEARCH_PARAMS] Parameters",
+        extra={"value": value, "current_params": current_params},
+    )
 
     # Validate field-specific constraints
     if field == "checkIn":
         if not isinstance(value, str):
-            return json.dumps({
-                "error": "invalid_type",
-                "message": "checkIn must be a string in YYYY-MM-DD format"
-            }, indent=2)
+            return json.dumps(
+                {
+                    "error": "invalid_type",
+                    "message": "checkIn must be a string in YYYY-MM-DD format",
+                },
+                indent=2,
+            )
         if not _validate_date_format(value):
-            return json.dumps({
-                "error": "invalid_date_format",
-                "message": f"checkIn must be in YYYY-MM-DD format, got: {value}"
-            }, indent=2)
+            return json.dumps(
+                {
+                    "error": "invalid_date_format",
+                    "message": f"checkIn must be in YYYY-MM-DD format, got: {value}",
+                },
+                indent=2,
+            )
         # If checkOut exists, validate date range
-        if "checkOut" in current_params:
-            if not _validate_date_range(value, current_params["checkOut"]):
-                return json.dumps({
+        if "checkOut" in current_params and not _validate_date_range(
+            value, current_params["checkOut"]
+        ):
+            return json.dumps(
+                {
                     "error": "invalid_date_range",
-                    "message": f"checkIn ({value}) must be before checkOut ({current_params['checkOut']})"
-                }, indent=2)
+                    "message": f"checkIn ({value}) must be before checkOut ({current_params['checkOut']})",
+                },
+                indent=2,
+            )
 
     elif field == "checkOut":
         if not isinstance(value, str):
-            return json.dumps({
-                "error": "invalid_type",
-                "message": "checkOut must be a string in YYYY-MM-DD format"
-            }, indent=2)
+            return json.dumps(
+                {
+                    "error": "invalid_type",
+                    "message": "checkOut must be a string in YYYY-MM-DD format",
+                },
+                indent=2,
+            )
         if not _validate_date_format(value):
-            return json.dumps({
-                "error": "invalid_date_format",
-                "message": f"checkOut must be in YYYY-MM-DD format, got: {value}"
-            }, indent=2)
+            return json.dumps(
+                {
+                    "error": "invalid_date_format",
+                    "message": f"checkOut must be in YYYY-MM-DD format, got: {value}",
+                },
+                indent=2,
+            )
         # If checkIn exists, validate date range
-        if "checkIn" in current_params:
-            if not _validate_date_range(current_params["checkIn"], value):
-                return json.dumps({
+        if "checkIn" in current_params and not _validate_date_range(
+            current_params["checkIn"], value
+        ):
+            return json.dumps(
+                {
                     "error": "invalid_date_range",
-                    "message": f"checkOut ({value}) must be after checkIn ({current_params['checkIn']})"
-                }, indent=2)
+                    "message": f"checkOut ({value}) must be after checkIn ({current_params['checkIn']})",
+                },
+                indent=2,
+            )
 
     elif field == "numOfAdults":
         if not isinstance(value, int):
-            return json.dumps({
-                "error": "invalid_type",
-                "message": "numOfAdults must be an integer"
-            }, indent=2)
+            return json.dumps(
+                {"error": "invalid_type", "message": "numOfAdults must be an integer"},
+                indent=2,
+            )
         if value < 1:
-            return json.dumps({
-                "error": "invalid_value",
-                "message": "numOfAdults must be at least 1"
-            }, indent=2)
+            return json.dumps(
+                {"error": "invalid_value", "message": "numOfAdults must be at least 1"},
+                indent=2,
+            )
 
     elif field == "numOfRooms":
         if not isinstance(value, int):
-            return json.dumps({
-                "error": "invalid_type",
-                "message": "numOfRooms must be an integer"
-            }, indent=2)
+            return json.dumps(
+                {"error": "invalid_type", "message": "numOfRooms must be an integer"},
+                indent=2,
+            )
         if value < 1:
-            return json.dumps({
-                "error": "invalid_value",
-                "message": "numOfRooms must be at least 1"
-            }, indent=2)
+            return json.dumps(
+                {"error": "invalid_value", "message": "numOfRooms must be at least 1"},
+                indent=2,
+            )
 
     elif field == "childAges":
         if not isinstance(value, list):
-            return json.dumps({
-                "error": "invalid_type",
-                "message": "childAges must be a list of integers"
-            }, indent=2)
+            return json.dumps(
+                {
+                    "error": "invalid_type",
+                    "message": "childAges must be a list of integers",
+                },
+                indent=2,
+            )
         if not all(isinstance(age, int) and 0 <= age <= 17 for age in value):
-            return json.dumps({
-                "error": "invalid_value",
-                "message": "childAges must contain integers between 0 and 17"
-            }, indent=2)
+            return json.dumps(
+                {
+                    "error": "invalid_value",
+                    "message": "childAges must contain integers between 0 and 17",
+                },
+                indent=2,
+            )
 
     # Success - update search_params
     updated_params = {**current_params, field: value}
     success_result = {
         "status": "success",
         "message": f"Updated search_params.{field} = {value}",
-        "search_params": updated_params
+        "search_params": updated_params,
     }
 
-    logger.info(f"[UPDATE_SEARCH_PARAMS] Successfully updated field '{field}'", extra={"field": field, "updated_params": updated_params})
+    logger.info(
+        f"[UPDATE_SEARCH_PARAMS] Successfully updated field '{field}'",
+        extra={"field": field, "updated_params": updated_params},
+    )
 
     if runtime is None:
         return json.dumps(success_result, indent=2)
@@ -229,6 +264,6 @@ async def update_search_params(
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
-            "search_params": {field: value}  # Will be merged by merge_dicts reducer
+            "search_params": {field: value},  # Will be merged by merge_dicts reducer
         }
     )

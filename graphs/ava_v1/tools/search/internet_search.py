@@ -32,9 +32,7 @@ def _get_tavily_client() -> AsyncTavilyClient:
 class InternetSearchInput(BaseModel):
     """Input schema for internet search."""
 
-    query: str = Field(
-        description="Search query for hotel booking related information"
-    )
+    query: str = Field(description="Search query for hotel booking related information")
     max_results: int = Field(
         default=3,
         description="Maximum number of search results to return (max 5)",

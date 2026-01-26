@@ -369,7 +369,7 @@ This happens because we upgraded to PostgreSQL 18, but your Docker volume still 
 
 **Solution**:
 You need to remove the old volume and (optionally) restore your data.
-Please follow the **[Migration Guide in README](../README.md#%EF%B8%8F-important-upgrade-to-postgresql-18)**.
+Please follow the **[PostgreSQL 18 Migration Guide](postgres-18-migration.md)**.
 
 ### Migration Issues in Docker
 
@@ -673,7 +673,7 @@ python3 scripts/migrate.py upgrade
 
 | Problem                   | Solution                                                                        |
 | ------------------------- | ------------------------------------------------------------------------------- |
-| **Incompatible DB version** | **See [Migration Guide](../README.md#%EF%B8%8F-important-upgrade-to-postgresql-18)** |
+| **Incompatible DB version** | **See [PostgreSQL 18 Migration Guide](postgres-18-migration.md)** |
 | Can't connect to database | `docker compose up postgres -d`       |
 | Migration fails           | `python3 scripts/migrate.py current`  |
 | Permission denied         | `chmod +x scripts/migrate.py`         |

@@ -307,23 +307,38 @@ async def get_thread_state(
         )
 
         langgraph_service = get_langgraph_service()
-        try:
-            agent = await langgraph_service.get_graph(graph_id)
-        except Exception as e:
-            logger.exception("Failed to load graph '%s' for state retrieval", graph_id)
-            raise HTTPException(
-                500, f"Failed to load graph '{graph_id}': {str(e)}"
-            ) from e
-
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
         if checkpoint_ns:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
         try:
-            agent = agent.with_config(config)
-            # NOTE: LangGraph only exposes subgraph checkpoints while the run is
-            # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
-            state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
+            async with langgraph_service.get_graph(graph_id) as agent:
+                agent = agent.with_config(config)
+                # NOTE: LangGraph only exposes subgraph checkpoints while the run is
+                # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
+                state_snapshot = await agent.aget_state(config, subgraphs=subgraphs)
+
+                if not state_snapshot:
+                    logger.info(
+                        "state GET: no checkpoint found for thread %s (checkpoint_ns=%s)",
+                        thread_id,
+                        checkpoint_ns,
+                    )
+                    raise HTTPException(404, f"No state found for thread '{thread_id}'")
+
+                thread_state = thread_state_service.convert_snapshot_to_thread_state(
+                    state_snapshot, thread_id, subgraphs=subgraphs
+                )
+
+                logger.debug(
+                    "state GET: thread_id=%s checkpoint_id=%s subgraphs=%s checkpoint_ns=%s",
+                    thread_id,
+                    thread_state.checkpoint.checkpoint_id,
+                    subgraphs,
+                    checkpoint_ns,
+                )
+
+                return thread_state
         except HTTPException:
             raise
         except Exception as e:
@@ -333,34 +348,6 @@ async def get_thread_state(
             raise HTTPException(
                 500, f"Failed to retrieve thread state: {str(e)}"
             ) from e
-
-        if not state_snapshot:
-            logger.info(
-                "state GET: no checkpoint found for thread %s (checkpoint_ns=%s)",
-                thread_id,
-                checkpoint_ns,
-            )
-            raise HTTPException(404, f"No state found for thread '{thread_id}'")
-
-        try:
-            thread_state = thread_state_service.convert_snapshot_to_thread_state(
-                state_snapshot, thread_id, subgraphs=subgraphs
-            )
-        except Exception as e:
-            logger.exception(
-                "Failed to convert latest state for thread '%s'", thread_id
-            )
-            raise HTTPException(500, f"Failed to convert thread state: {str(e)}") from e
-
-        logger.debug(
-            "state GET: thread_id=%s checkpoint_id=%s subgraphs=%s checkpoint_ns=%s",
-            thread_id,
-            thread_state.checkpoint.checkpoint_id,
-            subgraphs,
-            checkpoint_ns,
-        )
-
-        return thread_state
 
     except HTTPException:
         raise
@@ -418,14 +405,6 @@ async def update_thread_state(
         )
 
         langgraph_service = get_langgraph_service()
-        try:
-            agent = await langgraph_service.get_graph(graph_id)
-        except Exception as e:
-            logger.exception("Failed to load graph '%s' for state update", graph_id)
-            raise HTTPException(
-                500, f"Failed to load graph '{graph_id}': {str(e)}"
-            ) from e
-
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
 
         # Apply checkpoint configuration
@@ -437,75 +416,76 @@ async def update_thread_state(
             config["configurable"]["checkpoint_ns"] = request.checkpoint_ns
 
         try:
-            # Update state using aupdate_state method
-            # This creates a new checkpoint with the updated values
-            agent = agent.with_config(config)
+            async with langgraph_service.get_graph(graph_id) as agent:
+                # Update state using aupdate_state method
+                # This creates a new checkpoint with the updated values
+                agent = agent.with_config(config)
 
-            # Handle values - can be dict or list of dicts
-            update_values = request.values
-            if isinstance(update_values, list):
-                # If it's a list, use the first dict or convert to dict
-                if update_values and isinstance(update_values[0], dict):
-                    # Merge all dicts in the list
-                    merged = {}
-                    for item in update_values:
-                        if isinstance(item, dict):
-                            merged.update(item)
-                    update_values = merged
-                else:
-                    update_values = update_values[0] if update_values else None
+                # Handle values - can be dict or list of dicts
+                update_values = request.values
+                if isinstance(update_values, list):
+                    # If it's a list, use the first dict or convert to dict
+                    if update_values and isinstance(update_values[0], dict):
+                        # Merge all dicts in the list
+                        merged = {}
+                        for item in update_values:
+                            if isinstance(item, dict):
+                                merged.update(item)
+                        update_values = merged
+                    else:
+                        update_values = update_values[0] if update_values else None
 
-            # Update the state using aupdate_state
-            # aupdate_state signature: aupdate_state(config, values, as_node=None)
-            # When as_node is not specified, the graph may try to continue execution,
-            # which can fail if the state doesn't match expected graph flow.
-            # We should always use as_node to prevent unwanted execution.
-            try:
-                # If as_node is not provided, we need to determine a safe node to use
-                # For state updates without as_node, we'll use None which should just update state
-                # without triggering execution, but the graph may still validate the state
-                updated_config = await agent.aupdate_state(
-                    config, update_values, as_node=request.as_node
-                )
-            except Exception as update_error:
-                logger.exception(
-                    "aupdate_state failed for thread %s: %s",
+                # Update the state using aupdate_state
+                # aupdate_state signature: aupdate_state(config, values, as_node=None)
+                # When as_node is not specified, the graph may try to continue execution,
+                # which can fail if the state doesn't match expected graph flow.
+                # We should always use as_node to prevent unwanted execution.
+                try:
+                    # If as_node is not provided, we need to determine a safe node to use
+                    # For state updates without as_node, we'll use None which should just update state
+                    # without triggering execution, but the graph may still validate the state
+                    updated_config = await agent.aupdate_state(
+                        config, update_values, as_node=request.as_node
+                    )
+                except Exception as update_error:
+                    logger.exception(
+                        "aupdate_state failed for thread %s: %s",
+                        thread_id,
+                        update_error,
+                        exc_info=True,
+                    )
+                    raise
+
+                # Extract checkpoint info from the updated config
+                # aupdate_state returns the updated config dict
+                if not isinstance(updated_config, dict):
+                    logger.error(
+                        "aupdate_state returned non-dict: %s (type: %s)",
+                        updated_config,
+                        type(updated_config),
+                    )
+                    raise HTTPException(
+                        500,
+                        f"Unexpected return type from aupdate_state: {type(updated_config)}",
+                    )
+
+                checkpoint_info = {
+                    "checkpoint_id": updated_config.get("configurable", {}).get(
+                        "checkpoint_id"
+                    ),
+                    "thread_id": thread_id,
+                    "checkpoint_ns": updated_config.get("configurable", {}).get(
+                        "checkpoint_ns", ""
+                    ),
+                }
+
+                logger.info(
+                    "state POST: updated state for thread %s checkpoint_id=%s",
                     thread_id,
-                    update_error,
-                    exc_info=True,
-                )
-                raise
-
-            # Extract checkpoint info from the updated config
-            # aupdate_state returns the updated config dict
-            if not isinstance(updated_config, dict):
-                logger.error(
-                    "aupdate_state returned non-dict: %s (type: %s)",
-                    updated_config,
-                    type(updated_config),
-                )
-                raise HTTPException(
-                    500,
-                    f"Unexpected return type from aupdate_state: {type(updated_config)}",
+                    checkpoint_info.get("checkpoint_id"),
                 )
 
-            checkpoint_info = {
-                "checkpoint_id": updated_config.get("configurable", {}).get(
-                    "checkpoint_id"
-                ),
-                "thread_id": thread_id,
-                "checkpoint_ns": updated_config.get("configurable", {}).get(
-                    "checkpoint_ns", ""
-                ),
-            }
-
-            logger.info(
-                "state POST: updated state for thread %s checkpoint_id=%s",
-                thread_id,
-                checkpoint_info.get("checkpoint_id"),
-            )
-
-            return ThreadStateUpdateResponse(checkpoint=checkpoint_info)
+                return ThreadStateUpdateResponse(checkpoint=checkpoint_info)
 
         except HTTPException:
             raise
@@ -554,15 +534,6 @@ async def get_thread_state_at_checkpoint(
         )
 
         langgraph_service = get_langgraph_service()
-        try:
-            agent = await langgraph_service.get_graph(graph_id)
-        except Exception as e:
-            logger.exception(
-                "Failed to load graph '%s' for checkpoint retrieval", graph_id
-            )
-            raise HTTPException(
-                500, f"Failed to load graph '{graph_id}': {str(e)}"
-            ) from e
 
         # Build config with user context and thread_id
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
@@ -572,10 +543,30 @@ async def get_thread_state_at_checkpoint(
 
         # Fetch state at checkpoint
         try:
-            agent = agent.with_config(config)
-            state_snapshot = await agent.aget_state(
-                config, subgraphs=subgraphs or False
-            )
+            async with langgraph_service.get_graph(graph_id) as agent:
+                agent = agent.with_config(config)
+                state_snapshot = await agent.aget_state(
+                    config, subgraphs=subgraphs or False
+                )
+
+                if not state_snapshot:
+                    raise HTTPException(
+                        404,
+                        f"No state found at checkpoint '{checkpoint_id}' for thread '{thread_id}'",
+                    )
+
+                # Convert snapshot to ThreadCheckpoint using service
+                thread_checkpoint = (
+                    thread_state_service.convert_snapshot_to_thread_state(
+                        state_snapshot,
+                        thread_id,
+                        subgraphs=subgraphs or False,
+                    )
+                )
+
+                return thread_checkpoint
+        except HTTPException:
+            raise
         except Exception as e:
             logger.exception(
                 "Failed to retrieve state at checkpoint '%s' for thread '%s'",
@@ -586,21 +577,6 @@ async def get_thread_state_at_checkpoint(
                 500,
                 f"Failed to retrieve state at checkpoint '{checkpoint_id}': {str(e)}",
             ) from e
-
-        if not state_snapshot:
-            raise HTTPException(
-                404,
-                f"No state found at checkpoint '{checkpoint_id}' for thread '{thread_id}'",
-            )
-
-        # Convert snapshot to ThreadCheckpoint using service
-        thread_checkpoint = thread_state_service.convert_snapshot_to_thread_state(
-            state_snapshot,
-            thread_id,
-            subgraphs=subgraphs or False,
-        )
-
-        return thread_checkpoint
 
     except HTTPException:
         raise
@@ -715,13 +691,6 @@ async def get_thread_history_post(
         )
 
         langgraph_service = get_langgraph_service()
-        try:
-            agent = await langgraph_service.get_graph(graph_id)
-        except Exception as e:
-            logger.exception("Failed to load graph '%s' for history", graph_id)
-            raise HTTPException(
-                500, f"Failed to load graph '{graph_id}': {str(e)}"
-            ) from e
 
         # Build config with user context and thread_id
         config: dict[str, Any] = create_thread_config(thread_id, user, {})
@@ -744,23 +713,24 @@ async def get_thread_history_post(
         if metadata is not None:
             kwargs["metadata"] = metadata  # type: ignore[index]
 
-        # Some LangGraph versions support subgraphs flag; pass if available
-        try:
-            async for snapshot in agent.aget_state_history(
-                config, subgraphs=subgraphs, **kwargs
-            ):
-                state_snapshots.append(snapshot)
-        except TypeError:
-            # Fallback if subgraphs not supported in this version
-            async for snapshot in agent.aget_state_history(config, **kwargs):
-                state_snapshots.append(snapshot)
+        async with langgraph_service.get_graph(graph_id) as agent:
+            # Some LangGraph versions support subgraphs flag; pass if available
+            try:
+                async for snapshot in agent.aget_state_history(
+                    config, subgraphs=subgraphs, **kwargs
+                ):
+                    state_snapshots.append(snapshot)
+            except TypeError:
+                # Fallback if subgraphs not supported in this version
+                async for snapshot in agent.aget_state_history(config, **kwargs):
+                    state_snapshots.append(snapshot)
 
-        # Convert snapshots to ThreadState using service
-        thread_states = thread_state_service.convert_snapshots_to_thread_states(
-            state_snapshots, thread_id
-        )
+            # Convert snapshots to ThreadState using service
+            thread_states = thread_state_service.convert_snapshots_to_thread_states(
+                state_snapshots, thread_id
+            )
 
-        return thread_states
+            return thread_states
 
     except HTTPException:
         raise

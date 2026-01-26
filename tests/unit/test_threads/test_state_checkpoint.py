@@ -1,5 +1,6 @@
 """Unit tests for thread state at checkpoint endpoint."""
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +11,21 @@ from agent_server.api.threads import (
     get_thread_state_at_checkpoint_post,
 )
 from agent_server.models import ThreadCheckpoint, ThreadCheckpointPostRequest, User
+
+
+def create_get_graph_mock(return_value=None, side_effect=None):
+    """Create a mock for get_graph that works as an async context manager."""
+
+    @asynccontextmanager
+    async def async_cm(*args, **kwargs):
+        if side_effect:
+            raise side_effect
+        yield return_value
+
+    def get_graph(*args, **kwargs):
+        return async_cm(*args, **kwargs)
+
+    return get_graph
 
 
 class TestGetThreadStateAtCheckpoint:
@@ -46,7 +62,9 @@ class TestGetThreadStateAtCheckpoint:
                 return_value=mock_thread_state,
             ) as mock_convert,
         ):
-            mock_service.return_value.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.return_value.get_graph = create_get_graph_mock(
+                return_value=mock_agent
+            )
 
             result = await get_thread_state_at_checkpoint(
                 "thread-123",
@@ -94,7 +112,9 @@ class TestGetThreadStateAtCheckpoint:
                 return_value=mock_thread_state,
             ),
         ):
-            mock_service.return_value.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.return_value.get_graph = create_get_graph_mock(
+                return_value=mock_agent
+            )
 
             await get_thread_state_at_checkpoint(
                 "thread-123",
@@ -139,7 +159,9 @@ class TestGetThreadStateAtCheckpoint:
                 return_value=mock_thread_state,
             ),
         ):
-            mock_service.return_value.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.return_value.get_graph = create_get_graph_mock(
+                return_value=mock_agent
+            )
 
             await get_thread_state_at_checkpoint(
                 "thread-123",

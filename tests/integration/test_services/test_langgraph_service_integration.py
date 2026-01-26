@@ -134,6 +134,8 @@ class TestLangGraphServiceDatabase:
 
         mock_graph = DummyStateGraph()
         mock_compiled_graph = Mock()
+        # Add copy method to mock since get_graph uses .copy(update=...)
+        mock_compiled_graph.copy = Mock(return_value=mock_compiled_graph)
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
@@ -147,17 +149,17 @@ class TestLangGraphServiceDatabase:
             mock_db_manager.get_checkpointer = Mock(return_value=mock_checkpointer)
             mock_db_manager.get_store = Mock(return_value=mock_store)
 
-            # Mock graph compilation
+            # Mock graph compilation (for base graph caching)
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
 
-            result = await service.get_graph("db_graph")
-
-            assert result == mock_compiled_graph
-            mock_db_manager.get_checkpointer.assert_called_once()
-            mock_db_manager.get_store.assert_called_once()
-            mock_graph.compile.assert_called_once_with(
-                checkpointer=mock_checkpointer, store=mock_store
-            )
+            # get_graph is now a context manager
+            async with service.get_graph("db_graph") as result:
+                assert result == mock_compiled_graph
+                mock_db_manager.get_checkpointer.assert_called_once()
+                mock_db_manager.get_store.assert_called_once()
+                # Base graph is compiled once, then copy is called with checkpointer/store
+                mock_graph.compile.assert_called_once()
+                mock_compiled_graph.copy.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_graph_already_compiled(self):
@@ -171,10 +173,10 @@ class TestLangGraphServiceDatabase:
         }
 
         mock_compiled_graph = Mock()
-        # Graph doesn't have compile method (already compiled)
-        del (
-            mock_compiled_graph.compile
-        )  # Remove compile method to simulate already compiled graph
+        # Graph doesn't have compile method (already compiled Pregel)
+        mock_compiled_graph.compile = None  # Simulate already compiled graph
+        # Add copy method since get_graph uses .copy(update=...)
+        mock_compiled_graph.copy = Mock(return_value=mock_compiled_graph)
 
         with (
             patch.object(
@@ -189,12 +191,12 @@ class TestLangGraphServiceDatabase:
             mock_db_manager.get_checkpointer = Mock(return_value=mock_checkpointer)
             mock_db_manager.get_store = Mock(return_value=mock_store)
 
-            result = await service.get_graph("compiled_graph")
-
-            # Result should be the compiled graph (may be a copy)
-            assert result is not None
-            # Should not call compile on already compiled graph
-            assert not hasattr(mock_compiled_graph, "compile")
+            # get_graph is now a context manager
+            async with service.get_graph("compiled_graph") as result:
+                # Result should be the compiled graph (may be a copy)
+                assert result is not None
+                # copy should be called with checkpointer/store
+                mock_compiled_graph.copy.assert_called_once()
 
 
 class TestLangGraphServiceGraphLoading:
@@ -293,6 +295,9 @@ class TestLangGraphServiceErrorHandling:
         }
 
         mock_graph = Mock()
+        mock_compiled = Mock()
+        mock_compiled.copy = Mock(return_value=mock_compiled)
+        mock_graph.compile = Mock(return_value=mock_compiled)
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
@@ -305,7 +310,8 @@ class TestLangGraphServiceErrorHandling:
             )
 
             with pytest.raises(Exception, match="Database error"):
-                await service.get_graph("error_graph")
+                async with service.get_graph("error_graph"):
+                    pass
 
     @pytest.mark.asyncio
     async def test_get_graph_compilation_error(self):
@@ -330,7 +336,8 @@ class TestLangGraphServiceErrorHandling:
             mock_db_manager.get_store = Mock(return_value="store")
 
             with pytest.raises(Exception, match="Compilation error"):
-                await service.get_graph("compile_error_graph")
+                async with service.get_graph("compile_error_graph"):
+                    pass
 
     @pytest.mark.asyncio
     async def test_initialize_file_permission_error(self):
@@ -376,6 +383,7 @@ class TestLangGraphServiceConcurrency:
 
         mock_graph = DummyStateGraph()
         mock_compiled_graph = Mock()
+        mock_compiled_graph.copy = Mock(return_value=mock_compiled_graph)
 
         with (
             patch.object(service, "_load_graph_from_file", return_value=mock_graph),
@@ -386,33 +394,43 @@ class TestLangGraphServiceConcurrency:
             mock_db_manager.get_store = Mock(return_value="store")
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
 
-            # Load same graph concurrently
+            # Load same graph concurrently using context managers
             import asyncio
 
+            async def get_graph_task():
+                async with service.get_graph("concurrent_graph") as graph:
+                    return graph
+
             tasks = [
-                service.get_graph("concurrent_graph"),
-                service.get_graph("concurrent_graph"),
-                service.get_graph("concurrent_graph"),
+                get_graph_task(),
+                get_graph_task(),
+                get_graph_task(),
             ]
 
             results = await asyncio.gather(*tasks)
 
-            # All should return the same compiled graph
+            # All should return the compiled graph (copies)
             assert all(result == mock_compiled_graph for result in results)
-            # Should only load from file once due to caching
+            # Should only compile once due to base graph caching
             assert mock_graph.compile.call_count == 1
+            # copy is called once per request (3 times)
+            assert mock_compiled_graph.copy.call_count == 3
 
     @pytest.mark.asyncio
     async def test_concurrent_cache_invalidation(self):
         """Test concurrent cache invalidation"""
         service = LangGraphService()
-        service._graph_cache = {"graph1": Mock(), "graph2": Mock(), "graph3": Mock()}
+        service._base_graph_cache = {
+            "graph1": Mock(),
+            "graph2": Mock(),
+            "graph3": Mock(),
+        }
 
         import asyncio
 
         async def invalidate_graph(graph_id):
             service.invalidate_cache(graph_id)
-            return len(service._graph_cache)
+            return len(service._base_graph_cache)
 
         # Invalidate different graphs concurrently
         tasks = [
@@ -424,7 +442,7 @@ class TestLangGraphServiceConcurrency:
         results = await asyncio.gather(*tasks)
 
         # Cache should be empty after all invalidations
-        assert service._graph_cache == {}
+        assert service._base_graph_cache == {}
         # All results should be 0 (empty cache) - check individually
         # Note: concurrent execution may cause intermediate states
         assert all(

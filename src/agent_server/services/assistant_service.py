@@ -155,7 +155,7 @@ class AssistantService:
 
         # Validate graph can be loaded
         try:
-            await self.langgraph_service.get_graph(graph_id)
+            await self.langgraph_service.get_graph_for_validation(graph_id)
         except Exception as e:
             raise HTTPException(400, f"Failed to load graph: {str(e)}") from e
 
@@ -513,7 +513,11 @@ class AssistantService:
             raise HTTPException(404, f"Assistant '{assistant_id}' not found")
 
         try:
-            graph = await self.langgraph_service.get_graph(assistant.graph_id)
+            # Use get_graph_for_validation since we only need schema extraction,
+            # not checkpointer/store for execution
+            graph = await self.langgraph_service.get_graph_for_validation(
+                assistant.graph_id
+            )
             schemas = _extract_graph_schemas(graph)
 
             return {"graph_id": assistant.graph_id, **schemas}
@@ -537,7 +541,11 @@ class AssistantService:
             raise HTTPException(404, f"Assistant '{assistant_id}' not found")
 
         try:
-            graph = await self.langgraph_service.get_graph(assistant.graph_id)
+            # Use get_graph_for_validation since we only need graph structure,
+            # not checkpointer/store for execution
+            graph = await self.langgraph_service.get_graph_for_validation(
+                assistant.graph_id
+            )
 
             # Validate xray if it's an integer (not a boolean)
             if isinstance(xray, int) and not isinstance(xray, bool) and xray <= 0:
@@ -582,7 +590,11 @@ class AssistantService:
             raise HTTPException(404, f"Assistant '{assistant_id}' not found")
 
         try:
-            graph = await self.langgraph_service.get_graph(assistant.graph_id)
+            # Use get_graph_for_validation since we only need schema extraction,
+            # not checkpointer/store for execution
+            graph = await self.langgraph_service.get_graph_for_validation(
+                assistant.graph_id
+            )
 
             try:
                 subgraphs = {

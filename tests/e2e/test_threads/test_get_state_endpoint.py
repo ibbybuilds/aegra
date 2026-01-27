@@ -1,6 +1,6 @@
 import pytest
 
-from tests.e2e._utils import elog, get_e2e_client, skip_if_blocked
+from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
 
 
 @pytest.mark.e2e
@@ -29,7 +29,7 @@ async def test_latest_state_simple_agent_e2e():
     run_info = runs_list[0]
 
     # Check for geo-block before asserting status
-    skip_if_blocked(run_info)
+    check_and_skip_if_geo_blocked(run_info)
 
     assert run_info["status"] in ("success", "interrupted")
 
@@ -75,7 +75,7 @@ async def test_latest_state_human_in_loop_interrupt_e2e():
     elog("Run info after wait (HITL)", run_info)
 
     # Check for geo-block
-    skip_if_blocked(run_info)
+    check_and_skip_if_geo_blocked(run_info)
 
     assert run_info["status"] == "interrupted"
 
@@ -114,7 +114,7 @@ async def test_latest_state_with_subgraphs_e2e():
     # Check if run failed due to block (implicitly via getting runs)
     runs = await client.runs.list(thread_id)
     if runs:
-        skip_if_blocked(runs[0])
+        check_and_skip_if_geo_blocked(runs[0])
 
     state_without_subgraphs = await client.threads.get_state(
         thread_id=thread_id,
@@ -155,7 +155,7 @@ async def test_latest_state_with_subgraphs_e2e():
     # Check resume status
     resume_runs = await client.runs.list(thread_id)
     if resume_runs:
-        skip_if_blocked(resume_runs[0])
+        check_and_skip_if_geo_blocked(resume_runs[0])
 
     state_with_subgraphs_after_resume = await client.threads.get_state(
         thread_id=thread_id,

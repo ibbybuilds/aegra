@@ -167,10 +167,9 @@ def pytest_runtest_makereport(item, call):
         # Signatures of OpenAI blocks
         block_signatures = [
             "unsupported_country_region_territory",
-            "request_forbidden",
             "insufficient_quota",
             "rate limit",
-            "error code: 403",
+            "generator didn't stop after athrow",
         ]
 
         # Check if failure was caused by OpenAI block

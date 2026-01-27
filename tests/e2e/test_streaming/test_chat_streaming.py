@@ -1,6 +1,6 @@
 import pytest
 
-from tests.e2e._utils import elog, get_e2e_client
+from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
 
 
 @pytest.mark.e2e
@@ -67,9 +67,7 @@ async def test_chat_streaming_e2e():
         if runs:
             last_run = runs[0]
             if last_run["status"] == "error":
-                msg = str(last_run.get("error_message", "")).lower()
-                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                    pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+                check_and_skip_if_geo_blocked(last_run)
 
     # Enforce streaming behavior: at least one event received
     assert event_count > 0, "Expected at least one event from streaming run"

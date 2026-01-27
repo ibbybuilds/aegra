@@ -3,7 +3,7 @@ import pytest
 from src.agent_server.settings import settings
 
 # Match import style used by other e2e tests when run as top-level modules
-from tests.e2e._utils import elog, get_e2e_client, skip_if_blocked
+from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
 
 
 @pytest.mark.e2e
@@ -57,7 +57,7 @@ async def test_runs_crud_and_join_e2e():
 
     # Check for blocking error before asserting
     check_run = await client.runs.get(thread_id, run_id)
-    skip_if_blocked(check_run)
+    check_and_skip_if_geo_blocked(check_run)
 
     assert isinstance(final_state, dict)
 
@@ -145,14 +145,14 @@ async def test_runs_cancel_e2e():
         pytest.skip("No runs found to cancel")
     run_id = runs_list[0]["run_id"]
 
-    skip_if_blocked(runs_list[0])
+    check_and_skip_if_geo_blocked(runs_list[0])
 
     # Cancel the run
     patched = await client.runs.cancel(thread_id, run_id)
     elog("Runs.cancel", patched)
 
     # It might have failed in background
-    skip_if_blocked(patched)
+    check_and_skip_if_geo_blocked(patched)
 
     assert patched["status"] in ("interrupted", "success")
 
@@ -235,7 +235,7 @@ async def test_runs_wait_stateful_e2e():
     assert last_run["thread_id"] == thread_id
     assert last_run["assistant_id"] == assistant_id
 
-    skip_if_blocked(last_run)
+    check_and_skip_if_geo_blocked(last_run)
 
     assert last_run["status"] in ("success", "interrupted"), (
         f"Expected completed or interrupted, got {last_run['status']}"
@@ -299,7 +299,7 @@ async def test_runs_wait_with_interrupts_e2e():
         assert len(runs_list) > 0
         last_run = runs_list[0]
 
-        skip_if_blocked(last_run)
+        check_and_skip_if_geo_blocked(last_run)
 
         # Status can be interrupted or success depending on graph structure
         assert last_run["status"] in ("interrupted", "success"), (

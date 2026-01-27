@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from tests.e2e._utils import elog, get_e2e_client
+from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
 
 
 # Helper to wait for run completion and check for geo-blocks
@@ -19,9 +19,7 @@ async def wait_for_run_settle(client, thread_id, run_id, max_wait=20):
 
         # Check for block immediately when error appears
         if status == "error":
-            msg = str(run.get("error_message", "")).lower()
-            if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:50]}...)")
+            check_and_skip_if_geo_blocked(run)
             return run
 
         if status in ("interrupted", "success"):
@@ -97,9 +95,7 @@ async def test_human_in_loop_interrupt_resume_e2e():
         elif interrupted_run["status"] in ("success", "error"):
             # Check for block
             if interrupted_run["status"] == "error":
-                msg = str(interrupted_run.get("error_message", "")).lower()
-                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                    pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+                check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -148,9 +144,7 @@ async def test_human_in_loop_interrupt_resume_e2e():
 
     # Check for block
     if completed_run["status"] == "error":
-        msg = str(completed_run.get("error_message", "")).lower()
-        if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-            pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state (completed or interrupted again for more tools)
     assert completed_run["status"] in ("success", "interrupted")
@@ -226,9 +220,7 @@ async def test_human_in_loop_text_response_e2e():
         elif interrupted_run["status"] in ("success", "error"):
             # Check for block
             if interrupted_run["status"] == "error":
-                msg = str(interrupted_run.get("error_message", "")).lower()
-                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                    pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+                check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -269,9 +261,7 @@ async def test_human_in_loop_text_response_e2e():
 
     # Check for block
     if completed_run["status"] == "error":
-        msg = str(completed_run.get("error_message", "")).lower()
-        if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-            pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed (text response should complete the flow)
     assert completed_run["status"] == "success"
@@ -386,9 +376,7 @@ async def test_human_in_loop_ignore_tool_call_e2e():
         elif interrupted_run["status"] in ("success", "error"):
             # Check for block
             if interrupted_run["status"] == "error":
-                msg = str(interrupted_run.get("error_message", "")).lower()
-                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                    pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+                check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -422,9 +410,7 @@ async def test_human_in_loop_ignore_tool_call_e2e():
 
     # Check for block
     if completed_run["status"] == "error":
-        msg = str(completed_run.get("error_message", "")).lower()
-        if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-            pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed (ignore should complete the flow)
     assert completed_run["status"] == "success"
@@ -541,9 +527,7 @@ async def test_human_in_loop_edit_tool_args_e2e():
 
     # Check for block
     if completed_run["status"] == "error":
-        msg = str(completed_run.get("error_message", "")).lower()
-        if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-            pytest.skip(f"⛔️ Skipped: OpenAI Geo-block after edit. ({msg[:60]}...)")
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed
     assert completed_run["status"] in ("success", "interrupted")
@@ -688,10 +672,7 @@ async def test_human_in_loop_mark_as_resolved_e2e():
             break
         elif interrupted_run["status"] in ("success", "error"):
             # Check for block
-            if interrupted_run["status"] == "error":
-                msg = str(interrupted_run.get("error_message", "")).lower()
-                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                    pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+            check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -715,9 +696,7 @@ async def test_human_in_loop_mark_as_resolved_e2e():
 
     # Check for block
     if completed_run["status"] == "error":
-        msg = str(completed_run.get("error_message", "")).lower()
-        if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-            pytest.skip(f"⛔️ Skipped: OpenAI Geo-block. ({msg[:60]}...)")
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed (resolve should terminate immediately)
     assert completed_run["status"] == "success"
@@ -809,11 +788,7 @@ async def test_human_in_loop_streaming_interrupt_resume_e2e():
         if runs:
             last_run = runs[0]
             if last_run["status"] == "error":
-                msg = str(last_run.get("error_message", "")).lower()
-                if "unsupported_country" in msg or "403" in msg or "forbidden" in msg:
-                    pytest.skip(
-                        f"⛔️ Skipped: OpenAI Geo-block in stream. ({msg[:60]}...)"
-                    )
+                check_and_skip_if_geo_blocked(last_run)
 
     assert interrupt_detected, (
         f"Expected interrupt in stream after {event_count} events"

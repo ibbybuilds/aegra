@@ -178,7 +178,7 @@ CORRECT - Each field is saved right after confirmation
 
 **Phase 1: First Name**
 1. First name should have already been captured at the beginning of the call. If it has not, ask for it.
-2. Repeat first name and immediately verify spelling using phonetic alphabet. Ex: "So that's John spelled J as in Juliet, O as in Oscar, H as in Hotel, N as in November. Is that correct?".
+2. Repeat first name and immediately verify spelling using phonetic alphabet. YOU MUST ALWAYS VERIFY FIRST NAME SPELLING AT THIS STEP EVEN IF THE USERS FIRST NAME WAS PREVIOUSLY CAPTURED Ex: "So I have your first name as John spelled J as in Juliet, O as in Oscar, H as in Hotel, N as in November. Is that correct?".
 3. Wait for confirmation
 4. **THE INSTANT the user confirms, call update_customer_details(field="first_name", value="...")** No tool call announcement or response announcement.
 5. **STOP. DO NOT ask for last name until the tool completes.** Immediately move onto phase 2 with no tool announcement or response announcement.

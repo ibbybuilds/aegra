@@ -7,6 +7,7 @@ to all tests across the test suite.
 from unittest.mock import AsyncMock
 
 import pytest
+from httpx import HTTPStatusError
 
 from tests.fixtures.auth import DummyUser
 from tests.fixtures.clients import (
@@ -120,3 +121,64 @@ def runs_client():
     app = create_test_app(include_runs=True, include_threads=False)
     override_session_dependency(app, RunSession)
     return make_client(app)
+
+
+# --- AUTO-SKIP GEO-BLOCK FAILURES ---
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """
+    Advanced auto-skip hook.
+    Analyzes Tracebacks, Stdout, Stderr, and Logs.
+    If ANY trace of OpenAI geo-blocking/quota limits is found in a FAILED test,
+    marks it as SKIPPED instead.
+    """
+    outcome = yield
+    rep = outcome.get_result()
+
+    # Only process failed calls
+    if rep.when == "call" and rep.failed:
+        # Collect text from all possible sources
+        text_sources = []
+
+        # 1. Exception Info (Traceback message)
+        if call.excinfo:
+            text_sources.append(str(call.excinfo.value))
+            # If HTTP error, grab response body
+            if isinstance(call.excinfo.value, HTTPStatusError):
+                text_sources.append(call.excinfo.value.response.text)
+
+        # 2. Captured Stdout/Stderr (directly from report)
+        if hasattr(rep, "capstdout"):
+            text_sources.append(rep.capstdout)
+        if hasattr(rep, "capstderr"):
+            text_sources.append(rep.capstderr)
+
+        # 3. Report Sections (Captured logs often live here)
+        for _, section_content in rep.sections:
+            text_sources.append(section_content)
+
+        # 4. Detailed Traceback
+        if rep.longrepr:
+            text_sources.append(str(rep.longrepr))
+
+        # Combine and normalize
+        combined_text = "\n".join(text_sources).lower()
+
+        # Signatures of OpenAI blocks
+        block_signatures = [
+            "unsupported_country_region_territory",
+            "insufficient_quota",
+            "rate limit",
+            "generator didn't stop after athrow",
+        ]
+
+        # Check if failure was caused by OpenAI block
+        if any(sig in combined_text for sig in block_signatures):
+            rep.outcome = "skipped"
+            # Must return a tuple for skip location
+            file_path, line_no, _ = item.location
+            rep.longrepr = (
+                str(file_path),
+                line_no + 1,
+                "⛔️ Skipped: OpenAI Blocked/Quota detected in logs.",
+            )

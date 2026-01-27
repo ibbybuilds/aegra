@@ -3,6 +3,7 @@
 These tests focus on the schema extraction helper functions.
 """
 
+import warnings
 from unittest.mock import Mock
 
 import pytest
@@ -12,6 +13,19 @@ from agent_server.services.assistant_service import (
     _get_configurable_jsonschema,
     _state_jsonschema,
 )
+
+
+# Fixture to suppress Pydantic warnings about Mock types in an entire module
+@pytest.fixture(autouse=True)
+def ignore_pydantic_mock_warnings():
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*is not a Python type.*",
+            category=UserWarning,
+            module="pydantic",
+        )
+        yield
 
 
 class TestStateJsonSchema:

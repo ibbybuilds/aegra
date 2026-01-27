@@ -1,6 +1,31 @@
+import asyncio
+
 import pytest
 
-from tests.e2e._utils import elog, get_e2e_client
+from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
+
+
+# Helper to wait for run completion and check for geo-blocks
+async def wait_for_run_settle(client, thread_id, run_id, max_wait=20):
+    wait_interval = 0.5
+    waited = 0
+
+    while waited < max_wait:
+        await asyncio.sleep(wait_interval)
+        waited += wait_interval
+
+        run = await client.runs.get(thread_id, run_id)
+        status = run["status"]
+
+        # Check for block immediately when error appears
+        if status == "error":
+            check_and_skip_if_geo_blocked(run)
+            return run
+
+        if status in ("interrupted", "success"):
+            return run
+
+    return await client.runs.get(thread_id, run_id)
 
 
 @pytest.mark.e2e
@@ -68,6 +93,9 @@ async def test_human_in_loop_interrupt_resume_e2e():
         if interrupted_run["status"] == "interrupted":
             break
         elif interrupted_run["status"] in ("success", "error"):
+            # Check for block
+            if interrupted_run["status"] == "error":
+                check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -113,6 +141,10 @@ async def test_human_in_loop_interrupt_resume_e2e():
     # Wait for completion
     await client.runs.join(thread_id, resume_run_id)
     completed_run = await client.runs.get(thread_id, resume_run_id)
+
+    # Check for block
+    if completed_run["status"] == "error":
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state (completed or interrupted again for more tools)
     assert completed_run["status"] in ("success", "interrupted")
@@ -186,6 +218,9 @@ async def test_human_in_loop_text_response_e2e():
         if interrupted_run["status"] == "interrupted":
             break
         elif interrupted_run["status"] in ("success", "error"):
+            # Check for block
+            if interrupted_run["status"] == "error":
+                check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -223,6 +258,10 @@ async def test_human_in_loop_text_response_e2e():
     # Wait for completion
     await client.runs.join(thread_id, text_response_run_id)
     completed_run = await client.runs.get(thread_id, text_response_run_id)
+
+    # Check for block
+    if completed_run["status"] == "error":
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed (text response should complete the flow)
     assert completed_run["status"] == "success"
@@ -335,6 +374,9 @@ async def test_human_in_loop_ignore_tool_call_e2e():
         if interrupted_run["status"] == "interrupted":
             break
         elif interrupted_run["status"] in ("success", "error"):
+            # Check for block
+            if interrupted_run["status"] == "error":
+                check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -365,6 +407,10 @@ async def test_human_in_loop_ignore_tool_call_e2e():
     # Wait for completion
     await client.runs.join(thread_id, ignore_run_id)
     completed_run = await client.runs.get(thread_id, ignore_run_id)
+
+    # Check for block
+    if completed_run["status"] == "error":
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed (ignore should complete the flow)
     assert completed_run["status"] == "success"
@@ -432,7 +478,7 @@ async def test_human_in_loop_edit_tool_args_e2e():
     elog("Threads.create", thread)
     thread_id = thread["thread_id"]
 
-    # Create run that triggers tool usage (requires approval in agent_hitl)
+    # Create run that triggers tool usage
     run = await client.runs.create(
         thread_id=thread_id,
         assistant_id=assistant_id,
@@ -445,23 +491,7 @@ async def test_human_in_loop_edit_tool_args_e2e():
     elog("Runs.create (tool trigger)", run)
     run_id = run["run_id"]
 
-    # Wait for interrupt
-    import asyncio
-
-    max_wait = 10
-    wait_interval = 0.5
-    waited = 0
-
-    while waited < max_wait:
-        await asyncio.sleep(wait_interval)
-        waited += wait_interval
-
-        interrupted_run = await client.runs.get(thread_id, run_id)
-        if interrupted_run["status"] == "interrupted":
-            break
-        elif interrupted_run["status"] in ("success", "error"):
-            elog("Run completed without interrupt", interrupted_run)
-            return
+    interrupted_run = await wait_for_run_settle(client, thread_id, run_id)
 
     assert interrupted_run["status"] == "interrupted", (
         f"Expected interrupted, got {interrupted_run['status']}"
@@ -495,13 +525,15 @@ async def test_human_in_loop_edit_tool_args_e2e():
     await client.runs.join(thread_id, edit_run_id)
     completed_run = await client.runs.get(thread_id, edit_run_id)
 
-    # Verify final state is completed (edit should execute tools and complete)
-    # Note: The run might be interrupted again if there are more tool calls
+    # Check for block
+    if completed_run["status"] == "error":
+        check_and_skip_if_geo_blocked(completed_run)
+
+    # Verify final state is completed
     assert completed_run["status"] in ("success", "interrupted")
     elog("✅ Edit and execution completed", {"final_status": completed_run["status"]})
 
-    # Wait for state to be consistent after run completion (race condition fix)
-    # Sometimes the state isn't immediately available after join() returns
+    # Wait for state to be consistent after run completion
     import asyncio
 
     max_wait = 5
@@ -570,16 +602,7 @@ async def test_human_in_loop_edit_tool_args_e2e():
         # (tool might be in pending state)
         elog("Run interrupted again after edit", {"tool_msgs_count": len(tool_msgs)})
 
-    elog(
-        "✅ Tool edit and execution verified",
-        {
-            "user": len(user_msgs),
-            "ai": len(ai_msgs),
-            "tool": len(tool_msgs),
-            "search_tool_executed": search_tool_msg is not None,
-            "tool_content_length": len(tool_content),
-        },
-    )
+    elog("✅ Tool edit and execution verified", {})
 
 
 # TODO: Fix Mark as Resolved functionality
@@ -648,6 +671,8 @@ async def test_human_in_loop_mark_as_resolved_e2e():
         if interrupted_run["status"] == "interrupted":
             break
         elif interrupted_run["status"] in ("success", "error"):
+            # Check for block
+            check_and_skip_if_geo_blocked(interrupted_run)
             elog("Run completed without interrupt", interrupted_run)
             return
 
@@ -668,6 +693,10 @@ async def test_human_in_loop_mark_as_resolved_e2e():
     # Wait for completion
     await client.runs.join(thread_id, resolve_run_id)
     completed_run = await client.runs.get(thread_id, resolve_run_id)
+
+    # Check for block
+    if completed_run["status"] == "error":
+        check_and_skip_if_geo_blocked(completed_run)
 
     # Verify final state is completed (resolve should terminate immediately)
     assert completed_run["status"] == "success"
@@ -752,6 +781,14 @@ async def test_human_in_loop_streaming_interrupt_resume_e2e():
 
         if event_count > 50:  # Safety limit
             break
+
+    # Check for blocking error if no interrupt detected
+    if not interrupt_detected:
+        runs = await client.runs.list(thread_id)
+        if runs:
+            last_run = runs[0]
+            if last_run["status"] == "error":
+                check_and_skip_if_geo_blocked(last_run)
 
     assert interrupt_detected, (
         f"Expected interrupt in stream after {event_count} events"

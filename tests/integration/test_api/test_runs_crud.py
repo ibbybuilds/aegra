@@ -760,7 +760,7 @@ class TestWaitForRunTimeouts:
             async def refresh(self, obj):
                 pass
 
-            async def add(self, obj):
+            def add(self, obj):
                 pass
 
             async def commit(self):

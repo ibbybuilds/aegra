@@ -28,7 +28,7 @@ class TestLangGraphServiceInit:
             assert service.config_path == Path("aegra.json")
             assert service.config is None
             assert service._graph_registry == {}
-            assert service._graph_cache == {}
+            assert service._base_graph_cache == {}
 
     def test_init_custom_config_path(self):
         """Test initialization with custom config path"""
@@ -38,7 +38,7 @@ class TestLangGraphServiceInit:
         assert service.config_path == Path(custom_path)
         assert service.config is None
         assert service._graph_registry == {}
-        assert service._graph_cache == {}
+        assert service._base_graph_cache == {}
 
     def test_init_absolute_path(self):
         """Test initialization with absolute path"""
@@ -196,8 +196,8 @@ class TestLangGraphServiceGraphs:
     """Test graph management"""
 
     @pytest.mark.asyncio
-    async def test_get_graph_success(self):
-        """Test successful graph retrieval"""
+    async def test_get_graph_for_validation_success(self):
+        """Test successful graph retrieval for validation"""
         service = LangGraphService()
         service._graph_registry = {
             "test_graph": {"file_path": "test.py", "export_name": "graph"}
@@ -212,29 +212,45 @@ class TestLangGraphServiceGraphs:
         mock_graph = DummyStateGraph()
         mock_compiled_graph = Mock()
 
-        with (
-            patch.object(
-                service, "_load_graph_from_file", return_value=mock_graph
-            ) as mock_load,
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
-        ):
-            # Mock database manager
-            # FIX: Changed AsyncMock to Mock for synchronous getters
-            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
-            mock_db_manager.get_store = Mock(return_value="store")
-
-            # Mock graph compilation
+        with patch.object(
+            service, "_load_graph_from_file", return_value=mock_graph
+        ) as mock_load:
+            # Mock graph compilation (validation path compiles without checkpointer)
             mock_graph.compile = Mock(return_value=mock_compiled_graph)
 
-            result = await service.get_graph("test_graph")
+            result = await service.get_graph_for_validation("test_graph")
 
             assert result == mock_compiled_graph
             mock_load.assert_called_once_with(
                 "test_graph", service._graph_registry["test_graph"]
             )
-            mock_graph.compile.assert_called_once_with(
-                checkpointer="checkpointer", store="store"
-            )
+            mock_graph.compile.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_get_graph_context_manager(self):
+        """Test get_graph as context manager yields graph with checkpointer/store"""
+        service = LangGraphService()
+        service._graph_registry = {
+            "test_graph": {"file_path": "test.py", "export_name": "graph"}
+        }
+
+        # Create a mock base graph that supports copy()
+        mock_base_graph = Mock()
+        mock_copy = Mock()
+        mock_base_graph.copy = Mock(return_value=mock_copy)
+
+        # Put in base cache to skip loading
+        service._base_graph_cache = {"test_graph": mock_base_graph}
+
+        with patch("agent_server.core.database.db_manager") as mock_db_manager:
+            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
+            mock_db_manager.get_store = Mock(return_value="store")
+
+            async with service.get_graph("test_graph") as graph:
+                assert graph == mock_copy
+                mock_base_graph.copy.assert_called_once_with(
+                    update={"checkpointer": "checkpointer", "store": "store"}
+                )
 
     @pytest.mark.asyncio
     async def test_get_graph_not_found(self):
@@ -243,62 +259,22 @@ class TestLangGraphServiceGraphs:
         service._graph_registry = {}
 
         with pytest.raises(ValueError, match="Graph not found: missing_graph"):
-            await service.get_graph("missing_graph")
+            await service.get_graph_for_validation("missing_graph")
 
     @pytest.mark.asyncio
-    async def test_get_graph_cached(self):
-        """Test returning cached graph"""
+    async def test_get_base_graph_cached(self):
+        """Test returning cached base graph"""
         service = LangGraphService()
         service._graph_registry = {
             "test_graph": {"file_path": "test.py", "export_name": "graph"}
         }
 
         cached_graph = Mock()
-        service._graph_cache = {"test_graph": cached_graph}
+        service._base_graph_cache = {"test_graph": cached_graph}
 
-        result = await service.get_graph("test_graph")
+        result = await service._get_base_graph("test_graph")
 
         assert result == cached_graph
-
-    @pytest.mark.asyncio
-    async def test_get_graph_force_reload(self):
-        """Test force reload bypasses cache"""
-        service = LangGraphService()
-        service._graph_registry = {
-            "test_graph": {"file_path": "test.py", "export_name": "graph"}
-        }
-
-        cached_graph = Mock()
-        new_graph = Mock()
-        service._graph_cache = {"test_graph": cached_graph}
-
-        with (
-            patch.object(
-                service, "_load_graph_from_file", return_value=new_graph
-            ) as mock_load,
-            patch("agent_server.core.database.db_manager") as mock_db_manager,
-        ):
-            # FIX: Changed AsyncMock to Mock
-            mock_db_manager.get_checkpointer = Mock(return_value="checkpointer")
-            mock_db_manager.get_store = Mock(return_value="store")
-
-            # Make new_graph a StateGraph-like instance to hit compile path
-            import agent_server.services.langgraph_service as lgs_module
-
-            class DummyStateGraph2(lgs_module.StateGraph):
-                def __init__(self):
-                    pass
-
-            new_graph = DummyStateGraph2()
-            new_graph.compile = Mock(return_value=new_graph)
-
-            # Patch loader to return our new_graph instance
-            mock_load.return_value = new_graph
-
-            result = await service.get_graph("test_graph", force_reload=True)
-
-            assert result == new_graph
-            mock_load.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_load_graph_from_file_success(self):
@@ -431,41 +407,41 @@ class TestLangGraphServiceCache:
     def test_invalidate_cache_specific_graph(self):
         """Test invalidating cache for specific graph"""
         service = LangGraphService()
-        service._graph_cache = {"graph1": Mock(), "graph2": Mock()}
+        service._base_graph_cache = {"graph1": Mock(), "graph2": Mock()}
 
         service.invalidate_cache("graph1")
 
-        assert "graph1" not in service._graph_cache
-        assert "graph2" in service._graph_cache
+        assert "graph1" not in service._base_graph_cache
+        assert "graph2" in service._base_graph_cache
 
     def test_invalidate_cache_specific_graph_not_found(self):
         """Test invalidating cache for non-existent graph"""
         service = LangGraphService()
-        service._graph_cache = {"graph1": Mock()}
+        service._base_graph_cache = {"graph1": Mock()}
 
         # Should not raise error
         service.invalidate_cache("missing_graph")
 
-        assert "graph1" in service._graph_cache
+        assert "graph1" in service._base_graph_cache
 
     def test_invalidate_cache_all(self):
         """Test invalidating entire cache"""
         service = LangGraphService()
-        service._graph_cache = {"graph1": Mock(), "graph2": Mock()}
+        service._base_graph_cache = {"graph1": Mock(), "graph2": Mock()}
 
         service.invalidate_cache()
 
-        assert service._graph_cache == {}
+        assert service._base_graph_cache == {}
 
     def test_invalidate_cache_empty(self):
         """Test invalidating empty cache"""
         service = LangGraphService()
-        service._graph_cache = {}
+        service._base_graph_cache = {}
 
         # Should not raise error
         service.invalidate_cache()
 
-        assert service._graph_cache == {}
+        assert service._base_graph_cache == {}
 
 
 class TestLangGraphServiceContext:
@@ -724,49 +700,34 @@ class TestLangGraphServiceConfigs:
 
 
 @pytest.mark.asyncio
-async def test_get_graph_compiles_stategraph(monkeypatch):
-    # Prepare service and registry
+async def test_get_base_graph_compiles_stategraph(monkeypatch):
+    """Test that _get_base_graph compiles StateGraph without checkpointer"""
     service = LangGraphService()
     service._graph_registry["g1"] = {"file_path": "f", "export_name": "g"}
 
     # Dummy StateGraph-like object that exposes compile()
-    # Create a subclass of the real StateGraph so isinstance checks pass
     import agent_server.services.langgraph_service as lgs_module
 
     class DummyStateGraph(lgs_module.StateGraph):
         def __init__(self):
-            # Do not call super().__init__ to avoid heavy initialization
             pass
 
-        def compile(self, checkpointer, store):
-            return f"compiled:{checkpointer}:{store}"
+        def compile(self):
+            return "compiled_base"
 
     async def fake_load(self, graph_id, info):
         return DummyStateGraph()
 
     monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
 
-    # Provide a fake db_manager with get_checkpointer/get_store
-    class FakeDBManager:
-        # FIX: Removed async def
-        def get_checkpointer(self):
-            return "cp"
-
-        # FIX: Removed async def
-        def get_store(self):
-            return "store"
-
-    import agent_server.core.database as dbmod
-
-    monkeypatch.setattr(dbmod, "db_manager", FakeDBManager())
-
-    # Call get_graph and verify compile path
-    compiled = await service.get_graph("g1")
-    assert compiled == "compiled:cp:store"
+    # Call _get_base_graph and verify compile path
+    compiled = await service._get_base_graph("g1")
+    assert compiled == "compiled_base"
 
 
 @pytest.mark.asyncio
-async def test_get_graph_precompiled_copy(monkeypatch):
+async def test_get_graph_context_manager_injects_checkpointer(monkeypatch):
+    """Test that get_graph context manager injects checkpointer/store"""
     service = LangGraphService()
     service._graph_registry["g2"] = {"file_path": "f", "export_name": "g"}
 
@@ -774,17 +735,13 @@ async def test_get_graph_precompiled_copy(monkeypatch):
         def copy(self, update=None):
             return f"copied:{update.get('checkpointer')}:{update.get('store')}"
 
-    async def fake_load(self, graph_id, info):
-        return Precompiled()
-
-    monkeypatch.setattr(LangGraphService, "_load_graph_from_file", fake_load)
+    # Pre-populate base cache
+    service._base_graph_cache["g2"] = Precompiled()
 
     class FakeDBManager2:
-        # FIX: Removed async def
         def get_checkpointer(self):
             return "cp2"
 
-        # FIX: Removed async def
         def get_store(self):
             return "store2"
 
@@ -792,8 +749,8 @@ async def test_get_graph_precompiled_copy(monkeypatch):
 
     monkeypatch.setattr(dbmod, "db_manager", FakeDBManager2())
 
-    compiled = await service.get_graph("g2")
-    assert compiled == "copied:cp2:store2"
+    async with service.get_graph("g2") as graph:
+        assert graph == "copied:cp2:store2"
 
 
 class TestSetupDependencies:

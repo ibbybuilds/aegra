@@ -1,6 +1,7 @@
 """Integration tests for threads CRUD operations"""
 
-from unittest.mock import AsyncMock, patch
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,20 @@ from tests.fixtures.clients import create_test_app, make_client
 from tests.fixtures.database import DummySessionBase, override_get_session_dep
 from tests.fixtures.session_fixtures import BasicSession, override_session_dependency
 from tests.fixtures.test_helpers import DummyRun, DummyThread
+
+
+def create_get_graph_mock(return_value=None, side_effect=None):
+    """Create a mock for langgraph_service.get_graph that works as an async context manager."""
+    mock = MagicMock()
+
+    @asynccontextmanager
+    async def async_cm(*args, **kwargs):
+        if side_effect:
+            raise side_effect
+        yield return_value
+
+    mock.side_effect = lambda *args, **kwargs: async_cm(*args, **kwargs)
+    return mock
 
 
 def _thread_row(
@@ -467,7 +482,7 @@ class TestThreadGetState:
             "agent_server.services.langgraph_service.get_langgraph_service"
         ) as mock_get_service:
             mock_service = mock_get_service.return_value
-            mock_service.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
 
             resp = client.get("/threads/test-123/state")
             assert resp.status_code == 200
@@ -509,7 +524,7 @@ class TestThreadUpdateState:
             "agent_server.services.langgraph_service.get_langgraph_service"
         ) as mock_get_service:
             mock_service = mock_get_service.return_value
-            mock_service.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
 
             # POST with empty body or no values
             resp = client.post("/threads/test-123/state", json={})
@@ -543,7 +558,7 @@ class TestThreadUpdateState:
             "agent_server.services.langgraph_service.get_langgraph_service"
         ) as mock_get_service:
             mock_service = mock_get_service.return_value
-            mock_service.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
 
             resp = client.post(
                 "/threads/test-123/state",
@@ -659,7 +674,7 @@ class TestThreadStateCheckpoint:
             "agent_server.services.langgraph_service.get_langgraph_service"
         ) as mock_get_service:
             mock_service = mock_get_service.return_value
-            mock_service.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
 
             resp = client.get("/threads/test-123/state/cp-target")
             assert resp.status_code == 200
@@ -737,7 +752,7 @@ class TestThreadStateCheckpointPost:
             "agent_server.services.langgraph_service.get_langgraph_service"
         ) as mock_get_service:
             mock_service = mock_get_service.return_value
-            mock_service.get_graph = AsyncMock(return_value=mock_agent)
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
 
             resp = client.post(
                 "/threads/test-123/state/checkpoint",

@@ -26,7 +26,7 @@ class TestAssistantServiceDatabase:
 
         mock_service = Mock()
         mock_service.list_graphs.return_value = {"test-graph": "test-graph.py"}
-        mock_service.get_graph = AsyncMock(return_value=Mock())
+        mock_service.get_graph_for_validation = AsyncMock(return_value=Mock())
         return mock_service
 
     @pytest.fixture
@@ -429,8 +429,8 @@ class TestAssistantServiceDatabase:
         )
 
         # Mock LangGraph service failure
-        assistant_service.langgraph_service.get_graph.side_effect = Exception(
-            "Graph load failed"
+        assistant_service.langgraph_service.get_graph_for_validation.side_effect = (
+            Exception("Graph load failed")
         )
 
         with pytest.raises(

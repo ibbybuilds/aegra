@@ -92,16 +92,6 @@
 - Once the user has selected a room, proceed with the === BOOKING WORKFLOW === process
 
 
-**Handling Change in Desired Property/Booking Details**
-- If the user decides that they want to book a different property/book in a different city, book the same property with different dates and/or occupancy, or book a different property for different dates/occupancy you must follow this general workflow:
-	1. Acquire their new preferences (city/hotel, dates, occupancy, number of rooms) and confirm those details with the user.
-	2. Call start_hotel_search with the given new parameters (reference tool description and argument schema)
-	3. Ask the user if they have any preferences for hotels, amenities or star ratings (if not already mentioned). If they have already mentioned preferences, silently move onto step 4 below.
-	4. Call 'query_vfs' to extract available hotels for the user with the user's stated preferences if they have provided any.
-	5. Present the three hotel options from the 'query_vfs' result each with their starting prices
-	6. If the user selects one of the three hotel options that you presented, immediately call start_room_search and proceed with asking the user of their room preferences. If the user does not select any of the original three hotel options and would like more options, call 'query_vfs' again and present three more options with their starting prices. Repeat this process until the user has selected a hotel property to proceed with.
-	7. Once the user has stated their room preferences (price related, bed type, view, etc..) or responded with something like 'no preference', immediately call 'query_vfs' to extract three room options and present them to the user with their associated prices. (i.e. "Here are a few options. The standard king room is [price], the two queen room is [price], and the deluxe double room is [price]. All of the prices I just mentioned are the totals for your stay. Do any of these work for you or would you like some other options.") If the user asks for other options then call query_vfs again and provide more options in the same format until the user has selected a room type.
-	8. Once a room type has been selected by the user, proceed with the ==BOOKING WORKFLOW== process.
 ---
 
 {{ base_prompt }}

@@ -190,8 +190,10 @@ class TestLangGraphAuthBackend:
             assert backend.auth_instance is None
 
     @pytest.mark.asyncio
-    async def test_authenticate_no_auth_instance(self):
-        """Test authentication when no auth instance is available"""
+    async def test_authenticate_no_auth_instance_noop_mode(self, monkeypatch):
+        """Test authentication returns anonymous user in noop mode without auth.py"""
+        monkeypatch.setattr("src.agent_server.settings.settings.app.AUTH_TYPE", "noop")
+
         backend = LangGraphAuthBackend()
         backend.auth_instance = None
 
@@ -199,6 +201,25 @@ class TestLangGraphAuthBackend:
 
         result = await backend.authenticate(mock_conn)
 
+        # In noop mode without auth.py, should return anonymous authenticated user
+        assert result is not None
+        credentials, user = result
+        assert user.identity == "anonymous"
+        assert user.is_authenticated is True
+
+    @pytest.mark.asyncio
+    async def test_authenticate_no_auth_instance_custom_mode(self, monkeypatch):
+        """Test authentication returns None in custom mode without auth.py"""
+        monkeypatch.setattr("src.agent_server.settings.settings.app.AUTH_TYPE", "custom")
+
+        backend = LangGraphAuthBackend()
+        backend.auth_instance = None
+
+        mock_conn = Mock(spec=HTTPConnection)
+
+        result = await backend.authenticate(mock_conn)
+
+        # In custom mode without auth.py, should return None (unauthenticated)
         assert result is None
 
     @pytest.mark.asyncio

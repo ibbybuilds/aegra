@@ -119,6 +119,18 @@ class LangGraphAuthBackend(AuthenticationBackend):
         Raises:
             AuthenticationError: If authentication fails
         """
+        # For noop auth mode without auth.py, return a default authenticated user.
+        # This allows anonymous access when AUTH_TYPE=noop without requiring
+        # an auth.py file to be present.
+        if settings.app.AUTH_TYPE == "noop" and self.auth_instance is None:
+            default_user: MinimalUserDict = {
+                "identity": "anonymous",
+                "display_name": "Anonymous User",
+                "is_authenticated": True,
+                "permissions": [],
+            }
+            return AuthCredentials([]), LangGraphUser(default_user)
+
         if self.auth_instance is None:
             logger.warning("No auth instance available, skipping authentication")
             return None

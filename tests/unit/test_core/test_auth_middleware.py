@@ -210,7 +210,9 @@ class TestLangGraphAuthBackend:
     @pytest.mark.asyncio
     async def test_authenticate_no_auth_instance_custom_mode(self, monkeypatch):
         """Test authentication returns None in custom mode without auth.py"""
-        monkeypatch.setattr("src.agent_server.settings.settings.app.AUTH_TYPE", "custom")
+        monkeypatch.setattr(
+            "src.agent_server.settings.settings.app.AUTH_TYPE", "custom"
+        )
 
         backend = LangGraphAuthBackend()
         backend.auth_instance = None

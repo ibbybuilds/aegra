@@ -15,9 +15,24 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 - **[Main README](../README.md)** - Project overview and quick start
 - **[Contributing Guide](../CONTRIBUTING.md)** - How to contribute to Aegra
 
+## API Reference
+
+- **[SSE Streaming API](sse-streaming-api.md)** - Complete Server-Sent Events streaming protocol documentation
+- **[State Endpoint API](state-endpoint-api.md)** - Thread state management and context injection
+
+## Graph Architecture
+
+- **[AVA Prompt Architecture](ava-prompt-architecture.md)** - 5-level priority prompt system for ava_v1
+- **[Context Stack Guide](context-stack-guide.md)** - Context management in conversational agents
+
+## Deployment
+
+- **[Railway Deployment](railway-deployment.md)** - Deploy staging environment to Railway
+- **[GKE Deployment](gke-deployment.md)** - Deploy production to Google Kubernetes Engine
+
 ## Observability
 
-- [Langfuse Integration](./langfuse-usage.md) - How to set up and use Langfuse for tracing.
+- **[Langfuse Integration](langfuse-usage.md)** - How to set up and use Langfuse for tracing
 
 ## 🚀 Quick Start
 

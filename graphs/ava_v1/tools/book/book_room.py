@@ -53,9 +53,6 @@ class BookRoomInput(BaseModel):
     payment_type: Literal["phone"] = Field(
         description="Payment method: 'phone' for phone payment transfer"
     )
-    session_id: str | None = Field(
-        default=None, description="Optional session ID for tracking"
-    )
     price_confirmation_token: str | None = Field(
         default=None,
         description="Token from previous call if price changed and user confirmed",
@@ -97,7 +94,6 @@ Payment Type:
 async def book_room(
     room: RoomDict,
     payment_type: str,
-    session_id: str | None = None,
     price_confirmation_token: str | None = None,
     runtime: Annotated[ToolRuntime | None, InjectedToolArg()] = None,
 ) -> Command | str:
@@ -109,12 +105,14 @@ async def book_room(
     Args:
         room: RoomDict Pydantic model with validated booking data (converted to dict internally)
         payment_type: Payment method - must be "phone" for phone payment transfer
-        session_id: Optional session ID for tracking
         price_confirmation_token: Token from previous call if price changed and user confirmed
-        runtime: Injected tool runtime for accessing agent state
+        runtime: Injected tool runtime for accessing agent state and thread_id
 
     Returns:
         Command with state updates or JSON string with booking status
+
+    Note:
+        session_id is automatically derived from thread_id via runtime.config
     """
     # Convert Pydantic model to dict for downstream processing
     room_dict = room.model_dump()
@@ -123,7 +121,6 @@ async def book_room(
         "[BOOK_ROOM] Initiating booking",
         extra={
             "payment_type": payment_type,
-            "has_session_id": bool(session_id),
             "has_price_token": bool(price_confirmation_token),
             "hotel_id": room_dict["hotel_id"],
         },
@@ -133,7 +130,6 @@ async def book_room(
         "[BOOK_ROOM] Booking details",
         extra={
             "room": room_dict,
-            "session_id": session_id,
             "price_confirmation_token": price_confirmation_token,
         },
     )
@@ -245,9 +241,18 @@ async def book_room(
             )
             # If no phone found, validation below will catch it if required by payment type
 
-    # Generate session_id if not provided
-    if not session_id:
+    # session_id is always derived from thread_id
+    if runtime and runtime.config:
+        try:
+            # Extract thread_id from LangGraph runtime config
+            session_id = runtime.config["configurable"]["thread_id"]
+            logger.info(f"[BOOK_ROOM] Using thread_id as session_id: {session_id}")
+        except (KeyError, TypeError) as e:
+            session_id = str(uuid.uuid4())
+            logger.warning(f"[BOOK_ROOM] Could not extract thread_id from config: {e}, using fallback UUID")
+    else:
         session_id = str(uuid.uuid4())
+        logger.warning("[BOOK_ROOM] Runtime or config not available, using fallback UUID for session_id")
 
     # Validate payment_type
     if payment_type != "phone":

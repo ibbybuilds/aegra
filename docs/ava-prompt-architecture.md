@@ -197,7 +197,7 @@ All 9 ava_v1 tools have Pydantic schemas for type validation and LLM guidance.
 - Requires complete room data from query_vfs (not firstRoom preview)
 - Validates customer info exists
 - Creates booking hold
-- Returns payment URL (SMS or phone)
+- Prepares for phone payment transfer
 
 **`hotel_details`** - Get property information
 - Descriptions, amenities, policies

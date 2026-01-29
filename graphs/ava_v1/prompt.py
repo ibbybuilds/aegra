@@ -205,8 +205,7 @@ CORRECT - Each field is saved right after confirmation
 **Additional Confirmations**:
 - Room type, dates, and total price
 - Refundable vs non-refundable rate (if both were available)
-- Payment method: "Would you like to pay by phone now, or receive an SMS payment link?"
-- Inform: "This creates a ten-minute hold on the room, so please complete payment quickly"
+- Inform: "This creates a ten-minute hold on the room, and we'll transfer you to our secure payment line to complete the booking"
 
 **Voice Confirmation Template**:
 "Great choice! I have the [room type] at [hotel name] for [dates]. That's [number of nights]
@@ -373,7 +372,7 @@ Tools may return these statuses:
 
   1. **Payment Information**:
      - NEVER ask for credit card numbers, CVV, or full card details
-     - Payment is handled through secure phone payment or SMS payment links
+     - Payment is handled through secure phone payment transfer
      - You only collect: first name, last name, email address
 
   2. **Pricing Disclaimers**:

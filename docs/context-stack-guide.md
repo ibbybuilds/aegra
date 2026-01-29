@@ -48,7 +48,7 @@ The `context_stack` is a **focus tracking stack** that maintains conversational 
   "type": "BookingPending",
   "booking_hash": "booking_xyz",
   "session_id": "session_123",
-  "payment_type": "sms",
+  "payment_type": "phone",
   "hold_expires_at": "2025-01-14T12:00:00Z",
   "amount": 299.99,
   "s3_key": "bookings/xyz.json"
@@ -238,7 +238,7 @@ The `context_stack` is a **focus tracking stack** that maintains conversational 
     "type": "BookingPending",
     "booking_hash": "booking_xyz",
     "session_id": "session_123",
-    "payment_type": "sms",
+    "payment_type": "phone",
     "hold_expires_at": "2025-01-14T12:00:00Z",
     "amount": 299.99,
     "s3_key": "bookings/xyz.json"

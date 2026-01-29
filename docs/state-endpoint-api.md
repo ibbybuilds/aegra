@@ -723,7 +723,7 @@ Include all relevant fields to maximize optimization:
     "adults": 2,
     "children": 0
   },
-  "user_phone": "+12125551234"  // Enables SMS payment
+  "user_phone": "+12125551234"  // Customer phone number for booking
 }
 ```
 

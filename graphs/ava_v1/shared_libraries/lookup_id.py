@@ -1,5 +1,6 @@
 """Hotel ID lookup utility for resolving natural-language hotel names to hotel IDs."""
 
+import os
 from typing import Any
 
 import httpx
@@ -44,8 +45,12 @@ async def lookup_id(query: str, city_hint: str) -> dict[str, Any]:
     # Build search query
     search_query = f"{query} {city_hint}"
 
-    # API endpoint
-    pinecone_url = "https://pinecone-service-local-staging-4870.up.railway.app/search"
+    # API endpoint - configurable via environment variable
+    pinecone_base_url = os.getenv(
+        "PINECONE_SERVICE_URL",
+        "https://pinecone-service-local-staging-4870.up.railway.app"
+    )
+    pinecone_url = f"{pinecone_base_url}/search"
 
     # Request body
     request_body = {"query": search_query, "limit": 3, "indexName": "hotels"}

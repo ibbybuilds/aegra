@@ -19,6 +19,11 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 
 - **[SSE Streaming API](sse-streaming-api.md)** - Complete Server-Sent Events streaming protocol documentation
 - **[State Endpoint API](state-endpoint-api.md)** - Thread state management and context injection
+- **[Conversation Transcript API](CONVERSATION_TRANSCRIPT_API.md)** - Retrieve full conversation history for auditing and dispute resolution
+
+## Legal & Compliance
+
+- **[Chargeback Defense Guide](CHARGEBACK_DEFENSE_GUIDE.md)** - How to retrieve and use conversation transcripts for chargeback disputes (for legal and customer service teams)
 
 ## Graph Architecture
 

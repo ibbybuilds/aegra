@@ -49,6 +49,13 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_DB=0
+      # JWT authentication (for AUTH_TYPE=custom)
+      - AEGRA_JWT_ALGORITHM=${AEGRA_JWT_ALGORITHM:-HS256}
+      - AEGRA_JWT_SECRET=${AEGRA_JWT_SECRET}
+      - AEGRA_JWT_ISSUERS=${AEGRA_JWT_ISSUERS}
+      - AEGRA_JWT_AUDIENCE=${AEGRA_JWT_AUDIENCE}
+      - AEGRA_JWT_VERIFY_EXPIRATION=${AEGRA_JWT_VERIFY_EXPIRATION:-true}
+      - AEGRA_JWT_LEEWAY_SECONDS=${AEGRA_JWT_LEEWAY_SECONDS:-30}
     depends_on:
       postgres:
         condition: service_healthy

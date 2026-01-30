@@ -4,11 +4,11 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 
 ## 📚 Documentation
 
-### For Developers
+### Developer Guides
 
-- **[Developer Guide](developer-guide.md)** - Complete setup, migrations, and development workflow
-- **[Code Quality Guide](code-quality.md)** - Quick reference for linting, formatting, and commit standards
-- **[Migration Cheatsheet](migration-cheatsheet.md)** - Quick reference for common commands
+- **[Developer Guide](guides/developer-guide.md)** - Complete setup, migrations, and development workflow
+- **[Code Quality Guide](guides/code-quality.md)** - Quick reference for linting, formatting, and commit standards
+- **[Migration Cheatsheet](guides/migration-cheatsheet.md)** - Quick reference for common commands
 
 ### For Users
 
@@ -17,32 +17,27 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 
 ## API Reference
 
-- **[SSE Streaming API](sse-streaming-api.md)** - Complete Server-Sent Events streaming protocol documentation
-- **[State Endpoint API](state-endpoint-api.md)** - Thread state management and context injection
-- **[Conversation Transcript API](CONVERSATION_TRANSCRIPT_API.md)** - Retrieve full conversation history for auditing and dispute resolution
+- **[SSE Streaming API](api/sse-streaming-api.md)** - Complete Server-Sent Events streaming protocol documentation
+- **[State Endpoint API](api/state-endpoint-api.md)** - Thread state management and context injection
+- **[Conversation Transcript API](api/conversation-transcript-api.md)** - Retrieve full conversation history for auditing and dispute resolution
 
-## Legal & Compliance
+## Architecture
 
-- **[Chargeback Defense Guide](CHARGEBACK_DEFENSE_GUIDE.md)** - How to retrieve and use conversation transcripts for chargeback disputes (for legal and customer service teams)
+- **[AVA Prompt Architecture](architecture/ava-prompt-architecture.md)** - 5-level priority prompt system for ava_v1
+- **[Context Stack Guide](architecture/context-stack-guide.md)** - Context management in conversational agents
 
-## Graph Architecture
+## Authentication & Security
 
-- **[AVA Prompt Architecture](ava-prompt-architecture.md)** - 5-level priority prompt system for ava_v1
-- **[Context Stack Guide](context-stack-guide.md)** - Context management in conversational agents
-
-## Deployment
-
-- **[Railway Deployment](railway-deployment.md)** - Deploy staging environment to Railway
-- **[GKE Deployment](gke-deployment.md)** - Deploy production to Google Kubernetes Engine
+- **[JWT Authentication](jwt-authentication.md)** - Token-based authentication configuration and integration
 
 ## Observability
 
 - **[Langfuse Integration](langfuse-usage.md)** - How to set up and use Langfuse for tracing
 
-## 🚀 Quick Start
+## Quick Start
 
-1. **Read the [Developer Guide](developer-guide.md)** for complete setup instructions
-2. **Use the [Migration Cheatsheet](migration-cheatsheet.md)** for quick command reference
+1. **Read the [Developer Guide](guides/developer-guide.md)** for complete setup instructions
+2. **Use the [Migration Cheatsheet](guides/migration-cheatsheet.md)** for quick command reference
 3. **Check the [Main README](../README.md)** for project overview
 
 ## 📋 Getting Help

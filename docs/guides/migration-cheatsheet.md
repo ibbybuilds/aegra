@@ -66,3 +66,7 @@ python3 scripts/migrate.py upgrade
 
 - **📖 [Complete Developer Guide](developer-guide.md)** - Full setup, explanations, and troubleshooting
 - **🔗 [Alembic Documentation](https://alembic.sqlalchemy.org/)** - Official Alembic docs
+
+---
+
+Last Updated: 2026-01-30

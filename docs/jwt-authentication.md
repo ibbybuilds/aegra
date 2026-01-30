@@ -62,55 +62,21 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 # zJ3kW9pLqR8vYx2nM5tU7wA4bC6dE8fH
 ```
 
-### Development Configuration
+### Environment-Specific Configuration
 
-For local development, add to your `.env` file:
+| Variable | Development | Staging (Railway) | Production |
+|----------|-------------|-------------------|------------|
+| `AUTH_TYPE` | `custom` | `custom` | `custom` |
+| `AEGRA_JWT_ALGORITHM` | `HS256` | `HS256` | `HS256` |
+| `AEGRA_JWT_SECRET` | `dev-secret-change-in-production` | Generate new | Store in Secret Manager |
+| `AEGRA_JWT_ISSUER` | `conversation-relay-dev` | `conversation-relay-staging` | `conversation-relay` |
+| `AEGRA_JWT_AUDIENCE` | `aegra-dev` | `aegra-staging` | `aegra` |
+| `AEGRA_JWT_VERIFY_EXPIRATION` | `true` | `true` | `true` |
+| `AEGRA_JWT_LEEWAY_SECONDS` | `30` | `30` | `30` |
 
-```bash
-# Enable JWT authentication
-AUTH_TYPE=custom
-
-# JWT Configuration (Development)
-AEGRA_JWT_ALGORITHM=HS256
-AEGRA_JWT_SECRET=dev-secret-change-in-production-use-256-bit-key
-AEGRA_JWT_ISSUER=conversation-relay-dev
-AEGRA_JWT_AUDIENCE=aegra-dev
-AEGRA_JWT_VERIFY_EXPIRATION=true
-AEGRA_JWT_LEEWAY_SECONDS=30
-```
-
-### Staging Configuration (Railway)
-
-Configure in Railway dashboard as environment variables:
-
-```bash
-AUTH_TYPE=custom
-AEGRA_JWT_ALGORITHM=HS256
-AEGRA_JWT_SECRET=<GENERATE-STAGING-SECRET>
-AEGRA_JWT_ISSUER=conversation-relay-staging
-AEGRA_JWT_AUDIENCE=aegra-staging
-AEGRA_JWT_VERIFY_EXPIRATION=true
-AEGRA_JWT_LEEWAY_SECONDS=30
-```
-
-### Production Configuration (GKE)
-
-Store `AEGRA_JWT_SECRET` in GCP Secret Manager:
-
-```bash
-# Create secret in GCP Secret Manager
-echo -n "$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" | \
-  gcloud secrets create jwt-secret --data-file=-
-
-# Reference in Kubernetes manifest
-AUTH_TYPE=custom
-AEGRA_JWT_ALGORITHM=HS256
-AEGRA_JWT_SECRET=<from-secret-manager>
-AEGRA_JWT_ISSUER=conversation-relay
-AEGRA_JWT_AUDIENCE=aegra
-AEGRA_JWT_VERIFY_EXPIRATION=true
-AEGRA_JWT_LEEWAY_SECONDS=30
-```
+**Development**: Add to `.env` file
+**Staging**: Configure in Railway dashboard environment variables
+**Production**: Store `AEGRA_JWT_SECRET` in GCP Secret Manager, reference in Kubernetes manifest
 
 ## Token Format
 
@@ -396,71 +362,14 @@ JWT authentication automatically provides user-scoped data isolation:
 
 ### Common Errors
 
-#### "Authorization header required"
-
-**Cause**: Missing `Authorization` header in request
-
-**Fix**: Include header in all requests:
-```bash
-curl -H "Authorization: Bearer <token>" http://localhost:8000/threads
-```
-
-#### "Invalid token signature"
-
-**Cause**: `AEGRA_JWT_SECRET` mismatch between services
-
-**Fix**: Verify both services use identical `AEGRA_JWT_SECRET`:
-```bash
-# Check conversation-relay secret
-echo $AEGRA_JWT_SECRET
-
-# Check aegra secret (in Railway/K8s config)
-```
-
-#### "Invalid token issuer"
-
-**Cause**: Token `iss` claim doesn't match `AEGRA_JWT_ISSUER`
-
-**Fix**: Ensure conversation-relay sets correct issuer:
-```python
-payload = {
-    "iss": os.getenv("AEGRA_JWT_ISSUER"),  # Must match aegra's AEGRA_JWT_ISSUER
-    ...
-}
-```
-
-#### "Invalid token audience"
-
-**Cause**: Token `aud` claim doesn't match `AEGRA_JWT_AUDIENCE`
-
-**Fix**: Ensure conversation-relay sets correct audience:
-```python
-payload = {
-    "aud": os.getenv("AEGRA_JWT_AUDIENCE"),  # Must match aegra's AEGRA_JWT_AUDIENCE
-    ...
-}
-```
-
-#### "Token expired"
-
-**Cause**: Token `exp` claim is in the past
-
-**Fix**: Generate new token with valid expiration:
-```python
-exp = int((datetime.now(timezone.utc) + timedelta(seconds=1800)).timestamp())
-```
-
-#### "Token missing 'sub' claim"
-
-**Cause**: JWT payload doesn't include `sub` (subject) claim
-
-**Fix**: Always include `sub` in token payload:
-```python
-payload = {
-    "sub": user_id,  # REQUIRED
-    ...
-}
-```
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "Authorization header required" | Missing `Authorization` header | Include `Authorization: Bearer <token>` in all requests |
+| "Invalid token signature" | `AEGRA_JWT_SECRET` mismatch | Verify both services use identical secret |
+| "Invalid token issuer" | `iss` claim doesn't match `AEGRA_JWT_ISSUER` | Set `payload["iss"]` to match aegra's issuer config |
+| "Invalid token audience" | `aud` claim doesn't match `AEGRA_JWT_AUDIENCE` | Set `payload["aud"]` to match aegra's audience config |
+| "Token expired" | `exp` claim is in the past | Generate new token with valid expiration (30 min recommended) |
+| "Token missing 'sub' claim" | JWT missing `sub` field | Always include `sub` (user identifier) in token payload |
 
 ### Performance Issues
 
@@ -610,3 +519,7 @@ For issues or questions:
 - Review test files for examples
 - Check application logs for detailed error messages
 - Verify environment configuration matches between services
+
+---
+
+Last Updated: 2026-01-30

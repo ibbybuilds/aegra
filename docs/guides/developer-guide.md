@@ -657,3 +657,7 @@ docker compose up postgres -d
 # Apply migrations
 python3 scripts/migrate.py upgrade
 ```
+
+---
+
+Last Updated: 2026-01-30

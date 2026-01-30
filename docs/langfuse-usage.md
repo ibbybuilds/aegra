@@ -1,5 +1,7 @@
 # Langfuse Integration for Observability
 
+> Work in Progress: This guide covers basic setup. Advanced usage documentation coming soon.
+
 Aegra includes a plug-and-play integration for [Langfuse](https://langfuse.com/) to provide detailed tracing and observability for your LangGraph runs. When enabled, every graph execution will be traced, and the logs will be sent to your Langfuse project.
 
 ## Enabling Langfuse
@@ -44,3 +46,6 @@ This metadata-rich tracing allows you to easily debug issues, analyze performanc
 -   **Trace ID Correlation**: To make debugging even easier, we plan to set the Langfuse `trace_id` to be the same as the Aegra `run_id`. This will allow for a direct one-to-one mapping between a run in our system and its corresponding trace in Langfuse.
 
 For more detailed information about Langfuse and its features, please refer to the [official Langfuse documentation](https://langfuse.com/docs). 
+---
+
+Last Updated: 2026-01-30

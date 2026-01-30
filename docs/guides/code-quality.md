@@ -1,4 +1,7 @@
-# 🚀 Quick Reference: Code Quality Enforcement
+# Quick Reference: Code Quality Enforcement
+
+> This is a quick-reference companion to the [Developer Guide](developer-guide.md).
+> For detailed explanations of the development workflow, see the Developer Guide.
 
 ## For New Contributors
 
@@ -298,4 +301,8 @@ On GitHub, enable these for `main` branch:
 
 ---
 
-**Remember:** The tools are here to help! They catch issues early so you can focus on writing great code. 💪
+**Remember:** The tools are here to help! They catch issues early so you can focus on writing great code.
+
+---
+
+Last Updated: 2026-01-30

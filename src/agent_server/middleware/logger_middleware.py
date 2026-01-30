@@ -68,16 +68,8 @@ class StructLogMiddleware:
                 log_data["request_id"] = correlation_id.get()
 
             status_code = info.get("status_code", 500)
-            if 400 <= status_code < 500:
-                # Log as warning for client errors (4xx)
-                access_logger.warning(
-                    f"""{client_host}:{client_port} - "{http_method} {scope["path"]} HTTP/{http_version}" {status_code}""",
-                    http=log_data,
-                    network={"client": {"ip": client_host, "port": client_port}},
-                    duration=process_time,
-                )
-            elif 500 <= status_code < 600:
-                # Log as error for server errors (5xx)
+            if 500 <= status_code < 600:
+                # Log as error for server errors (5xx) - business critical
                 access_logger.error(
                     f"""{client_host}:{client_port} - "{http_method} {scope["path"]} HTTP/{http_version}" {status_code}""",
                     http=log_data,
@@ -85,8 +77,8 @@ class StructLogMiddleware:
                     duration=process_time,
                 )
             else:
-                # Normal log for successful responses (2xx, 3xx)
-                access_logger.info(
+                # All other requests (2xx, 3xx, 4xx) at DEBUG level
+                access_logger.debug(
                     f"""{client_host}:{client_port} - "{http_method} {scope["path"]} HTTP/{http_version}" {status_code}""",
                     http=log_data,
                     network={"client": {"ip": client_host, "port": client_port}},

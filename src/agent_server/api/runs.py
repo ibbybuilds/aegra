@@ -472,7 +472,7 @@ async def list_runs(
         .offset(offset)
         .order_by(RunORM.created_at.desc())
     )
-    logger.info(f"[list_runs] querying DB thread_id={thread_id} user={user.identity}")
+    logger.debug(f"[list_runs] querying DB thread_id={thread_id} user={user.identity}")
     result = await session.scalars(stmt)
     rows = result.all()
     runs = [

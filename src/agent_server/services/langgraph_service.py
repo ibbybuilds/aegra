@@ -161,7 +161,7 @@ class LangGraphService:
             # The module exported an *uncompiled* StateGraph – compile it now with
             # a Postgres checkpointer for durable state.
 
-            logger.info(f"🔧 Compiling graph '{graph_id}' with Postgres persistence")
+            logger.info(f"Compiling graph '{graph_id}' with Postgres persistence")
             compiled_graph = base_graph.compile(
                 checkpointer=checkpointer_cm, store=store_cm
             )
@@ -176,7 +176,7 @@ class LangGraphService:
             except Exception:
                 # Fallback: property may be immutably set; run as-is with warning
                 logger.warning(
-                    f"⚠️  Pre-compiled graph '{graph_id}' does not support checkpointer injection; running without persistence"
+                    f"Pre-compiled graph '{graph_id}' does not support checkpointer injection; running without persistence"
                 )
                 compiled_graph = base_graph
 

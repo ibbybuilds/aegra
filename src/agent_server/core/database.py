@@ -51,7 +51,7 @@ class DatabaseManager:
         # Note: Database schema is now managed by Alembic migrations
         # Run 'alembic upgrade head' to apply migrations
 
-        logger.info("✅ Database and LangGraph components initialized")
+        logger.info("Database and LangGraph components initialized")
 
     async def close(self) -> None:
         """Close database connections"""
@@ -69,7 +69,7 @@ class DatabaseManager:
             self._store_cm = None
             self._store = None
 
-        logger.info("✅ Database connections closed")
+        logger.info("Database connections closed")
 
     async def get_checkpointer(self) -> AsyncPostgresSaver:
         """Return a live AsyncPostgresSaver.

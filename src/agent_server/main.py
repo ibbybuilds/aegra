@@ -83,7 +83,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         from graphs.ava_v1.shared_libraries.redis_client import close_redis_pool
 
         await close_redis_pool()
-        logger.info("✅ Redis connection pool closed")
+        logger.info("Redis connection pool closed")
     except ImportError:
         # ava_v1 not available or not using Redis
         pass

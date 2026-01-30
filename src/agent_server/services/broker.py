@@ -141,7 +141,7 @@ class BrokerManager(BaseBrokerManager):
 
                 for run_id in to_remove:
                     self.remove_broker(run_id)
-                    logger.info(f"Cleaned up old broker for run {run_id}")
+                    logger.debug(f"Cleaned up old broker for run {run_id}")
 
             except asyncio.CancelledError:
                 break

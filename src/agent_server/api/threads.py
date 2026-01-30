@@ -420,11 +420,11 @@ async def update_thread_state(
 
             # Process context if provided
             if request.context:
-                logger.info("[CONTEXT_MIGRATION] Context provided in /state request")
-                logger.info(
+                logger.debug("[CONTEXT_MIGRATION] Context provided in /state request")
+                logger.debug(
                     f"[CONTEXT_MIGRATION] Raw context type: {request.context.get('type')}"
                 )
-                logger.info(
+                logger.debug(
                     f"[CONTEXT_MIGRATION] Raw context keys: {list(request.context.keys())}"
                 )
                 from ..utils.context_parser import parse_context_for_graph
@@ -432,51 +432,51 @@ async def update_thread_state(
                 try:
                     # Parse context based on graph type
                     parsed_context = parse_context_for_graph(graph_id, request.context)
-                    logger.info(
-                        f"[CONTEXT_MIGRATION] ✓ Successfully parsed context for graph {graph_id}"
+                    logger.debug(
+                        f"[CONTEXT_MIGRATION] Successfully parsed context for graph {graph_id}"
                     )
-                    logger.info(
+                    logger.debug(
                         f"[CONTEXT_MIGRATION] Parsed context type: {type(parsed_context)}"
                     )
                     if hasattr(parsed_context, "__dict__"):
-                        logger.info(
+                        logger.debug(
                             f"[CONTEXT_MIGRATION] Parsed context attrs: {list(parsed_context.__dict__.keys())}"
                         )
 
                     # For ava_v1, inject call_context into state values
                     if graph_id in ["ava", "ava_v1"] and parsed_context:
-                        logger.info(
-                            "[CONTEXT_MIGRATION] → Injecting call_context into state for ava/ava_v1"
+                        logger.debug(
+                            "[CONTEXT_MIGRATION] Injecting call_context into state for ava/ava_v1"
                         )
                         # If values not provided, create dict with just context
                         if update_values is None:
                             update_values = {"call_context": parsed_context}
-                            logger.info(
-                                "[CONTEXT_MIGRATION] ✓ Created new update_values dict with call_context"
+                            logger.debug(
+                                "[CONTEXT_MIGRATION] Created new update_values dict with call_context"
                             )
                         elif isinstance(update_values, dict):
                             update_values["call_context"] = parsed_context
-                            logger.info(
-                                "[CONTEXT_MIGRATION] ✓ Merged call_context into existing update_values"
+                            logger.debug(
+                                "[CONTEXT_MIGRATION] Merged call_context into existing update_values"
                             )
                         else:
                             logger.warning(
-                                f"[CONTEXT_MIGRATION] ✗ Cannot inject - update_values is not dict (type: {type(update_values)})"
+                                f"[CONTEXT_MIGRATION] Cannot inject - update_values is not dict (type: {type(update_values)})"
                             )
 
-                        logger.info(
+                        logger.debug(
                             f"[CONTEXT_MIGRATION] Final update_values keys: {list(update_values.keys()) if isinstance(update_values, dict) else 'not a dict'}"
                         )
-                        logger.info(
+                        logger.debug(
                             "[CONTEXT_MIGRATION] Context injection complete - will be persisted to checkpoint"
                         )
                     else:
-                        logger.info(
+                        logger.debug(
                             f"[CONTEXT_MIGRATION] Skipping injection for graph_id={graph_id}"
                         )
                 except Exception as e:
                     logger.error(
-                        f"[CONTEXT_MIGRATION] ✗ Context parsing FAILED: {type(e).__name__}: {str(e)}"
+                        f"[CONTEXT_MIGRATION] Context parsing FAILED: {type(e).__name__}: {str(e)}"
                     )
                     logger.error(
                         "[CONTEXT_MIGRATION] Continuing without context (optional)"

@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from .database import db_manager
 
-router = APIRouter()
+router = APIRouter(tags=["Health"])
 
 
 class HealthResponse(BaseModel):

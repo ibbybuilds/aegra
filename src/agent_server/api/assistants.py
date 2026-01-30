@@ -24,7 +24,7 @@ from ..models import (
 )
 from ..services.assistant_service import AssistantService, get_assistant_service
 
-router = APIRouter()
+router = APIRouter(tags=["Assistants"])
 
 
 @router.post("/assistants", response_model=Assistant, response_model_by_alias=False)

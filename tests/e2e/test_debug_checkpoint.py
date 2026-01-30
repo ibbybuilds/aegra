@@ -19,7 +19,7 @@ async def test_run_without_input_sees_injected():
 
     # 1. Create assistant
     assistant = await client.assistants.create(
-        graph_id="ava",
+        graph_id="ava_v1",
         config={"tags": ["debug-checkpoint-test"]},
         if_exists="do_nothing",
     )

@@ -4,7 +4,6 @@
     "agent_hitl": "./graphs/react_agent_hitl/graph.py:graph",
     "subgraph_agent": "./graphs/subgraph_agent/graph.py:graph",
     "subgraph_hitl_agent": "./graphs/subgraph_hitl_agent/graph.py:graph",
-    "ava": "./graphs/ava/graph.py:agent",
     "ava_v1": "./graphs/ava_v1/graph.py:agent"
   }
 }

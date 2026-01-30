@@ -114,7 +114,7 @@ async def test_agent_sees_injected_messages():
 
     # 1. Create assistant
     assistant = await client.assistants.create(
-        graph_id="ava",
+        graph_id="ava_v1",
         config={"tags": ["injection-visibility-test"]},
         if_exists="do_nothing",
     )

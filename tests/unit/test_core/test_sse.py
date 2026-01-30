@@ -10,7 +10,6 @@ from src.agent_server.core.sse import (
     create_error_event,
     create_messages_event,
     create_metadata_event,
-    format_sse_event,
     format_sse_message,
     get_sse_headers,
 )
@@ -230,25 +229,3 @@ class TestSSEEvent:
         assert event.event == "test"
         assert event.data == {"key": "value"}
         assert event.timestamp is not None
-
-    def test_sse_event_format(self):
-        """Test SSEEvent formatting"""
-        event = SSEEvent(id="evt-1", event="test", data={"key": "value"})
-        result = event.format()
-
-        assert "id: evt-1\n" in result
-        assert "event: test\n" in result
-        assert "data: " in result
-        assert result.endswith("\n\n")
-
-
-class TestFormatSSEEvent:
-    """Test format_sse_event legacy function"""
-
-    def test_format_sse_event(self):
-        """Test legacy format_sse_event"""
-        result = format_sse_event("evt-1", "test", {"key": "value"})
-
-        assert "id: evt-1\n" in result
-        assert "event: test\n" in result
-        assert "data: " in result

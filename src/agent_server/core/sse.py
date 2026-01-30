@@ -146,14 +146,3 @@ class SSEEvent:
     def __post_init__(self) -> None:
         if self.timestamp is None:
             self.timestamp = datetime.now(UTC)
-
-    def format(self) -> str:
-        """Format as proper SSE event"""
-        json_data = json.dumps(self.data, default=str)
-        return f"id: {self.id}\nevent: {self.event}\ndata: {json_data}\n\n"
-
-
-def format_sse_event(id: str, event: str, data: dict[str, Any]) -> str:
-    """Format SSE event (used by event_store)"""
-    json_data = json.dumps(data, default=str)
-    return f"id: {id}\nevent: {event}\ndata: {json_data}\n\n"

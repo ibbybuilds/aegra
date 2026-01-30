@@ -55,39 +55,3 @@ def get_user_id(user: User = Depends(get_current_user)) -> str:
         User identity string
     """
     return user.identity
-
-
-def require_permission(permission: str):
-    """
-    Create a dependency that requires a specific permission.
-
-    Args:
-        permission: Required permission string
-
-    Returns:
-        Dependency function that checks for the permission
-
-    Example:
-        @app.get("/admin")
-        def admin_endpoint(user: User = Depends(require_permission("admin"))):
-            return {"message": "Admin access granted"}
-    """
-
-    def permission_dependency(user: User = Depends(get_current_user)) -> User:
-        if permission not in user.permissions:
-            raise HTTPException(
-                status_code=403, detail=f"Permission '{permission}' required"
-            )
-        return user
-
-    return permission_dependency
-
-
-def require_authenticated(request: Request) -> User:
-    """
-    Simplified dependency that just ensures user is authenticated.
-
-    This is equivalent to get_current_user but with a clearer name
-    for endpoints that just need any authenticated user.
-    """
-    return get_current_user(request)

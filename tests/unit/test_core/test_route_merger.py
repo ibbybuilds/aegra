@@ -156,6 +156,40 @@ def test_update_openapi_spec_fastapi(user_app):
     update_openapi_spec(user_app)
 
 
+def test_update_openapi_spec_with_core_routers(user_app):
+    """Test that core routers are included in OpenAPI spec"""
+    from fastapi import APIRouter
+
+    # Create mock core routers
+    assistants_router = APIRouter()
+    threads_router = APIRouter()
+
+    @assistants_router.get("/assistants")
+    async def list_assistants():
+        return []
+
+    @threads_router.get("/threads")
+    async def list_threads():
+        return []
+
+    core_routers = [assistants_router, threads_router]
+
+    # Update OpenAPI spec with core routers
+    update_openapi_spec(user_app, core_routers)
+
+    # Verify routes are included in the app
+    route_paths = [r.path for r in user_app.routes if hasattr(r, "path")]
+    assert "/assistants" in route_paths
+    assert "/threads" in route_paths
+
+    # Verify OpenAPI spec includes the routes
+    openapi_schema = user_app.openapi()
+    assert "/assistants" in openapi_schema["paths"]
+    assert "/threads" in openapi_schema["paths"]
+    # Custom route should also be included
+    assert "/custom" in openapi_schema["paths"]
+
+
 def test_update_openapi_spec_starlette():
     """Test updating OpenAPI spec for Starlette app"""
     app = Starlette()

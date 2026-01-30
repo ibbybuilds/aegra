@@ -197,8 +197,9 @@ if user_app:
     # Merge exception handlers
     app = merge_exception_handlers(app, exception_handlers)
 
-    # Update OpenAPI spec if FastAPI
-    update_openapi_spec(app)
+    # Update OpenAPI spec for FastAPI - pass core routers for spec generation
+    core_routers = [assistants_router, threads_router, runs_router, store_router]
+    update_openapi_spec(app, core_routers)
 
     # Merge middleware - add Aegra middleware to user app
     # Note: User's middleware is already in user_app.user_middleware

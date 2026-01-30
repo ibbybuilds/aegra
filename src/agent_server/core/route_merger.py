@@ -3,10 +3,14 @@
 import sys
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 import structlog
 from starlette.applications import Starlette
 from starlette.routing import BaseRoute, Mount
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
 logger = structlog.get_logger(__name__)
 
@@ -115,22 +119,34 @@ def merge_exception_handlers(
     return user_app
 
 
-def update_openapi_spec(user_app: Starlette) -> None:
+def update_openapi_spec(
+    user_app: Starlette, core_routers: list["APIRouter"] | None = None
+) -> None:
     """Update OpenAPI spec if user app is FastAPI.
 
-    If the user app is a FastAPI instance, its OpenAPI spec will be automatically
-    merged with Aegra's default spec when FastAPI generates the combined spec.
+    When a custom FastAPI app is merged with Aegra core routes, the core routes
+    (which are added as Starlette Route/Mount objects) won't appear in FastAPI's
+    OpenAPI spec generation. This function includes the core APIRouters so they
+    appear in the generated OpenAPI spec.
 
     Args:
         user_app: User's FastAPI/Starlette application
+        core_routers: List of Aegra core APIRouters to include in OpenAPI spec
     """
     if "fastapi" in sys.modules:
         from fastapi import FastAPI
 
         if isinstance(user_app, FastAPI):
-            # FastAPI automatically merges routes into OpenAPI spec
-            # The /docs and /openapi.json endpoints will show both
-            # Aegra routes and custom routes
+            # Include core routers in the FastAPI app for OpenAPI spec generation
+            # These routes are already mounted via merge_routes, but FastAPI's
+            # OpenAPI generator only picks up routes added via include_router
+            if core_routers:
+                for router in core_routers:
+                    user_app.include_router(router)
+                logger.info(
+                    "Core routers included in FastAPI app for OpenAPI spec generation",
+                    router_count=len(core_routers),
+                )
             logger.info(
                 "Custom FastAPI app detected - OpenAPI spec will include custom routes"
             )

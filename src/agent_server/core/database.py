@@ -32,10 +32,31 @@ class DatabaseManager:
 
     async def initialize(self) -> None:
         """Initialize database connections and LangGraph components"""
+        # Connection pool configuration for production load handling
+        pool_size = int(os.getenv("DB_POOL_SIZE", "20"))
+        max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+        pool_timeout = float(os.getenv("DB_POOL_TIMEOUT", "30"))
+        pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+        pool_pre_ping = os.getenv("DB_POOL_PRE_PING", "true").lower() == "true"
+
+        logger.info(
+            "Initializing database connection pool",
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=pool_pre_ping,
+        )
+
         # SQLAlchemy for our minimal Agent Protocol metadata tables
         self.engine = create_async_engine(
             self._database_url,
             echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=pool_pre_ping,
         )
 
         # Convert asyncpg URL to psycopg format for LangGraph

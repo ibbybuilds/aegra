@@ -84,7 +84,7 @@ def main():
 
     uvicorn.run(
         "src.agent_server.main:app",
-        host=os.getenv("HOST", "0.0.0.0"),  # nosec B104 - required for Docker
+        host=os.getenv("HOST", "::"),  # nosec B104 - IPv6 dual-stack for internal networking
         port=port,
         reload=True,
         access_log=False,

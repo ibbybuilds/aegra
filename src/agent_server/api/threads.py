@@ -742,10 +742,25 @@ async def get_thread_history_post(
             f"history POST: thread_id={thread_id} limit={limit} before={before} subgraphs={subgraphs} checkpoint_ns={checkpoint_ns}"
         )
 
-        # Verify the thread exists and belongs to the user
-        stmt = select(ThreadORM).where(
-            ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
-        )
+        # Check for admin permissions
+        has_admin = "admin" in (user.permissions or [])
+        has_read_all = "read:all" in (user.permissions or [])
+        is_admin_user = has_admin or has_read_all
+
+        # Verify the thread exists
+        stmt = select(ThreadORM).where(ThreadORM.thread_id == thread_id)
+
+        # Regular users: filter by user_id (admins can access any thread)
+        if not is_admin_user:
+            stmt = stmt.where(ThreadORM.user_id == user.identity)
+        else:
+            logger.info(
+                "Admin access to thread history",
+                thread_id=thread_id,
+                user_identity=user.identity,
+                permissions=user.permissions,
+            )
+
         thread = await session.scalar(stmt)
         if not thread:
             raise HTTPException(404, f"Thread '{thread_id}' not found")

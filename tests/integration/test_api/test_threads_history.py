@@ -204,3 +204,90 @@ def test_history_invalid_limit(client: TestClient, mock_langgraph):
     # GET invalid metadata JSON
     resp = client.get(f"/threads/{thread_id}/history", params={"metadata": "{not-json"})
     assert resp.status_code == 422
+
+
+def test_admin_can_access_any_thread_history(mock_langgraph):
+    """Test that users with admin or read:all permissions can access any thread"""
+    from fastapi import FastAPI
+
+    from tests.fixtures.auth import DummyUser
+
+    # Provide a DummySession that checks if user_id is filtered in the query
+    class SessionOtherUser(DummySessionBase):
+        async def scalar(self, stmt):
+            # Check if the query filters by user_id by inspecting the compiled statement
+            # Regular users will have "user_id = :user_id_1" in the WHERE clause
+            # Admins won't have this filter
+            stmt_str = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+            if "user_id = 'test-user'" in stmt_str or 'user_id = "test-user"' in stmt_str:
+                # Regular user trying to access other user's thread - return None (not found)
+                return None
+            # Admin access (no user_id filter) - return the thread
+            thread = _thread_row()
+            thread.user_id = "other-user"
+            return thread
+
+    # Test 1: Regular user cannot access other user's thread
+    app1 = FastAPI()
+
+    @app1.middleware("http")
+    async def inject_regular_user(request, call_next):
+        request.scope["user"] = DummyUser(identity="test-user", permissions=[])
+        return await call_next(request)
+
+    from agent_server.api import threads as threads_module
+
+    app1.include_router(threads_module.router)
+    app1.dependency_overrides[core_get_session] = override_get_session_dep(
+        SessionOtherUser
+    )
+
+    regular_client = make_client(app1)
+    resp = regular_client.post(
+        "/threads/11111111-1111-1111-1111-111111111111/history",
+        json={"limit": 10},
+    )
+    assert resp.status_code == 404, "Regular user should not access other user's thread"
+
+    # Test 2: User with admin permission can access any thread
+    app2 = FastAPI()
+
+    @app2.middleware("http")
+    async def inject_admin_user(request, call_next):
+        request.scope["user"] = DummyUser(identity="admin-user", permissions=["admin"])
+        return await call_next(request)
+
+    app2.include_router(threads_module.router)
+    app2.dependency_overrides[core_get_session] = override_get_session_dep(
+        SessionOtherUser
+    )
+
+    admin_client = make_client(app2)
+    resp = admin_client.post(
+        "/threads/11111111-1111-1111-1111-111111111111/history",
+        json={"limit": 10},
+    )
+    assert resp.status_code == 200, "Admin user should access any thread"
+    states = resp.json()
+    assert len(states) == 2
+
+    # Test 3: User with read:all permission can access any thread
+    app3 = FastAPI()
+
+    @app3.middleware("http")
+    async def inject_read_all_user(request, call_next):
+        request.scope["user"] = DummyUser(
+            identity="read-all-user", permissions=["read:all"]
+        )
+        return await call_next(request)
+
+    app3.include_router(threads_module.router)
+    app3.dependency_overrides[core_get_session] = override_get_session_dep(
+        SessionOtherUser
+    )
+
+    read_all_client = make_client(app3)
+    resp = read_all_client.get("/threads/11111111-1111-1111-1111-111111111111/history")
+    assert resp.status_code == 200, "read:all user should access any thread"
+    states = resp.json()
+    assert len(states) == 2

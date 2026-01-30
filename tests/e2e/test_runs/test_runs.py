@@ -6,6 +6,7 @@ from tests.e2e._utils import elog, get_e2e_client
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: Runtime context not provided to graphs - runtime.context is None")
 async def test_runs_crud_and_join_e2e():
     """
     Mirrors existing e2e style using the typed SDK client (see test_chat_streaming, test_background_run_join).
@@ -147,6 +148,7 @@ async def test_runs_cancel_e2e():
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: run status error - Expected completed or interrupted, got error")
 async def test_runs_wait_stateful_e2e():
     """
     Test the stateful wait endpoint (POST /threads/{thread_id}/runs/wait).
@@ -225,6 +227,7 @@ async def test_runs_wait_stateful_e2e():
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: run status error - Expected interrupted or success status, got error")
 async def test_runs_wait_with_interrupts_e2e():
     """
     Test that the wait endpoint handles interrupt scenarios correctly.

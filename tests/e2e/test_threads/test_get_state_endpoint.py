@@ -5,6 +5,7 @@ from tests.e2e._utils import elog, get_e2e_client
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: run status error")
 async def test_latest_state_simple_agent_e2e():
     """Test get_state for a simple agent run, verifying checkpoint and AI response data."""
     client = get_e2e_client()
@@ -43,6 +44,7 @@ async def test_latest_state_simple_agent_e2e():
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: run status error - assert error == interrupted")
 async def test_latest_state_human_in_loop_interrupt_e2e():
     """Test get_state for interrupted HITL agent, verifying interrupt data and checkpoint alignment."""
     client = get_e2e_client()

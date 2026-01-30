@@ -544,6 +544,10 @@ async def join_run(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Join a run (wait for completion and return final output) - persisted."""
+    logger.info(
+        f"[join_run] starting run_id={run_id} thread_id={thread_id} user={user.identity}"
+    )
+
     # Get run and validate it exists
     run_orm = await session.scalar(
         select(RunORM).where(
@@ -553,7 +557,12 @@ async def join_run(
         )
     )
     if not run_orm:
+        logger.warning(f"[join_run] run not found run_id={run_id}")
         raise HTTPException(404, f"Run '{run_id}' not found")
+
+    logger.info(
+        f"[join_run] initial status={run_orm.status} run_id={run_id}"
+    )
 
     # If already completed, return output immediately
     # Check if run is in a terminal state
@@ -561,26 +570,48 @@ async def join_run(
     if run_orm.status in terminal_states:
         # Refresh to ensure we have the latest data
         await session.refresh(run_orm)
-        output = getattr(run_orm, "output", None) or {}
+        output = run_orm.output if run_orm.output is not None else {}
+        logger.info(
+            f"[join_run] returning terminal state output run_id={run_id} status={run_orm.status}"
+        )
         return output
 
     # Wait for background task to complete
     task = active_runs.get(run_id)
+    logger.info(
+        f"[join_run] waiting for task run_id={run_id} has_task={task is not None}"
+    )
     if task:
         try:
             await asyncio.wait_for(task, timeout=30.0)
+            logger.info(f"[join_run] task completed run_id={run_id}")
         except TimeoutError:
             # Task is taking too long, but that's okay - we'll check DB status
-            pass
+            logger.warning(f"[join_run] task timeout run_id={run_id}")
         except asyncio.CancelledError:
             # Task was cancelled, that's also okay
-            pass
+            logger.warning(f"[join_run] task cancelled run_id={run_id}")
+        except Exception as e:
+            logger.error(f"[join_run] task error run_id={run_id}: {e}")
 
     # Return final output from database
-    run_orm = await session.scalar(select(RunORM).where(RunORM.run_id == run_id))
-    if run_orm:
-        await session.refresh(run_orm)  # Refresh to get latest data from DB
-    output = getattr(run_orm, "output", None) or {}
+    run_orm = await session.scalar(
+        select(RunORM).where(
+            RunORM.run_id == run_id,
+            RunORM.thread_id == thread_id,
+            RunORM.user_id == user.identity,
+        )
+    )
+    if not run_orm:
+        logger.error(f"[join_run] run disappeared after wait run_id={run_id}")
+        raise HTTPException(500, f"Run '{run_id}' disappeared during execution")
+
+    await session.refresh(run_orm)  # Refresh to get latest data from DB
+    output = run_orm.output if run_orm.output is not None else {}
+
+    logger.info(
+        f"[join_run] returning final output run_id={run_id} status={run_orm.status} has_output={run_orm.output is not None}"
+    )
     return output
 
 

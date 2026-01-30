@@ -12,18 +12,6 @@ import jwt
 import pytest
 from langgraph_sdk import Auth
 
-# Set up environment before importing auth module
-os.environ["AUTH_TYPE"] = "custom"
-os.environ["AEGRA_JWT_SECRET"] = "test-secret-for-admin-tests"
-os.environ["AEGRA_JWT_ISSUERS"] = "conversation-relay,transcript-service,unknown-service"
-os.environ["AEGRA_JWT_AUDIENCE"] = "test-audience"
-os.environ["AEGRA_JWT_VERIFY_EXPIRATION"] = "true"
-os.environ["AEGRA_JWT_LEEWAY_SECONDS"] = "30"
-# Configure issuer scope mapping for tests
-os.environ[
-    "AEGRA_JWT_ISSUER_SCOPES"
-] = "conversation-relay:admin;transcript-service:read:all"
-
 
 def generate_admin_token(
     sub: str = "admin-user",
@@ -54,8 +42,23 @@ def generate_admin_token(
 
 
 @pytest.fixture(autouse=True)
-def clear_jwt_cache():
-    """Clear JWT cache before and after each test."""
+def setup_admin_test_env(monkeypatch):
+    """Set up environment for admin authentication tests."""
+    # Configure environment for admin tests
+    monkeypatch.setenv("AUTH_TYPE", "custom")
+    monkeypatch.setenv("AEGRA_JWT_SECRET", "test-secret-for-admin-tests")
+    monkeypatch.setenv(
+        "AEGRA_JWT_ISSUERS", "conversation-relay,transcript-service,unknown-service"
+    )
+    monkeypatch.setenv("AEGRA_JWT_AUDIENCE", "test-audience")
+    monkeypatch.setenv("AEGRA_JWT_VERIFY_EXPIRATION", "true")
+    monkeypatch.setenv("AEGRA_JWT_LEEWAY_SECONDS", "30")
+    monkeypatch.setenv(
+        "AEGRA_JWT_ISSUER_SCOPES",
+        "conversation-relay:admin;transcript-service:read:all",
+    )
+
+    # Clear JWT cache after environment setup
     from src.agent_server.core.jwt_utils import clear_jwt_cache as clear_cache
 
     clear_cache()

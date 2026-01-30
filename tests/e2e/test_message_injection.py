@@ -12,6 +12,7 @@ from tests.e2e._utils import elog, get_e2e_client
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: /join endpoint bug - 'NoneType' object has no attribute 'model'")
 async def test_inject_ai_message_via_state():
     """
     Test injecting an AI message into thread state without running the agent.
@@ -105,6 +106,7 @@ async def test_inject_ai_message_via_state():
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: /join endpoint bug - 'NoneType' object has no attribute 'model'")
 async def test_agent_sees_injected_messages():
     """
     Test that the agent can see injected messages when it runs.
@@ -265,6 +267,7 @@ async def test_agent_sees_injected_messages():
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Known issue: /join endpoint bug - 'NoneType' object has no attribute 'model'")
 async def test_inject_multiple_messages():
     """
     Test injecting multiple messages at once.

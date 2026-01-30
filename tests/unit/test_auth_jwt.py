@@ -12,16 +12,6 @@ import jwt
 import pytest
 from langgraph_sdk import Auth
 
-# We need to set AUTH_TYPE before importing auth module
-os.environ["AUTH_TYPE"] = "custom"
-os.environ["AEGRA_JWT_SECRET"] = "test-secret-for-auth-tests"
-os.environ["AEGRA_JWT_ISSUERS"] = "test-issuer,other-issuer"
-os.environ["AEGRA_JWT_AUDIENCE"] = "test-audience"
-os.environ["AEGRA_JWT_VERIFY_EXPIRATION"] = "true"
-os.environ["AEGRA_JWT_LEEWAY_SECONDS"] = "30"
-# Configure issuer scope mapping for tests (test-issuer has no permissions)
-os.environ["AEGRA_JWT_ISSUER_SCOPES"] = ""  # Empty mapping
-
 
 def generate_test_token(
     sub: str = "test-user",
@@ -46,27 +36,19 @@ def generate_test_token(
     return jwt.encode(payload, os.getenv("AEGRA_JWT_SECRET"), algorithm="HS256")
 
 
-@pytest.fixture(autouse=True, scope="function")
-def setup_test_env():
-    """Ensure correct environment for each test."""
-    # Save original value
-    original_issuer_scopes = os.environ.get("AEGRA_JWT_ISSUER_SCOPES")
-
-    # Set empty mapping for these tests
-    os.environ["AEGRA_JWT_ISSUER_SCOPES"] = ""
-
-    yield
-
-    # Restore original value
-    if original_issuer_scopes is not None:
-        os.environ["AEGRA_JWT_ISSUER_SCOPES"] = original_issuer_scopes
-    else:
-        os.environ.pop("AEGRA_JWT_ISSUER_SCOPES", None)
-
-
 @pytest.fixture(autouse=True)
-def clear_jwt_cache():
-    """Clear JWT cache before and after each test."""
+def setup_jwt_test_env(monkeypatch):
+    """Set up environment for JWT authentication tests."""
+    # Configure environment for JWT tests
+    monkeypatch.setenv("AUTH_TYPE", "custom")
+    monkeypatch.setenv("AEGRA_JWT_SECRET", "test-secret-for-auth-tests")
+    monkeypatch.setenv("AEGRA_JWT_ISSUERS", "test-issuer,other-issuer")
+    monkeypatch.setenv("AEGRA_JWT_AUDIENCE", "test-audience")
+    monkeypatch.setenv("AEGRA_JWT_VERIFY_EXPIRATION", "true")
+    monkeypatch.setenv("AEGRA_JWT_LEEWAY_SECONDS", "30")
+    monkeypatch.setenv("AEGRA_JWT_ISSUER_SCOPES", "")  # Empty mapping
+
+    # Clear JWT cache after environment setup
     from src.agent_server.core.jwt_utils import clear_jwt_cache as clear_cache
 
     clear_cache()

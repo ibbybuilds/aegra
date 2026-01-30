@@ -2,6 +2,8 @@
 
 Welcome to Aegra! This guide will help you get started with development, whether you're a newcomer to database migrations or an experienced developer.
 
+**Note**: This is a fork of [ibbybuilds/aegra](https://github.com/ibbybuilds/aegra) with custom extensions (ava_v1 agent, JWT auth, Redis integration, Railway deployment). See [NOTICE](../../NOTICE) for details.
+
 ## 📋 Table of Contents
 
 - [🚀 Quick Start for New Developers](#-quick-start-for-new-developers)
@@ -32,7 +34,7 @@ Welcome to Aegra! This guide will help you get started with development, whether
 
 ```bash
 # 1. Clone and setup
-git clone https://github.com/ibbybuilds/aegra.git
+git clone https://github.com/lucca-mrktr/aegra.git
 cd aegra
 uv install
 

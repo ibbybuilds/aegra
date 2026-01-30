@@ -8,52 +8,49 @@
   <strong>Self-hosted AI agent backend. LangGraph power without vendor lock-in.</strong>
 </p>
 
+## Fork Notice
+
+This is a fork of [ibbybuilds/aegra](https://github.com/ibbybuilds/aegra) with custom extensions for production deployment. Original project by [Muhammad Ibrahim](https://github.com/ibbybuilds).
+
+**Custom Extensions in This Fork:**
+- **ava_v1 Agent**: LangGraph-based hotel booking agent with Redis caching and dynamic prompts
+- **JWT Authentication**: Sub-1ms token validation with multi-tenant support
+- **Redis Integration**: Caching layer for agent operations (hotel searches, bookings)
+- **Railway Deployment**: Staging environment with automated CI/CD pipeline
+- **Enhanced Documentation**: JWT auth guide, Railway deployment guide, API references
+
+See [NOTICE](NOTICE) file for complete list of modifications.
+
 <p align="center">
-  <a href="https://github.com/ibbybuilds/aegra/stargazers"><img src="https://img.shields.io/github/stars/ibbybuilds/aegra" alt="GitHub stars"></a>
-  <a href="https://github.com/ibbybuilds/aegra/blob/main/LICENSE"><img src="https://img.shields.io/github/license/ibbybuilds/aegra" alt="License"></a>
-  <a href="https://github.com/ibbybuilds/aegra/issues"><img src="https://img.shields.io/github/issues/ibbybuilds/aegra" alt="Issues"></a>
-  <a href="https://discord.com/invite/D5M3ZPS25e"><img src="https://img.shields.io/badge/Discord-Join-7289DA?logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://www.reddit.com/r/aegra/"><img src="https://img.shields.io/badge/Reddit-Join-orange?logo=reddit&logoColor=white" alt="Reddit"></a>
-  <a href="https://x.com/intent/user?screen_name=ibbyybuilds"><img src="https://img.shields.io/twitter/follow/ibbyybuilds?style=social" alt="Follow on X"></a>
+  <a href="https://github.com/lucca-mrktr/aegra/stargazers"><img src="https://img.shields.io/github/stars/lucca-mrktr/aegra" alt="GitHub stars"></a>
+  <a href="https://github.com/lucca-mrktr/aegra/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lucca-mrktr/aegra" alt="License"></a>
+  <a href="https://github.com/lucca-mrktr/aegra/issues"><img src="https://img.shields.io/github/issues/lucca-mrktr/aegra" alt="Issues"></a>
+  <a href="https://github.com/ibbybuilds/aegra"><img src="https://img.shields.io/badge/upstream-ibbybuilds%2Faegra-blue" alt="Upstream"></a>
 </p>
 
 Replace LangGraph Platform with your own infrastructure. Built with FastAPI + PostgreSQL for developers who demand complete control over their agent orchestration.
 
-**🔌 Agent Protocol Compliant**: Aegra implements the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) specification, an open-source standard for serving LLM agents in production.
+**🔌 Agent Protocol Compliant**: Implements the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) specification, an open-source standard for serving LLM agents in production.
 
 **🎯 Perfect for:** Teams escaping vendor lock-in • Data sovereignty requirements • Custom deployments • Cost optimization
 
-## 🆕 What's New
+## Why Aegra vs LangGraph Platform?
 
-- **🎨 LangGraph Studio Support**: Full compatibility with LangGraph Studio for visual graph debugging and development
-- **🤖 AG-UI / CopilotKit Support**: Seamless integration with AG-UI and CopilotKit-based clients for enhanced user experiences
-- **⬆️ LangGraph v1.0.0**: Upgraded to LangGraph and LangChain v1.0.0 with latest features and improvements
-- **🤝 Human-in-the-Loop**: Interactive agent workflows with approval gates and user intervention points
-- **📊 [Langfuse Integration](docs/langfuse-usage.md)**: Complete observability and tracing for your agent runs
+| Feature                | LangGraph Platform         | Aegra (Self-Hosted)                          |
+| ---------------------- | -------------------------- | -------------------------------------------- |
+| **Cost**               | $$$+ per month             | **Free** (infrastructure cost only)          |
+| **Data Control**       | Third-party hosted         | **Your infrastructure**                      |
+| **Authentication**     | Limited customization      | **Full control** (JWT/OAuth/Firebase/NoAuth) |
+| **Customization**      | Platform limitations       | **Complete flexibility**                     |
 
+## Key Features
 
-## 🔥 Why Aegra vs LangGraph Platform?
-
-| Feature                | LangGraph Platform         | Aegra (Self-Hosted)                               |
-| ---------------------- | -------------------------- | ------------------------------------------------- |
-| **Cost**               | $$$+ per month             | **Free** (self-hosted), infra-cost only           |
-| **Data Control**       | Third-party hosted         | **Your infrastructure**                           |
-| **Vendor Lock-in**     | High dependency            | **Zero lock-in**                                  |
-| **Customization**      | Platform limitations       | **Full control**                                  |
-| **API Compatibility**  | LangGraph SDK              | **Same LangGraph SDK**                            |
-| **Authentication**     | Lite: no custom auth       | **Custom auth** (JWT/OAuth/Firebase/NoAuth)       |
-| **Database Ownership** | No bring-your-own database | **BYO Postgres** (you own credentials and schema) |
-| **Tracing/Telemetry**  | Forced LangSmith in SaaS   | **Your choice** (Langfuse/None)                   |
-
-## ✨ Core Benefits
-
-- **🏠 Self-Hosted**: Run on your infrastructure, your rules
-- **🔄 Drop-in Replacement**: Use existing LangGraph Client SDK without changes
-- **🛡️ Production Ready**: PostgreSQL persistence, streaming, authentication
-- **📊 Zero Vendor Lock-in**: Apache 2.0 license, open source, full control
-- **🚀 Fast Setup**: 5-minute deployment with Docker
-- **🔌 Agent Protocol Compliant**: Implements the open-source [Agent Protocol](https://github.com/langchain-ai/agent-protocol) specification
-- **💬 Agent Chat UI Compatible**: Works seamlessly with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui)
+- **Self-Hosted**: Deploy on your infrastructure with full control
+- **Drop-in Replacement**: Compatible with existing LangGraph Client SDK
+- **Production Ready**: PostgreSQL persistence, streaming, JWT authentication
+- **Agent Protocol Compliant**: Works with [Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui) and CopilotKit
+- **Extensible**: Custom auth, observability (Langfuse), human-in-the-loop workflows
+- **Zero Vendor Lock-in**: Apache 2.0 license, open source
 
 ## 🚀 Quick Start (5 minutes)
 
@@ -67,7 +64,7 @@ Replace LangGraph Platform with your own infrastructure. Built with FastAPI + Po
 
 ```bash
 # Clone and setup
-git clone https://github.com/ibbybuilds/aegra.git
+git clone https://github.com/lucca-mrktr/aegra.git
 cd aegra
 # Install uv if missing
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -98,249 +95,144 @@ open http://localhost:8000/docs
 
 You now have a self-hosted LangGraph Platform alternative running locally.
 
-## 💬 Agent Chat UI Compatible
+**💬 Agent Chat UI Compatible**: Works with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui). Set `NEXT_PUBLIC_API_URL=http://localhost:8000` and `NEXT_PUBLIC_ASSISTANT_ID=agent` to connect.
 
-Aegra works seamlessly with [LangChain's Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui). Simply set `NEXT_PUBLIC_API_URL=http://localhost:8000` and `NEXT_PUBLIC_ASSISTANT_ID=agent` in your Agent Chat UI environment to connect to your Aegra backend.
+## For Developers
 
-## 👨‍💻 For Developers
+**Guides:**
+- [Developer Guide](docs/guides/developer-guide.md) - Complete setup and workflow
+- [Migration Cheatsheet](docs/guides/migration-cheatsheet.md) - Quick reference
 
-**New to database migrations?** Check out our guides:
-
-- **📚 [Developer Guide](docs/developer-guide.md)** - Complete setup, migrations, and development workflow
-- **⚡ [Migration Cheatsheet](docs/migration-cheatsheet.md)** - Quick reference for common commands
-
-**Quick Development Commands:**
-
+**Quick Commands:**
 ```bash
-# Docker development (recommended)
-docker compose up aegra
-
-# Local development
-docker compose up postgres -d
-python3 scripts/migrate.py upgrade
-python3 run_server.py
-
-# Create new migration
-python3 scripts/migrate.py revision --autogenerate -m "Add new feature"
+docker compose up aegra                                     # Start everything
+python3 scripts/migrate.py upgrade                          # Apply migrations
+python3 scripts/migrate.py revision --autogenerate -m "..."  # New migration
 ```
 
-## 🧪 Try the Example Agent
+## Example Usage
 
-Use the **same LangGraph Client SDK** you're already familiar with:
+Use the same LangGraph Client SDK:
 
 ```python
-import asyncio
 from langgraph_sdk import get_client
 
-async def main():
-    # Connect to your self-hosted Aegra instance
-    client = get_client(url="http://localhost:8000")
+client = get_client(url="http://localhost:8000")
 
-    # Create assistant (same API as LangGraph Platform)
-    assistant = await client.assistants.create(
-        graph_id="agent",
-        if_exists="do_nothing",
-        config={},
-    )
-    assistant_id = assistant["assistant_id"]
+# Create assistant and thread
+assistant = await client.assistants.create(graph_id="agent")
+thread = await client.threads.create()
 
-    # Create thread
-    thread = await client.threads.create()
-    thread_id = thread["thread_id"]
-
-    # Stream responses (identical to LangGraph Platform)
-    stream = client.runs.stream(
-        thread_id=thread_id,
-        assistant_id=assistant_id,
-        input={
-            "messages": [
-                {"type": "human", "content": [{"type": "text", "text": "hello"}]}
-            ]
-        },
-        stream_mode=["values", "messages-tuple", "custom"],
-        on_disconnect="cancel",
-    )
-
-    async for chunk in stream:
-        print(f"event: {getattr(chunk, 'event', None)}, data: {getattr(chunk, 'data', None)}")
-
-asyncio.run(main())
+# Stream responses (same API as LangGraph Platform)
+async for chunk in client.runs.stream(
+    thread_id=thread["thread_id"],
+    assistant_id=assistant["assistant_id"],
+    input={"messages": [{"type": "human", "content": "hello"}]},
+):
+    print(chunk)
 ```
 
-**Key Point**: Your existing LangGraph applications work without modification! 🔄
+Your existing LangGraph applications work without modification.
 
-## 🏗️ Architecture
+## Architecture
 
 ```text
-Client → FastAPI → LangGraph SDK → PostgreSQL
- ↓         ↓           ↓             ↓
-Agent    HTTP     State        Persistent
-SDK      API    Management      Storage
+Client → FastAPI → LangGraph → PostgreSQL
+         (HTTP)   (State Mgmt)  (Storage)
 ```
 
-### Components
+**Stack**: FastAPI (Agent Protocol API) • LangGraph (execution) • PostgreSQL (checkpoints) • Redis (caching) • JWT Auth (multi-tenant)
 
-- **FastAPI**: Agent Protocol-compliant HTTP layer
-- **LangGraph**: State management and graph execution
-- **PostgreSQL**: Durable checkpoints and metadata
-- **Agent Protocol**: Open-source specification for LLM agent APIs
-- **Config-driven**: `aegra.json` for graph definitions
-
-## 📁 Project Structure
+## Project Structure
 
 ```text
 aegra/
-├── aegra.json           # Graph configuration
-├── auth.py              # Authentication setup
-├── graphs/              # Agent definitions
-│   └── react_agent/     # Example ReAct agent
-├── src/agent_server/    # FastAPI application
-│   ├── main.py         # Application entrypoint
-│   ├── core/           # Database & infrastructure
-│   ├── models/         # Pydantic schemas
-│   ├── services/       # Business logic
-│   └── utils/          # Helper functions
-├── tests/              # Test suite
-└── deployments/        # Docker & K8s configs
+├── aegra.json           # Graph definitions
+├── auth.py              # Authentication
+├── graphs/              # Agent graphs (react_agent, ava_v1)
+├── src/agent_server/    # FastAPI app
+├── alembic/             # Database migrations
+└── docs/                # Documentation
 ```
 
-## ⚙️ Configuration
+See [docs/guides/developer-guide.md](docs/guides/developer-guide.md) for details.
+
+## Configuration
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and configure values:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
+**Key variables:**
 ```bash
-# Database
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/aegra
-
-# Authentication (extensible)
-AUTH_TYPE=noop  # noop, custom
-
-# Server
-HOST=0.0.0.0
-PORT=8000
-DEBUG=true
-
-# Logging
-LOG_LEVEL=INFO
-ENV_MODE=LOCAL # DEVELOPMENT, PRODUCTION, LOCAL (PRODUCTION outputs JSON logs)
-LOG_VERBOSITY=standard # standard, verbose (verbose outputs request-id for each request)
-
-# LLM Providers
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/aegra
+AUTH_TYPE=custom  # or noop
 OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=...
-# TOGETHER_API_KEY=...
 
+# JWT Auth (optional)
+AEGRA_JWT_SECRET=your-secret
+AEGRA_JWT_ISSUER=your-issuer
+AEGRA_JWT_AUDIENCE=aegra
+
+# Redis (for ava_v1)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Observability (optional)
 LANGFUSE_LOGGING=true
 LANGFUSE_SECRET_KEY=sk-...
-LANGFUSE_PUBLIC_KEY=pk-...
-LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+See `.env.example` for complete list.
 
 ### Graph Configuration
 
-`aegra.json` defines your agent graphs:
+Define agent graphs in `aegra.json`:
 
 ```json
 {
   "graphs": {
-    "agent": "./graphs/react_agent/graph.py:graph"
+    "agent": "./graphs/react_agent/graph.py:graph",
+    "ava_v1": "./graphs/ava_v1/graph.py:graph"
   }
 }
 ```
 
-## 🎯 What You Get
+## What You Get
 
-### ✅ **Core Features**
+**Core Features:**
+- Agent Protocol-compliant REST API
+- PostgreSQL persistence with LangGraph checkpoints
+- SSE streaming with network resilience
+- LangGraph Client SDK compatibility
+- Human-in-the-loop workflows
+- [Langfuse observability](docs/langfuse-usage.md)
 
-- [Agent Protocol](https://github.com/langchain-ai/agent-protocol)-compliant REST endpoints
-- Persistent conversations with PostgreSQL checkpoints
-- Streaming responses with network resilience
-- Config-driven agent graph management
-- Compatible with LangGraph Client SDK
-- Human-in-the-loop support
-- [Langfuse integration](docs/langfuse-usage.md) for observability and tracing
-
-### ✅ **Production Ready**
-
-- Docker containerization
-- Database migrations with Alembic
+**Production Features:**
+- Docker + Kubernetes deployment
+- Alembic database migrations
+- JWT authentication (multi-tenant)
+- Health checks and monitoring
 - Comprehensive test suite
-- Authentication framework (JWT/OAuth ready)
-- Health checks and monitoring endpoints
 
-### ✅ **Developer Experience**
-
-- Interactive API documentation (FastAPI)
+**Developer Experience:**
+- Interactive API docs (FastAPI)
 - Hot reload in development
-- Clear error messages and logging
-- Extensible architecture
-- **📚 [Developer Guide](docs/developer-guide.md)** - Complete setup, migrations, and development workflow
-- **⚡ [Migration Cheatsheet](docs/migration-cheatsheet.md)** - Quick reference for common commands
+- [Developer Guide](docs/guides/developer-guide.md)
+- [Migration Cheatsheet](docs/guides/migration-cheatsheet.md)
 
-## Star History
+## Contributing
 
-<a href="https://www.star-history.com/#ibbybuilds/aegra&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ibbybuilds/aegra&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ibbybuilds/aegra&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ibbybuilds/aegra&type=Date" />
- </picture>
-</a>
+Contributions welcome! You can help by:
+- Reporting bugs and suggesting features
+- Improving code quality and test coverage
+- Enhancing documentation
 
-## 🛣️ Roadmap
-
-**✅ Completed**
-
-- Agent Chat UI compatibility
-- Agent Protocol API implementation
-- PostgreSQL persistence and streaming
-- Authentication framework
-- Human-in-the-loop support
-- Langfuse integration
-
-**🎯 Next**
-
-- Custom HTTP endpoints support
-- Generative user interfaces support
-- Redis-backed streaming buffers
-- Advanced deployment recipes
-
-**🚀 Future**
-
-- Performance optimizations
-- Custom UI themes and branding
-- Aegra CLI for migration and image building
-
-## 🤝 Contributing
-
-We welcome contributions! Here's how you can help:
-
-**🐛 Issues & Bugs**
-
-- Report bugs with detailed reproduction steps
-- Suggest new features and improvements
-- Help with documentation
-
-**💻 Code Contributions**
-
-- Improve Agent Protocol spec alignment
-- Add authentication backends
-- Enhance testing coverage
-- Optimize performance
-
-**📚 Documentation**
-
-- Deployment guides
-- Integration examples
-- Best practices
-
-**Get Started**: Check out [CONTRIBUTING.md](CONTRIBUTING.md), our [Developer Guide](docs/developer-guide.md), and our [good first issues](https://github.com/ibbybuilds/aegra/labels/good%20first%20issue).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [good first issues](https://github.com/lucca-mrktr/aegra/labels/good%20first%20issue) to get started.
 
 ## 📄 License
 
@@ -348,7 +240,7 @@ Apache 2.0 License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-<p align=\"center\">
-  <strong>⭐ If Aegra helps you escape vendor lock-in, please star the repo! ⭐</strong><br>
-  <sub>Built with ❤️ by developers who believe in infrastructure freedom</sub>
+<p align="center">
+  <strong>If this fork helps your project, please star the repo!</strong><br>
+  <sub>Built with infrastructure freedom in mind</sub>
 </p>

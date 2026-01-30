@@ -1,0 +1,57 @@
+Aegra - Open Source LangGraph Platform Alternative
+
+This software is a fork of the original Aegra project by Muhammad Ibrahim.
+
+Original Copyright: Copyright (c) 2025 Muhammad Ibrahim (@ibbybuilds)
+Original Repository: https://github.com/ibbybuilds/aegra
+
+MODIFICATIONS IN THIS FORK:
+
+This fork contains the following custom extensions and modifications:
+
+1. ava_v1 Agent Integration
+   - LangChain/LangGraph port of AVA hotel booking agent
+   - CallContext-based dynamic prompt system (5-level priority)
+   - Redis-backed caching for hotel searches and booking idempotency
+   - Integration with external Pinecone service for hotel data
+
+2. JWT Authentication System
+   - Sub-1ms latency JWT authentication with LRU caching
+   - HS256 symmetric signing
+   - Multi-tenant user scoping via JWT claims
+   - Issuer-based scope mapping for microservice integration
+   - Token generation scripts and comprehensive documentation
+
+3. Redis Integration
+   - Redis caching layer for ava_v1 agent operations
+   - Configurable TTL for search results (30 days) and bookings (10 minutes)
+   - Docker Compose service configuration
+
+4. Railway Deployment Support
+   - Staging environment configuration for Railway.app
+   - GitHub Actions CI/CD pipeline for development branch
+   - Railway-specific environment variable examples
+   - Comprehensive deployment documentation
+
+5. Documentation Enhancements
+   - JWT authentication guide with security considerations
+   - Railway deployment guide with step-by-step instructions
+   - AVA prompt architecture documentation
+   - Context stack management guide
+   - State endpoint API documentation
+   - Conversation transcript API documentation
+   - Enhanced developer guides and migration cheatsheets
+
+6. Database Schema Changes
+   - Additional Alembic migrations for fork-specific features
+   - Schema changes to support JWT auth and multi-tenancy
+
+LICENSE:
+
+This software is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the complete license text.
+
+As required by the Apache License 2.0:
+- The original copyright notice and license are preserved in the LICENSE file
+- This NOTICE file documents the modifications made in this fork
+- No endorsement by the original author is claimed or implied

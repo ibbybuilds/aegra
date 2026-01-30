@@ -254,14 +254,18 @@ git push origin feat/my-feature
 ### Keeping Your Fork Updated
 
 ```bash
-# Add upstream remote (once)
-git remote add upstream https://github.com/ibbybuilds/aegra.git
+# Add upstream remote (once) - this fork
+git remote add upstream https://github.com/lucca-mrktr/aegra.git
 
-# Update your fork
+# Update your fork from this fork
 git fetch upstream
 git checkout main
 git merge upstream/main
 git push origin main
+
+# Optional: Track original upstream (ibbybuilds/aegra)
+git remote add original https://github.com/ibbybuilds/aegra.git
+git fetch original
 ```
 
 ## 📚 Code Style Guidelines

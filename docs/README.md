@@ -42,6 +42,7 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 
 ## 📋 Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/ibbybuilds/aegra/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/ibbybuilds/aegra/discussions)
+- **Issues**: [GitHub Issues](https://github.com/lucca-mrktr/aegra/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/lucca-mrktr/aegra/discussions)
+- **Upstream**: [Original Aegra](https://github.com/ibbybuilds/aegra)
 - **Documentation**: [Alembic Docs](https://alembic.sqlalchemy.org/)

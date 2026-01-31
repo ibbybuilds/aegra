@@ -39,13 +39,13 @@ async def create_assistant(
     ctx = build_auth_context(user, "assistants", "create")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    
+
     # If handler modified metadata, update request
     if filters and "metadata" in filters:
         request.metadata = {**(request.metadata or {}), **filters["metadata"]}
     elif value.get("metadata"):
         request.metadata = {**(request.metadata or {}), **value["metadata"]}
-    
+
     return await service.create_assistant(request, user.identity)
 
 
@@ -59,7 +59,7 @@ async def list_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = {}
     filters = await handle_event(ctx, value)
-    
+
     # Apply filters if provided by handler
     if filters:
         # Convert filters to search request format
@@ -67,7 +67,7 @@ async def list_assistants(
         assistants = await service.search_assistants(search_request, user.identity)
     else:
         assistants = await service.list_assistants(user.identity)
-    
+
     return AssistantList(assistants=assistants, total=len(assistants))
 
 
@@ -84,12 +84,12 @@ async def search_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    
+
     # Merge handler filters with request filters
     if filters:
         request_filters = request.filters or {}
         request.filters = {**request_filters, **filters}
-    
+
     return await service.search_assistants(request, user.identity)
 
 
@@ -104,12 +104,12 @@ async def count_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    
+
     # Merge handler filters with request filters
     if filters:
         request_filters = request.filters or {}
         request.filters = {**request_filters, **filters}
-    
+
     return await service.count_assistants(request, user.identity)
 
 
@@ -128,7 +128,7 @@ async def get_assistant(
     ctx = build_auth_context(user, "assistants", "read")
     value = {"assistant_id": assistant_id}
     await handle_event(ctx, value)
-    
+
     return await service.get_assistant(assistant_id, user.identity)
 
 
@@ -148,13 +148,13 @@ async def update_assistant(
     ctx = build_auth_context(user, "assistants", "update")
     value = {**request.model_dump(), "assistant_id": assistant_id}
     filters = await handle_event(ctx, value)
-    
+
     # If handler modified metadata, update request
     if filters and "metadata" in filters:
         request.metadata = {**(request.metadata or {}), **filters["metadata"]}
     elif value.get("metadata"):
         request.metadata = {**(request.metadata or {}), **value["metadata"]}
-    
+
     return await service.update_assistant(assistant_id, request, user.identity)
 
 
@@ -169,7 +169,7 @@ async def delete_assistant(
     ctx = build_auth_context(user, "assistants", "delete")
     value = {"assistant_id": assistant_id}
     await handle_event(ctx, value)
-    
+
     return await service.delete_assistant(assistant_id, user.identity)
 
 

@@ -16,18 +16,18 @@ auth = Auth()
 @auth.authenticate
 async def authenticate(headers: dict) -> dict:
     """Mock JWT authentication that simulates real JWT behavior.
-    
+
     Expects: Authorization: Bearer <token>
     Token format: mock-jwt-<user_id>-<role>-<extra_data>
-    
+
     Returns user data with custom fields that should flow through to routes.
-    
+
     Args:
         headers: Request headers dict
-        
+
     Returns:
         User data dict with identity, display_name, permissions, and custom fields
-        
+
     Raises:
         HTTPException: If token is missing or invalid
     """
@@ -73,6 +73,7 @@ async def authenticate(headers: dict) -> dict:
 
 # Authorization handlers
 
+
 # Global fallback handler - runs for all resources/actions that don't have specific handlers
 @auth.on
 async def authorize(ctx, value):
@@ -90,7 +91,11 @@ async def allow_thread_create(ctx, value):
         value["metadata"] = {}
     # Inject team_id from user custom fields
     try:
-        team_id = ctx.user["team_id"] if "team_id" in ctx.user else getattr(ctx.user, "team_id", None)
+        team_id = (
+            ctx.user["team_id"]
+            if "team_id" in ctx.user
+            else getattr(ctx.user, "team_id", None)
+        )
         if team_id:
             value["metadata"]["team_id"] = team_id
     except (KeyError, AttributeError):
@@ -102,7 +107,11 @@ async def allow_thread_create(ctx, value):
 async def filter_threads_by_team(ctx, value):
     """Filter thread searches by team_id"""
     try:
-        team_id = ctx.user["team_id"] if "team_id" in ctx.user else getattr(ctx.user, "team_id", None)
+        team_id = (
+            ctx.user["team_id"]
+            if "team_id" in ctx.user
+            else getattr(ctx.user, "team_id", None)
+        )
         if team_id:
             return {"metadata": {"team_id": team_id}}
     except (KeyError, AttributeError):
@@ -114,7 +123,9 @@ async def filter_threads_by_team(ctx, value):
 async def restrict_assistant_deletion(ctx, value):
     """Only admins can delete assistants"""
     try:
-        role = ctx.user["role"] if "role" in ctx.user else getattr(ctx.user, "role", None)
+        role = (
+            ctx.user["role"] if "role" in ctx.user else getattr(ctx.user, "role", None)
+        )
         if role == "admin":
             return True
     except (KeyError, AttributeError):
@@ -130,7 +141,11 @@ async def allow_assistant_create(ctx, value):
         value["metadata"] = {}
     value["metadata"]["created_by"] = ctx.user.identity
     try:
-        team_id = ctx.user["team_id"] if "team_id" in ctx.user else getattr(ctx.user, "team_id", None)
+        team_id = (
+            ctx.user["team_id"]
+            if "team_id" in ctx.user
+            else getattr(ctx.user, "team_id", None)
+        )
         if team_id:
             value["metadata"]["team_id"] = team_id
     except (KeyError, AttributeError):

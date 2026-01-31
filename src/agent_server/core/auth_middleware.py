@@ -144,9 +144,11 @@ class LangGraphAuthBackend(AuthenticationBackend):
             if not file_path.exists():
                 logger.warning(f"Auth file not found: {file_path}")
                 return None
-            
+
             if not file_path.is_file():
-                logger.warning(f"Auth path is not a file: {file_path} (is directory: {file_path.is_dir()})")
+                logger.warning(
+                    f"Auth path is not a file: {file_path} (is directory: {file_path.is_dir()})"
+                )
                 return None
 
             # Create a unique module name based on the file path

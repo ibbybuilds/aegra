@@ -273,7 +273,9 @@ def create_app() -> FastAPI:
         _include_core_routers(application)
 
         # Add root endpoint if not already defined
-        if not any(route.path == "/" for route in application.routes if hasattr(route, "path")):
+        if not any(
+            route.path == "/" for route in application.routes if hasattr(route, "path")
+        ):
             application.get("/")(root_handler)
 
         application = merge_lifespans(application, lifespan)

@@ -1,8 +1,6 @@
 """Integration tests for authorization handlers with real auth instances"""
 
 import json
-from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -86,7 +84,9 @@ async def allow_assistant_create(ctx, value):
         )
         return config_file
 
-    def test_load_auth_with_handlers(self, aegra_config_with_auth_handlers, mock_auth_file):
+    def test_load_auth_with_handlers(
+        self, aegra_config_with_auth_handlers, mock_auth_file
+    ):
         """Test that auth with handlers loads successfully"""
         from src.agent_server.core.auth_middleware import LangGraphAuthBackend
 
@@ -174,13 +174,13 @@ async def allow_assistant_create(ctx, value):
     ):
         """Test that specific handler takes precedence over general"""
         user = User(identity="test-user")
-        
+
         # Thread create should use specific handler (allows)
         ctx_create = build_auth_context(user, "threads", "create")
         value_create = {}
         result_create = await handle_event(ctx_create, value_create)
         assert result_create is None  # Allowed
-        
+
         # Unknown action on threads should use global handler (denies)
         ctx_unknown = build_auth_context(user, "threads", "unknown_action")
         value_unknown = {}

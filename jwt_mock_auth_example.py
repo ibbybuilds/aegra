@@ -34,18 +34,18 @@ auth = Auth()
 @auth.authenticate
 async def authenticate(headers: dict) -> dict:
     """Mock JWT authentication that simulates real JWT behavior.
-    
+
     Expects: Authorization: Bearer <token>
     Token format: mock-jwt-<user_id>-<role>-<team_id>
-    
+
     Returns user data with custom fields that flow through to routes.
-    
+
     Args:
         headers: Request headers dict
-        
+
     Returns:
         User data dict with identity, display_name, permissions, and custom fields
-        
+
     Raises:
         HTTPException: If token is missing or invalid
     """
@@ -91,15 +91,16 @@ async def authenticate(headers: dict) -> dict:
 
 # Authorization handlers (@auth.on.*)
 
+
 # Global fallback handler - runs for all resources/actions that don't have specific handlers
 # This provides default filtering behavior (e.g., user-scoped access)
 @auth.on
-async def authorize(ctx, value):
+async def authorize(_ctx, _value):
     """Global authorization handler - fallback for all requests.
-    
+
     This handler runs for any resource/action that doesn't have a more specific
     handler. It provides default filtering to ensure users only see their own data.
-    
+
     Returns:
         Filter dict to apply to queries, or True to allow without filtering
     """
@@ -111,7 +112,7 @@ async def authorize(ctx, value):
 @auth.on.threads.create
 async def allow_thread_create(ctx, value):
     """Allow thread creation and inject team_id into metadata.
-    
+
     This handler automatically injects the user's team_id into thread metadata,
     ensuring data isolation at the team level.
     """
@@ -120,7 +121,11 @@ async def allow_thread_create(ctx, value):
         value["metadata"] = {}
     # Inject team_id from user custom fields
     try:
-        team_id = ctx.user["team_id"] if "team_id" in ctx.user else getattr(ctx.user, "team_id", None)
+        team_id = (
+            ctx.user["team_id"]
+            if "team_id" in ctx.user
+            else getattr(ctx.user, "team_id", None)
+        )
         if team_id:
             value["metadata"]["team_id"] = team_id
     except (KeyError, AttributeError):
@@ -129,14 +134,18 @@ async def allow_thread_create(ctx, value):
 
 
 @auth.on.threads.search
-async def filter_threads_by_team(ctx, value):
+async def filter_threads_by_team(ctx, _value):
     """Filter thread searches by team_id.
-    
+
     This handler ensures users only see threads from their team,
     providing automatic data filtering for search operations.
     """
     try:
-        team_id = ctx.user["team_id"] if "team_id" in ctx.user else getattr(ctx.user, "team_id", None)
+        team_id = (
+            ctx.user["team_id"]
+            if "team_id" in ctx.user
+            else getattr(ctx.user, "team_id", None)
+        )
         if team_id:
             return {"metadata": {"team_id": team_id}}
     except (KeyError, AttributeError):
@@ -145,14 +154,16 @@ async def filter_threads_by_team(ctx, value):
 
 
 @auth.on.assistants.delete
-async def restrict_assistant_deletion(ctx, value):
+async def restrict_assistant_deletion(ctx, _value):
     """Only admins can delete assistants.
-    
+
     This demonstrates role-based authorization - only users with
     role="admin" can delete assistants.
     """
     try:
-        role = ctx.user["role"] if "role" in ctx.user else getattr(ctx.user, "role", None)
+        role = (
+            ctx.user["role"] if "role" in ctx.user else getattr(ctx.user, "role", None)
+        )
         if role == "admin":
             return True
     except (KeyError, AttributeError):
@@ -163,7 +174,7 @@ async def restrict_assistant_deletion(ctx, value):
 @auth.on.assistants.create
 async def allow_assistant_create(ctx, value):
     """Allow assistant creation and inject creator info.
-    
+
     This handler injects metadata about who created the assistant
     and which team it belongs to.
     """
@@ -172,7 +183,11 @@ async def allow_assistant_create(ctx, value):
         value["metadata"] = {}
     value["metadata"]["created_by"] = ctx.user.identity
     try:
-        team_id = ctx.user["team_id"] if "team_id" in ctx.user else getattr(ctx.user, "team_id", None)
+        team_id = (
+            ctx.user["team_id"]
+            if "team_id" in ctx.user
+            else getattr(ctx.user, "team_id", None)
+        )
         if team_id:
             value["metadata"]["team_id"] = team_id
     except (KeyError, AttributeError):

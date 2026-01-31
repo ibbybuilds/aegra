@@ -21,7 +21,7 @@ To run these tests:
 2. Start the server with your auth config:
    AEGRA_CONFIG=my_auth_config.json python run_server.py
    # OR: AEGRA_CONFIG=my_auth_config.json docker compose up
-   
+
 3. Run tests explicitly:
    pytest tests/e2e/manual_auth_tests/test_authorization_handlers_e2e.py -v -m manual_auth
 """
@@ -38,9 +38,11 @@ def get_server_url() -> str:
     return settings.app.SERVER_URL
 
 
-def get_auth_token(user_id: str = "alice", role: str = "user", team_id: str = "team123") -> str:
+def get_auth_token(
+    user_id: str = "alice", role: str = "user", team_id: str = "team123"
+) -> str:
     """Generate a mock JWT token for testing.
-    
+
     These tests run against a server with auth enabled, so all requests need valid auth tokens.
     """
     return f"mock-jwt-{user_id}-{role}-{team_id}"
@@ -53,18 +55,19 @@ def get_auth_headers(token: str | None = None) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def get_client_with_auth(user_id: str = "alice", role: str = "user", team_id: str = "team123"):
+def get_client_with_auth(
+    user_id: str = "alice", role: str = "user", team_id: str = "team123"
+):
     """Get SDK client with authentication headers.
-    
+
     Uses SDK client for standard API endpoints (assistants, threads, runs, store).
     For custom routes, use httpx directly.
     """
     from langgraph_sdk import get_client
-    
+
     token = get_auth_token(user_id, role, team_id)
     return get_client(
-        url=get_server_url(),
-        headers={"Authorization": f"Bearer {token}"}
+        url=get_server_url(), headers={"Authorization": f"Bearer {token}"}
     )
 
 
@@ -77,10 +80,8 @@ class TestThreadAuthorization:
     async def test_thread_create_injects_team_id(self):
         """Test that thread creation injects team_id into metadata via @auth.on.threads.create"""
         client = get_client_with_auth("alice", "user", "team456")
-        
-        thread = await client.threads.create(
-            metadata={"custom": "value"}
-        )
+
+        thread = await client.threads.create(metadata={"custom": "value"})
 
         # Authorization handler should have injected team_id
         assert "metadata" in thread
@@ -118,9 +119,9 @@ class TestAssistantAuthorization:
     async def test_assistant_create_injects_metadata(self):
         """Test that assistant creation injects created_by via @auth.on.assistants.create"""
         import uuid
-        
+
         client = get_client_with_auth("charlie", "admin", "team111")
-        
+
         assistant = await client.assistants.create(
             graph_id="agent",
             name=f"Test Assistant {uuid.uuid4().hex[:8]}",
@@ -139,10 +140,10 @@ class TestAssistantAuthorization:
     async def test_assistant_delete_allowed_for_admin(self):
         """Test that assistant deletion is allowed for admin role via @auth.on.assistants.delete"""
         import uuid
-        
+
         # Create client with admin auth
         admin_client = get_client_with_auth("adminuser", "admin", "team1")
-        
+
         # Create an assistant
         assistant = await admin_client.assistants.create(
             graph_id="agent",
@@ -161,10 +162,10 @@ class TestAssistantAuthorization:
     async def test_assistant_delete_denied_for_non_admin(self):
         """Test that assistant deletion is denied for non-admin role"""
         import uuid
-        
+
         # Create client with regular user auth
         user_client = get_client_with_auth("regularuser", "user", "team2")
-        
+
         # Create an assistant
         assistant = await user_client.assistants.create(
             graph_id="agent",
@@ -178,13 +179,15 @@ class TestAssistantAuthorization:
         # SDK client raises an exception for 403
         with pytest.raises(Exception) as exc_info:
             await user_client.assistants.delete(assistant_id)
-        
+
         # Verify it's a 403 error
         # SDK wraps httpx.HTTPStatusError, check response.status_code
         error = exc_info.value
         assert hasattr(error, "response") or hasattr(error, "status_code")
         status_code = getattr(error, "status_code", None) or (
-            getattr(error.response, "status_code", None) if hasattr(error, "response") else None
+            getattr(error.response, "status_code", None)
+            if hasattr(error, "response")
+            else None
         )
         assert status_code == 403, f"Expected 403, got {status_code}"
 
@@ -213,7 +216,7 @@ class TestAuthorizationMetadataInjection:
     async def test_thread_create_metadata_injection(self):
         """Test that thread creation handler injects metadata"""
         client = get_client_with_auth("dave", "user", "team999")
-        
+
         thread = await client.threads.create()
 
         # Check that team_id was injected
@@ -227,9 +230,9 @@ class TestAuthorizationMetadataInjection:
     async def test_assistant_create_metadata_injection(self):
         """Test that assistant creation handler injects metadata"""
         import uuid
-        
+
         client = get_client_with_auth("eve", "admin", "team888")
-        
+
         assistant = await client.assistants.create(
             graph_id="agent",
             name=f"Metadata Test Assistant {uuid.uuid4().hex[:8]}",

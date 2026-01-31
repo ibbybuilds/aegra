@@ -31,10 +31,10 @@ def get_e2e_client():
 
 def check_server_has_auth(url: str | None = None) -> bool | None:
     """Check if server has auth enabled by making unauthenticated request.
-    
+
     Args:
         url: Server URL (defaults to settings.app.SERVER_URL)
-    
+
     Returns:
         True if auth is enabled (401 response)
         False if no auth (200 response)
@@ -42,7 +42,7 @@ def check_server_has_auth(url: str | None = None) -> bool | None:
     """
     if url is None:
         url = settings.app.SERVER_URL
-    
+
     try:
         response = httpx.get(f"{url}/assistants", timeout=2.0)
         if response.status_code == 401:

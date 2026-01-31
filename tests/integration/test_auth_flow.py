@@ -9,16 +9,16 @@ These tests validate:
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
+from fastapi import Request
 from starlette.authentication import AuthCredentials, AuthenticationError
 from starlette.requests import HTTPConnection
 
-from src.agent_server.core.auth_middleware import LangGraphAuthBackend, LangGraphUser
 from src.agent_server.core.auth_deps import require_auth
+from src.agent_server.core.auth_middleware import LangGraphAuthBackend, LangGraphUser
 from src.agent_server.models.auth import User
-from fastapi import Request
 
 
 class TestAuthLoadingFromConfig:
@@ -103,7 +103,6 @@ class TestMockJWTAuth:
         """Create backend with mock JWT auth"""
         # Import the mock auth handler
         import sys
-        from pathlib import Path
 
         # Add tests/fixtures to path
         fixtures_path = Path(__file__).parent.parent / "fixtures"
@@ -119,8 +118,6 @@ class TestMockJWTAuth:
     @pytest.fixture
     def mock_jwt_auth_backend_from_config(self, tmp_path, monkeypatch):
         """Create backend by loading mock JWT auth from config path (realistic scenario)"""
-        import sys
-        from pathlib import Path
 
         # Get the actual fixtures directory
         fixtures_path = Path(__file__).parent.parent / "fixtures"
@@ -128,6 +125,7 @@ class TestMockJWTAuth:
 
         # Copy mock auth file to tmp_path
         import shutil
+
         test_auth_file = tmp_path / "mock_jwt_auth.py"
         shutil.copy(mock_auth_file, test_auth_file)
 
@@ -223,7 +221,9 @@ class TestMockJWTAuth:
         assert user.subscription_tier == "premium"
 
     @pytest.mark.asyncio
-    async def test_mock_jwt_loaded_from_config_path(self, mock_jwt_auth_backend_from_config):
+    async def test_mock_jwt_loaded_from_config_path(
+        self, mock_jwt_auth_backend_from_config
+    ):
         """Test that mock JWT auth can be loaded via config path mechanism"""
         backend = mock_jwt_auth_backend_from_config
 
@@ -272,7 +272,6 @@ class TestUserModelCustomFields:
     async def test_user_model_preserves_custom_fields(self):
         """Test that custom fields from auth handler are accessible on User model"""
         import sys
-        from pathlib import Path
 
         fixtures_path = Path(__file__).parent.parent / "fixtures"
         if str(fixtures_path) not in sys.path:
@@ -296,7 +295,9 @@ class TestUserModelCustomFields:
         mock_request.scope = {}
         mock_request.user = None
 
-        with patch("src.agent_server.core.auth_deps.get_auth_backend", return_value=backend):
+        with patch(
+            "src.agent_server.core.auth_deps.get_auth_backend", return_value=backend
+        ):
             # Set scope with authenticated user
             mock_request.scope["user"] = langgraph_user
             mock_request.scope["auth"] = credentials
@@ -321,7 +322,6 @@ class TestUserModelCustomFields:
     async def test_require_auth_with_mock_jwt(self):
         """Test require_auth dependency directly with mock JWT auth"""
         import sys
-        from pathlib import Path
 
         fixtures_path = Path(__file__).parent.parent / "fixtures"
         if str(fixtures_path) not in sys.path:
@@ -337,7 +337,9 @@ class TestUserModelCustomFields:
         mock_request.scope = {}
         mock_request.user = None
 
-        with patch("src.agent_server.core.auth_deps.get_auth_backend", return_value=backend):
+        with patch(
+            "src.agent_server.core.auth_deps.get_auth_backend", return_value=backend
+        ):
             user = await require_auth(mock_request)
 
             # Verify user is authenticated and custom fields are present

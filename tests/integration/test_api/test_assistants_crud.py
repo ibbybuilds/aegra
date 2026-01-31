@@ -24,7 +24,9 @@ def client(mock_assistant_service):
 
     # Mock authorization handlers to allow all requests in integration tests
     # These tests focus on API layer, not authorization layer
-    with patch("agent_server.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+    with patch(
+        "agent_server.api.assistants.handle_event", new_callable=AsyncMock
+    ) as mock_handle:
         mock_handle.return_value = None  # Allow all requests
         yield make_client(app)
 

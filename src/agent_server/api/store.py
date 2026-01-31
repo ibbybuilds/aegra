@@ -28,7 +28,7 @@ async def put_store_item(
     ctx = build_auth_context(user, "store", "put")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    
+
     # If handler modified namespace/key/value, update request
     if filters:
         if "namespace" in filters:
@@ -64,7 +64,7 @@ async def get_store_item(
     ctx = build_auth_context(user, "store", "get")
     value = {"key": key, "namespace": namespace}
     filters = await handle_event(ctx, value)
-    
+
     # If handler modified namespace/key, update
     if filters:
         if "namespace" in filters:
@@ -120,12 +120,12 @@ async def delete_store_item(
             raise HTTPException(422, "Missing 'key' parameter")
         ns = namespace or []
         k = key
-    
+
     # Authorization check
     ctx = build_auth_context(user, "store", "delete")
     value = {"namespace": ns, "key": k}
     filters = await handle_event(ctx, value)
-    
+
     # If handler modified namespace/key, update
     if filters:
         if "namespace" in filters:
@@ -155,7 +155,7 @@ async def search_store_items(
     ctx = build_auth_context(user, "store", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    
+
     # Merge handler filters with request filters
     if filters:
         request_filters = request.filters or {}

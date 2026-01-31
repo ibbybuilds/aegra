@@ -3,10 +3,9 @@
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request
-from starlette.authentication import AuthCredentials
 
-from .auth_middleware import LangGraphUser, get_auth_backend
 from ..models.auth import User
+from .auth_middleware import get_auth_backend
 
 
 def _extract_user_data(user_obj: Any) -> dict[str, Any]:

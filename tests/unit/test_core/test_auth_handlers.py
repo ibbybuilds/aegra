@@ -76,7 +76,9 @@ class TestHandleEvent:
         user = User(identity="user-123")
         ctx = build_auth_context(user, "threads", "create")
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=None):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance", return_value=None
+        ):
             result = await handle_event(ctx, {})
 
             assert result is None
@@ -92,7 +94,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             assert result is None
@@ -109,7 +114,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             assert result is None
@@ -127,7 +135,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             assert result is None
@@ -144,7 +155,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await handle_event(ctx, {})
 
@@ -164,7 +178,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             assert result == filter_dict
@@ -186,7 +203,10 @@ class TestHandleEvent:
         mock_auth._handler_cache = {}
 
         value = {}
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             await handle_event(ctx, value)
 
             assert value["metadata"] == {"org_id": "org-456"}
@@ -212,19 +232,24 @@ class TestHandleEvent:
         mock_auth._handlers = {("threads", "create"): [mock_handler]}
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
-        
+
         # Mock Auth.exceptions.HTTPException to match our exception type
         mock_auth.exceptions = Mock()
         mock_auth.exceptions.HTTPException = MockHTTPException
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
-            with patch("src.agent_server.core.auth_handlers.Auth") as mock_auth_class:
-                mock_auth_class.exceptions.HTTPException = MockHTTPException
-                with pytest.raises(HTTPException) as exc_info:
-                    await handle_event(ctx, {})
+        with (
+            patch(
+                "src.agent_server.core.auth_handlers.get_auth_instance",
+                return_value=mock_auth,
+            ),
+            patch("src.agent_server.core.auth_handlers.Auth") as mock_auth_class,
+        ):
+            mock_auth_class.exceptions.HTTPException = MockHTTPException
+            with pytest.raises(HTTPException) as exc_info:
+                await handle_event(ctx, {})
 
-                assert exc_info.value.status_code == 403
-                assert "Access denied" in exc_info.value.detail
+            assert exc_info.value.status_code == 403
+            assert "Access denied" in exc_info.value.detail
 
     @pytest.mark.asyncio
     async def test_handler_raises_assertion_error(self):
@@ -238,7 +263,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await handle_event(ctx, {})
 
@@ -257,7 +285,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await handle_event(ctx, {})
 
@@ -276,7 +307,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await handle_event(ctx, {})
 
@@ -303,7 +337,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             # Should use most specific handler
@@ -329,7 +366,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             # Should use resource-specific handler
@@ -352,7 +392,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             result = await handle_event(ctx, {})
 
             # Should use global handler
@@ -371,7 +414,10 @@ class TestHandleEvent:
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch("src.agent_server.core.auth_handlers.get_auth_instance", return_value=mock_auth):
+        with patch(
+            "src.agent_server.core.auth_handlers.get_auth_instance",
+            return_value=mock_auth,
+        ):
             # First call
             await handle_event(ctx, {})
             assert ("threads", "create") in mock_auth._handler_cache

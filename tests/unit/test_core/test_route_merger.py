@@ -2,8 +2,6 @@
 
 from contextlib import asynccontextmanager
 
-from contextlib import asynccontextmanager
-
 import pytest
 from fastapi import FastAPI
 

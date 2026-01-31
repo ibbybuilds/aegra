@@ -176,7 +176,7 @@ async def create_run(
     ctx = build_auth_context(user, "threads", "create_run")
     value = {**request.model_dump(), "thread_id": thread_id}
     filters = await handle_event(ctx, value)
-    
+
     # If handler modified config/context, update request
     if filters:
         if "config" in filters:
@@ -447,7 +447,7 @@ async def get_run(
     ctx = build_auth_context(user, "runs", "read")
     value = {"run_id": run_id, "thread_id": thread_id}
     await handle_event(ctx, value)
-    
+
     stmt = select(RunORM).where(
         RunORM.run_id == str(run_id),
         RunORM.thread_id == thread_id,

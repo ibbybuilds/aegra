@@ -12,7 +12,7 @@ To run these tests:
    AEGRA_CONFIG=my_auth_config.json python run_server.py
    # OR for Docker:
    AEGRA_CONFIG=my_auth_config.json docker compose up
-   
+
 3. Run tests explicitly:
    pytest tests/e2e/manual_auth_tests/test_auth_e2e.py -v -m manual_auth
 """
@@ -29,7 +29,9 @@ def get_server_url() -> str:
     return settings.app.SERVER_URL
 
 
-def get_auth_token(user_id: str = "alice", role: str = "user", team_id: str = "team123") -> str:
+def get_auth_token(
+    user_id: str = "alice", role: str = "user", team_id: str = "team123"
+) -> str:
     """Generate a mock JWT token for testing"""
     return f"mock-jwt-{user_id}-{role}-{team_id}"
 
@@ -78,7 +80,11 @@ class TestCoreRoutesAuth:
 
         elog(
             "Core route with valid auth",
-            {"url": url, "status": response.status_code, "headers": list(headers.keys())},
+            {
+                "url": url,
+                "status": response.status_code,
+                "headers": list(headers.keys()),
+            },
         )
 
     def test_core_routes_reject_invalid_token(self):
@@ -92,7 +98,10 @@ class TestCoreRoutesAuth:
             f"Expected 401 for invalid token, got {response.status_code}: {response.text}"
         )
 
-        elog("Core route with invalid token", {"url": url, "status": response.status_code})
+        elog(
+            "Core route with invalid token",
+            {"url": url, "status": response.status_code},
+        )
 
 
 @pytest.mark.e2e

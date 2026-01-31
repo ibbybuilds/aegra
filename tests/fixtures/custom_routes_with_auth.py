@@ -6,7 +6,8 @@ These routes test:
 3. Auth dependency application to custom routes
 """
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import Depends, FastAPI, Request
+
 from src.agent_server.core.auth_deps import require_auth
 from src.agent_server.models.auth import User
 
@@ -19,7 +20,7 @@ app = FastAPI(
 @app.get("/custom/whoami")
 async def whoami(request: Request, user: User = Depends(require_auth)):
     """Return current user info - tests that auth flows to custom routes.
-    
+
     This endpoint explicitly uses get_current_user dependency to test
     that authentication works correctly with custom routes.
     """
@@ -39,7 +40,7 @@ async def whoami(request: Request, user: User = Depends(require_auth)):
 @app.get("/custom/public")
 async def public_endpoint():
     """Public endpoint - no auth dependency explicitly added.
-    
+
     This endpoint will be protected if enable_custom_route_auth is True,
     otherwise it will be public.
     """
@@ -52,7 +53,7 @@ async def public_endpoint():
 @app.get("/custom/protected")
 async def protected_endpoint(user: User = Depends(require_auth)):
     """Protected endpoint - explicitly requires auth dependency.
-    
+
     This endpoint always requires authentication regardless of config.
     """
     return {

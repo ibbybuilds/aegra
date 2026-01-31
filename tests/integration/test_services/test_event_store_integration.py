@@ -48,17 +48,19 @@ def database_available():
             port = "5432"
 
         # Test connection with psycopg3
-        with psycopg.connect(
-            host=host,
-            port=int(port),
-            user=user,
-            password=password,
-            dbname=database,
-            connect_timeout=5,
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
+        with (
+            psycopg.connect(
+                host=host,
+                port=int(port),
+                user=user,
+                password=password,
+                dbname=database,
+                connect_timeout=5,
+            ) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute("SELECT 1")
+            cur.fetchone()
 
         logger.info("Database connection successful for integration tests")
         yield True
@@ -152,10 +154,10 @@ async def event_store(clean_event_store_tables):
         yield EventStore()
 
     # Cleanup: close the test pool
-    try:
-        await test_pool.close()
-    except Exception:
-        pass  # Ignore cleanup errors
+    from contextlib import suppress
+
+    with suppress(Exception):
+        await test_pool.close()  # Ignore cleanup errors
 
 
 class TestEventStoreIntegration:

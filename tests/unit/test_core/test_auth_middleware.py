@@ -128,7 +128,9 @@ class TestLangGraphAuthBackend:
         with (
             patch("pathlib.Path.exists", return_value=False),
             patch("pathlib.Path.cwd", return_value=Path("/test")),
-            patch("agent_server.core.auth_middleware.load_auth_config", return_value=None),
+            patch(
+                "agent_server.core.auth_middleware.load_auth_config", return_value=None
+            ),
         ):
             backend = LangGraphAuthBackend()
 
@@ -193,7 +195,9 @@ class TestLangGraphAuthBackend:
                 "agent_server.core.auth_middleware.load_auth_config",
                 side_effect=Exception("Test config error"),
             ),
-            patch("pathlib.Path.exists", return_value=False),  # Fallback also finds nothing
+            patch(
+                "pathlib.Path.exists", return_value=False
+            ),  # Fallback also finds nothing
             patch("pathlib.Path.cwd", return_value=Path("/test")),
         ):
             backend = LangGraphAuthBackend()

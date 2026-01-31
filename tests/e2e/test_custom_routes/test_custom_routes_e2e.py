@@ -60,7 +60,9 @@ def test_openapi_includes_custom_routes():
     # These routes exist in custom_routes_example.py
     assert "/custom/whoami" in paths, "Custom whoami route should be in OpenAPI spec"
     assert "/custom/public" in paths, "Custom public route should be in OpenAPI spec"
-    assert "/custom/protected" in paths, "Custom protected route should be in OpenAPI spec"
+    assert "/custom/protected" in paths, (
+        "Custom protected route should be in OpenAPI spec"
+    )
 
     elog(
         "OpenAPI spec verification",

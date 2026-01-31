@@ -72,7 +72,7 @@ class TestLangGraphServiceRealFiles:
     async def test_initialize_fallback_to_langgraph_json(self, monkeypatch):
         """Test fallback to langgraph.json when aegra.json not found"""
         import sys
-        import shutil
+
         config_data = {"graphs": {"fallback_graph": "./graphs/fallback.py:graph"}}
 
         # Windows has issues with temp directory cleanup when files are still open

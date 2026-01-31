@@ -33,7 +33,8 @@ You can also configure CORS:
 }
 """
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import Depends, FastAPI
+
 from src.agent_server.core.auth_deps import require_auth
 from src.agent_server.models.auth import User
 
@@ -46,9 +47,9 @@ app = FastAPI(
 
 
 @app.get("/custom/whoami")
-async def whoami(request: Request, user: User = Depends(require_auth)):
+async def whoami(user: User = Depends(require_auth)):
     """Return current user info - demonstrates authentication integration.
-    
+
     This endpoint shows how to access authenticated user data in custom routes.
     Custom fields from your auth handler (e.g., role, team_id) are accessible.
     """
@@ -68,7 +69,7 @@ async def whoami(request: Request, user: User = Depends(require_auth)):
 @app.get("/custom/public")
 async def public_endpoint():
     """Public endpoint - no auth dependency explicitly added.
-    
+
     This endpoint will be protected if enable_custom_route_auth is True,
     otherwise it will be public. Useful for testing the enable_custom_route_auth config.
     """
@@ -81,7 +82,7 @@ async def public_endpoint():
 @app.get("/custom/protected")
 async def protected_endpoint(user: User = Depends(require_auth)):
     """Protected endpoint - explicitly requires authentication.
-    
+
     This endpoint always requires authentication regardless of
     enable_custom_route_auth configuration.
     """

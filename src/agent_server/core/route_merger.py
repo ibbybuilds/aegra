@@ -69,5 +69,3 @@ def merge_exception_handlers(
             logger.debug(f"User app overrides exception handler for {exc_type}")
 
     return user_app
-
-

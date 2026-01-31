@@ -25,19 +25,19 @@ from tests.e2e._utils import check_server_has_auth
 @pytest.fixture(scope="session", autouse=True)
 def skip_if_no_auth():
     """Skip auth flow tests if server doesn't have auth enabled.
-    
+
     This fixture automatically skips all tests in test_auth_flow if:
     - Server is not running
     - Server doesn't have auth enabled
-    
+
     This allows regular E2E tests to run without auth, while auth tests
     are skipped unless the server is configured with auth.
     """
     server_url = settings.app.SERVER_URL
-    
+
     # Check if server has auth enabled
     has_auth = check_server_has_auth(server_url)
-    
+
     if has_auth is False:
         pytest.skip(
             "Server is running but does not have auth enabled. "

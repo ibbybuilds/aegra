@@ -150,9 +150,11 @@ Documentation includes:
 - Custom routes integration
 - Testing guide
 
-## Related Issues
+## Related Issues & PRs
 
 Closes #152 - Configurable Auth File Loading from aegra.json
 Closes #151 - Flexible User Model - Accept Arbitrary Fields Without Type Errors
+
+**Note on PR #150**: This PR's base commit (8059de1) already includes the OpenAPI fix for core routes appearing in API spec when using custom routes. The fix uses `_include_core_routers()` to directly include routers (cleaner approach) rather than PR #150's `merge_routes()` + `update_openapi_spec()` approach. Both solve the same problem, but this PR's approach is already merged.
 
 This PR implements authorization handler support as part of the auth and OpenAPI refactor.

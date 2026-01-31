@@ -45,7 +45,7 @@ Run these tests when:
    ```bash
    # Run all manual auth tests
    pytest tests/e2e/manual_auth_tests/ -v -m manual_auth
-   
+
    # Run specific test file
    pytest tests/e2e/manual_auth_tests/test_auth_e2e.py -v -m manual_auth
    pytest tests/e2e/manual_auth_tests/test_authorization_handlers_e2e.py -v -m manual_auth

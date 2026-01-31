@@ -152,4 +152,7 @@ Documentation includes:
 
 ## Related Issues
 
-Implements authorization handler support as part of the auth and OpenAPI refactor.
+Closes #152 - Configurable Auth File Loading from aegra.json
+Closes #151 - Flexible User Model - Accept Arbitrary Fields Without Type Errors
+
+This PR implements authorization handler support as part of the auth and OpenAPI refactor.

@@ -2,7 +2,6 @@
 
 import pytest
 from fastapi import FastAPI
-from starlette.applications import Starlette
 
 from src.agent_server.core.app_loader import load_custom_app
 
@@ -34,7 +33,7 @@ async def custom():
 
 
 def test_load_custom_app_from_file_starlette(tmp_path):
-    """Test loading custom Starlette app from file path"""
+    """Test that Starlette apps are rejected (only FastAPI allowed)"""
     # Create a temporary Python file with a Starlette app
     app_file = tmp_path / "custom_starlette.py"
     app_file.write_text(
@@ -49,11 +48,9 @@ app = Starlette(routes=[Route("/custom", handler)])
 """
     )
 
-    # Load the app
-    loaded_app = load_custom_app(f"{app_file}:app")
-
-    assert isinstance(loaded_app, Starlette)
-    assert len(loaded_app.routes) == 1
+    # Starlette apps should be rejected - only FastAPI is allowed
+    with pytest.raises(TypeError, match="not a FastAPI application"):
+        load_custom_app(f"{app_file}:app")
 
 
 def test_load_custom_app_invalid_format():
@@ -78,11 +75,11 @@ def test_load_custom_app_missing_variable(tmp_path):
 
 
 def test_load_custom_app_not_starlette(tmp_path):
-    """Test loading app when variable is not a Starlette app"""
+    """Test loading app when variable is not a FastAPI app"""
     app_file = tmp_path / "not_app.py"
     app_file.write_text("app = 'not an app'")
 
-    with pytest.raises(TypeError, match="is not a Starlette or FastAPI application"):
+    with pytest.raises(TypeError, match="not a FastAPI application"):
         load_custom_app(f"{app_file}:app")
 
 

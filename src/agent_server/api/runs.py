@@ -32,7 +32,7 @@ from ..utils.run_utils import (
 )
 from ..utils.status_compat import validate_run_status
 
-router = APIRouter()
+router = APIRouter(tags=["Runs"])
 
 logger = structlog.getLogger(__name__)
 serializer = GeneralSerializer()

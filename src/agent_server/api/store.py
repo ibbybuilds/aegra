@@ -15,7 +15,7 @@ from ..models import (
     User,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Store"])
 
 
 @router.put("/store/items")

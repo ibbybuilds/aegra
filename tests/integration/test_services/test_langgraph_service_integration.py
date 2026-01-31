@@ -71,9 +71,15 @@ class TestLangGraphServiceRealFiles:
     @pytest.mark.asyncio
     async def test_initialize_fallback_to_langgraph_json(self, monkeypatch):
         """Test fallback to langgraph.json when aegra.json not found"""
+        import sys
+        import shutil
         config_data = {"graphs": {"fallback_graph": "./graphs/fallback.py:graph"}}
 
-        with TemporaryDirectory() as temp_dir:
+        # Windows has issues with temp directory cleanup when files are still open
+        # Use manual cleanup with error handling to work around this
+        temp_dir_obj = TemporaryDirectory()
+        temp_dir = temp_dir_obj.name
+        try:
             langgraph_path = Path(temp_dir) / "langgraph.json"
             langgraph_path.write_text(json.dumps(config_data))
 
@@ -93,6 +99,16 @@ class TestLangGraphServiceRealFiles:
                 assert service.config == config_data
                 # Path will be relative since we changed directory
                 assert service.config_path.name == "langgraph.json"
+        finally:
+            # Windows may have file handle issues, so use ignore_errors
+            try:
+                temp_dir_obj.cleanup()
+            except (PermissionError, OSError):
+                # On Windows, files may still be locked - ignore cleanup errors
+                if sys.platform == "win32":
+                    pass
+                else:
+                    raise
 
     @pytest.mark.asyncio
     async def test_initialize_invalid_json_file(self):

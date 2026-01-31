@@ -28,7 +28,7 @@ class HttpConfig(TypedDict, total=False):
     app: str
     """Import path for custom Starlette/FastAPI app to mount"""
     enable_custom_route_auth: bool
-    """Apply Aegra authentication middleware to custom routes"""
+    """Apply Aegra authentication dependency to custom routes (uses FastAPI dependencies, not middleware)"""
     cors: CorsConfig | None
     """Custom CORS configuration"""
 

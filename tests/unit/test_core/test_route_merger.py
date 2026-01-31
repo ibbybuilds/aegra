@@ -2,16 +2,14 @@
 
 from contextlib import asynccontextmanager
 
+from contextlib import asynccontextmanager
+
 import pytest
 from fastapi import FastAPI
-from starlette.applications import Starlette
-from starlette.routing import Mount, Route
 
 from src.agent_server.core.route_merger import (
     merge_exception_handlers,
     merge_lifespans,
-    merge_routes,
-    update_openapi_spec,
 )
 
 
@@ -28,52 +26,8 @@ def user_app():
     return app
 
 
-@pytest.fixture
-def shadowable_routes():
-    """Create shadowable routes"""
-    return [Route("/", dummy_handler, methods=["GET"])]
-
-
-@pytest.fixture
-def unshadowable_routes():
-    """Create unshadowable routes"""
-    return [Route("/health", dummy_handler, methods=["GET"])]
-
-
-@pytest.fixture
-def protected_mount():
-    """Create protected mount"""
-    return Mount("/api", routes=[Route("/test", dummy_handler, methods=["GET"])])
-
-
-def test_merge_routes(
-    user_app, shadowable_routes, unshadowable_routes, protected_mount
-):
-    """Test merging routes with correct priority"""
-    merged_app = merge_routes(
-        user_app=user_app,
-        unshadowable_routes=unshadowable_routes,
-        shadowable_routes=shadowable_routes,
-        protected_mount=protected_mount,
-    )
-
-    assert merged_app is user_app
-    routes = list(merged_app.routes)
-
-    # FastAPI adds default routes (/docs, /openapi.json, etc.) which come first
-    # Check route order: FastAPI defaults -> unshadowable -> custom -> shadowable -> protected
-    route_paths = [r.path for r in routes if hasattr(r, "path")]
-
-    # Find positions of our routes
-    health_idx = route_paths.index("/health")
-    custom_idx = route_paths.index("/custom")
-    root_idx = route_paths.index("/")
-
-    # Check priority order: unshadowable comes before custom, custom before shadowable
-    assert health_idx < custom_idx < root_idx
-
-    # Protected mount should be last
-    assert isinstance(routes[-1], Mount)
+# Note: merge_routes() has been removed - routes are now merged via include_router()
+# Route merging is now handled directly in main.py using FastAPI's include_router()
 
 
 def test_merge_lifespans(user_app):
@@ -150,14 +104,5 @@ def test_merge_exception_handlers_user_override(user_app):
     assert merged_app.exception_handlers[ValueError] is user_handler
 
 
-def test_update_openapi_spec_fastapi(user_app):
-    """Test updating OpenAPI spec for FastAPI app"""
-    # Should not raise
-    update_openapi_spec(user_app)
-
-
-def test_update_openapi_spec_starlette():
-    """Test updating OpenAPI spec for Starlette app"""
-    app = Starlette()
-    # Should not raise
-    update_openapi_spec(app)
+# Note: update_openapi_spec() has been removed - FastAPI automatically handles OpenAPI
+# when using include_router(), so no manual spec update is needed

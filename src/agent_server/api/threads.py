@@ -34,7 +34,7 @@ from ..models import (
 from ..services.streaming_service import streaming_service
 from ..services.thread_state_service import ThreadStateService
 
-router = APIRouter()
+router = APIRouter(tags=["Threads"])
 logger = structlog.getLogger(__name__)
 
 thread_state_service = ThreadStateService()

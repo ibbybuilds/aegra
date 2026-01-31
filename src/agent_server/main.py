@@ -286,7 +286,7 @@ def create_app() -> FastAPI:
     else:
         application = FastAPI(
             title=settings.app.PROJECT_NAME,
-            description="Production-ready Agent Protocol server built on LangGraph",
+            description="Production-ready Agent Protocol server",
             version=settings.app.VERSION,
             debug=settings.app.DEBUG,
             docs_url="/docs",

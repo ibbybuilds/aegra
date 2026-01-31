@@ -67,10 +67,7 @@ class StoreConfig(TypedDict, total=False):
 
 
 class AuthConfig(TypedDict, total=False):
-    """Auth configuration options.
-
-    Mirrors LangGraph Platform's auth config format.
-    """
+    """Auth configuration options."""
 
     path: str
     """Import path for auth handler in format './file.py:variable' or 'module:variable'.
@@ -84,12 +81,12 @@ class AuthConfig(TypedDict, total=False):
 
 
 def _resolve_config_path() -> Path | None:
-    """Resolve config file path using the same logic as LangGraphService.
+    """Resolve config file path using standard resolution order.
 
     Resolution order:
     1) AEGRA_CONFIG env var (absolute or relative path) - returned even if doesn't exist
     2) aegra.json in CWD
-    3) langgraph.json in CWD (fallback)
+        3) langgraph.json in CWD (fallback for compatibility)
 
     Returns:
         Path to config file or None if not found
@@ -112,7 +109,7 @@ def _resolve_config_path() -> Path | None:
 
 
 def load_config() -> dict | None:
-    """Load full config file using the same resolution logic as LangGraphService.
+    """Load full config file using standard resolution order.
 
     Returns:
         Full config dict or None if not found
@@ -132,7 +129,7 @@ def load_config() -> dict | None:
 def load_http_config() -> HttpConfig | None:
     """Load HTTP config from aegra.json or langgraph.json.
 
-    Uses the same config resolution logic as LangGraphService to ensure consistency.
+    Uses standard config resolution order.
 
     Returns:
         HTTP configuration dict or None if not found
@@ -153,7 +150,7 @@ def load_http_config() -> HttpConfig | None:
 def load_store_config() -> StoreConfig | None:
     """Load store config from aegra.json or langgraph.json.
 
-    Uses the same config resolution logic as LangGraphService to ensure consistency.
+    Uses standard config resolution order.
 
     Returns:
         Store configuration dict or None if not found
@@ -174,7 +171,7 @@ def load_store_config() -> StoreConfig | None:
 def load_auth_config() -> AuthConfig | None:
     """Load auth config from aegra.json or langgraph.json.
 
-    Uses the same config resolution logic as LangGraphService to ensure consistency.
+    Uses standard config resolution order.
 
     Returns:
         Auth configuration dict or None if not found

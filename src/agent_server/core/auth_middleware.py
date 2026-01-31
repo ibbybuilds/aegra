@@ -1,7 +1,7 @@
 """
-Authentication middleware integration for LangGraph Agent Server.
+Authentication middleware integration for Aegra.
 
-This module integrates LangGraph's authentication system with FastAPI
+This module integrates authentication system with FastAPI
 using Starlette's AuthenticationMiddleware.
 """
 
@@ -34,7 +34,7 @@ logger = structlog.getLogger(__name__)
 class LangGraphUser(BaseUser):
     """
     User wrapper that implements Starlette's BaseUser interface
-    while preserving LangGraph auth data.
+    while preserving auth data.
     """
 
     def __init__(self, user_data: Auth.types.MinimalUserDict):
@@ -67,9 +67,9 @@ class LangGraphUser(BaseUser):
 
 class LangGraphAuthBackend(AuthenticationBackend):
     """
-    Authentication backend that uses LangGraph's auth system.
+    Authentication backend that uses the auth system.
 
-    This bridges LangGraph's @auth.authenticate handlers with
+    This bridges @auth.authenticate handlers with
     Starlette's AuthenticationMiddleware.
     """
 
@@ -80,9 +80,8 @@ class LangGraphAuthBackend(AuthenticationBackend):
         """Load the auth instance from config or fallback to hardcoded candidates.
 
         Resolution order:
-        1. Load from aegra.json/langgraph.json auth.path config
-        2. Fallback to hardcoded candidates: auth.py in CWD
-        3. If no auth file found, returns None (noop handled directly in authenticate())
+        1. Load from aegra.json auth.path config
+        2. If no auth file found, returns None (noop handled directly in authenticate())
 
         Returns:
             Auth instance or None if not found (noop handled in authenticate() method)
@@ -100,17 +99,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
         except Exception as e:
             logger.warning(f"Error loading auth config: {e}")
 
-        # 2. Fallback to hardcoded candidates for backward compatibility
-        fallback_candidates = ["auth.py"]
-        for candidate in fallback_candidates:
-            auth_path = Path.cwd() / candidate
-            if auth_path.exists():
-                logger.info(f"Trying fallback auth file: {auth_path}")
-                auth_instance = self._load_from_file(auth_path, "auth")
-                if auth_instance:
-                    return auth_instance
-
-        logger.warning("No auth instance found from config or fallback candidates")
+        logger.debug("No auth instance found from config")
         return None
 
     def _load_from_path(self, path: str) -> Auth | None:
@@ -154,6 +143,10 @@ class LangGraphAuthBackend(AuthenticationBackend):
         try:
             if not file_path.exists():
                 logger.warning(f"Auth file not found: {file_path}")
+                return None
+            
+            if not file_path.is_file():
+                logger.warning(f"Auth path is not a file: {file_path} (is directory: {file_path.is_dir()})")
                 return None
 
             # Create a unique module name based on the file path
@@ -220,7 +213,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
         self, conn: HTTPConnection
     ) -> tuple[AuthCredentials, BaseUser] | None:
         """
-        Authenticate request using LangGraph's auth system.
+        Authenticate request using the configured auth system.
 
         Args:
             conn: HTTP connection containing request headers
@@ -235,7 +228,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
         # Default to noop (anonymous) authentication when no auth file is found,
         # regardless of AUTH_TYPE setting. This ensures the server works out-of-the-box.
         if self.auth_instance is None:
-            logger.info(
+            logger.debug(
                 "No auth file configured, defaulting to noop (anonymous) authentication"
             )
             # Return anonymous user when no auth is configured
@@ -255,7 +248,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
             return None
 
         try:
-            # Convert headers to dict format expected by LangGraph
+            # Convert headers to dict format expected by auth handlers
             headers = {
                 key.decode() if isinstance(key, bytes) else key: value.decode()
                 if isinstance(value, bytes)
@@ -263,7 +256,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
                 for key, value in conn.headers.items()
             }
 
-            # Call LangGraph's authenticate handler
+            # Call the authenticate handler
             user_data = await self.auth_instance._authenticate_handler(headers)
 
             if not user_data or not isinstance(user_data, dict):
@@ -305,7 +298,7 @@ def get_auth_backend() -> AuthenticationBackend:
     auth_type = settings.app.AUTH_TYPE
 
     if auth_type in ["noop", "custom"]:
-        logger.info(f"Using LangGraph auth backend with type: {auth_type}")
+        logger.debug(f"Using auth backend with type: {auth_type}")
         return LangGraphAuthBackend()
     else:
         logger.warning(f"Unknown AUTH_TYPE: {auth_type}, using noop")

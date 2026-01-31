@@ -184,9 +184,9 @@ The system uses a hybrid approach with two connection pools:
 }
 ```
 
-**auth.py** - Authentication using LangGraph SDK Auth patterns:
+**jwt_mock_auth_example.py** - Example authentication using LangGraph SDK Auth patterns:
 - `@auth.authenticate` decorator for user authentication
-- `@auth.on.{resource}.{action}` for authorization
+- `@auth.on.{resource}.{action}` for authorization handlers
 - Returns `Auth.types.MinimalUserDict` with user identity
 
 ### Graph Loading

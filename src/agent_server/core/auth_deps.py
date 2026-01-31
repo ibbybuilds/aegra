@@ -1,8 +1,34 @@
 """Authentication dependencies for FastAPI endpoints"""
 
+from typing import Any
+
 from fastapi import Depends, HTTPException, Request
 
 from ..models.auth import User
+
+
+def _extract_user_data(user_obj: Any) -> dict[str, Any]:
+    """Extract user data from various object types.
+
+    Handles dict, objects with to_dict(), and objects with dict() methods.
+
+    Args:
+        user_obj: User object from authentication middleware
+
+    Returns:
+        Dictionary containing user data
+    """
+    if isinstance(user_obj, dict):
+        return user_obj
+    if hasattr(user_obj, "to_dict"):
+        return user_obj.to_dict()
+    if hasattr(user_obj, "dict"):
+        return user_obj.dict()
+    # Fallback: try to extract known attributes
+    return {
+        "identity": getattr(user_obj, "identity", str(user_obj)),
+        "is_authenticated": getattr(user_obj, "is_authenticated", True),
+    }
 
 
 def get_current_user(request: Request) -> User:
@@ -12,36 +38,39 @@ def get_current_user(request: Request) -> User:
     The authentication middleware sets request.user after calling our
     LangGraph auth handlers (@auth.authenticate).
 
+    This function passes ALL fields from auth handlers through to the User model,
+    allowing custom auth handlers to return extra fields (e.g., subscription_tier,
+    team_id) that will be accessible on the User object.
+
     Args:
         request: FastAPI request object
 
     Returns:
-        User object with authentication context
+        User object with authentication context including any extra fields
 
     Raises:
         HTTPException: If user is not authenticated
     """
-
     # Get user from Starlette authentication middleware
     if not hasattr(request, "user") or request.user is None:
-        # No authentication middleware or user not set
         raise HTTPException(status_code=401, detail="Authentication required")
 
     if not request.user.is_authenticated:
-        # User is explicitly not authenticated
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
-    # Convert LangGraphUser to our User model
-    # request.user is the LangGraphUser instance from auth_middleware
-    user_data = request.user.to_dict()
+    # Extract user data from various object types
+    user_data = _extract_user_data(request.user)
 
-    return User(
-        identity=user_data["identity"],
-        display_name=user_data.get("display_name"),
-        permissions=user_data.get("permissions", []),
-        org_id=user_data.get("org_id"),
-        is_authenticated=user_data.get("is_authenticated", True),
-    )
+    # Ensure identity exists
+    if "identity" not in user_data:
+        raise HTTPException(status_code=401, detail="User identity not provided")
+
+    # Set display_name default if not provided
+    if user_data.get("display_name") is None:
+        user_data["display_name"] = user_data["identity"]
+
+    # Pass all fields through to User model (extra fields allowed via ConfigDict)
+    return User(**user_data)
 
 
 def get_user_id(user: User = Depends(get_current_user)) -> str:

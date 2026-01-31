@@ -124,13 +124,15 @@ class TestLangGraphAuthBackend:
             assert backend.auth_instance == mock_auth_instance
 
     def test_load_auth_instance_file_not_found(self):
-        """Test auth instance loading when file doesn't exist"""
+        """Test auth instance loading when file doesn't exist - returns None, noop handled in authenticate()"""
         with (
             patch("pathlib.Path.exists", return_value=False),
             patch("pathlib.Path.cwd", return_value=Path("/test")),
+            patch("agent_server.core.auth_middleware.load_auth_config", return_value=None),
         ):
             backend = LangGraphAuthBackend()
 
+            # Should return None (noop handled directly in authenticate method)
             assert backend.auth_instance is None
 
     def test_load_auth_instance_spec_failure(self):
@@ -183,23 +185,61 @@ class TestLangGraphAuthBackend:
             assert backend.auth_instance is None
 
     def test_load_auth_instance_exception(self):
-        """Test auth instance loading when exception occurs"""
-        with patch("pathlib.Path.exists", side_effect=Exception("Test error")):
+        """Test auth instance loading when exception occurs - returns None, noop handled in authenticate()"""
+        # Test that exceptions during config loading are handled gracefully
+        # noop is handled directly in authenticate method, not here
+        with (
+            patch(
+                "agent_server.core.auth_middleware.load_auth_config",
+                side_effect=Exception("Test config error"),
+            ),
+            patch("pathlib.Path.exists", return_value=False),  # Fallback also finds nothing
+            patch("pathlib.Path.cwd", return_value=Path("/test")),
+        ):
             backend = LangGraphAuthBackend()
 
+            # Should return None (noop handled directly in authenticate method)
             assert backend.auth_instance is None
 
     @pytest.mark.asyncio
-    async def test_authenticate_no_auth_instance(self):
-        """Test authentication when no auth instance is available"""
+    async def test_authenticate_noop_when_no_auth_instance(self):
+        """Test that noop authentication works when no auth instance is configured"""
         backend = LangGraphAuthBackend()
         backend.auth_instance = None
 
         mock_conn = Mock(spec=HTTPConnection)
+        mock_conn.headers = {}
 
-        result = await backend.authenticate(mock_conn)
+        with patch("agent_server.core.auth_middleware.settings") as mock_settings:
+            mock_settings.app.AUTH_TYPE = "noop"
+            result = await backend.authenticate(mock_conn)
 
-        assert result is None
+            assert result is not None
+            credentials, user = result
+            assert user.identity == "anonymous"
+            assert user.display_name == "Anonymous User"
+            assert user.is_authenticated is True
+            assert isinstance(credentials, AuthCredentials)
+
+    @pytest.mark.asyncio
+    async def test_authenticate_no_auth_instance_defaults_to_noop(self):
+        """Test that no auth instance defaults to noop (anonymous) regardless of AUTH_TYPE"""
+        backend = LangGraphAuthBackend()
+        backend.auth_instance = None
+
+        mock_conn = Mock(spec=HTTPConnection)
+        mock_conn.headers = {}
+
+        # Test with AUTH_TYPE=custom - should still default to noop
+        with patch("agent_server.core.auth_middleware.settings") as mock_settings:
+            mock_settings.app.AUTH_TYPE = "custom"
+            result = await backend.authenticate(mock_conn)
+
+            # Should return anonymous user even when AUTH_TYPE=custom
+            assert result is not None
+            credentials, user = result
+            assert user.identity == "anonymous"
+            assert user.display_name == "Anonymous User"
 
     @pytest.mark.asyncio
     async def test_authenticate_no_handler(self):

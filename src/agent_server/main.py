@@ -36,6 +36,7 @@ from .api.activity_logs import router as activity_logs_router
 from .api.assistants import router as assistants_router
 from .api.career_advisors import router as career_advisors_router
 from .api.management import router as management_router
+from .api.opportunities import router as opportunities_router
 from .api.runs import router as runs_router
 from .api.store import router as store_router
 from .api.threads import router as threads_router
@@ -208,6 +209,7 @@ for router in [
     management_router,
     career_advisors_router,
     accountability_router,
+    opportunities_router,
 ]:
     protected_routes.extend(router.routes)
 
@@ -349,6 +351,7 @@ else:
     app.include_router(management_router, prefix="", tags=["Management"])
     app.include_router(career_advisors_router, prefix="", tags=["Career Advisors"])
     app.include_router(accountability_router, prefix="", tags=["Accountability"])
+    app.include_router(opportunities_router, prefix="", tags=["Opportunities"])
 
     # Add exception handlers
     for exc_type, handler in exception_handlers.items():

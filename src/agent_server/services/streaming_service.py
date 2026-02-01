@@ -280,38 +280,61 @@ class StreamingService:
                     yield sse_event
                     last_sent_sequence = current_sequence
 
-    def _cancel_background_task(self, run_id: str):
-        """Cancel background task on disconnect"""
+    def _cancel_background_task(self, run_id: str) -> bool:
+        """Cancel the asyncio task for a run.
+
+        @param run_id: The ID of the run to cancel.
+        @return: True if task was cancelled, False otherwise.
+        """
         try:
             from ..api.runs import active_runs
 
             task = active_runs.get(run_id)
             if task and not task.done():
+                logger.info(f"Cancelling asyncio task for run {run_id}")
                 task.cancel()
+                return True
+            elif task and task.done():
+                logger.debug(f"Task for run {run_id} already completed")
+                return False
+            else:
+                logger.debug(f"No active task found for run {run_id}")
+                return False
         except Exception as e:
-            logger.warning(
-                f"Failed to cancel background task for run {run_id} on disconnect: {e}"
-            )
+            logger.warning(f"Failed to cancel background task for run {run_id}: {e}")
+            return False
 
     async def _convert_raw_to_sse(self, event_id: str, raw_event: Any) -> str | None:
         """Convert a raw event from broker to SSE format"""
         return self.event_converter.convert_raw_to_sse(event_id, raw_event)
 
     async def interrupt_run(self, run_id: str) -> bool:
-        """Interrupt a running execution"""
+        """Interrupt a running execution.
+
+        Cancels the asyncio task and signals interruption to broker.
+        The task's CancelledError handler will set status to 'interrupted'.
+        """
         try:
+            # Cancel the asyncio task first so it stops processing
+            self._cancel_background_task(run_id)
+            # Signal interruption to broker for any connected clients
             await self.signal_run_error(run_id, "Run was interrupted")
-            await self._update_run_status(run_id, "interrupted")
             return True
         except Exception as e:
             logger.error(f"Error interrupting run {run_id}: {e}")
             return False
 
     async def cancel_run(self, run_id: str) -> bool:
-        """Cancel a pending or running execution - uses standard status"""
+        """Cancel a pending or running execution.
+
+        Cancels the asyncio task and signals cancellation to broker.
+        The task's CancelledError handler will set status to 'interrupted'.
+        """
         try:
+            # Cancel the asyncio task first so it stops processing
+            self._cancel_background_task(run_id)
+            # Signal cancellation to broker for any connected clients
             await self.signal_run_cancelled(run_id)
-            await self._update_run_status(run_id, "interrupted")  # Standard status
             return True
         except Exception as e:
             logger.error(f"Error cancelling run {run_id}: {e}")

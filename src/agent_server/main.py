@@ -45,6 +45,7 @@ from .middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
 from .models.errors import AgentProtocolError, get_error_type
 from .observability.base import get_observability_manager
 from .observability.langfuse_integration import _langfuse_provider
+from .observability.otel import _otel_provider
 from .services.event_store import event_store
 from .services.langgraph_service import get_langgraph_service
 from .utils.setup_logging import setup_logging
@@ -65,9 +66,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 
-    # Initialize observability providers
+    # Initialize observability providers (Pure OTEL + Legacy Langfuse)
     observability_manager = get_observability_manager()
+    observability_manager.register_provider(_otel_provider)
     observability_manager.register_provider(_langfuse_provider)
+
+    # Trigger OTEL initialization (sets up global tracer and auto-instrumentation)
+    _otel_provider.initialize()
 
     # Initialize LangGraph service
     langgraph_service = get_langgraph_service()

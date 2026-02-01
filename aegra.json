@@ -8,5 +8,12 @@
   "http": {
     "app": "./custom_routes_example.py:app",
     "enable_custom_route_auth": false
+  },
+  "observability": {
+    "exporters": {
+      "local-phoenix": {
+        "endpoint": "http://localhost:6006/v1/traces"
+      }
+    }
   }
 }

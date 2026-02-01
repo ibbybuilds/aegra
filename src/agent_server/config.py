@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import structlog
 
@@ -78,6 +78,22 @@ class AuthConfig(TypedDict, total=False):
     """
     disable_studio_auth: bool
     """Disable authentication for LangGraph Studio connections"""
+
+
+class OTLPExporterConfig(TypedDict, total=False):
+    """Configuration for a single OTLP exporter"""
+
+    endpoint: str
+    """OTLP endpoint URL (e.g., http://localhost:4318/v1/traces)"""
+    headers: dict[str, str] | None
+    """Optional HTTP headers for authentication/metadata"""
+
+
+class ObservabilityConfig(TypedDict, total=False):
+    """Observability configuration"""
+
+    exporters: dict[str, OTLPExporterConfig]
+    """Dictionary of enabled OTLP exporters"""
 
 
 def _resolve_config_path() -> Path | None:
@@ -185,5 +201,24 @@ def load_auth_config() -> AuthConfig | None:
         config_path = _resolve_config_path()
         logger.info(f"Loaded auth config from {config_path}")
         return auth_config
+
+    return None
+
+
+def load_observability_config() -> ObservabilityConfig | None:
+    """Load observability config from aegra.json or langgraph.json.
+
+    Returns:
+        Observability configuration dict or None if not found
+    """
+    config = load_config()
+    if config is None:
+        return None
+
+    obs_config = config.get("observability")
+    if obs_config:
+        config_path = _resolve_config_path()
+        logger.info(f"Loaded observability config from {config_path}")
+        return cast("ObservabilityConfig", obs_config)
 
     return None

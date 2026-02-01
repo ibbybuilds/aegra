@@ -88,6 +88,14 @@ class PoolSettings(EnvBase):
     LANGGRAPH_MAX_POOL_SIZE: int = 6
 
 
+class OtelSettings(EnvBase):
+    """OpenTelemetry settings."""
+
+    # Dynamic exporters config (JSON string map)
+    # e.g. '{"my-target": {"endpoint": "...", "headers": {...}}}'
+    OTEL_EXPORTERS: str = "{}"
+
+
 class LangfuseSettings(EnvBase):
     """Langfuse integration settings."""
 
@@ -100,6 +108,7 @@ class Settings:
         self.db = DatabaseSettings()
         self.pool = PoolSettings()
         self.langfuse = LangfuseSettings()
+        self.otel = OtelSettings()
 
 
 settings = Settings()

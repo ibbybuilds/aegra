@@ -251,16 +251,23 @@ class LangGraphService:
         checkpointer = db_manager.get_checkpointer()
         store = db_manager.get_store()
 
-        # Yield a fresh copy with checkpointer/store injected
+        # Try to create a copy with checkpointer/store injected.
+        # NOTE: Do this BEFORE yield to avoid dual-yield when exceptions occur
+        # in the context body - @asynccontextmanager would call athrow() and
+        # catch it in except, causing "generator didn't stop after athrow()".
         try:
-            yield base_graph.copy(update={"checkpointer": checkpointer, "store": store})
+            graph_to_use = base_graph.copy(
+                update={"checkpointer": checkpointer, "store": store}
+            )
         except Exception:
-            # Fallback: property may be immutably set
+            # Graph doesn't support copy with these attrs (e.g., immutable property)
             logger.warning(
                 f"⚠️  Graph '{graph_id}' does not support checkpointer injection; "
                 "running without persistence"
             )
-            yield base_graph
+            graph_to_use = base_graph
+
+        yield graph_to_use
 
     async def get_graph_for_validation(self, graph_id: str) -> Pregel:
         """Get a graph instance for validation/schema extraction only.

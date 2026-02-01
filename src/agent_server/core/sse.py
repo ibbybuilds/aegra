@@ -112,9 +112,32 @@ def create_end_event(event_id: str | None = None) -> str:
     return format_sse_message("end", {"status": "success"}, event_id)
 
 
-def create_error_event(error: str, event_id: str | None = None) -> str:
-    """Create error event"""
-    data = {"error": error, "timestamp": datetime.now(UTC).isoformat()}
+def create_error_event(error: str | dict[str, Any], event_id: str | None = None) -> str:
+    """Create error event with structured error information.
+
+    Error format: {"error": str, "message": str}
+    This format ensures compatibility with standard SSE error event consumers.
+
+    Args:
+        error: Either a simple error string, or a dict with structured error info.
+               Dict format: {"error": "ErrorType", "message": "detailed message"}
+        event_id: Optional SSE event ID for reconnection support.
+
+    Returns:
+        SSE-formatted error event string with standard error format.
+    """
+    if isinstance(error, dict):
+        # Structured error format - standard format: {error: str, message: str}
+        data = {
+            "error": error.get("error", "Error"),
+            "message": error.get("message", str(error)),
+        }
+    else:
+        # Simple string format - wrap it to standard format
+        data = {
+            "error": "Error",
+            "message": str(error),
+        }
     return format_sse_message("error", data, event_id)
 
 

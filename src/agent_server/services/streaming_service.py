@@ -167,17 +167,44 @@ class StreamingService:
 
         broker_manager.cleanup_broker(run_id)
 
-    async def signal_run_error(self, run_id: str, error_message: str):
-        """Signal that a run encountered an error"""
+    async def signal_run_error(
+        self, run_id: str, error_message: str, error_type: str = "Error"
+    ):
+        """Signal that a run encountered an error.
+
+        Sends a proper 'error' event to the broker and stores it for replay.
+        Also sends an 'end' event to signal stream completion.
+
+        Args:
+            run_id: The run ID.
+            error_message: Human-readable error message.
+            error_type: Error type/class name (e.g., "ValueError", "GraphRecursionError").
+        """
         counter = self.event_counters.get(run_id, 0) + 1
         self.event_counters[run_id] = counter
-        event_id = generate_event_id(run_id, counter)
+        error_event_id = generate_event_id(run_id, counter)
+
+        # Create structured error payload
+        error_payload = {"error": error_type, "message": error_message}
 
         broker = broker_manager.get_or_create_broker(run_id)
         if broker:
-            await broker.put(
-                event_id, ("end", {"status": "error", "error": error_message})
+            # Send dedicated error event (so frontend receives the error details)
+            await broker.put(error_event_id, ("error", error_payload))
+
+            # Store error event for replay support
+            await store_sse_event(
+                run_id,
+                error_event_id,
+                "error",
+                {"error": error_type, "message": error_message},
             )
+
+            # Send end event to signal stream completion
+            counter += 1
+            self.event_counters[run_id] = counter
+            end_event_id = generate_event_id(run_id, counter)
+            await broker.put(end_event_id, ("end", {"status": "error"}))
 
         broker_manager.cleanup_broker(run_id)
 

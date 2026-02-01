@@ -179,13 +179,61 @@ class TestCreateEndEvent:
 class TestCreateErrorEvent:
     """Test create_error_event function"""
 
-    def test_create_error_event(self):
-        """Test error event creation"""
+    def test_create_error_event_string(self):
+        """Test error event creation with string format"""
         result = create_error_event("Something went wrong")
 
         assert "event: error\n" in result
         assert "Something went wrong" in result
-        assert "timestamp" in result
+
+        # Parse and verify structure matches standard error format
+        data_line = [line for line in result.split("\n") if line.startswith("data: ")][
+            0
+        ]
+        parsed_data = json.loads(data_line.replace("data: ", ""))
+        assert parsed_data["error"] == "Error"
+        assert parsed_data["message"] == "Something went wrong"
+        # Verify format is standard: only 'error' and 'message' fields
+        assert len(parsed_data) == 2, "Should only have 'error' and 'message' fields"
+
+    def test_create_error_event_dict_format(self):
+        """Test error event creation with structured dict format"""
+        error_dict = {"error": "ValueError", "message": "Invalid input provided"}
+        result = create_error_event(error_dict)
+
+        assert "event: error\n" in result
+
+        # Parse and verify structure matches standard error format
+        data_line = [line for line in result.split("\n") if line.startswith("data: ")][
+            0
+        ]
+        parsed_data = json.loads(data_line.replace("data: ", ""))
+        assert parsed_data["error"] == "ValueError"
+        assert parsed_data["message"] == "Invalid input provided"
+        # Verify format is standard: only 'error' and 'message' fields
+        assert len(parsed_data) == 2, "Should only have 'error' and 'message' fields"
+
+    def test_create_error_event_dict_partial(self):
+        """Test error event with partial dict (missing fields)"""
+        error_dict = {"error": "GraphRecursionError"}
+        result = create_error_event(error_dict)
+
+        data_line = [line for line in result.split("\n") if line.startswith("data: ")][
+            0
+        ]
+        parsed_data = json.loads(data_line.replace("data: ", ""))
+        assert parsed_data["error"] == "GraphRecursionError"
+        assert "message" in parsed_data  # Should have default message
+        # Verify format is standard: only 'error' and 'message' fields
+        assert len(parsed_data) == 2, "Should only have 'error' and 'message' fields"
+
+    def test_create_error_event_with_event_id(self):
+        """Test error event with event ID for reconnection support"""
+        result = create_error_event("Test error", event_id="evt-error-123")
+
+        assert "event: error\n" in result
+        assert "id: evt-error-123\n" in result
+        assert "Test error" in result
 
 
 class TestCreateMessagesEvent:

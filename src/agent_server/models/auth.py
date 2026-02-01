@@ -1,6 +1,6 @@
 """Authentication and user context models"""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class User(BaseModel):
@@ -16,11 +16,10 @@ class User(BaseModel):
 class AuthContext(BaseModel):
     """Authentication context for request processing"""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     user: User
     request_id: str | None = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class TokenPayload(BaseModel):

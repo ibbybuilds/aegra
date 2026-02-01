@@ -30,7 +30,7 @@ def mock_langgraph_service() -> Mock:
     """Mock LangGraphService for testing"""
     mock_service = Mock()
     mock_service.list_graphs.return_value = {"test-graph": {}}
-    mock_service.get_graph = AsyncMock(return_value=Mock())
+    mock_service.get_graph_for_validation = AsyncMock(return_value=Mock())
     return mock_service
 
 
@@ -254,7 +254,9 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.return_value = Mock()
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            Mock()
+        )
 
         # Mock database operations
         assistant_service.session.scalar.return_value = None  # No existing assistant
@@ -296,7 +298,7 @@ class TestAssistantServiceCreate:
 
         assert isinstance(result, Assistant)
         assistant_service.langgraph_service.list_graphs.assert_called_once()
-        assistant_service.langgraph_service.get_graph.assert_called_once_with(
+        assistant_service.langgraph_service.get_graph_for_validation.assert_called_once_with(
             "test-graph"
         )
 
@@ -329,8 +331,8 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.side_effect = Exception(
-            "Graph load failed"
+        assistant_service.langgraph_service.get_graph_for_validation.side_effect = (
+            Exception("Graph load failed")
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -355,7 +357,9 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.return_value = Mock()
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            Mock()
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await assistant_service.create_assistant(request, "user-123")
@@ -379,7 +383,9 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.return_value = Mock()
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            Mock()
+        )
         assistant_service.session.scalar.return_value = None
         assistant_service.session.add = Mock()
         assistant_service.session.commit = AsyncMock()
@@ -419,7 +425,9 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.return_value = Mock()
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            Mock()
+        )
         assistant_service.session.scalar.return_value = None
         assistant_service.session.add = Mock()
         assistant_service.session.commit = AsyncMock()
@@ -480,7 +488,9 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.return_value = Mock()
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            Mock()
+        )
         assistant_service.session.scalar.return_value = existing_assistant
 
         result = await assistant_service.create_assistant(request, "user-123")
@@ -507,7 +517,9 @@ class TestAssistantServiceCreate:
         assistant_service.langgraph_service.list_graphs.return_value = {
             "test-graph": {}
         }
-        assistant_service.langgraph_service.get_graph.return_value = Mock()
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            Mock()
+        )
         assistant_service.session.scalar.return_value = existing_assistant
 
         with pytest.raises(HTTPException) as exc_info:
@@ -896,7 +908,9 @@ class TestAssistantServiceSchemas:
         mock_graph.get_context_jsonschema.return_value = {"type": "object"}
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.return_value = mock_graph
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            mock_graph
+        )
 
         result = await assistant_service.get_assistant_schemas("test-id", "user-123")
 
@@ -934,8 +948,8 @@ class TestAssistantServiceSchemas:
         mock_assistant.__table__ = mock_table
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.side_effect = Exception(
-            "Graph load failed"
+        assistant_service.langgraph_service.get_graph_for_validation.side_effect = (
+            Exception("Graph load failed")
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -973,7 +987,9 @@ class TestAssistantServiceGraph:
         mock_graph.aget_graph = AsyncMock(return_value=mock_drawable_graph)
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.return_value = mock_graph
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            mock_graph
+        )
 
         result = await assistant_service.get_assistant_graph(
             "test-id", False, "user-123"
@@ -1003,7 +1019,9 @@ class TestAssistantServiceGraph:
         mock_graph.aget_graph.return_value = Mock()
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.return_value = mock_graph
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            mock_graph
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await assistant_service.get_assistant_graph("test-id", -1, "user-123")
@@ -1031,7 +1049,9 @@ class TestAssistantServiceGraph:
         mock_graph.aget_graph.side_effect = NotImplementedError("Not supported")
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.return_value = mock_graph
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            mock_graph
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await assistant_service.get_assistant_graph("test-id", False, "user-123")
@@ -1077,7 +1097,9 @@ class TestAssistantServiceSubgraphs:
         mock_graph.aget_subgraphs = mock_aget_subgraphs
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.return_value = mock_graph
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            mock_graph
+        )
 
         result = await assistant_service.get_assistant_subgraphs(
             "test-id", "namespace1", True, "user-123"
@@ -1106,7 +1128,9 @@ class TestAssistantServiceSubgraphs:
         mock_graph.aget_subgraphs.side_effect = NotImplementedError("Not supported")
 
         assistant_service.session.scalar.return_value = mock_assistant
-        assistant_service.langgraph_service.get_graph.return_value = mock_graph
+        assistant_service.langgraph_service.get_graph_for_validation.return_value = (
+            mock_graph
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await assistant_service.get_assistant_subgraphs(

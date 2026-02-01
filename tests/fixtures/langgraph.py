@@ -1,9 +1,30 @@
 """LangGraph fixtures for tests"""
 
+from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from langgraph.types import Interrupt, PregelTask
+
+
+def create_async_context_manager_mock(return_value=None, side_effect=None):
+    """Create a mock that can be used as an async context manager.
+
+    Usage:
+        mock_service.get_graph = create_async_context_manager_mock(return_value=mock_agent)
+
+    This is needed because `get_graph` is now an asynccontextmanager.
+    """
+    mock = MagicMock()
+
+    @asynccontextmanager
+    async def async_cm(*args, **kwargs):
+        if side_effect:
+            raise side_effect
+        yield return_value
+
+    mock.side_effect = lambda *args, **kwargs: async_cm(*args, **kwargs)
+    return mock
 
 
 class FakeSnapshot:
@@ -126,7 +147,18 @@ class MockLangGraphService:
         self._agent = agent
         self._graph = graph
 
+    @asynccontextmanager
     async def get_graph(self, _graph_id: str):
+        """Context manager that yields the fake agent/graph"""
+        if self._agent is not None:
+            yield self._agent
+        elif self._graph is not None:
+            yield self._graph
+        else:
+            raise RuntimeError("No fake agent/graph configured")
+
+    async def get_graph_for_validation(self, _graph_id: str):
+        """Return fake agent/graph for validation (non-context manager)"""
         if self._agent is not None:
             return self._agent
         if self._graph is not None:

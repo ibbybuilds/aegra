@@ -1,6 +1,6 @@
 import pytest
 
-from tests.e2e._utils import elog, get_e2e_client
+from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
 
 
 @pytest.mark.e2e
@@ -60,6 +60,14 @@ async def test_chat_streaming_e2e():
                     content = message_chunk.get("content")
                 if content:
                     token_count += 1
+
+    # Check for blocking if no tokens received
+    if token_count == 0:
+        runs = await client.runs.list(thread_id)
+        if runs:
+            last_run = runs[0]
+            if last_run["status"] == "error":
+                check_and_skip_if_geo_blocked(last_run)
 
     # Enforce streaming behavior: at least one event received
     assert event_count > 0, "Expected at least one event from streaming run"

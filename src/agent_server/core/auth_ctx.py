@@ -1,11 +1,11 @@
-"""Lightweight context-var helpers for passing authenticated user info into LangGraph graphs.
+"""Lightweight context-var helpers for passing authenticated user info into graphs.
 
 Graph nodes can access the current request's authentication context by calling
 `get_auth_ctx()`.  The server sets the context for the lifetime of a single run
 (using an async context-manager) so the information is automatically scoped and
 cleaned up.
 
-We mirror the structure used by the vendored reference implementation so that
+The structure follows the standard auth context format so that
 libraries expecting `Auth.types.BaseAuthContext` work unchanged.
 """
 
@@ -21,7 +21,7 @@ from starlette.authentication import AuthCredentials, BaseUser
 # Internal context-var storing the current auth context (or None when absent)
 _AuthCtx: contextvars.ContextVar[Auth.types.BaseAuthContext | None] = (
     contextvars.ContextVar(  # type: ignore[attr-defined]
-        "LangGraphAuthContext", default=None
+        "AuthContext", default=None
     )
 )
 

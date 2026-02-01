@@ -5,13 +5,13 @@ import importlib.util
 from pathlib import Path
 
 import structlog
-from starlette.applications import Starlette
+from fastapi import FastAPI
 
 logger = structlog.get_logger(__name__)
 
 
-def load_custom_app(app_import: str) -> Starlette | None:
-    """Load custom Starlette/FastAPI app from import path.
+def load_custom_app(app_import: str) -> FastAPI | None:
+    """Load custom FastAPI app from import path.
 
     Supports both file-based and module-based imports:
     - File path: "./custom_routes.py:app" or "/path/to/file.py:app"
@@ -21,12 +21,12 @@ def load_custom_app(app_import: str) -> Starlette | None:
         app_import: Import path in format "path/to/file.py:variable" or "module.path:variable"
 
     Returns:
-        Loaded Starlette/FastAPI app instance or None if path is invalid
+        Loaded FastAPI app instance or None if path is invalid
 
     Raises:
         ImportError: If the module or file cannot be imported
         AttributeError: If the specified variable is not found in the module
-        TypeError: If the loaded object is not a Starlette/FastAPI application
+        TypeError: If the loaded object is not a FastAPI application
     """
     logger.info(f"Loading custom app from {app_import}")
 
@@ -69,16 +69,14 @@ def load_custom_app(app_import: str) -> Starlette | None:
 
         user_app = getattr(module, name)
 
-        # Validate it's a Starlette/FastAPI application
-        if not isinstance(user_app, Starlette):
+        # Validate it's a FastAPI application
+        if not isinstance(user_app, FastAPI):
             raise TypeError(
-                f"Object '{name}' in module '{path}' is not a Starlette or FastAPI application. "
-                "Please initialize your app by importing and using the appropriate class:\n"
-                "from starlette.applications import Starlette\n\n"
-                "app = Starlette(...)\n\n"
-                "or\n\n"
+                f"Object '{name}' in module '{path}' is not a FastAPI application. "
+                "Custom apps must be FastAPI instances for proper OpenAPI support.\n"
+                "Please initialize your app using:\n\n"
                 "from fastapi import FastAPI\n\n"
-                "app = FastAPI(...)\n\n"
+                "app = FastAPI()\n\n"
             )
 
         logger.info(f"Successfully loaded custom app '{name}' from {path}")

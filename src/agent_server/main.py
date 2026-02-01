@@ -5,6 +5,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -24,9 +25,6 @@ from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware import Middleware
-from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.routing import Mount, Route
 
 from src.agent_server.settings import settings
 
@@ -36,14 +34,12 @@ from .api.store import router as store_router
 from .api.threads import router as threads_router
 from .config import HttpConfig, load_http_config
 from .core.app_loader import load_custom_app
-from .core.auth_middleware import get_auth_backend, on_auth_error
+from .core.auth_deps import auth_dependency
 from .core.database import db_manager
 from .core.health import router as health_router
 from .core.route_merger import (
     merge_exception_handlers,
     merge_lifespans,
-    merge_routes,
-    update_openapi_spec,
 )
 from .middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
 from .models.errors import AgentProtocolError, get_error_type
@@ -58,6 +54,9 @@ active_runs: dict[str, asyncio.Task] = {}
 
 setup_logging()
 logger = structlog.getLogger(__name__)
+
+# Default CORS headers required for LangGraph SDK stream reconnection
+DEFAULT_EXPOSE_HEADERS = ["Content-Location", "Location"]
 
 
 @asynccontextmanager
@@ -123,7 +122,7 @@ exception_handlers = {
 }
 
 
-# Define shadowable routes (can be overridden by custom routes)
+# Define root endpoint handler
 async def root_handler() -> dict[str, str]:
     """Root endpoint"""
     return {
@@ -133,83 +132,49 @@ async def root_handler() -> dict[str, str]:
     }
 
 
-# Extract routes from health router - these are already Starlette-compatible
-health_routes = [route for route in health_router.routes if hasattr(route, "path")]
+def _apply_auth_to_routes(app: FastAPI, auth_deps: list[Any]) -> None:
+    """Apply auth dependency to all existing routes in the FastAPI app.
 
-# Filter routes by path for priority ordering
-unshadowable_health_routes = [
-    route for route in health_routes if route.path in ["/health", "/ready", "/live"]
-]
-shadowable_health_routes = [route for route in health_routes if route.path == "/info"]
+    This function recursively processes all routes including nested routers,
+    adding the auth dependency to each route that doesn't already have it.
+    Auth dependencies are prepended to ensure they run first (fail-fast).
 
-shadowable_routes = [
-    Route("/", root_handler, methods=["GET"]),
-] + shadowable_health_routes
+    Args:
+        app: FastAPI application instance
+        auth_deps: List of dependencies to apply (e.g., [Depends(require_auth)])
+    """
+    from fastapi.routing import APIRoute, APIRouter
 
-# Define unshadowable routes (health endpoints - always accessible)
-unshadowable_routes = unshadowable_health_routes
+    def process_routes(routes: list) -> None:
+        """Recursively process routes and nested routers."""
+        for route in routes:
+            if isinstance(route, APIRoute):
+                # Add auth dependency if not already present
+                existing_deps = list(route.dependencies or [])
+                # Check if auth dependency is already present
+                auth_dep_ids = {id(dep) for dep in auth_deps}
+                existing_dep_ids = {id(dep) for dep in existing_deps}
+                if not auth_dep_ids.intersection(existing_dep_ids):
+                    # Prepend auth deps so they run first (fail-fast)
+                    route.dependencies = auth_deps + existing_deps
+            elif isinstance(route, APIRouter):
+                # Process nested router
+                process_routes(route.routes)
+            elif hasattr(route, "routes"):
+                # Handle other route types that have nested routes
+                process_routes(route.routes)
 
-# Create protected routes mount (core API routes)
-# Extract routes from routers for the mount
-protected_routes = []
-for router in [assistants_router, threads_router, runs_router, store_router]:
-    protected_routes.extend(router.routes)
+    process_routes(app.routes)
+    logger.info("Applied authentication dependency to custom routes")
 
-protected_mount = Mount(
-    "",
-    routes=protected_routes,
-    middleware=[
-        Middleware(
-            AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
-        )
-    ],
-)
 
-# Load HTTP configuration
-http_config: HttpConfig | None = load_http_config()
+def _add_cors_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> None:
+    """Add CORS middleware with config or defaults.
 
-# Try to load custom app if configured
-user_app = None
-if http_config and http_config.get("app"):
-    try:
-        user_app = load_custom_app(http_config["app"])
-        logger.info("Custom app loaded successfully")
-    except Exception as e:
-        logger.error(f"Failed to load custom app: {e}", exc_info=True)
-        raise
-
-# Create application
-if user_app:
-    # Merge custom app with Aegra routes
-    app = user_app
-
-    # Merge routes with priority order
-    app = merge_routes(
-        user_app=app,
-        unshadowable_routes=unshadowable_routes,
-        shadowable_routes=shadowable_routes,
-        protected_mount=protected_mount,
-    )
-
-    # Merge lifespans
-    app = merge_lifespans(app, lifespan)
-
-    # Merge exception handlers
-    app = merge_exception_handlers(app, exception_handlers)
-
-    # Update OpenAPI spec if FastAPI
-    update_openapi_spec(app)
-
-    # Merge middleware - add Aegra middleware to user app
-    # Note: User's middleware is already in user_app.user_middleware
-    app.add_middleware(StructLogMiddleware)
-    app.add_middleware(CorrelationIdMiddleware)
-
-    # Apply CORS configuration
-    # Default expose_headers includes Content-Location and Location which are
-    # required for LangGraph SDK stream reconnection (reconnectOnMount)
-    cors_config = http_config.get("cors") if http_config else None
-    default_expose_headers = ["Content-Location", "Location"]
+    Args:
+        app: FastAPI application instance
+        cors_config: CORS configuration dict or None for defaults
+    """
     if cors_config:
         app.add_middleware(
             CORSMiddleware,
@@ -217,7 +182,7 @@ if user_app:
             allow_credentials=cors_config.get("allow_credentials", True),
             allow_methods=cors_config.get("allow_methods", ["*"]),
             allow_headers=cors_config.get("allow_headers", ["*"]),
-            expose_headers=cors_config.get("expose_headers", default_expose_headers),
+            expose_headers=cors_config.get("expose_headers", DEFAULT_EXPOSE_HEADERS),
             max_age=cors_config.get("max_age", 600),
         )
     else:
@@ -227,82 +192,123 @@ if user_app:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
-            expose_headers=default_expose_headers,
+            expose_headers=DEFAULT_EXPOSE_HEADERS,
         )
 
-    app.add_middleware(DoubleEncodedJSONMiddleware)
 
-    # Apply auth middleware to custom routes if enabled
-    enable_custom_route_auth = (
-        http_config.get("enable_custom_route_auth", False) if http_config else False
-    )
-    if enable_custom_route_auth:
-        app.add_middleware(
-            AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
-        )
+def _add_common_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> None:
+    """Add common middleware stack in correct order.
 
-else:
-    # Standard Aegra app without custom routes
-    app = FastAPI(
-        title=settings.app.PROJECT_NAME,
-        description="Production-ready Agent Protocol server built on LangGraph",
-        version=settings.app.VERSION,
-        debug=settings.app.DEBUG,
-        docs_url="/docs",
-        redoc_url="/redoc",
-        lifespan=lifespan,
-    )
+    Middleware runs in reverse registration order, so we register:
+    1. DoubleEncodedJSONMiddleware (outermost - runs first)
+    2. CORSMiddleware (handles preflight early)
+    3. CorrelationIdMiddleware (adds request ID)
+    4. StructLogMiddleware (innermost - logs with correlation ID)
 
+    Args:
+        app: FastAPI application instance
+        cors_config: CORS configuration dict or None for defaults
+    """
     app.add_middleware(StructLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
-
-    # Add CORS middleware - apply config from http.cors if present
-    # Default expose_headers includes Content-Location and Location which are
-    # required for LangGraph SDK stream reconnection (reconnectOnMount)
-    cors_config = http_config.get("cors") if http_config else None
-    default_expose_headers = ["Content-Location", "Location"]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_config.get("allow_origins", ["*"]) if cors_config else ["*"],
-        allow_credentials=cors_config.get("allow_credentials", True)
-        if cors_config
-        else True,
-        allow_methods=cors_config.get("allow_methods", ["*"]) if cors_config else ["*"],
-        allow_headers=cors_config.get("allow_headers", ["*"]) if cors_config else ["*"],
-        expose_headers=cors_config.get("expose_headers", default_expose_headers)
-        if cors_config
-        else default_expose_headers,
-        max_age=cors_config.get("max_age", 600) if cors_config else 600,
-    )
-
-    # Add middleware to handle double-encoded JSON from frontend
+    _add_cors_middleware(app, cors_config)
     app.add_middleware(DoubleEncodedJSONMiddleware)
 
-    # Add authentication middleware (must be added after CORS)
-    app.add_middleware(
-        AuthenticationMiddleware, backend=get_auth_backend(), on_error=on_auth_error
+
+def _include_core_routers(app: FastAPI) -> None:
+    """Include all core API routers with auth dependency.
+
+    Routers are included in consistent order:
+    1. Health (no auth)
+    2. Assistants (with auth)
+    3. Threads (with auth)
+    4. Runs (with auth)
+    5. Store (with auth)
+
+    Args:
+        app: FastAPI application instance
+    """
+    app.include_router(health_router, prefix="", tags=["Health"])
+    app.include_router(
+        assistants_router, dependencies=auth_dependency, prefix="", tags=["Assistants"]
+    )
+    app.include_router(
+        threads_router, dependencies=auth_dependency, prefix="", tags=["Threads"]
+    )
+    app.include_router(
+        runs_router, dependencies=auth_dependency, prefix="", tags=["Runs"]
+    )
+    app.include_router(
+        store_router, dependencies=auth_dependency, prefix="", tags=["Store"]
     )
 
-    # Include routers
-    app.include_router(health_router, prefix="", tags=["Health"])
-    app.include_router(assistants_router, prefix="", tags=["Assistants"])
-    app.include_router(threads_router, prefix="", tags=["Threads"])
-    app.include_router(runs_router, prefix="", tags=["Runs"])
-    app.include_router(store_router, prefix="", tags=["Store"])
 
-    # Add exception handlers
-    for exc_type, handler in exception_handlers.items():
-        app.exception_handler(exc_type)(handler)
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application.
 
-    # Add root endpoint
-    @app.get("/")
-    async def root() -> dict[str, str]:
-        """Root endpoint"""
-        return {
-            "message": settings.app.PROJECT_NAME,
-            "version": settings.app.VERSION,
-            "status": "running",
-        }
+    Returns:
+        Configured FastAPI application instance
+    """
+    http_config: HttpConfig | None = load_http_config()
+    cors_config = http_config.get("cors") if http_config else None
+
+    # Try to load custom app if configured
+    user_app = None
+    if http_config and http_config.get("app"):
+        try:
+            user_app = load_custom_app(http_config["app"])
+            logger.info("Custom app loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load custom app: {e}", exc_info=True)
+            raise
+
+    if user_app:
+        if not isinstance(user_app, FastAPI):
+            raise TypeError(
+                "Custom apps must be FastAPI applications. "
+                "Use: from fastapi import FastAPI; app = FastAPI()"
+            )
+
+        application = user_app
+        _include_core_routers(application)
+
+        # Add root endpoint if not already defined
+        if not any(
+            route.path == "/" for route in application.routes if hasattr(route, "path")
+        ):
+            application.get("/")(root_handler)
+
+        application = merge_lifespans(application, lifespan)
+        application = merge_exception_handlers(application, exception_handlers)
+        _add_common_middleware(application, cors_config)
+
+        # Apply auth to custom routes if enabled
+        if http_config and http_config.get("enable_custom_route_auth", False):
+            _apply_auth_to_routes(application, auth_dependency)
+    else:
+        application = FastAPI(
+            title=settings.app.PROJECT_NAME,
+            description="Production-ready Agent Protocol server",
+            version=settings.app.VERSION,
+            debug=settings.app.DEBUG,
+            docs_url="/docs",
+            redoc_url="/redoc",
+            lifespan=lifespan,
+        )
+
+        _add_common_middleware(application, cors_config)
+        _include_core_routers(application)
+
+        for exc_type, handler in exception_handlers.items():
+            application.exception_handler(exc_type)(handler)
+
+        application.get("/")(root_handler)
+
+    return application
+
+
+# Create application instance
+app = create_app()
 
 
 if __name__ == "__main__":

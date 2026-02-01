@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth_ctx import with_auth_ctx
 from ..core.auth_deps import get_current_user
+from ..core.auth_handlers import build_auth_context, handle_event
 from ..core.orm import Assistant as AssistantORM
 from ..core.orm import Run as RunORM
 from ..core.orm import Thread as ThreadORM
@@ -32,7 +33,7 @@ from ..utils.run_utils import (
 )
 from ..utils.status_compat import validate_run_status
 
-router = APIRouter()
+router = APIRouter(tags=["Runs"])
 
 logger = structlog.getLogger(__name__)
 serializer = GeneralSerializer()
@@ -171,6 +172,21 @@ async def create_run(
     session: AsyncSession = Depends(get_session),
 ) -> Run:
     """Create and execute a new run (persisted)."""
+    # Authorization check (create_run action on threads resource)
+    ctx = build_auth_context(user, "threads", "create_run")
+    value = {**request.model_dump(), "thread_id": thread_id}
+    filters = await handle_event(ctx, value)
+
+    # If handler modified config/context, update request
+    if filters:
+        if "config" in filters:
+            request.config = {**(request.config or {}), **filters["config"]}
+        if "context" in filters:
+            request.context = {**(request.context or {}), **filters["context"]}
+    elif value.get("config"):
+        request.config = {**(request.config or {}), **value["config"]}
+    elif value.get("context"):
+        request.context = {**(request.context or {}), **value["context"]}
 
     # Validate resume command requirements early
     await _validate_resume_command(session, thread_id, request.command)
@@ -427,6 +443,11 @@ async def get_run(
     session: AsyncSession = Depends(get_session),
 ) -> Run:
     """Get run by ID (persisted)."""
+    # Authorization check (read action on runs resource)
+    ctx = build_auth_context(user, "runs", "read")
+    value = {"run_id": run_id, "thread_id": thread_id}
+    await handle_event(ctx, value)
+
     stmt = select(RunORM).where(
         RunORM.run_id == str(run_id),
         RunORM.thread_id == thread_id,
@@ -1100,6 +1121,11 @@ async def delete_run(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    """Delete run by ID"""
+    # Authorization check (delete action on runs resource)
+    ctx = build_auth_context(user, "runs", "delete")
+    value = {"run_id": run_id, "thread_id": thread_id}
+    await handle_event(ctx, value)
     """
     Delete a run record.
 

@@ -1,10 +1,12 @@
 """
-Authentication middleware integration for LangGraph Agent Server.
+Authentication middleware integration for Aegra.
 
-This module integrates LangGraph's authentication system with FastAPI
+This module integrates authentication system with FastAPI
 using Starlette's AuthenticationMiddleware.
 """
 
+import functools
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -22,9 +24,9 @@ from starlette.authentication import (
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 
+from src.agent_server.config import load_auth_config
+from src.agent_server.models.errors import AgentProtocolError
 from src.agent_server.settings import settings
-
-from ..models.errors import AgentProtocolError
 
 logger = structlog.getLogger(__name__)
 
@@ -32,7 +34,7 @@ logger = structlog.getLogger(__name__)
 class LangGraphUser(BaseUser):
     """
     User wrapper that implements Starlette's BaseUser interface
-    while preserving LangGraph auth data.
+    while preserving auth data.
     """
 
     def __init__(self, user_data: Auth.types.MinimalUserDict):
@@ -65,9 +67,9 @@ class LangGraphUser(BaseUser):
 
 class LangGraphAuthBackend(AuthenticationBackend):
     """
-    Authentication backend that uses LangGraph's auth system.
+    Authentication backend that uses the auth system.
 
-    This bridges LangGraph's @auth.authenticate handlers with
+    This bridges @auth.authenticate handlers with
     Starlette's AuthenticationMiddleware.
     """
 
@@ -75,40 +77,145 @@ class LangGraphAuthBackend(AuthenticationBackend):
         self.auth_instance = self._load_auth_instance()
 
     def _load_auth_instance(self) -> Auth | None:
-        """Load the auth instance from auth.py"""
+        """Load the auth instance from config or fallback to hardcoded candidates.
+
+        Resolution order:
+        1. Load from aegra.json auth.path config
+        2. If no auth file found, returns None (noop handled directly in authenticate())
+
+        Returns:
+            Auth instance or None if not found (noop handled in authenticate() method)
+        """
+        # 1. Try loading from config
         try:
-            # Import the auth instance from the project root auth.py
-            auth_path = Path.cwd() / "auth.py"
-            if not auth_path.exists():
-                logger.warning(f"Auth file not found at {auth_path}")
+            auth_config = load_auth_config()
+            if auth_config and "path" in auth_config:
+                auth_path = auth_config["path"]
+                logger.info(f"Loading auth from config path: {auth_path}")
+                auth_instance = self._load_from_path(auth_path)
+                if auth_instance:
+                    return auth_instance
+                logger.warning(f"Failed to load auth from config path: {auth_path}")
+        except Exception as e:
+            logger.warning(f"Error loading auth config: {e}")
+
+        logger.debug("No auth instance found from config")
+        return None
+
+    def _load_from_path(self, path: str) -> Auth | None:
+        """Load auth instance from path in format './file.py:var' or 'module:var'.
+
+        Args:
+            path: Import path in format './file.py:variable' or 'module.path:variable'
+
+        Returns:
+            Auth instance or None if loading fails
+        """
+        if ":" not in path:
+            logger.error(f"Invalid auth path format (missing ':'): {path}")
+            return None
+
+        module_path, var_name = path.rsplit(":", 1)
+
+        # Handle file path format: ./file.py or ./path/to/file.py
+        if module_path.startswith("./") or module_path.startswith("/"):
+            # Resolve relative to CWD
+            if module_path.startswith("./"):
+                file_path = Path.cwd() / module_path[2:]
+            else:
+                file_path = Path(module_path)
+
+            return self._load_from_file(file_path, var_name)
+
+        # Handle module format: module.path
+        return self._load_from_module(module_path, var_name)
+
+    def _load_from_file(self, file_path: Path, var_name: str) -> Auth | None:
+        """Load auth instance from a file path.
+
+        Args:
+            file_path: Path to the Python file
+            var_name: Name of the variable to load
+
+        Returns:
+            Auth instance or None if loading fails
+        """
+        try:
+            if not file_path.exists():
+                logger.warning(f"Auth file not found: {file_path}")
                 return None
 
-            spec = importlib.util.spec_from_file_location("auth_module", str(auth_path))
+            if not file_path.is_file():
+                logger.warning(
+                    f"Auth path is not a file: {file_path} (is directory: {file_path.is_dir()})"
+                )
+                return None
+
+            # Create a unique module name based on the file path
+            module_name = f"auth_module_{file_path.stem}"
+
+            spec = importlib.util.spec_from_file_location(module_name, str(file_path))
             if spec is None or spec.loader is None:
-                logger.error(f"Could not load auth module from {auth_path}")
+                logger.error(f"Could not load auth module from {file_path}")
                 return None
 
             auth_module = importlib.util.module_from_spec(spec)
-            sys.modules["auth_module"] = auth_module
+            sys.modules[module_name] = auth_module
             spec.loader.exec_module(auth_module)
 
-            auth_instance = getattr(auth_module, "auth", None)
+            auth_instance = getattr(auth_module, var_name, None)
             if not isinstance(auth_instance, Auth):
-                logger.error(f"No valid Auth instance found in {auth_path}")
+                logger.error(
+                    f"Variable '{var_name}' in {file_path} is not an Auth instance"
+                )
                 return None
 
-            logger.info(f"Successfully loaded auth instance from {auth_path}")
+            logger.info(
+                f"Successfully loaded auth instance from {file_path}:{var_name}"
+            )
             return auth_instance
 
         except Exception as e:
-            logger.error(f"Error loading auth instance: {e}", exc_info=True)
+            logger.error(f"Error loading auth from {file_path}: {e}", exc_info=True)
+            return None
+
+    def _load_from_module(self, module_path: str, var_name: str) -> Auth | None:
+        """Load auth instance from an installed module.
+
+        Args:
+            module_path: Dotted module path (e.g., 'mypackage.auth')
+            var_name: Name of the variable to load
+
+        Returns:
+            Auth instance or None if loading fails
+        """
+        try:
+            module = importlib.import_module(module_path)
+            auth_instance = getattr(module, var_name, None)
+
+            if not isinstance(auth_instance, Auth):
+                logger.error(
+                    f"Variable '{var_name}' in module {module_path} is not an Auth instance"
+                )
+                return None
+
+            logger.info(
+                f"Successfully loaded auth instance from {module_path}:{var_name}"
+            )
+            return auth_instance
+
+        except ImportError as e:
+            logger.error(f"Could not import module {module_path}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error loading auth from {module_path}: {e}", exc_info=True)
             return None
 
     async def authenticate(
         self, conn: HTTPConnection
     ) -> tuple[AuthCredentials, BaseUser] | None:
         """
-        Authenticate request using LangGraph's auth system.
+        Authenticate request using the configured auth system.
 
         Args:
             conn: HTTP connection containing request headers
@@ -119,9 +226,22 @@ class LangGraphAuthBackend(AuthenticationBackend):
         Raises:
             AuthenticationError: If authentication fails
         """
+        # Handle noop auth when no auth instance is configured
+        # Default to noop (anonymous) authentication when no auth file is found,
+        # regardless of AUTH_TYPE setting. This ensures the server works out-of-the-box.
         if self.auth_instance is None:
-            logger.warning("No auth instance available, skipping authentication")
-            return None
+            logger.debug(
+                "No auth file configured, defaulting to noop (anonymous) authentication"
+            )
+            # Return anonymous user when no auth is configured
+            user_data: Auth.types.MinimalUserDict = {
+                "identity": "anonymous",
+                "display_name": "Anonymous User",
+                "is_authenticated": True,
+            }
+            credentials = AuthCredentials([])
+            user = LangGraphUser(user_data)
+            return credentials, user
 
         if self.auth_instance._authenticate_handler is None:
             logger.warning(
@@ -130,7 +250,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
             return None
 
         try:
-            # Convert headers to dict format expected by LangGraph
+            # Convert headers to dict format expected by auth handlers
             headers = {
                 key.decode() if isinstance(key, bytes) else key: value.decode()
                 if isinstance(value, bytes)
@@ -138,7 +258,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
                 for key, value in conn.headers.items()
             }
 
-            # Call LangGraph's authenticate handler
+            # Call the authenticate handler
             user_data = await self.auth_instance._authenticate_handler(headers)
 
             if not user_data or not isinstance(user_data, dict):
@@ -180,7 +300,7 @@ def get_auth_backend() -> AuthenticationBackend:
     auth_type = settings.app.AUTH_TYPE
 
     if auth_type in ["noop", "custom"]:
-        logger.info(f"Using LangGraph auth backend with type: {auth_type}")
+        logger.debug(f"Using auth backend with type: {auth_type}")
         return LangGraphAuthBackend()
     else:
         logger.warning(f"Unknown AUTH_TYPE: {auth_type}, using noop")
@@ -208,3 +328,18 @@ def on_auth_error(conn: HTTPConnection, exc: AuthenticationError) -> JSONRespons
             details={"authentication_required": True},
         ).model_dump(),
     )
+
+
+@functools.lru_cache(maxsize=1)
+def get_auth_instance() -> Auth | None:
+    """Get cached Auth instance for use by other modules.
+
+    Uses LRU cache to ensure only one Auth instance is loaded per process.
+    This allows other modules to access the same Auth instance used by
+    the middleware without re-loading it.
+
+    Returns:
+        Auth instance or None if not configured/found
+    """
+    backend = LangGraphAuthBackend()
+    return backend.auth_instance

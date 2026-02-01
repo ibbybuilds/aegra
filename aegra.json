@@ -6,6 +6,7 @@
     "subgraph_hitl_agent": "./graphs/subgraph_hitl_agent/graph.py:graph"
   },
   "http": {
-    "app": "./custom_routes_example.py:app"
+    "app": "./custom_routes_example.py:app",
+    "enable_custom_route_auth": false
   }
 }

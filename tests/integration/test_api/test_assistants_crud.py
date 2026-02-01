@@ -1,5 +1,7 @@
 """Integration tests for assistants CRUD operations"""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from agent_server.services.assistant_service import get_assistant_service
@@ -20,7 +22,13 @@ def client(mock_assistant_service):
     # Override the service dependency
     app.dependency_overrides[get_assistant_service] = lambda: mock_assistant_service
 
-    return make_client(app)
+    # Mock authorization handlers to allow all requests in integration tests
+    # These tests focus on API layer, not authorization layer
+    with patch(
+        "agent_server.api.assistants.handle_event", new_callable=AsyncMock
+    ) as mock_handle:
+        mock_handle.return_value = None  # Allow all requests
+        yield make_client(app)
 
 
 class TestCreateAssistant:

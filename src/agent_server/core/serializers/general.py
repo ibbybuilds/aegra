@@ -1,4 +1,4 @@
-"""General-purpose object serialization based on LangGraph's approach"""
+"""General-purpose object serialization for complex objects"""
 
 from typing import Any
 
@@ -6,10 +6,10 @@ from .base import SerializationError, Serializer
 
 
 class GeneralSerializer(Serializer):
-    """Simple object serializer using LangGraph's proven approach"""
+    """Simple object serializer for complex Python objects"""
 
     def serialize(self, obj: Any) -> Any:
-        """Serialize any object to JSON-compatible format using LangGraph's logic"""
+        """Serialize any object to JSON-compatible format"""
         try:
             return self._serialize_object(obj)
         except Exception as e:
@@ -18,7 +18,7 @@ class GeneralSerializer(Serializer):
             ) from e
 
     def _serialize_object(self, obj: Any) -> Any:
-        """Core serialization logic based on LangGraph SDK's _orjson_default"""
+        """Core serialization logic for Python objects"""
         # Handle Pydantic v2 models (model_dump method)
         if hasattr(obj, "model_dump") and callable(obj.model_dump):
             return obj.model_dump()

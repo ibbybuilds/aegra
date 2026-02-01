@@ -83,6 +83,7 @@ async for chunk in client.runs.stream(
 | Topic | Description |
 |-------|-------------|
 | [Developer Guide](docs/developer-guide.md) | Local setup, migrations, development workflow |
+| [Authentication & Authorization](docs/authentication.md) | Configure JWT, OAuth, or custom auth with fine-grained access control |
 | [Custom Routes](docs/custom-routes.md) | Add your own FastAPI endpoints |
 | [Semantic Store](docs/semantic-store.md) | Vector embeddings with pgvector |
 | [Dependencies](docs/dependencies.md) | Shared modules for graph imports |

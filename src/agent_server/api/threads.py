@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api.runs import active_runs
 from ..core.auth_deps import get_current_user
+from ..core.auth_handlers import build_auth_context, handle_event
 from ..core.orm import Run as RunORM
 from ..core.orm import Thread as ThreadORM
 from ..core.orm import get_session
@@ -34,7 +35,7 @@ from ..models import (
 from ..services.streaming_service import streaming_service
 from ..services.thread_state_service import ThreadStateService
 
-router = APIRouter()
+router = APIRouter(tags=["Threads"])
 logger = structlog.getLogger(__name__)
 
 thread_state_service = ThreadStateService()
@@ -119,6 +120,19 @@ async def create_thread(
     session: AsyncSession = Depends(get_session),
 ):
     """Create a new conversation thread"""
+    # Authorization check
+    ctx = build_auth_context(user, "threads", "create")
+    value = request.model_dump()
+    filters = await handle_event(ctx, value)
+
+    # If handler modified metadata, update request
+    if filters and "metadata" in filters:
+        current_metadata = request.metadata or {}
+        request.metadata = {**current_metadata, **filters["metadata"]}
+    elif value.get("metadata"):
+        # Handler may have modified value dict directly
+        current_metadata = request.metadata or {}
+        request.metadata = {**current_metadata, **value["metadata"]}
 
     thread_id = request.thread_id or str(uuid4())
 
@@ -167,7 +181,18 @@ async def list_threads(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
 ):
     """List user's threads"""
+    # Authorization check (search action for listing)
+    ctx = build_auth_context(user, "threads", "search")
+    value = {}
+    filters = await handle_event(ctx, value)
+
+    # Build query with filters if provided
     stmt = select(ThreadORM).where(ThreadORM.user_id == user.identity)
+    if filters:
+        # Apply filters from authorization handler
+        # For now, we'll apply user_id filter which is already there
+        # Additional filters can be added here based on handler response
+        pass
     result = await session.scalars(stmt)
     rows = result.all()
 
@@ -183,6 +208,11 @@ async def get_thread(
     session: AsyncSession = Depends(get_session),
 ):
     """Get thread by ID"""
+    # Authorization check
+    ctx = build_auth_context(user, "threads", "read")
+    value = {"thread_id": thread_id}
+    await handle_event(ctx, value)
+
     stmt = select(ThreadORM).where(
         ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
     )
@@ -201,6 +231,17 @@ async def update_thread(
     session: AsyncSession = Depends(get_session),
 ):
     """Update a thread's metadata and timestamp."""
+    # Authorization check
+    ctx = build_auth_context(user, "threads", "update")
+    value = {**request.model_dump(), "thread_id": thread_id}
+    filters = await handle_event(ctx, value)
+
+    # If handler modified metadata, update request
+    if filters and "metadata" in filters:
+        request.metadata = {**(request.metadata or {}), **filters["metadata"]}
+    elif value.get("metadata"):
+        request.metadata = {**(request.metadata or {}), **value["metadata"]}
+
     stmt = select(ThreadORM).where(
         ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
     )
@@ -695,6 +736,11 @@ async def delete_thread(
     session: AsyncSession = Depends(get_session),
 ):
     """Delete thread by ID. Automatically cancels active runs."""
+    # Authorization check
+    ctx = build_auth_context(user, "threads", "delete")
+    value = {"thread_id": thread_id}
+    await handle_event(ctx, value)
+
     stmt = select(ThreadORM).where(
         ThreadORM.thread_id == thread_id, ThreadORM.user_id == user.identity
     )
@@ -735,6 +781,18 @@ async def search_threads(
     session: AsyncSession = Depends(get_session),
 ):
     """Search threads with filters"""
+    # Authorization check
+    ctx = build_auth_context(user, "threads", "search")
+    value = request.model_dump()
+    filters = await handle_event(ctx, value)
+
+    # Merge handler filters with request metadata
+    # Note: ThreadSearchRequest doesn't have a filters field,
+    # so we merge authorization filters into metadata if needed
+    if filters and "metadata" in filters:
+        # If filters contain metadata, merge with request metadata
+        request.metadata = {**(request.metadata or {}), **filters["metadata"]}
+        # Other filter types can be handled here if needed
     stmt = select(ThreadORM).where(ThreadORM.user_id == user.identity)
 
     if request.status:

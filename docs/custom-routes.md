@@ -54,12 +54,38 @@ Custom routes follow this priority order:
 3. **Shadowable routes**: `/`, `/info` - can be overridden by custom routes
 4. **Protected core routes**: `/assistants`, `/threads`, `/runs`, `/store` - cannot be overridden
 
+## Authentication on Custom Routes
+
+By default, custom routes do **NOT** have Aegra's authentication applied. To enable authentication on your custom routes, set `enable_custom_route_auth: true` in your config:
+
+```json
+{
+  "http": {
+    "app": "./my_app.py:app",
+    "enable_custom_route_auth": true
+  }
+}
+```
+
+When enabled, Aegra will automatically apply the authentication dependency to all your custom routes. This uses FastAPI's dependency system (not middleware), so it properly appears in OpenAPI docs.
+
+Alternatively, you can apply auth manually to specific routes:
+
+```python
+from agent_server.core.auth_deps import require_auth
+from fastapi import Depends
+
+@app.get("/my-protected-route")
+async def my_route(user = Depends(require_auth)):
+    return {"user": user.identity}
+```
+
 ## Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `app` | `string` | `None` | Import path to custom FastAPI/Starlette app (format: `"path/to/file.py:variable"`) |
-| `enable_custom_route_auth` | `boolean` | `false` | Apply Aegra's authentication middleware to custom routes |
+| `app` | `string` | `None` | Import path to custom FastAPI app (format: `"path/to/file.py:variable"`) |
+| `enable_custom_route_auth` | `boolean` | `false` | Apply Aegra's authentication dependency to all custom routes |
 | `cors` | `object` | `None` | Custom CORS configuration |
 
 ## Use Cases

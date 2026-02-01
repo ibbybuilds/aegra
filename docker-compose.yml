@@ -32,7 +32,7 @@ services:
       - ./aegra.json:/app/aegra.json:ro
       - ./graphs:/app/graphs:ro
       - ./src:/app/src:ro # for hot reload support of server
-      - ./auth.py:/app/auth.py:ro
+      - ./jwt_mock_auth_example.py:/app/jwt_mock_auth_example.py:ro
       - ./.env:/app/.env:ro
       - ./alembic:/app/alembic:ro # for migrations
       # Mount custom route files dynamically (add your custom routes file here)

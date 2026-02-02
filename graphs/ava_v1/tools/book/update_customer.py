@@ -10,6 +10,8 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from ava_v1.shared_libraries.email_validator import check_email_validity
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,19 +64,21 @@ async def update_customer_details(
             )
 
     if field == "email":
-        # Simple regex for email validation
-        email_pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-        if not re.match(email_pattern, value.strip()):
+        # Use tiered validation (Tier 1: free checks)
+        is_valid, error_hint = await check_email_validity(value.strip())
+        if not is_valid:
+            logger.info(f"[UPDATE_CUSTOMER] Email validation failed: {error_hint}")
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Invalid email format: {value}. Please verify spelling.",
+                    "message": error_hint,
                 }
             )
 
     # Prepare state update
     update = {field: value.strip()}
 
+    logger.info(f"[UPDATE_CUSTOMER] {field} validated successfully")
     logger.info(f"[UPDATE_CUSTOMER] State update committed for {field}: {update}")
 
     if runtime is None:

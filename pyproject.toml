@@ -52,6 +52,8 @@ dependencies = [
     "redis[hiredis]>=5.0.0",
     # Jinja2 for ava_v1 dynamic prompt templates
     "jinja2>=3.1.0",
+    # DNS lookups for email validation (MX record checks)
+    "dnspython>=2.6.1",
 ]
 
 [project.urls]

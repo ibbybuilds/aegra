@@ -148,8 +148,8 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
     Runs checks in order, stopping at first rejection:
     1. Syntax validation (regex)
     2. Disposable domain check
-    3. MX record validation
-    4. Trusted provider check (accept if trusted)
+    3. Trusted provider check (accept if trusted)
+    4. MX record validation
 
     Args:
         email: Email address to validate
@@ -159,21 +159,32 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
         - is_valid: True if email passes all checks
         - error_hint: User-friendly error message if invalid, None if valid
     """
+    logger.info(f"[EMAIL_VALIDATOR] Starting validation for domain: {email.split('@')[-1] if '@' in email else 'invalid'}")
+
     # Tier 1 Check 1: Syntax validation
     if not _validate_email(email):
-        logger.info(f"[EMAIL_VALIDATOR] Syntax validation failed")
+        logger.info(
+            f"[EMAIL_VALIDATOR] REJECTED - Reason: syntax_invalid, "
+            f"Tier: 1, Check: syntax"
+        )
         return (False, "Invalid email format")
 
     # Extract domain
     try:
         domain = email.split("@")[1].lower()
     except IndexError:
-        logger.info(f"[EMAIL_VALIDATOR] Failed to extract domain from email")
+        logger.info(
+            f"[EMAIL_VALIDATOR] REJECTED - Reason: domain_extraction_failed, "
+            f"Tier: 1, Check: syntax"
+        )
         return (False, "Invalid email format")
 
     # Tier 1 Check 2: Disposable domain check
     if is_disposable_domain(domain):
-        logger.info(f"[EMAIL_VALIDATOR] Disposable domain rejected: {domain}")
+        logger.info(
+            f"[EMAIL_VALIDATOR] REJECTED - Reason: disposable_domain, "
+            f"Domain: {domain}, Tier: 1, Check: disposable_blocklist"
+        )
         return (
             False,
             "This appears to be a temporary/disposable email address. Please provide a permanent email address.",
@@ -181,17 +192,28 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
 
     # Tier 1 Check 3: Trusted provider whitelist (skip MX check if trusted)
     if is_trusted_provider(domain):
-        logger.info(f"[EMAIL_VALIDATOR] Accepted trusted provider: {domain}")
+        logger.info(
+            f"[EMAIL_VALIDATOR] ACCEPTED - Reason: trusted_provider, "
+            f"Domain: {domain}, Tier: 1, Check: whitelist, MX_Check: skipped"
+        )
         return (True, None)
 
     # Tier 1 Check 4: MX record validation
+    logger.debug(f"[EMAIL_VALIDATOR] Running MX check for domain: {domain}")
     if not has_valid_mx_records(domain):
-        logger.info(f"[EMAIL_VALIDATOR] MX validation failed for domain: {domain}")
+        logger.info(
+            f"[EMAIL_VALIDATOR] REJECTED - Reason: no_mx_records, "
+            f"Domain: {domain}, Tier: 1, Check: mx_validation"
+        )
         return (
             False,
             "This email domain doesn't have valid mail servers. Please verify the spelling or provide a different email.",
         )
 
     # All Tier 1 checks passed
-    logger.info(f"[EMAIL_VALIDATOR] Email validated successfully (Tier 1): {domain}")
+    logger.info(
+        f"[EMAIL_VALIDATOR] ACCEPTED - Reason: tier1_passed, "
+        f"Domain: {domain}, Tier: 1, Checks: syntax+disposable+mx, "
+        f"MX_Check: completed"
+    )
     return (True, None)

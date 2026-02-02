@@ -14,6 +14,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from ava_v1.shared_libraries.cache_worker_client import get_cache_worker_client
 from ava_v1.shared_libraries.context_helpers import prepare_booking_pending_push
 from ava_v1.shared_libraries.hashing import _generate_booking_hash
 from ava_v1.shared_libraries.input_sanitizer import sanitize_tool_input
@@ -338,9 +339,6 @@ async def book_room(
             return json.dumps(error_result, indent=2)
 
     # Build request to cache-worker
-    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
-    endpoint = f"{cache_worker_url}/v1/book"
-
     request_body = {
         "room": room_dict,
         "customer_info": customer_info,
@@ -351,8 +349,8 @@ async def book_room(
 
     # Call cache-worker
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(endpoint, json=request_body, timeout=30.0)
+        async with get_cache_worker_client() as client:
+            response = await client.post("/v1/book", json=request_body, timeout=30.0)
 
             # 409 Conflict means price mismatch - this is expected, not an error
             # Don't raise exception, parse the response body with price info

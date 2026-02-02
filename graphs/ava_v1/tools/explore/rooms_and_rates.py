@@ -12,6 +12,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from ava_v1.shared_libraries.cache_worker_client import get_cache_worker_client
 from ava_v1.shared_libraries.context_helpers import prepare_room_list_push
 
 # Import redis_client and shared libraries
@@ -35,9 +36,6 @@ async def _start_rooms_search(
     Returns:
         Dict with roomSearchId, status, roomCount (metadata only)
     """
-    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
-    endpoint = f"{cache_worker_url}/v1/search/rooms"
-
     request_body = {
         "hotelId": int(hotel_id),
         "checkIn": search_params["checkIn"],
@@ -45,11 +43,11 @@ async def _start_rooms_search(
         "occupancy": search_params["occupancy"],
     }
 
-    logger.info(f"[ROOMS_SEARCH] Calling cache-worker: {endpoint}")
+    logger.info("[ROOMS_SEARCH] Calling cache-worker: /v1/search/rooms")
     logger.info(f"[ROOMS_SEARCH] Request body: {request_body}")
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(endpoint, json=request_body, timeout=30.0)
+    async with get_cache_worker_client() as client:
+        response = await client.post("/v1/search/rooms", json=request_body, timeout=30.0)
         response.raise_for_status()
         data = response.json()
 

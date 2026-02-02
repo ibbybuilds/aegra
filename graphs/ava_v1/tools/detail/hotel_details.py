@@ -11,6 +11,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from ava_v1.shared_libraries.cache_worker_client import get_cache_worker_client
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_details_push
 from ava_v1.shared_libraries.lookup_id import lookup_id
 
@@ -231,19 +232,15 @@ async def hotel_details(
         }
         return _wrap_response(result, resolved_hotel_id or "", runtime)
 
-    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
-    endpoint = f"{cache_worker_url}/v1/search/details/{resolved_hotel_id}"
-
-    logger.info(f"[DEBUG] CACHE_WORKER_URL: {cache_worker_url}")
     logger.info(
         f"[HOTEL_DETAILS] Calling cache-worker for hotel_id: {resolved_hotel_id}"
     )
 
     try:
-        logger.info("[DEBUG] Creating httpx.AsyncClient for hotel details")
-        async with httpx.AsyncClient() as client:
-            logger.info(f"[DEBUG] Sending GET request to {endpoint}")
-            response = await client.get(endpoint, timeout=10.0)
+        logger.info("[DEBUG] Creating cache-worker client for hotel details")
+        async with get_cache_worker_client() as client:
+            logger.info(f"[DEBUG] Sending GET request to /v1/search/details/{resolved_hotel_id}")
+            response = await client.get(f"/v1/search/details/{resolved_hotel_id}", timeout=10.0)
             logger.info(
                 f"[DEBUG] Received response with status: {response.status_code}"
             )

@@ -16,6 +16,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field, model_validator
 
+from ava_v1.shared_libraries.cache_worker_client import get_cache_worker_client
 from ava_v1.shared_libraries.context_helpers import prepare_hotel_list_push
 from ava_v1.shared_libraries.lookup_id import lookup_id
 
@@ -112,20 +113,16 @@ async def get_geo_coordinates(destination: str) -> str:
         }
         return json.dumps(result, indent=2)
 
-    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
-    endpoint = f"{cache_worker_url}/v1/search/geo"
-
-    logger.debug(f"CACHE_WORKER_URL: {cache_worker_url}")
     logger.info(
         f"[GEO_COORDINATES] Calling cache-worker for destination: {destination}"
     )
 
     try:
-        logger.debug("Creating httpx.AsyncClient for geocode request")
-        async with httpx.AsyncClient() as client:
-            logger.debug(f"Sending GET request to {endpoint}")
+        logger.debug("Creating cache-worker client for geocode request")
+        async with get_cache_worker_client() as client:
+            logger.debug("Sending GET request to /v1/search/geo")
             response = await client.get(
-                endpoint, params={"destination": destination}, timeout=10.0
+                "/v1/search/geo", params={"destination": destination}, timeout=10.0
             )
             logger.debug(f"Received response with status: {response.status_code}")
             response.raise_for_status()
@@ -222,9 +219,6 @@ async def _start_hotel_search(
     Returns:
         Dict with searchId, status, hotelCount (metadata only)
     """
-    cache_worker_url = os.getenv("CACHE_WORKER_URL", "http://localhost:8080")
-    endpoint = f"{cache_worker_url}/v1/search"
-
     request_body = {
         "destination": search["destination"],
         "checkIn": search["checkIn"],
@@ -237,14 +231,14 @@ async def _start_hotel_search(
     }
 
     logger.debug("_start_hotel_search() called")
-    logger.info(f"[HOTEL_SEARCH] Calling cache-worker: {endpoint}")
+    logger.info("[HOTEL_SEARCH] Calling cache-worker: /v1/search")
     logger.info(f"[HOTEL_SEARCH] Request body: {request_body}")
 
     try:
-        logger.debug("Creating httpx.AsyncClient for hotel search")
-        async with httpx.AsyncClient() as client:
-            logger.debug("Sending POST request to cache-worker")
-            response = await client.post(endpoint, json=request_body, timeout=30.0)
+        logger.debug("Creating cache-worker client for hotel search")
+        async with get_cache_worker_client() as client:
+            logger.debug("Sending POST request to /v1/search")
+            response = await client.post("/v1/search", json=request_body, timeout=30.0)
             logger.debug(f"Received response with status: {response.status_code}")
             response.raise_for_status()
             data = response.json()

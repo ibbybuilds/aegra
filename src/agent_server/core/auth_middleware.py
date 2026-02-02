@@ -118,6 +118,11 @@ class LangGraphAuthBackend(AuthenticationBackend):
         Raises:
             AuthenticationError: If authentication fails
         """
+        # Skip authentication for health check and status endpoints
+        UNAUTHENTICATED_PATHS = {"/", "/health", "/live", "/ready", "/info"}
+        if conn.url.path in UNAUTHENTICATED_PATHS:
+            return None
+
         if self.auth_instance is None:
             logger.warning("No auth instance available, skipping authentication")
             return None

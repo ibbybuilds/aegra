@@ -100,7 +100,15 @@ def has_valid_mx_records(domain: str) -> bool:
 
         # Query MX records
         mx_records = resolver.resolve(domain, "MX")
-        logger.debug(f"[EMAIL_VALIDATOR] MX records found for domain: {domain}")
+
+        # Check for null MX record (0 .) which means "no email accepted"
+        # Null MX has priority 0 and exchange "."
+        for mx in mx_records:
+            if mx.preference == 0 and str(mx.exchange) == ".":
+                logger.info(f"[EMAIL_VALIDATOR] Null MX record (no email) for domain: {domain}")
+                return False
+
+        logger.debug(f"[EMAIL_VALIDATOR] Valid MX records found for domain: {domain}")
         return len(mx_records) > 0
 
     except dns.resolver.NXDOMAIN:

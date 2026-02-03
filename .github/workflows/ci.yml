@@ -65,5 +65,3 @@ jobs:
           files: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
-          # Enable PR comments (requires token)
-          enable_auto_upload: true

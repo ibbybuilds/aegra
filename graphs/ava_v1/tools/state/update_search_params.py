@@ -75,6 +75,7 @@ class UpdateSearchParamsInput(BaseModel):
 @tool(
     args_schema=UpdateSearchParamsInput,
     description=(
+        "DO NOT USE THIS TOOL if the call starts with existing search parameters like dates and occupancy "
         "Update search parameters (dates, occupancy) one field at a time. "
         "Use this immediately after user confirms each field value. "
         "These params are staged temporarily and will be copied to active_searches "

@@ -12,7 +12,7 @@ class StorePutRequest(BaseModel):
     key: str = Field(..., description="Item key")
     value: dict[str, Any] = Field(..., description="Item value (must be a JSON object)")
 
-    @field_validator("value")
+    @field_validator("value", mode="before")
     @classmethod
     def validate_value_is_dict(cls, v: Any) -> dict[str, Any]:
         """Validate that value is a dictionary.

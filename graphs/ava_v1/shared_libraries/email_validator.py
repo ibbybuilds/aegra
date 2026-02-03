@@ -12,10 +12,14 @@ Future tiers (not yet implemented):
 """
 
 import logging
+import os
+import time
+import urllib.parse
 from pathlib import Path
 from typing import Tuple
 
 import dns.resolver
+import httpx
 
 from ava_v1.shared_libraries.validation import _validate_email
 
@@ -150,14 +154,209 @@ def is_trusted_provider(domain: str) -> bool:
     return domain.lower() in TRUSTED_PROVIDERS
 
 
-async def check_email_validity(email: str) -> Tuple[bool, str | None]:
-    """Validate email using Tier 1 free checks only.
+async def validate_email_with_ipqs(email: str) -> dict | None:
+    """Call IPQualityScore API to validate email.
 
-    Runs checks in order, stopping at first rejection:
-    1. Syntax validation (regex)
-    2. Disposable domain check
-    3. Trusted provider check (accept if trusted)
-    4. MX record validation
+    API Documentation: https://www.ipqualityscore.com/documentation/email-validation-api/overview
+
+    NOTE: This function is for evaluation/testing only. Not yet integrated
+    into the main validation flow.
+
+    Args:
+        email: Email address to validate
+
+    Returns:
+        Dict with IPQS response data and timing info, or None if API unavailable
+        Response includes all IPQS fields plus:
+        - _latency_ms: Request latency in milliseconds
+        - _error: Error message if request failed
+
+    Key IPQS response fields:
+        - valid (bool): Email appears structurally and functionally valid
+        - fraud_score (float): 0-100, scores ≥75 warrant suspension, ≥90 high risk
+        - smtp_score (int): -1=invalid, 0=rejects all, 1=temp error, 2=catch-all, 3=verified exists
+        - overall_score (int): 0-4, higher is better (4=verified exists)
+        - disposable (bool): Temporary/disposable email service
+        - catch_all (bool): Server accepts all emails (less reliable verification)
+        - honeypot (bool): Suspected spam trap
+        - recent_abuse (bool): Recently verified abusive activity
+        - suggested_domain (str): Typo correction suggestion (e.g., "gmail.com" for "gmial.com")
+        - deliverability (str): "high", "medium", or "low"
+        - domain_trust (str): "trusted", "positive", "neutral", "suspicious", "malicious"
+    """
+    api_key = os.getenv("IPQUALITYSCORE_API_KEY")
+    if not api_key:
+        logger.warning("[IPQS] API key not configured")
+        return None
+
+    # URL-encode email for API call
+    encoded_email = urllib.parse.quote(email, safe="")
+    url = f"https://www.ipqualityscore.com/api/json/email/{api_key}/{encoded_email}"
+
+    # Parameters for full SMTP validation
+    # See: https://www.ipqualityscore.com/documentation/email-validation-api/overview
+    params = {
+        "timeout": 20,  # 1-60 seconds, default 7. Higher = more accurate SMTP checks
+        "fast": "false",  # Full validation, not fast mode
+        "abuse_strictness": 0,  # 0-2, higher = more false positives
+    }
+
+    start_time = time.perf_counter()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, params=params)
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            response.raise_for_status()
+            data = response.json()
+
+            # Check for API-level errors
+            if not data.get("success", True):
+                errors = data.get("errors", [])
+                logger.error(f"[IPQS] API error for {email.split('@')[-1]}: {errors}")
+                return {"_error": f"api_error: {errors}", "_latency_ms": round(latency_ms, 2)}
+
+            # Add timing info
+            data["_latency_ms"] = round(latency_ms, 2)
+
+            logger.info(
+                f"[IPQS] Response for {email.split('@')[-1]}: "
+                f"fraud_score={data.get('fraud_score')}, "
+                f"smtp_score={data.get('smtp_score')}, "
+                f"overall_score={data.get('overall_score')}, "
+                f"valid={data.get('valid')}, "
+                f"disposable={data.get('disposable')}, "
+                f"catch_all={data.get('catch_all')}, "
+                f"honeypot={data.get('honeypot')}, "
+                f"domain_trust={data.get('domain_trust')}, "
+                f"suggested_domain={data.get('suggested_domain')}, "
+                f"latency={latency_ms:.0f}ms"
+            )
+
+            return data
+
+    except httpx.TimeoutException:
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        logger.warning(f"[IPQS] Timeout after {latency_ms:.0f}ms for {email.split('@')[-1]}")
+        return {"_error": "timeout", "_latency_ms": round(latency_ms, 2)}
+
+    except httpx.HTTPStatusError as e:
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        logger.error(f"[IPQS] HTTP {e.response.status_code} for {email.split('@')[-1]}")
+        return {"_error": f"http_{e.response.status_code}", "_latency_ms": round(latency_ms, 2)}
+
+    except Exception as e:
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        logger.error(f"[IPQS] Error for {email.split('@')[-1]}: {e}")
+        return {"_error": str(e), "_latency_ms": round(latency_ms, 2)}
+
+
+def interpret_ipqs_result(data: dict) -> Tuple[bool, str | None, dict]:
+    """Interpret IPQS response and return validation result.
+
+    Based on IPQS documentation:
+    https://www.ipqualityscore.com/documentation/email-validation-api/response-parameters
+
+    Optimized for hotel booking use case - focuses on hard signals that indicate
+    the email is fake/invalid, NOT soft signals like leaked credentials or
+    frequent complainer status (which affect fraud_score but aren't relevant
+    for legitimate bookings).
+
+    Args:
+        data: IPQS API response dict
+
+    Returns:
+        Tuple of (is_valid, rejection_reason, details)
+        - is_valid: True if email passes all checks
+        - rejection_reason: Human-readable reason if rejected, None if valid
+        - details: Dict with additional context for evaluation
+    """
+    details = {
+        "fraud_score": data.get("fraud_score"),
+        "smtp_score": data.get("smtp_score"),
+        "overall_score": data.get("overall_score"),
+        "spam_trap_score": data.get("spam_trap_score"),
+        "deliverability": data.get("deliverability"),
+        "leaked": data.get("leaked"),
+        "frequent_complainer": data.get("frequent_complainer"),
+    }
+
+    if "_error" in data:
+        return (True, None, {"_error": data["_error"]})  # Fail open on API errors
+
+    # ==========================================================================
+    # HARD REJECT CRITERIA - These indicate the email is definitively bad
+    # ==========================================================================
+
+    # 1. Honeypot - Known spam trap, definite reject
+    if data.get("honeypot", False):
+        return (False, "This email address cannot be used for bookings", details)
+
+    # 2. Disposable/temporary email - Won't be reachable long-term
+    if data.get("disposable", False):
+        return (False, "Please provide a permanent email address, not a temporary one", details)
+
+    # 3. SMTP score - Does the email actually exist?
+    # -1 = invalid, 0 = server rejects all mail, 1 = temp error, 2 = catch-all, 3 = verified
+    smtp_score = data.get("smtp_score")
+    if smtp_score == -1:
+        suggested = data.get("suggested_domain")
+        if suggested and suggested != "N/A":
+            return (False, f"This email doesn't exist. Did you mean @{suggested}?", details)
+        return (False, "This email address doesn't appear to exist", details)
+    if smtp_score == 0:
+        return (False, "This email domain doesn't accept any emails", details)
+
+    # 4. Valid flag - Basic structural validity
+    if not data.get("valid", True):
+        return (False, "This email address is invalid", details)
+
+    # 5. High spam trap score - High confidence this is a trap
+    spam_trap_score = data.get("spam_trap_score", "none")
+    if spam_trap_score == "high":
+        return (False, "This email address cannot be used for bookings", details)
+
+    # 6. Recent abuse - Known bad actor (chargebacks, fake signups, etc.)
+    if data.get("recent_abuse", False):
+        return (False, "This email has been flagged for suspicious activity", details)
+
+    # ==========================================================================
+    # PASS - Email is valid for booking purposes
+    # ==========================================================================
+
+    # Add informational warnings (don't reject, just note)
+    warnings = []
+    if data.get("catch_all", False):
+        warnings.append("catch_all domain")
+    if smtp_score == 1:
+        warnings.append("smtp temporary error")
+    if data.get("deliverability") == "low":
+        warnings.append("low deliverability")
+    if data.get("leaked", False):
+        warnings.append("appeared in data breach")
+    if data.get("frequent_complainer", False):
+        warnings.append("frequent spam complainer")
+
+    if warnings:
+        details["warnings"] = warnings
+
+    return (True, None, details)
+
+
+async def check_email_validity(email: str) -> Tuple[bool, str | None]:
+    """Validate email using tiered approach for cost optimization.
+
+    Tier 1 - FREE checks (always run):
+        1. Syntax validation
+        2. Disposable domain blocklist
+        3. Trusted provider whitelist → ACCEPT, skip IPQS
+        4. MX record validation
+
+    Tier 2 - IPQS API (only for unknown domains that pass Tier 1):
+        - Checks: honeypot, disposable, smtp_score, valid, spam_trap_score, recent_abuse
+        - Does NOT use fraud_score (too many false positives)
+        - If API fails → ACCEPT (free checks already passed)
 
     Args:
         email: Email address to validate
@@ -167,61 +366,73 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
         - is_valid: True if email passes all checks
         - error_hint: User-friendly error message if invalid, None if valid
     """
-    logger.info(f"[EMAIL_VALIDATOR] Starting validation for domain: {email.split('@')[-1] if '@' in email else 'invalid'}")
+    domain = email.split('@')[-1].lower() if '@' in email else 'invalid'
+    logger.info(f"[EMAIL_VALIDATOR] Starting validation for domain: {domain}")
 
-    # Tier 1 Check 1: Syntax validation
+    # =========================================================================
+    # TIER 1: FREE CHECKS
+    # =========================================================================
+
+    # Check 1: Syntax validation
     if not _validate_email(email):
-        logger.info(
-            f"[EMAIL_VALIDATOR] REJECTED - Reason: syntax_invalid, "
-            f"Tier: 1, Check: syntax"
-        )
+        logger.info(f"[EMAIL_VALIDATOR] REJECTED - syntax_invalid, Domain: {domain}")
         return (False, "Invalid email format")
 
     # Extract domain
     try:
         domain = email.split("@")[1].lower()
     except IndexError:
-        logger.info(
-            f"[EMAIL_VALIDATOR] REJECTED - Reason: domain_extraction_failed, "
-            f"Tier: 1, Check: syntax"
-        )
+        logger.info(f"[EMAIL_VALIDATOR] REJECTED - domain_extraction_failed")
         return (False, "Invalid email format")
 
-    # Tier 1 Check 2: Disposable domain check
+    # Check 2: Disposable domain blocklist
     if is_disposable_domain(domain):
-        logger.info(
-            f"[EMAIL_VALIDATOR] REJECTED - Reason: disposable_domain, "
-            f"Domain: {domain}, Tier: 1, Check: disposable_blocklist"
-        )
+        logger.info(f"[EMAIL_VALIDATOR] REJECTED - disposable_domain, Domain: {domain}")
         return (
             False,
             "This appears to be a temporary/disposable email address. Please provide a permanent email address.",
         )
 
-    # Tier 1 Check 3: Trusted provider whitelist (skip MX check if trusted)
+    # Check 3: Trusted provider whitelist (skip IPQS)
     if is_trusted_provider(domain):
-        logger.info(
-            f"[EMAIL_VALIDATOR] ACCEPTED - Reason: trusted_provider, "
-            f"Domain: {domain}, Tier: 1, Check: whitelist, MX_Check: skipped"
-        )
+        logger.info(f"[EMAIL_VALIDATOR] ACCEPTED - trusted_provider, Domain: {domain}, IPQS: skipped")
         return (True, None)
 
-    # Tier 1 Check 4: MX record validation
-    logger.debug(f"[EMAIL_VALIDATOR] Running MX check for domain: {domain}")
+    # Check 4: MX record validation
     if not has_valid_mx_records(domain):
-        logger.info(
-            f"[EMAIL_VALIDATOR] REJECTED - Reason: no_mx_records, "
-            f"Domain: {domain}, Tier: 1, Check: mx_validation"
-        )
+        logger.info(f"[EMAIL_VALIDATOR] REJECTED - no_mx_records, Domain: {domain}")
         return (
             False,
             "This email domain doesn't have valid mail servers. Please verify the spelling or provide a different email.",
         )
 
-    # All Tier 1 checks passed
-    logger.info(
-        f"[EMAIL_VALIDATOR] ACCEPTED - Reason: tier1_passed, "
-        f"Domain: {domain}, Tier: 1, Checks: syntax+disposable+mx, "
-        f"MX_Check: completed"
-    )
-    return (True, None)
+    # =========================================================================
+    # TIER 2: IPQS API (only for unknown domains)
+    # =========================================================================
+    logger.info(f"[EMAIL_VALIDATOR] Tier 1 passed, calling IPQS for domain: {domain}")
+
+    ipqs_response = await validate_email_with_ipqs(email)
+
+    # If IPQS unavailable, accept (free checks passed)
+    if ipqs_response is None:
+        logger.info(f"[EMAIL_VALIDATOR] ACCEPTED - ipqs_not_configured, Domain: {domain}")
+        return (True, None)
+
+    # Interpret IPQS result (uses hard signals, not fraud_score)
+    is_valid, rejection_reason, details = interpret_ipqs_result(ipqs_response)
+
+    if is_valid:
+        warnings = details.get("warnings", [])
+        logger.info(
+            f"[EMAIL_VALIDATOR] ACCEPTED - ipqs_passed, Domain: {domain}, "
+            f"smtp={details.get('smtp_score')}, fraud={details.get('fraud_score')}"
+            f"{f', warnings={warnings}' if warnings else ''}"
+        )
+        return (True, None)
+    else:
+        logger.info(
+            f"[EMAIL_VALIDATOR] REJECTED - ipqs_failed, Domain: {domain}, "
+            f"smtp={details.get('smtp_score')}, fraud={details.get('fraud_score')}, "
+            f"reason={rejection_reason}"
+        )
+        return (False, rejection_reason)

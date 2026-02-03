@@ -1,4 +1,6 @@
 coverage:
+  # Badge color thresholds: red < 50%, yellow 50-70%, green >= 70%
+  # Note: Badge may take time to update after changing this setting
   range: 50..70
   round: down
   precision: 2
@@ -14,12 +16,16 @@ coverage:
         informational: true
 
 comment:
-  layout: "diff, flags, files"
-  behavior: default
-  require_changes: false
-  require_base: false
+  # Use condensed layout for cleaner, more focused PR comments
+  layout: "condensed_header, condensed_files, condensed_footer"
+  behavior: default  # Update existing comment, or post new if doesn't exist
+  # Only post if coverage changes (reduces noise)
+  require_changes: true
+  # Require both base and head reports for meaningful comparison
+  require_base: true
   require_head: true
-  hide_project_coverage: false
+  # Hide project coverage, focus on patch/diff coverage (cleaner view)
+  hide_project_coverage: true
 
 # When modifying this file, please validate using
 # curl -X POST --data-binary @codecov.yml https://codecov.io/validate

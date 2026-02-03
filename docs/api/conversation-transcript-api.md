@@ -20,7 +20,7 @@ In our CRM system, each booking has a `correlationId` field. **This correlationI
 
 ```bash
 # Replace {thread_id} with the correlationId from your CRM booking record
-curl -X POST https://api.example.com/threads/{thread_id}/history \
+curl -X POST https://aegra-production.up.railway.app/threads/{thread_id}/history \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"limit": 1000}'
@@ -37,12 +37,14 @@ curl -X POST https://api.example.com/threads/{thread_id}/history \
 **Primary endpoint for retrieving complete transcripts.**
 
 #### Endpoint
+
 ```
 POST /threads/{thread_id}/history
 GET /threads/{thread_id}/history
 ```
 
 #### Use Case
+
 - Retrieve complete conversation transcript for chargeback defense
 - Export conversation history for auditing
 - Review customer interactions for quality assurance
@@ -55,6 +57,7 @@ GET /threads/{thread_id}/history
 | `thread_id` | string | Yes | Thread ID (same as `correlationId` in CRM) |
 
 **Request Body (POST method):**
+
 ```json
 {
   "limit": 100,
@@ -65,15 +68,16 @@ GET /threads/{thread_id}/history
 }
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `limit` | integer | No | 10 | Maximum number of checkpoints to return (1-1000) |
-| `before` | string | No | null | Return checkpoints before this checkpoint ID (pagination) |
-| `metadata` | object | No | {} | Filter checkpoints by metadata |
-| `subgraphs` | boolean | No | false | Include subgraph states |
-| `checkpoint_ns` | string | No | null | Checkpoint namespace filter |
+| Field           | Type    | Required | Default | Description                                               |
+| --------------- | ------- | -------- | ------- | --------------------------------------------------------- |
+| `limit`         | integer | No       | 10      | Maximum number of checkpoints to return (1-1000)          |
+| `before`        | string  | No       | null    | Return checkpoints before this checkpoint ID (pagination) |
+| `metadata`      | object  | No       | {}      | Filter checkpoints by metadata                            |
+| `subgraphs`     | boolean | No       | false   | Include subgraph states                                   |
+| `checkpoint_ns` | string  | No       | null    | Checkpoint namespace filter                               |
 
 **Query Parameters (GET method):**
+
 ```
 GET /threads/{thread_id}/history?limit=100&subgraphs=false
 ```
@@ -91,14 +95,14 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
       "messages": [
         {
           "type": "human",
-          "content": [{"type": "text", "text": "Hello"}],
+          "content": [{ "type": "text", "text": "Hello" }],
           "id": "message-uuid",
           "additional_kwargs": {},
           "response_metadata": {}
         },
         {
           "type": "ai",
-          "content": [{"type": "text", "text": "Hello! I'm Ava..."}],
+          "content": [{ "type": "text", "text": "Hello! I'm Ava..." }],
           "id": "message-uuid",
           "tool_calls": [],
           "invalid_tool_calls": [],
@@ -111,24 +115,26 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
         {
           "type": "ai",
           "content": [
-            {"type": "text", "text": "Let me search for hotels..."},
+            { "type": "text", "text": "Let me search for hotels..." },
             {
               "type": "tool_use",
               "id": "toolu_xxx",
               "name": "start_hotel_search",
-              "input": {"destination": "Miami", "check_in": "2026-02-01"}
+              "input": { "destination": "Miami", "check_in": "2026-02-01" }
             }
           ],
           "tool_calls": [
             {
               "name": "start_hotel_search",
               "args": {
-                "searches": [{
-                  "destination": "Miami",
-                  "check_in": "2026-02-01",
-                  "check_out": "2026-02-02",
-                  "occupancy": {"numOfAdults": 2, "numOfRooms": 1}
-                }]
+                "searches": [
+                  {
+                    "destination": "Miami",
+                    "check_in": "2026-02-01",
+                    "check_out": "2026-02-02",
+                    "occupancy": { "numOfAdults": 2, "numOfRooms": 1 }
+                  }
+                ]
               },
               "id": "toolu_xxx",
               "type": "tool_call"
@@ -187,19 +193,21 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
 #### Message Types
 
 **1. Human Message** (Customer input)
+
 ```json
 {
   "type": "human",
-  "content": [{"type": "text", "text": "I want to book a hotel in Miami"}],
+  "content": [{ "type": "text", "text": "I want to book a hotel in Miami" }],
   "id": "message-uuid"
 }
 ```
 
 **2. AI Message** (Agent response)
+
 ```json
 {
   "type": "ai",
-  "content": [{"type": "text", "text": "I'll help you find hotels in Miami"}],
+  "content": [{ "type": "text", "text": "I'll help you find hotels in Miami" }],
   "id": "message-uuid",
   "tool_calls": [],
   "usage_metadata": {
@@ -210,11 +218,12 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
 ```
 
 **3. AI Message with Tool Call** (Agent taking action)
+
 ```json
 {
   "type": "ai",
   "content": [
-    {"type": "text", "text": "Let me search for available hotels"},
+    { "type": "text", "text": "Let me search for available hotels" },
     {
       "type": "tool_use",
       "id": "toolu_xxx",
@@ -232,7 +241,9 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
   "tool_calls": [
     {
       "name": "book_room",
-      "args": {/* tool arguments */},
+      "args": {
+        /* tool arguments */
+      },
       "id": "toolu_xxx"
     }
   ]
@@ -240,6 +251,7 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
 ```
 
 **4. Tool Result Message** (Result of agent action)
+
 ```json
 {
   "type": "tool",
@@ -252,6 +264,7 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
 #### Error Responses
 
 **404 Not Found**
+
 ```json
 {
   "detail": "Thread 'thread-uuid' not found"
@@ -259,6 +272,7 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
 ```
 
 **500 Internal Server Error**
+
 ```json
 {
   "detail": "Error retrieving thread history: <error message>"
@@ -272,11 +286,13 @@ GET /threads/{thread_id}/history?limit=100&subgraphs=false
 **Get the latest checkpoint state for a conversation.**
 
 #### Endpoint
+
 ```
 GET /threads/{thread_id}/state
 ```
 
 #### Use Case
+
 - Check if a conversation is still active
 - Get the most recent customer details and booking status
 - Verify current state before taking action
@@ -303,7 +319,9 @@ GET /threads/{thread_id}/state
 ```json
 {
   "values": {
-    "messages": [/* array of all messages */],
+    "messages": [
+      /* array of all messages */
+    ],
     "customer_details": {
       "first_name": "John",
       "last_name": "Doe",
@@ -329,11 +347,13 @@ GET /threads/{thread_id}/state
 **Get thread information and status.**
 
 #### Endpoint
+
 ```
 GET /threads/{thread_id}
 ```
 
 #### Use Case
+
 - Check if thread exists
 - Verify thread ownership
 - Get thread creation time and status
@@ -365,6 +385,7 @@ GET /threads/{thread_id}
 ```
 
 **Status Values:**
+
 - `idle`: Conversation inactive, ready for new messages
 - `busy`: Agent is currently processing
 - `interrupted`: Conversation paused (e.g., waiting for payment)
@@ -377,11 +398,13 @@ GET /threads/{thread_id}
 **Get all execution runs (conversations) for a thread.**
 
 #### Endpoint
+
 ```
 GET /threads/{thread_id}/runs
 ```
 
 #### Use Case
+
 - See how many times the conversation was restarted
 - Get execution metadata (start time, end time, status)
 - Identify which run corresponds to the booking
@@ -412,10 +435,12 @@ GET /threads/{thread_id}/runs
     "assistant_id": "ava_v1",
     "status": "success",
     "input": {
-      "messages": [{"type": "human", "content": "Hello"}]
+      "messages": [{ "type": "human", "content": "Hello" }]
     },
     "output": {
-      "messages": [/* final message array */]
+      "messages": [
+        /* final message array */
+      ]
     },
     "config": {},
     "context": {},
@@ -428,6 +453,7 @@ GET /threads/{thread_id}/runs
 ```
 
 **Status Values:**
+
 - `success`: Run completed successfully
 - `error`: Run failed with an error
 - `interrupted`: Run was interrupted (e.g., human-in-the-loop)
@@ -441,11 +467,13 @@ GET /threads/{thread_id}/runs
 **Get details of a specific execution run.**
 
 #### Endpoint
+
 ```
 GET /threads/{thread_id}/runs/{run_id}
 ```
 
 #### Use Case
+
 - Get detailed execution metadata
 - Review input and output for specific run
 - Check error messages if run failed
@@ -469,10 +497,12 @@ GET /threads/{thread_id}/runs/{run_id}
   "assistant_id": "ava_v1",
   "status": "success",
   "input": {
-    "messages": [{"type": "human", "content": "I want to book a hotel"}]
+    "messages": [{ "type": "human", "content": "I want to book a hotel" }]
   },
   "output": {
-    "messages": [/* complete message history at end of run */]
+    "messages": [
+      /* complete message history at end of run */
+    ]
   },
   "config": {
     "configurable": {
@@ -497,13 +527,15 @@ GET /threads/{thread_id}/runs/{run_id}
 **Scenario**: A customer disputes a hotel booking charge. You need to prove they consented to the booking.
 
 **Step 1: Locate the correlationId**
+
 ```
 CRM Record → Booking → correlationId: "98bfc16e-c45a-4fb6-b6ae-2a2269eb7391"
 ```
 
 **Step 2: Retrieve full conversation transcript**
+
 ```bash
-curl -X POST https://api.example.com/threads/98bfc16e-c45a-4fb6-b6ae-2a2269eb7391/history \
+curl -X POST https://aegra-production.up.railway.app/threads/98bfc16e-c45a-4fb6-b6ae-2a2269eb7391/history \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"limit": 1000}'
@@ -514,6 +546,7 @@ curl -X POST https://api.example.com/threads/98bfc16e-c45a-4fb6-b6ae-2a2269eb739
 Look for these key message types in the response:
 
 1. **Customer provided personal details** (proves identity)
+
    ```json
    {
      "type": "tool",
@@ -523,32 +556,37 @@ Look for these key message types in the response:
    ```
 
 2. **Customer confirmed hotel selection** (proves consent)
+
    ```json
    {
      "type": "human",
-     "content": [{"text": "Yes, book that hotel"}]
+     "content": [{ "text": "Yes, book that hotel" }]
    }
    ```
 
 3. **Price was disclosed** (proves transparency)
+
    ```json
    {
      "type": "ai",
-     "content": [{"text": "The total price is $299.99 per night"}]
+     "content": [{ "text": "The total price is $299.99 per night" }]
    }
    ```
 
 4. **Booking was initiated** (proves transaction)
+
    ```json
    {
      "type": "ai",
-     "tool_calls": [{
-       "name": "book_room",
-       "args": {
-         "room": {"expected_price": 299.99},
-         "payment_type": "phone"
+     "tool_calls": [
+       {
+         "name": "book_room",
+         "args": {
+           "room": { "expected_price": 299.99 },
+           "payment_type": "phone"
+         }
        }
-     }]
+     ]
    }
    ```
 
@@ -564,8 +602,9 @@ Look for these key message types in the response:
 **Step 4: Export for legal team**
 
 Save the JSON response to a file:
+
 ```bash
-curl -X POST https://api.example.com/threads/{thread_id}/history \
+curl -X POST https://aegra-production.up.railway.app/threads/{thread_id}/history \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"limit": 1000}' > booking_transcript_case_12345.json
@@ -579,7 +618,7 @@ curl -X POST https://api.example.com/threads/{thread_id}/history \
 
 ```bash
 # Step 1: List all threads created in date range
-curl -X POST https://api.example.com/threads/search \
+curl -X POST https://aegra-production.up.railway.app/threads/search \
   -H "Content-Type: application/json" \
   -d '{
     "limit": 100,
@@ -589,7 +628,7 @@ curl -X POST https://api.example.com/threads/search \
 
 # Step 2: For each thread, retrieve history
 for thread_id in $(cat threads.json | jq -r '.threads[].thread_id'); do
-  curl -X POST https://api.example.com/threads/$thread_id/history \
+  curl -X POST https://aegra-production.up.railway.app/threads/$thread_id/history \
     -H "Content-Type: application/json" \
     -d '{"limit": 1000}' > "transcript_$thread_id.json"
 done
@@ -654,6 +693,7 @@ done
 - **Checkpoint**: A snapshot of state at a specific point in the conversation
 
 **Relationship:**
+
 ```
 Thread (1)
   ├─> Run 1 (2026-01-29 10:00)
@@ -680,6 +720,7 @@ Thread (1)
 **Problem**: API returns 404 when looking up thread by correlationId
 
 **Solutions**:
+
 1. Verify correlationId matches thread_id exactly (case-sensitive)
 2. Check if thread exists: `GET /threads/{thread_id}`
 3. Confirm thread wasn't deleted
@@ -690,6 +731,7 @@ Thread (1)
 **Problem**: API returns `[]` empty array
 
 **Solutions**:
+
 1. Check if any runs were executed: `GET /threads/{thread_id}/runs`
 2. Verify thread has a graph_id: `GET /threads/{thread_id}`
 3. Confirm checkpoints were created (check `created_at` in state)
@@ -699,6 +741,7 @@ Thread (1)
 **Problem**: Messages are missing or truncated
 
 **Solutions**:
+
 1. Increase `limit` parameter (max 1000)
 2. Use pagination with `before` parameter
 3. Check if multiple runs exist: `GET /threads/{thread_id}/runs`
@@ -708,6 +751,7 @@ Thread (1)
 **Problem**: `tool_calls` array is empty or missing args
 
 **Solutions**:
+
 1. Check `content` array for `tool_use` type messages
 2. Look for `partial_json` field in tool_use content
 3. Verify the tool call completed (check for corresponding tool result message)
@@ -717,9 +761,11 @@ Thread (1)
 ## Support
 
 For technical questions or API access issues:
+
 - **Technical Support**: dev@aegra.com
 - **API Documentation**: https://docs.aegra.com
 - **Status Page**: https://status.aegra.com
 
 For legal/compliance questions regarding transcript usage:
+
 - **Legal Team**: legal@aegra.com

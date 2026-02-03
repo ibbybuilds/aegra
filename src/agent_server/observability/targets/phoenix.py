@@ -15,7 +15,7 @@ class PhoenixTarget(BaseOtelTarget):
         endpoint = conf.PHOENIX_COLLECTOR_ENDPOINT
 
         if not endpoint:
-            return
+            return None
 
         headers = {}
         if conf.PHOENIX_API_KEY:

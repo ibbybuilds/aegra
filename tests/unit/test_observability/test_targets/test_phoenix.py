@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
 from src.agent_server.observability.targets.phoenix import PhoenixTarget
 
 
@@ -16,7 +14,7 @@ class TestPhoenixTarget:
         assert target.name == "Phoenix"
 
     def test_get_exporter_defaults(self):
-        """Test exporter creation with default settings (local Phoenix)."""
+        """Test exporter is None when endpoint is missing."""
         with patch(
             "src.agent_server.observability.targets.phoenix.settings"
         ) as mock_settings:
@@ -27,10 +25,7 @@ class TestPhoenixTarget:
             target = PhoenixTarget()
             exporter = target.get_exporter()
 
-            assert isinstance(exporter, OTLPSpanExporter)
-            # When endpoint passed is None, OTLPSpanExporter uses its default (usually localhost:4318)
-            # We just check headers are empty
-            assert exporter._headers == {}
+            assert exporter is None
 
     def test_get_exporter_with_custom_endpoint(self):
         """Test exporter creation with a specific collector endpoint."""

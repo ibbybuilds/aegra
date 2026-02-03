@@ -7,6 +7,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langgraph.graph.state import CompiledStateGraph
 
 from ava_v1.middleware import ForcedRetryMiddleware, customize_agent_prompt
+from ava_v1.middleware.model_armor import ModelArmorMiddleware
 from ava_v1.prompt import TRAVEL_ASSISTANT_PROMPT
 from ava_v1.state import AvaV1State
 from ava_v1.tools import (
@@ -55,6 +56,7 @@ agent: CompiledStateGraph = create_agent(
         AnthropicPromptCachingMiddleware(ttl="5m"),
         customize_agent_prompt,
         ForcedRetryMiddleware(),
+        ModelArmorMiddleware(),
     ],  # Dynamic prompt based on CallContext
     state_schema=AvaV1State,
 )

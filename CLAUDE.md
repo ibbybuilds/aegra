@@ -94,6 +94,7 @@ graph = workflow.compile()  # Must export as 'graph'
 - **asyncpg**: Async PostgreSQL driver for SQLAlchemy
 - **greenlet**: Required for async SQLAlchemy operations
 - **redis[hiredis]**: In-memory cache for ava_v1 (hotel searches, booking state)
+- **google-auth**: OAuth2 authentication for Model Armor API
 
 ## Authentication
 
@@ -125,6 +126,7 @@ Hotel booking agent (LangGraph port of AVA).
 - State: `active_searches`, `context_stack`
 - Redis: Hotel searches (30d TTL), room data, booking idempotency (10m)
 - Model: claude-haiku-4-5-20251001 (temperature 0.3)
+- Model Armor: Content policy enforcement (auto-enabled in production)
 
 **Redis Config:**
 ```bash
@@ -149,6 +151,12 @@ REDIS_DB=0
   }
 }
 ```
+
+**Model Armor (Content Policy):**
+- Middleware: Sanitizes user prompts and model responses
+- Auto-enabled in production (ENV_MODE=PRODUCTION)
+- Config: Requires GCP project, service account, and template ID
+- See [docs/guides/model-armor.md](docs/guides/model-armor.md) for setup guide
 
 ## Development Patterns
 

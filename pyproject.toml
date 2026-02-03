@@ -54,6 +54,8 @@ dependencies = [
     "jinja2>=3.1.0",
     # DNS lookups for email validation (MX record checks)
     "dnspython>=2.6.1",
+    # Google Auth for Model Armor service account authentication
+    "google-auth>=2.30.0",
 ]
 
 [project.urls]

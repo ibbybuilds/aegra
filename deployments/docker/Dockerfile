@@ -74,7 +74,6 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 COPY alembic.ini ./alembic.ini
 COPY alembic/ ./alembic/
 COPY aegra.json ./aegra.json
-COPY auth.py ./auth.py
 COPY graphs/ ./graphs/
 
 # Copy src to keep compatibility with current compose command using 'src.agent_server.main:app'

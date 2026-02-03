@@ -88,18 +88,37 @@ class PoolSettings(EnvBase):
     LANGGRAPH_MAX_POOL_SIZE: int = 6
 
 
-class LangfuseSettings(EnvBase):
-    """Langfuse integration settings."""
+class ObservabilitySettings(EnvBase):
+    """
+    Unified settings for OpenTelemetry and Vendor targets.
+    Supports Fan-out configuration via OTEL_TARGETS.
+    """
 
-    LANGFUSE_LOGGING: bool
+    # General OTEL Config
+    OTEL_SERVICE_NAME: str = "aegra-backend"
+    OTEL_TARGETS: str = ""  # Comma-separated: "LANGFUSE,PHOENIX"
+    OTEL_CONSOLE_EXPORT: bool = False  # For local debugging
+
+    # --- Generic OTLP Target (Default/Custom) ---
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
+    OTEL_EXPORTER_OTLP_HEADERS: str | None = None
+
+    # --- Langfuse Specifics ---
+    LANGFUSE_BASE_URL: str = "http://localhost:3000"
+    LANGFUSE_PUBLIC_KEY: str | None = None
+    LANGFUSE_SECRET_KEY: str | None = None
+
+    # --- Phoenix Specifics ---
+    PHOENIX_COLLECTOR_ENDPOINT: str = "http://127.0.0.1:6006/v1/traces"
+    PHOENIX_API_KEY: str | None = None
 
 
 class Settings:
-    def __init__(self):
+    def __init__(self) -> None:
         self.app = AppSettings()
         self.db = DatabaseSettings()
         self.pool = PoolSettings()
-        self.langfuse = LangfuseSettings()
+        self.observability = ObservabilitySettings()
 
 
 settings = Settings()

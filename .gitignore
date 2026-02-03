@@ -37,3 +37,5 @@ htmlcov/
 
 # Local logs
 tmp/
+model-armor-key.json
+*.json (service account keys)

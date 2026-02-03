@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class StorePutRequest(BaseModel):
@@ -10,7 +10,21 @@ class StorePutRequest(BaseModel):
 
     namespace: list[str] = Field(..., description="Storage namespace")
     key: str = Field(..., description="Item key")
-    value: Any = Field(..., description="Item value")
+    value: dict[str, Any] = Field(..., description="Item value (must be a JSON object)")
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value_is_dict(cls, v: Any) -> dict[str, Any]:
+        """Validate that value is a dictionary.
+
+        LangGraph store requires values to be dictionaries for proper
+        serialization and search functionality.
+        """
+        if not isinstance(v, dict):
+            raise ValueError(
+                f"Value must be a dictionary (JSON object), got {type(v).__name__}"
+            )
+        return v
 
 
 class StoreGetResponse(BaseModel):

@@ -40,3 +40,36 @@ async def test_store_endpoints_via_sdk():
     # Ensure deleted
     with pytest.raises(Exception):  # noqa: B017 - SDK doesn't expose specific exception type
         await client.store.get_item(ns, key=key)
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_store_rejects_non_dict_values():
+    """Test that store API rejects non-dictionary values"""
+    client = get_e2e_client()
+
+    ns = ["test"]
+    key = "invalid-value"
+
+    # Test array value (should be rejected)
+    with pytest.raises(Exception) as exc_info:  # noqa: B017
+        await client.store.put_item(ns, key=f"{key}-array", value=[1, 2, 3])
+    error_msg = str(exc_info.value).lower()
+    assert (
+        "dictionary" in error_msg
+        or "object" in error_msg
+        or "422" in str(exc_info.value)
+    )
+
+    # Test scalar values (should be rejected)
+    for scalar_value in [42, "string", True, None]:
+        with pytest.raises(Exception) as exc_info:  # noqa: B017
+            await client.store.put_item(
+                ns, key=f"{key}-{type(scalar_value).__name__}", value=scalar_value
+            )
+        error_msg = str(exc_info.value).lower()
+        assert (
+            "dictionary" in error_msg
+            or "object" in error_msg
+            or "422" in str(exc_info.value)
+        )

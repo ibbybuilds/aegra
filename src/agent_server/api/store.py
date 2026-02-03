@@ -158,10 +158,12 @@ async def search_store_items(
 
     # Merge handler filters with request filters
     if filters:
-        request_filters = request.filters or {}
-        request.filters = {**request_filters, **filters}
         if "namespace_prefix" in filters:
             request.namespace_prefix = filters["namespace_prefix"]
+
+        handler_filters = {k: v for k, v in filters.items() if k != "namespace_prefix"}
+        if handler_filters:
+            request.filter = {**(request.filter or {}), **handler_filters}
 
     # Apply user namespace scoping
     scoped_prefix = apply_user_namespace_scoping(
@@ -178,6 +180,7 @@ async def search_store_items(
     results = await store.asearch(
         tuple(scoped_prefix),
         query=request.query,
+        filter=request.filter,
         limit=request.limit or 20,
         offset=request.offset or 0,
     )

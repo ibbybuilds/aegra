@@ -266,12 +266,14 @@ class TestSearchStoreItems:
             DummyStoreItem("key2", {"data": "value2"}, ("test", "ns")),
         ]
         mock_store.asearch.return_value = mock_results
+        filter_payload = {"type": "note", "status": "active"}
 
         resp = client.post(
             "/store/items/search",
             json={
                 "namespace_prefix": ["test"],
                 "query": None,
+                "filter": filter_payload,
                 "limit": 10,
                 "offset": 0,
             },
@@ -284,6 +286,9 @@ class TestSearchStoreItems:
         assert data["total"] == 2
         assert data["limit"] == 10
         assert data["offset"] == 0
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] == filter_payload
 
     def test_search_items_empty(self, client, mock_store):
         """Test searching with no results"""
@@ -298,6 +303,9 @@ class TestSearchStoreItems:
         data = resp.json()
         assert data["items"] == []
         assert data["total"] == 0
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
 
     def test_search_items_with_query(self, client, mock_store):
         """Test searching with a query string"""
@@ -320,6 +328,30 @@ class TestSearchStoreItems:
         data = resp.json()
         assert len(data["items"]) == 1
         assert data["items"][0]["key"] == "matching-key"
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
+
+    def test_search_items_with_filter_only(self, client, mock_store):
+        """Test searching with filter only"""
+        mock_results = [
+            DummyStoreItem("filtered-key", {"data": "value"}, ("test",)),
+        ]
+        mock_store.asearch.return_value = mock_results
+        filter_payload = {"tag": "important"}
+
+        resp = client.post(
+            "/store/items/search",
+            json={"namespace_prefix": ["test"], "filter": filter_payload},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["key"] == "filtered-key"
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] == filter_payload
 
     def test_search_items_with_pagination(self, client, mock_store):
         """Test searching with pagination"""
@@ -337,6 +369,9 @@ class TestSearchStoreItems:
         data = resp.json()
         assert data["limit"] == 5
         assert data["offset"] == 10
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
 
     def test_search_items_default_limit(self, client, mock_store):
         """Test search uses default limit when not provided"""
@@ -352,6 +387,44 @@ class TestSearchStoreItems:
         # Default limit should be 20
         assert data["limit"] == 20
         assert data["offset"] == 0
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        assert call_args.kwargs["filter"] is None
+
+    def test_search_items_with_auth_handler_filter_merge(self, client, mock_store):
+        """Test that auth handler filters are merged with request filters"""
+        from unittest.mock import AsyncMock, patch
+
+        mock_store.asearch.return_value = []
+
+        # Mock handle_event to return auth filters
+        async def mock_handle_event(ctx, value):
+            return {"auth_field": "auth_value"}
+
+        with patch(
+            "agent_server.api.store.handle_event",
+            new=AsyncMock(side_effect=mock_handle_event),
+        ):
+            request_filter = {"user_field": "user_value"}
+            resp = client.post(
+                "/store/items/search",
+                json={
+                    "namespace_prefix": ["test"],
+                    "query": None,
+                    "filter": request_filter,
+                },
+            )
+
+        assert resp.status_code == 200
+        mock_store.asearch.assert_called_once()
+        call_args = mock_store.asearch.call_args
+        # Both auth handler filter and request filter should be present
+        merged_filter = call_args.kwargs["filter"]
+        assert merged_filter is not None
+        assert "user_field" in merged_filter
+        assert merged_filter["user_field"] == "user_value"
+        assert "auth_field" in merged_filter
+        assert merged_filter["auth_field"] == "auth_value"
 
 
 class TestNamespaceScoping:

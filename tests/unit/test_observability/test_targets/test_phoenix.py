@@ -44,7 +44,7 @@ class TestPhoenixTarget:
             assert exporter._headers == {}
 
     def test_get_exporter_with_api_key(self):
-        """Test that API key is correctly added to headers."""
+        """Test that API key is correctly added as Bearer token."""
         api_key = "phoenix-api-key-123"
 
         with patch(
@@ -58,4 +58,5 @@ class TestPhoenixTarget:
             target = PhoenixTarget()
             exporter = target.get_exporter()
 
-            assert exporter._headers == {"api_key": api_key}
+            # Проверяем новый формат заголовка
+            assert exporter._headers == {"authorization": f"Bearer {api_key}"}

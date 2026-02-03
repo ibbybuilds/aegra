@@ -19,6 +19,6 @@ class PhoenixTarget(BaseOtelTarget):
 
         headers = {}
         if conf.PHOENIX_API_KEY:
-            headers["api_key"] = conf.PHOENIX_API_KEY
+            headers["authorization"] = f"Bearer {conf.PHOENIX_API_KEY}"
 
         return OTLPSpanExporter(endpoint=endpoint, headers=headers)

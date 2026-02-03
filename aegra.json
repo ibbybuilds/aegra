@@ -1,12 +1,12 @@
 {
   "graphs": {
-    "agent": "./graphs/react_agent/graph.py:graph",
-    "agent_hitl": "./graphs/react_agent_hitl/graph.py:graph",
-    "subgraph_agent": "./graphs/subgraph_agent/graph.py:graph",
-    "subgraph_hitl_agent": "./graphs/subgraph_hitl_agent/graph.py:graph"
+    "agent": "./examples/react_agent/graph.py:graph",
+    "agent_hitl": "./examples/react_agent_hitl/graph.py:graph",
+    "subgraph_agent": "./examples/subgraph_agent/graph.py:graph",
+    "subgraph_hitl_agent": "./examples/subgraph_hitl_agent/graph.py:graph"
   },
   "http": {
-    "app": "./custom_routes_example.py:app",
+    "app": "./examples/custom_routes_example.py:app",
     "enable_custom_route_auth": false
   }
 }

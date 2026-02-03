@@ -158,8 +158,8 @@ async def search_store_items(
 
     # Merge handler filters with request filters
     if filters:
-        request_filters = request.filters or {}
-        request.filters = {**request_filters, **filters}
+        request_filters = request.filter or {}
+        request.filter = {**request_filters, **filters}
         if "namespace_prefix" in filters:
             request.namespace_prefix = filters["namespace_prefix"]
 

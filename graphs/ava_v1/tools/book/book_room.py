@@ -290,11 +290,18 @@ async def book_room(
         existing_attempt = await redis_get_json(idempotency_key)
         if existing_attempt:
             # Return cached result to prevent duplicate booking
+            cached_status = existing_attempt.get("status", "unknown")
+            logger.info(
+                f"[BOOK_ROOM] Idempotency cache HIT - returning cached result "
+                f"(status={cached_status}, hash={booking_hash[:8]}...)"
+            )
             return json.dumps(existing_attempt, indent=2)
+        else:
+            logger.info(f"[BOOK_ROOM] Idempotency cache MISS - proceeding with booking")
 
     except Exception as e:
         # Log but don't fail - idempotency check is not critical
-        logger.warning(f"Idempotency check error: {e}")
+        logger.warning(f"[BOOK_ROOM] Idempotency check error: {e}")
 
     # Determine if this is a price confirmation retry
     skip_price_check = False
@@ -348,6 +355,10 @@ async def book_room(
     }
 
     # Call cache-worker
+    logger.info(
+        f"[BOOK_ROOM] Calling cache-worker /v1/book "
+        f"(hash={booking_hash[:8]}..., skip_price_check={skip_price_check})"
+    )
     try:
         async with get_cache_worker_client() as client:
             response = await client.post("/v1/book", json=request_body, timeout=30.0)
@@ -356,10 +367,12 @@ async def book_room(
             # Don't raise exception, parse the response body with price info
             if response.status_code == 409:
                 booking_response = response.json()
+                logger.info(f"[BOOK_ROOM] Cache-worker returned 409 (price mismatch)")
             else:
                 # For all other status codes, raise on error
                 response.raise_for_status()
                 booking_response = response.json()
+                logger.info(f"[BOOK_ROOM] Cache-worker returned {response.status_code}")
 
     except httpx.HTTPStatusError as e:
         error_result = {

@@ -287,6 +287,11 @@ async def modify_call(
         context_stack = runtime.state.get("context_stack", []) if runtime else []
         logger.info(f"[modify_call] Context stack length: {len(context_stack)}")
 
+        # Log what's in the stack for debugging
+        if context_stack:
+            stack_types = [ctx.get("type", "unknown") for ctx in context_stack if isinstance(ctx, dict)]
+            logger.info(f"[modify_call] Context stack contents: {stack_types}")
+
         # Find the most recent BookingPending context
         booking_context = None
         for ctx in reversed(context_stack):

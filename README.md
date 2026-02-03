@@ -28,7 +28,7 @@ Aegra is a drop-in replacement for LangGraph Platform. Use the same LangGraph SD
 **Prerequisites:** Docker, Python 3.11+
 
 ```bash
-git clone https://github.com/ibbybuilds/aegra.git
+git clone [https://github.com/ibbybuilds/aegra.git](https://github.com/ibbybuilds/aegra.git)
 cd aegra
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env
@@ -75,7 +75,7 @@ async for chunk in client.runs.stream(
 - **[Streaming](docs/developer-guide.md)** - Real-time responses with network resilience
 - **[Persistent state](docs/developer-guide.md)** - PostgreSQL checkpoints via LangGraph
 - **[Configurable auth](docs/developer-guide.md)** - JWT, OAuth, Firebase, or none
-- **[Observable](docs/langfuse-usage.md)** - Langfuse integration for tracing
+- **[Unified Observability](docs/observability.md)** - Fan-out tracing support via OpenTelemetry
 - **[Semantic store](docs/semantic-store.md)** - Vector embeddings with pgvector
 - **[Custom routes](docs/custom-routes.md)** - Add your own FastAPI endpoints
 
@@ -88,7 +88,7 @@ async for chunk in client.runs.stream(
 | [Custom Routes](docs/custom-routes.md) | Add your own FastAPI endpoints |
 | [Semantic Store](docs/semantic-store.md) | Vector embeddings with pgvector |
 | [Dependencies](docs/dependencies.md) | Shared modules for graph imports |
-| [Langfuse Integration](docs/langfuse-usage.md) | Observability and tracing |
+| [Observability & Tracing](docs/observability.md) | Configure Langfuse, Phoenix, and generic OTLP exporters |
 | [Production Setup](docs/production-docker-setup.md) | Docker deployment for production |
 
 > ⚠️ **Upgrading from an older version?** See the [PostgreSQL 18 Migration Guide](docs/postgres-18-migration.md).
@@ -104,6 +104,7 @@ async for chunk in client.runs.stream(
 - [FastAPI](https://fastapi.tiangolo.com/) - HTTP layer
 - [LangGraph](https://github.com/langchain-ai/langgraph) - State management & graph execution
 - [PostgreSQL](https://www.postgresql.org/) - Persistence & checkpoints
+- [OpenTelemetry](https://opentelemetry.io/) - Observability standard
 - [pgvector](https://github.com/pgvector/pgvector) - Vector embeddings
 
 ## 🤝 Contributing

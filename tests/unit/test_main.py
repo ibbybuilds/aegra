@@ -10,25 +10,33 @@ from src.agent_server.observability.base import get_observability_manager
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_lifespan_registers_langfuse_provider(monkeypatch):
-    """Test that the lifespan function registers the Langfuse provider during startup."""
-    # Enable Langfuse so the provider will be registered
-    monkeypatch.setenv("LANGFUSE_LOGGING", "true")
+async def test_lifespan_registers_otel_provider(monkeypatch):
+    """Test that the lifespan function registers the OpenTelemetry provider during startup."""
+    # Configure OTEL_TARGETS so the provider is enabled
+    monkeypatch.setenv("OTEL_TARGETS", "LANGFUSE")
 
-    # Reload the module to pick up the env var change
-    import src.agent_server.observability.langfuse_integration as langfuse_module
+    # 1. Reload settings
+    import src.agent_server.settings as settings_module
 
-    importlib.reload(langfuse_module)
-    # Reload main module to get the updated provider
+    importlib.reload(settings_module)
+
+    # 2. Reload otel module (creates new Provider class/instance)
+    import src.agent_server.observability.otel as otel_module
+
+    importlib.reload(otel_module)
+    # 3. Reload setup module (crucial! so it imports the NEW otel_provider)
+    import src.agent_server.observability.setup as setup_module
+    from src.agent_server.observability.otel import OpenTelemetryProvider
+
+    importlib.reload(setup_module)
+
+    # 4. Reload main module
     import src.agent_server.main as main_module
-    from src.agent_server.observability.langfuse_integration import (
-        LangfuseProvider,
-    )
 
     importlib.reload(main_module)
     from src.agent_server.main import lifespan
 
-    # Mock all the dependencies that lifespan needs
+    # Mock all the dependencies
     with (
         patch("src.agent_server.main.db_manager") as mock_db_manager,
         patch(
@@ -36,7 +44,6 @@ async def test_lifespan_registers_langfuse_provider(monkeypatch):
         ) as mock_get_langgraph_service,
         patch("src.agent_server.main.event_store") as mock_event_store,
     ):
-        # Setup mocks
         mock_db_manager.initialize = AsyncMock()
         mock_db_manager.close = AsyncMock()
 
@@ -47,31 +54,21 @@ async def test_lifespan_registers_langfuse_provider(monkeypatch):
         mock_event_store.start_cleanup_task = AsyncMock()
         mock_event_store.stop_cleanup_task = AsyncMock()
 
-        # Clear the observability manager before test
+        # Clear the manager
         manager = get_observability_manager()
         manager._providers.clear()
 
-        # Create a mock FastAPI app
         mock_app = MagicMock()
 
-        # Run the lifespan function
         async with lifespan(mock_app):
-            # Verify that a LangfuseProvider instance is registered
-            # Check by type since reloading creates a new instance
-            langfuse_providers = [
-                p for p in manager._providers if isinstance(p, LangfuseProvider)
+            # Verify OpenTelemetryProvider is registered
+            otel_providers = [
+                p for p in manager._providers if isinstance(p, OpenTelemetryProvider)
             ]
-            assert len(langfuse_providers) == 1, (
-                "Langfuse provider should be registered during lifespan startup"
+            assert len(otel_providers) == 1, (
+                "OpenTelemetry provider should be registered during lifespan startup"
             )
 
-            # Verify the observability manager can get callbacks from registered provider
-            callbacks = manager.get_all_callbacks()
-            # If Langfuse is enabled, we'd get callbacks; if disabled, empty list
-            # Either way, the provider should be registered
-            assert isinstance(callbacks, list)
-
-        # Verify cleanup was called
         mock_db_manager.close.assert_called_once()
 
 
@@ -79,6 +76,10 @@ async def test_lifespan_registers_langfuse_provider(monkeypatch):
 @pytest.mark.asyncio
 async def test_lifespan_calls_required_initialization():
     """Test that lifespan calls all required initialization functions."""
+    # Reload main to ensure clean state
+    import src.agent_server.main as main_module
+
+    importlib.reload(main_module)
     from src.agent_server.main import lifespan
 
     with (
@@ -87,9 +88,8 @@ async def test_lifespan_calls_required_initialization():
             "src.agent_server.main.get_langgraph_service"
         ) as mock_get_langgraph_service,
         patch("src.agent_server.main.event_store") as mock_event_store,
-        patch(
-            "src.agent_server.main.get_observability_manager"
-        ) as mock_get_observability_manager,
+        # Patch the new setup_observability function directly
+        patch("src.agent_server.main.setup_observability") as mock_setup_observability,
     ):
         # Setup mocks
         mock_db_manager.initialize = AsyncMock()
@@ -101,9 +101,6 @@ async def test_lifespan_calls_required_initialization():
 
         mock_event_store.start_cleanup_task = AsyncMock()
         mock_event_store.stop_cleanup_task = AsyncMock()
-
-        mock_manager = MagicMock()
-        mock_get_observability_manager.return_value = mock_manager
 
         mock_app = MagicMock()
 
@@ -116,20 +113,8 @@ async def test_lifespan_calls_required_initialization():
         mock_langgraph_service.initialize.assert_called_once()
         mock_event_store.start_cleanup_task.assert_called_once()
 
-        # Verify observability manager was used to register provider
-        mock_get_observability_manager.assert_called()
-        # Check that register_provider was called with a LangfuseProvider instance
-        assert mock_manager.register_provider.called, (
-            "register_provider should be called"
-        )
-        call_args = mock_manager.register_provider.call_args
-        assert call_args is not None
-        # Verify it was called with a LangfuseProvider (check by type/class name)
-        from src.agent_server.observability.langfuse_integration import LangfuseProvider
-
-        assert isinstance(call_args[0][0], LangfuseProvider), (
-            "register_provider should be called with LangfuseProvider instance"
-        )
+        # Verify observability setup was called
+        mock_setup_observability.assert_called_once()
 
         # Verify cleanup
         mock_event_store.stop_cleanup_task.assert_called_once()

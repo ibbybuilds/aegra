@@ -84,6 +84,72 @@ class TestPutStoreItem:
         assert resp.status_code == 200
         assert resp.json()["status"] == "stored"
 
+    def test_put_item_rejects_array_value(self, client, mock_store):
+        """Test that array values are rejected"""
+        resp = client.put(
+            "/store/items",
+            json={
+                "namespace": ["test"],
+                "key": "array-key",
+                "value": [1, 2, 3],
+            },
+        )
+
+        assert resp.status_code == 422
+        error_detail = resp.json()["detail"]
+        assert any(
+            "dictionary" in str(err).lower() or "object" in str(err).lower()
+            for err in error_detail
+            if isinstance(err, dict)
+        )
+
+    def test_put_item_rejects_scalar_value(self, client, mock_store):
+        """Test that scalar values (string, number, boolean) are rejected"""
+        # Test string
+        resp = client.put(
+            "/store/items",
+            json={
+                "namespace": ["test"],
+                "key": "string-key",
+                "value": "not-a-dict",
+            },
+        )
+        assert resp.status_code == 422
+
+        # Test number
+        resp = client.put(
+            "/store/items",
+            json={
+                "namespace": ["test"],
+                "key": "number-key",
+                "value": 42,
+            },
+        )
+        assert resp.status_code == 422
+
+        # Test boolean
+        resp = client.put(
+            "/store/items",
+            json={
+                "namespace": ["test"],
+                "key": "bool-key",
+                "value": True,
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_put_item_rejects_null_value(self, client, mock_store):
+        """Test that null values are rejected"""
+        resp = client.put(
+            "/store/items",
+            json={
+                "namespace": ["test"],
+                "key": "null-key",
+                "value": None,
+            },
+        )
+        assert resp.status_code == 422
+
 
 class TestGetStoreItem:
     """Test GET /store/items"""

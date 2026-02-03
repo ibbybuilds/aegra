@@ -28,7 +28,7 @@ Aegra is a drop-in replacement for LangGraph Platform. Use the same LangGraph SD
 **Prerequisites:** Docker, Python 3.11+
 
 ```bash
-git clone [https://github.com/ibbybuilds/aegra.git](https://github.com/ibbybuilds/aegra.git)
+git clone https://github.com/ibbybuilds/aegra.git
 cd aegra
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env

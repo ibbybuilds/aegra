@@ -25,7 +25,7 @@ class GenericOtelTarget(BaseOtelTarget):
         )
 
     def _parse_headers(self, headers_str: str | None) -> dict[str, str]:
-        headers = {}
+        headers: dict[str, str] = {}
         if not headers_str:
             return headers
         try:

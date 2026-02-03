@@ -41,7 +41,7 @@ OTEL_CONSOLE_EXPORT=true
 Aegra uses the standard OTLP endpoint for Langfuse.
 
 ```bash
-LANGFUSE_BASE_URL=[https://cloud.langfuse.com](https://cloud.langfuse.com)
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 ```
@@ -52,7 +52,7 @@ Phoenix is excellent for local trace visualization.
 
 ```bash
 # Default local Phoenix endpoint
-PHOENIX_COLLECTOR_ENDPOINT=[http://127.0.0.1:6006/v1/traces](http://127.0.0.1:6006/v1/traces)
+PHOENIX_COLLECTOR_ENDPOINT=http://127.0.0.1:6006/v1/traces
 PHOENIX_API_KEY=  # Optional
 ```
 

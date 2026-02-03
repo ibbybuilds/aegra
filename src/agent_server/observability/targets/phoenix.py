@@ -14,6 +14,9 @@ class PhoenixTarget(BaseOtelTarget):
         conf = settings.observability
         endpoint = conf.PHOENIX_COLLECTOR_ENDPOINT
 
+        if not endpoint:
+            return
+
         headers = {}
         if conf.PHOENIX_API_KEY:
             headers["api_key"] = conf.PHOENIX_API_KEY

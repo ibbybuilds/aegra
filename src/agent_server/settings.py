@@ -114,7 +114,7 @@ class ObservabilitySettings(EnvBase):
 
 
 class Settings:
-    def __init__(self):
+    def __init__(self) -> None:
         self.app = AppSettings()
         self.db = DatabaseSettings()
         self.pool = PoolSettings()

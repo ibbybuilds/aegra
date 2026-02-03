@@ -291,11 +291,11 @@ def interpret_ipqs_result(data: dict) -> Tuple[bool, str | None, dict]:
 
     # 1. Honeypot - Known spam trap, definite reject
     if data.get("honeypot", False):
-        return (False, "This email address cannot be used for bookings", details)
+        return (False, "This email cannot be verified for booking purposes. Ask the user to provide a different email address.", details)
 
     # 2. Disposable/temporary email - Won't be reachable long-term
     if data.get("disposable", False):
-        return (False, "Please provide a permanent email address, not a temporary one", details)
+        return (False, "The email is from a temporary/disposable service. Ask the user for a permanent email address they check regularly.", details)
 
     # 3. SMTP score - Does the email actually exist?
     # -1 = invalid, 0 = server rejects all mail, 1 = temp error, 2 = catch-all, 3 = verified
@@ -303,23 +303,23 @@ def interpret_ipqs_result(data: dict) -> Tuple[bool, str | None, dict]:
     if smtp_score == -1:
         suggested = data.get("suggested_domain")
         if suggested and suggested != "N/A":
-            return (False, f"This email doesn't exist. Did you mean @{suggested}?", details)
-        return (False, "This email address doesn't appear to exist", details)
+            return (False, f"The email does not exist. The domain appears to be a typo - suggest @{suggested} to the user.", details)
+        return (False, "The email address does not exist at this domain. Ask the user to double-check the spelling or provide a different email.", details)
     if smtp_score == 0:
-        return (False, "This email domain doesn't accept any emails", details)
+        return (False, "This email domain does not accept incoming emails. Ask the user to provide a different email address.", details)
 
     # 4. Valid flag - Basic structural validity
     if not data.get("valid", True):
-        return (False, "This email address is invalid", details)
+        return (False, "The email address could not be validated. Ask the user to verify the spelling or provide a different email.", details)
 
     # 5. High spam trap score - High confidence this is a trap
     spam_trap_score = data.get("spam_trap_score", "none")
     if spam_trap_score == "high":
-        return (False, "This email address cannot be used for bookings", details)
+        return (False, "This email cannot be verified for booking purposes. Ask the user to provide a different email address.", details)
 
     # 6. Recent abuse - Known bad actor (chargebacks, fake signups, etc.)
     if data.get("recent_abuse", False):
-        return (False, "This email has been flagged for suspicious activity", details)
+        return (False, "This email cannot be verified for booking purposes. Ask the user to provide a different email address.", details)
 
     # ==========================================================================
     # PASS - Email is valid for booking purposes
@@ -376,21 +376,21 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
     # Check 1: Syntax validation
     if not _validate_email(email):
         logger.info(f"[EMAIL_VALIDATOR] REJECTED - syntax_invalid, Domain: {domain}")
-        return (False, "Invalid email format")
+        return (False, "The email address has invalid syntax (missing @ or domain). Ask the user to spell out their complete email address again.")
 
     # Extract domain
     try:
         domain = email.split("@")[1].lower()
     except IndexError:
         logger.info(f"[EMAIL_VALIDATOR] REJECTED - domain_extraction_failed")
-        return (False, "Invalid email format")
+        return (False, "The email address has invalid syntax (missing @ or domain). Ask the user to spell out their complete email address again.")
 
     # Check 2: Disposable domain blocklist
     if is_disposable_domain(domain):
         logger.info(f"[EMAIL_VALIDATOR] REJECTED - disposable_domain, Domain: {domain}")
         return (
             False,
-            "This appears to be a temporary/disposable email address. Please provide a permanent email address.",
+            "The email is from a temporary/disposable email service. Ask the user for a permanent email address they check regularly.",
         )
 
     # Check 3: Trusted provider whitelist (skip IPQS)
@@ -403,7 +403,7 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
         logger.info(f"[EMAIL_VALIDATOR] REJECTED - no_mx_records, Domain: {domain}")
         return (
             False,
-            "This email domain doesn't have valid mail servers. Please verify the spelling or provide a different email.",
+            "The email domain doesn't exist or can't receive emails (likely a typo). Ask the user to verify the spelling of their email address.",
         )
 
     # =========================================================================

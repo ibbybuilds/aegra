@@ -52,30 +52,24 @@ async def test_store_rejects_non_dict_values():
     key = "invalid-value"
 
     # Test array value (should be rejected)
-    try:
+    with pytest.raises(Exception) as exc_info:  # noqa: B017
         await client.store.put_item(ns, key=f"{key}-array", value=[1, 2, 3])
-        pytest.fail("Expected validation error for array value")
-    except Exception as e:  # noqa: BLE001
-        # Should get validation error
-        assert (
-            "dictionary" in str(e).lower()
-            or "object" in str(e).lower()
-            or "422" in str(e)
-        )
+    error_msg = str(exc_info.value).lower()
+    assert (
+        "dictionary" in error_msg
+        or "object" in error_msg
+        or "422" in str(exc_info.value)
+    )
 
     # Test scalar values (should be rejected)
     for scalar_value in [42, "string", True, None]:
-        try:
+        with pytest.raises(Exception) as exc_info:  # noqa: B017
             await client.store.put_item(
                 ns, key=f"{key}-{type(scalar_value).__name__}", value=scalar_value
             )
-            pytest.fail(
-                f"Expected validation error for {type(scalar_value).__name__} value"
-            )
-        except Exception as e:  # noqa: BLE001
-            # Should get validation error
-            assert (
-                "dictionary" in str(e).lower()
-                or "object" in str(e).lower()
-                or "422" in str(e)
-            )
+        error_msg = str(exc_info.value).lower()
+        assert (
+            "dictionary" in error_msg
+            or "object" in error_msg
+            or "422" in str(exc_info.value)
+        )

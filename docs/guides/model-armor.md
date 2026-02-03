@@ -1,87 +1,160 @@
-# Google Model Armor Integration
+# Model Armor Guide
 
-Model Armor is a middleware component that enforces content policy using Google's Model Armor API. It sanitizes both user prompts and model responses to ensure compliance with content policies before and after LLM calls.
+Google Model Armor provides content policy enforcement for LLM applications, scanning user prompts and model responses for harmful content.
 
 ## Overview
 
-The Model Armor middleware intercepts every LLM call in the ava_v1 graph to:
+Model Armor middleware checks every message against Google's content policies:
+- **Pre-call**: Validates user prompts before sending to LLM
+- **Post-call**: Validates model responses before returning to user
 
-1. **Pre-call sanitization**: Check user prompts against Google's content policy before sending to the model
-2. **Post-call sanitization**: Check model responses against content policy before returning to the user
+**Categories**: dangerous, pi_and_jailbreak, hate_speech, harassment, sexually_explicit, csam, malicious_uris
 
-If content violates policy at either stage, the middleware blocks the request/response and returns a safe, generic error message.
+**Performance**: Adds ~200-600ms latency per model call (100-300ms per check).
 
-## Features
+## Quick Start
 
-- Automatic policy enforcement for all ava_v1 conversations
-- Configurable fail-open/fail-closed modes for API unavailability
-- Auto-enable in production environments
-- Detailed violation logging for analysis
-- Low-latency checks with configurable timeouts (5s default)
-- Service account-based authentication with automatic token refresh
-
-## Prerequisites
-
-1. **GCP Account**: Active Google Cloud Platform account
-2. **Model Armor API**: Enabled in your GCP project
-3. **Model Armor Template**: Created and configured in GCP Console
-4. **Service Account**: With Model Armor API permissions
-
-### Step 1: Enable Model Armor API
+### 1. Enable Model Armor API
 
 ```bash
-# Enable the API in your GCP project
-gcloud services enable modelarmor.googleapis.com --project=YOUR_PROJECT_ID
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable modelarmor.googleapis.com
 ```
 
-### Step 2: Create Model Armor Template
+### 2. Create Template
 
-1. Navigate to [Model Armor Console](https://console.cloud.google.com/ai/model-armor)
-2. Click "Create Template"
-3. Configure policy rules:
-   - Hate speech detection
-   - Harmful content filtering
-   - PII detection (optional)
-   - Custom rules (optional)
-4. Name your template (e.g., `aegra-production`)
-5. Note the Template ID for configuration
+Visit [GCP Console](https://console.cloud.google.com/ai/model-armor):
+1. Click "Create Template"
+2. Configure policy rules and detection thresholds
+3. Name your template (e.g., "aegra-production")
+4. Note the Template ID
 
-### Step 3: Create Service Account
+### 3. Choose Authentication Method
 
+**Local Development** (gcloud CLI):
+```bash
+gcloud auth application-default login
+```
+
+**Railway/Cloud** (service account):
 ```bash
 # Create service account
 gcloud iam service-accounts create model-armor-sa \
-  --display-name="Model Armor Service Account" \
-  --project=YOUR_PROJECT_ID
+  --display-name="Model Armor Service Account"
 
-# Grant Model Armor API permissions
+# Grant permissions
 gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
   --member="serviceAccount:model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/modelarmor.user"
 
-# Generate and download key file
-gcloud iam service-accounts keys create model-armor-key.json \
+# Create key (for Railway)
+gcloud iam service-accounts keys create key.json \
   --iam-account=model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
 
-# Move key file to secure location
-mv model-armor-key.json /path/to/secure/location/
-chmod 600 /path/to/secure/location/model-armor-key.json
+# Copy JSON content to environment variable, then delete file
+cat key.json  # Copy output
+rm key.json   # Never commit this!
 ```
 
-### Step 4: Configure Environment Variables
+**GKE** (Workload Identity):
+```bash
+# Enable Workload Identity
+gcloud container clusters update YOUR_CLUSTER \
+  --workload-pool=YOUR_PROJECT_ID.svc.id.goog
 
-Add the following to your `.env` file:
+# Create Kubernetes service account
+kubectl create serviceaccount aegra-sa --namespace=aegra-prod
+
+# Bind to GCP service account
+gcloud iam service-accounts add-iam-policy-binding \
+  model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+  --role roles/iam.workloadIdentityUser \
+  --member "serviceAccount:YOUR_PROJECT_ID.svc.id.goog[aegra-prod/aegra-sa]"
+
+# Annotate Kubernetes service account
+kubectl annotate serviceaccount aegra-sa \
+  --namespace=aegra-prod \
+  iam.gke.io/gcp-service-account=model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+### 4. Configure Environment Variables
+
+**Local (.env)**:
+```bash
+MODEL_ARMOR_ENABLED=true
+MODEL_ARMOR_PROJECT_ID=your-project-id
+MODEL_ARMOR_LOCATION=us-central1
+MODEL_ARMOR_TEMPLATE_ID=your-template-id
+# Leave blank to use gcloud CLI (ADC)
+```
+
+**Railway**:
+```bash
+MODEL_ARMOR_ENABLED=true
+MODEL_ARMOR_PROJECT_ID=your-project-id
+MODEL_ARMOR_LOCATION=us-central1
+MODEL_ARMOR_TEMPLATE_ID=aegra-staging
+MODEL_ARMOR_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+```
+
+**GKE**:
+```yaml
+env:
+- name: MODEL_ARMOR_ENABLED
+  value: "true"
+- name: MODEL_ARMOR_PROJECT_ID
+  value: "your-project-id"
+- name: MODEL_ARMOR_LOCATION
+  value: "us-central1"
+- name: MODEL_ARMOR_TEMPLATE_ID
+  value: "aegra-production"
+# No credentials needed - Workload Identity handles it
+```
+
+### 5. Test
 
 ```bash
-# Google Model Armor Configuration
-MODEL_ARMOR_ENABLED=true  # Or omit to auto-enable in production
-MODEL_ARMOR_PROJECT_ID=your-gcp-project-id
-MODEL_ARMOR_LOCATION=us-central1
-MODEL_ARMOR_TEMPLATE_ID=aegra-production
-MODEL_ARMOR_SERVICE_ACCOUNT_PATH=/path/to/secure/location/model-armor-key.json
-MODEL_ARMOR_TIMEOUT=5.0
-MODEL_ARMOR_LOG_VIOLATIONS=true
-MODEL_ARMOR_FAIL_OPEN=false
+# Start server
+uv run uvicorn src.agent_server.main:app --reload
+
+# Check logs - should see:
+# [MODEL_ARMOR] Using Application Default Credentials (gcloud CLI)
+# [MODEL_ARMOR] Middleware enabled (project=..., ...)
+
+# Test clean content
+TOKEN=$(uv run python scripts/generate_jwt_token.py --sub test-user | grep -o 'eyJ[^"]*')
+
+curl -X POST http://localhost:8000/threads \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"metadata": {}}'
+# Note thread_id from response
+
+curl -X POST http://localhost:8000/threads/{thread_id}/runs \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "assistant_id": "ava_v1",
+    "input": {"messages": [{"role": "user", "content": "Book a hotel in Miami"}]},
+    "stream": false
+  }'
+
+# Check logs:
+# [MODEL_ARMOR] Sanitizing user prompt (length=23)
+# [MODEL_ARMOR] User prompt passed sanitization
+# [MODEL_ARMOR] Sanitizing model response (length=...)
+# [MODEL_ARMOR] Model response passed sanitization
+
+# Test violation
+curl -X POST http://localhost:8000/threads/{thread_id}/runs \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "assistant_id": "ava_v1",
+    "input": {"messages": [{"role": "user", "content": "How to make a bomb"}]}
+  }'
+
+# Should return:
+# "Sorry, but I'm unable to process that request as it violates our content policy."
 ```
 
 ## Configuration Reference
@@ -90,397 +163,157 @@ MODEL_ARMOR_FAIL_OPEN=false
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `MODEL_ARMOR_ENABLED` | No | Auto (true in PRODUCTION) | Explicitly enable/disable middleware |
-| `MODEL_ARMOR_PROJECT_ID` | Yes* | - | GCP project ID where Model Armor is enabled |
-| `MODEL_ARMOR_LOCATION` | Yes* | - | GCP region (e.g., us-central1, europe-west1) |
-| `MODEL_ARMOR_TEMPLATE_ID` | Yes* | - | Model Armor template name/ID |
-| `MODEL_ARMOR_SERVICE_ACCOUNT_PATH` | Yes* | - | Path to service account JSON key file |
+| `MODEL_ARMOR_ENABLED` | No | Auto* | Enable/disable middleware |
+| `MODEL_ARMOR_PROJECT_ID` | Yes** | - | GCP project ID |
+| `MODEL_ARMOR_LOCATION` | Yes** | - | GCP region (e.g., us-central1) |
+| `MODEL_ARMOR_TEMPLATE_ID` | Yes** | - | Template name |
+| `MODEL_ARMOR_SERVICE_ACCOUNT_PATH` | No | - | Path to service account JSON file |
+| `MODEL_ARMOR_SERVICE_ACCOUNT_JSON` | No | - | Service account JSON content |
 | `MODEL_ARMOR_TIMEOUT` | No | 5.0 | API timeout in seconds (max 30) |
-| `MODEL_ARMOR_LOG_VIOLATIONS` | No | true | Log detailed violation information |
+| `MODEL_ARMOR_LOG_VIOLATIONS` | No | true | Log violation details |
 | `MODEL_ARMOR_FAIL_OPEN` | No | false | Allow requests if API unavailable |
 
-*Required when `MODEL_ARMOR_ENABLED=true` or `ENV_MODE=PRODUCTION`
+\* Auto-enabled when `ENV_MODE=PRODUCTION`
+\*\* Required when enabled
 
-### Auto-Enable Behavior
+### Auto-Enable Logic
 
-Model Armor automatically enables in production environments:
+Model Armor is automatically enabled in production:
 
-```python
-# Explicitly disabled
-MODEL_ARMOR_ENABLED=false  # Disabled (overrides ENV_MODE)
+```bash
+# Explicit control (overrides auto-enable)
+MODEL_ARMOR_ENABLED=true   # Force enable
+MODEL_ARMOR_ENABLED=false  # Force disable
 
-# Explicitly enabled
-MODEL_ARMOR_ENABLED=true   # Enabled (requires full config)
-
-# Auto-enable in production
-ENV_MODE=PRODUCTION        # Enabled (requires full config)
-
-# Disabled by default in local/development
-ENV_MODE=LOCAL             # Disabled (unless explicitly enabled)
-ENV_MODE=DEVELOPMENT       # Disabled (unless explicitly enabled)
+# Auto-enable based on environment
+ENV_MODE=PRODUCTION   # Auto-enables Model Armor
+ENV_MODE=LOCAL        # Auto-disables Model Armor
+ENV_MODE=DEVELOPMENT  # Auto-disables Model Armor
 ```
+
+### Authentication Methods
+
+Three methods are supported (in order of precedence):
+
+#### Method 1: Service Account File Path
+
+```bash
+MODEL_ARMOR_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
+```
+
+Best for: Local testing with a specific service account.
+
+#### Method 2: Service Account JSON (Environment Variable)
+
+```bash
+MODEL_ARMOR_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"...","private_key":"..."}'
+```
+
+Best for: Railway, Cloud Run, or platforms without file storage.
+
+#### Method 3: Application Default Credentials (ADC)
+
+```bash
+# Leave both SERVICE_ACCOUNT_* variables empty
+gcloud auth application-default login
+```
+
+Best for: Local development, GKE with Workload Identity.
+
+**Priority**: If multiple methods are configured, the order is: File Path > JSON > ADC.
 
 ### Fail Open vs Fail Closed
 
-The `MODEL_ARMOR_FAIL_OPEN` setting controls behavior when the Model Armor API is unavailable:
+**Fail Closed** (default, `MODEL_ARMOR_FAIL_OPEN=false`):
+- Block requests if Model Armor API is unavailable
+- Guarantees all content is checked
+- Recommended for production
 
-**Fail Closed (default, `MODEL_ARMOR_FAIL_OPEN=false`)**:
-- Blocks all requests if API is unreachable
-- Ensures 100% policy enforcement
-- Returns error to user: "Content policy service unavailable"
-- Use for: High-security environments, strict compliance requirements
+**Fail Open** (`MODEL_ARMOR_FAIL_OPEN=true`):
+- Allow requests if Model Armor API is unavailable
+- Prioritizes availability over content checks
+- Use for development or high-availability requirements
 
-**Fail Open (`MODEL_ARMOR_FAIL_OPEN=true`)**:
-- Allows requests to proceed if API is unreachable
-- Logs error but doesn't block user
-- Reduces impact of API outages on availability
-- Use for: High-availability requirements, graceful degradation
+**Violations always blocked**: Policy violations are always blocked regardless of fail open/closed mode.
 
-## How It Works
+## Authentication Setup by Environment
 
-### Request Flow
+### Local Development
 
-```
-User Message
-    ↓
-[Model Armor Pre-Call Check]
-    ↓ (if clean)
-LLM Model Call
-    ↓
-[Model Armor Post-Call Check]
-    ↓ (if clean)
-User Response
-```
-
-### Violation Handling
-
-**User Prompt Violation**:
-- User submits: "inappropriate content example"
-- Model Armor blocks request
-- User receives: "I'm unable to process that request as it violates our content policy. Please rephrase your question."
-- Model is never called
-
-**Model Response Violation**:
-- Model generates: "inappropriate response example"
-- Model Armor blocks response
-- User receives: "I apologize, but I cannot provide that information. How else can I assist you with your hotel reservation?"
-- Original response is discarded
-
-### Message Scope
-
-The middleware checks only the **last user message** in each turn, not the entire conversation history. This approach:
-
-- Reduces API latency (single message vs full history)
-- Minimizes API costs
-- Focuses on new user input per turn
-- Maintains conversation context without redundant checks
-
-## Performance Impact
-
-Model Armor adds latency to each LLM call:
-
-- **Pre-call check**: 100-300ms (1 API call)
-- **Post-call check**: 100-300ms (1 API call)
-- **Total overhead**: 200-600ms per model call
-
-### Optimization Strategies
-
-1. **Aggressive timeout**: Default 5s timeout prevents long waits
-2. **Fail-open mode**: Enable for high-availability use cases
-3. **Regional deployment**: Deploy close to Model Armor API endpoints
-4. **Caching**: Model Armor API may cache similar content checks
-
-## Monitoring and Troubleshooting
-
-### Log Levels
-
-Model Armor uses structured logging with the `[MODEL_ARMOR]` prefix:
-
-**INFO**: Initialization and configuration
-```
-[MODEL_ARMOR] Middleware enabled (project=my-project, location=us-central1, template=prod-template, timeout=5.0s, fail_open=false)
-[MODEL_ARMOR] Middleware disabled
-```
-
-**DEBUG**: Sanitization operations
-```
-[MODEL_ARMOR] Sanitizing user prompt (length=42)
-[MODEL_ARMOR] User prompt passed sanitization
-[MODEL_ARMOR] Sanitizing model response (length=156)
-[MODEL_ARMOR] Model response passed sanitization
-```
-
-**WARNING**: Policy violations
-```
-[MODEL_ARMOR] User prompt blocked: {'blocked': True, 'reason': 'inappropriate_content', 'categories': ['hate_speech']}
-[MODEL_ARMOR] Model response blocked: {'blocked': True, 'reason': 'policy_violation'}
-[MODEL_ARMOR] Fail-open mode: allowing request despite timeout
-```
-
-**ERROR**: API errors
-```
-[MODEL_ARMOR] Model Armor API timeout after 5.0s: TimeoutException
-[MODEL_ARMOR] Model Armor API error (status 503): Service Unavailable
-[MODEL_ARMOR] Failed to generate access token: InvalidServiceAccountError
-```
-
-### Common Issues
-
-#### 1. Configuration Errors (Startup Failures)
-
-**Symptom**: Server fails to start with `ModelArmorConfigError`
-
-**Causes**:
-- Missing required environment variables
-- Service account file not found
-- Invalid service account credentials
-- Invalid timeout value (>30s or ≤0s)
-
-**Solution**:
-```bash
-# Verify all required variables are set
-env | grep MODEL_ARMOR
-
-# Check service account file exists and is readable
-ls -l /path/to/service-account-key.json
-cat /path/to/service-account-key.json | jq .
-
-# Verify file permissions (should be 600 or 400)
-chmod 600 /path/to/service-account-key.json
-
-# Test service account credentials
-gcloud auth activate-service-account --key-file=/path/to/service-account-key.json
-```
-
-#### 2. Authentication Errors
-
-**Symptom**: `Failed to generate access token` in logs
-
-**Causes**:
-- Invalid service account JSON file
-- Service account lacks Model Armor permissions
-- Service account deleted or disabled
-
-**Solution**:
-```bash
-# Verify service account exists
-gcloud iam service-accounts describe model-armor-sa@PROJECT_ID.iam.gserviceaccount.com
-
-# Check IAM permissions
-gcloud projects get-iam-policy PROJECT_ID \
-  --flatten="bindings[].members" \
-  --filter="bindings.members:serviceAccount:model-armor-sa@PROJECT_ID.iam.gserviceaccount.com"
-
-# Re-grant permissions if missing
-gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:model-armor-sa@PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/modelarmor.user"
-```
-
-#### 3. API Timeouts
-
-**Symptom**: `Model Armor API timeout after 5.0s` in logs
-
-**Causes**:
-- Network latency to GCP
-- Model Armor API overloaded
-- Timeout setting too aggressive
-
-**Solution**:
-```bash
-# Increase timeout (up to 30s max)
-MODEL_ARMOR_TIMEOUT=10.0
-
-# Enable fail-open mode for high availability
-MODEL_ARMOR_FAIL_OPEN=true
-
-# Test network connectivity to Model Armor API
-curl -I https://modelarmor.us-central1.rep.googleapis.com
-
-# Check GCP status page
-open https://status.cloud.google.com
-```
-
-#### 4. High Violation Rate
-
-**Symptom**: Many blocked requests in logs
-
-**Causes**:
-- Template policy too strict
-- Legitimate content triggering false positives
-- User testing with violation examples
-
-**Solution**:
-```bash
-# Review violation logs for patterns
-grep "\[MODEL_ARMOR\] User prompt blocked" logs/aegra.log | jq .filter_results
-
-# Adjust template policy in GCP Console
-# - Review category thresholds (LOW, MEDIUM, HIGH)
-# - Add allowlist rules for specific patterns
-# - Test changes in staging environment
-
-# Consider fail-open mode during template tuning
-MODEL_ARMOR_FAIL_OPEN=true
-```
-
-### Analyzing Violations
-
-When `MODEL_ARMOR_LOG_VIOLATIONS=true`, detailed violation data is logged:
-
-```python
-{
-  "blocked": true,
-  "reason": "inappropriate_content",
-  "categories": ["hate_speech", "violence"],
-  "scores": {
-    "hate_speech": 0.95,
-    "violence": 0.72,
-    "sexual": 0.12
-  },
-  "filtered_text_ranges": [[0, 50]]
-}
-```
-
-Use this data to:
-- Identify common violation patterns
-- Fine-tune template policies
-- Train users on policy guidelines
-- Debug false positives
-
-## Testing
-
-### Local Testing
-
-1. Set up test environment variables:
-```bash
-export MODEL_ARMOR_ENABLED=true
-export MODEL_ARMOR_PROJECT_ID=test-project
-export MODEL_ARMOR_LOCATION=us-central1
-export MODEL_ARMOR_TEMPLATE_ID=test-template
-export MODEL_ARMOR_SERVICE_ACCOUNT_PATH=/path/to/test-key.json
-```
-
-2. Start the server:
-```bash
-uv run uvicorn src.agent_server.main:app --reload
-```
-
-3. Send test request (clean content):
-```bash
-# Generate JWT token
-TOKEN=$(uv run python scripts/generate_jwt_token.py --sub test-user)
-
-# Create thread
-THREAD_ID=$(curl -s -X POST http://localhost:8000/assistants/ava_v1/threads \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  | jq -r .thread_id)
-
-# Send clean message
-curl -X POST http://localhost:8000/threads/$THREAD_ID/messages \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"role": "user", "content": "Book me a hotel in Miami"}'
-
-# Check logs
-tail -f logs/aegra.log | grep MODEL_ARMOR
-# Should see: "User prompt passed", "Model response passed"
-```
-
-4. Test violation (use content that violates your template policy):
-```bash
-# Send violating message
-curl -X POST http://localhost:8000/threads/$THREAD_ID/messages \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"role": "user", "content": "<your-test-violation-content>"}'
-
-# Should receive policy error response
-# Should see in logs: "User prompt blocked"
-```
-
-### Unit Tests
-
-Run the test suite:
+**Advantages**: No key files, uses your personal credentials, zero security risk.
 
 ```bash
-# Run Model Armor middleware tests
-uv run pytest tests/unit/test_middleware/test_model_armor_middleware.py -v
+# 1. Authenticate
+gcloud auth application-default login
 
-# Run with coverage
-uv run pytest tests/unit/test_middleware/test_model_armor_middleware.py \
-  --cov=graphs/ava_v1/middleware/model_armor \
-  --cov-report=html
-
-# View coverage report
-open htmlcov/index.html
-```
-
-### Integration Tests
-
-Verify Model Armor doesn't break existing functionality:
-
-```bash
-# Run full test suite
-uv run pytest
-
-# Run E2E tests specifically
-uv run pytest tests/e2e/test_agent_protocol.py -v
-```
-
-## Deployment
-
-### Staging (Railway)
-
-1. Add service account credentials to Railway secrets:
-```bash
-# In Railway dashboard:
-# 1. Go to your project
-# 2. Click on "Variables" tab
-# 3. Add the following variables:
-
+# 2. Configure .env
 MODEL_ARMOR_ENABLED=true
-MODEL_ARMOR_PROJECT_ID=staging-project-id
+MODEL_ARMOR_PROJECT_ID=your-dev-project
 MODEL_ARMOR_LOCATION=us-central1
-MODEL_ARMOR_TEMPLATE_ID=staging-template
-MODEL_ARMOR_SERVICE_ACCOUNT_PATH=/app/model-armor-key.json
-MODEL_ARMOR_TIMEOUT=5.0
-MODEL_ARMOR_LOG_VIOLATIONS=true
-MODEL_ARMOR_FAIL_OPEN=false
+MODEL_ARMOR_TEMPLATE_ID=aegra-dev
+# Leave SERVICE_ACCOUNT_* empty
 
-# 4. Add service account JSON as file:
-#    - Click "Add file"
-#    - Name: model-armor-key.json
-#    - Paste JSON contents
+# 3. Start server
+uv run uvicorn src.agent_server.main:app --reload
+
+# Logs should show:
+# [MODEL_ARMOR] Using Application Default Credentials (gcloud CLI)
 ```
 
-2. Deploy:
+### Railway Staging
+
+**Advantages**: No file system needed, secure environment variable storage.
+
 ```bash
-git push origin development  # Auto-deploys to Railway
+# 1. Create service account and key (one-time)
+gcloud iam service-accounts create model-armor-sa
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/modelarmor.user"
+gcloud iam service-accounts keys create key.json \
+  --iam-account=model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+
+# 2. Add to Railway environment variables
+# Variable: MODEL_ARMOR_SERVICE_ACCOUNT_JSON
+# Value: (paste entire JSON content from key.json)
+
+# 3. Delete local key file
+rm key.json
+
+# 4. Add other variables in Railway dashboard:
+MODEL_ARMOR_ENABLED=true
+MODEL_ARMOR_PROJECT_ID=your-project-id
+MODEL_ARMOR_LOCATION=us-central1
+MODEL_ARMOR_TEMPLATE_ID=aegra-staging
+
+# Logs should show:
+# [MODEL_ARMOR] Using service account JSON from environment variable
 ```
 
-3. Monitor logs:
+**Key Rotation** (every 90 days):
 ```bash
-# In Railway dashboard, check deployment logs for:
-[MODEL_ARMOR] Middleware enabled (project=staging-project-id, ...)
+# Create new key
+gcloud iam service-accounts keys create key-new.json \
+  --iam-account=model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+
+# Update Railway variable with new key content
+# Restart deployment
+# Verify in logs
+# Delete old key
+gcloud iam service-accounts keys list \
+  --iam-account=model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+gcloud iam service-accounts keys delete KEY_ID \
+  --iam-account=model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+
+rm key-new.json
 ```
 
-### Production (GKE)
+### GKE Production
 
-1. Create Kubernetes secret:
-```bash
-# Create secret from service account file
-kubectl create secret generic model-armor-sa \
-  --from-file=key.json=/path/to/production-key.json \
-  --namespace=aegra-prod
+**Advantages**: Most secure (no keys!), automatic credential rotation, GKE best practice.
 
-# Verify secret
-kubectl get secret model-armor-sa -n aegra-prod -o yaml
-```
-
-2. Update deployment YAML:
 ```yaml
+# deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -489,137 +322,322 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: aegra-sa  # Bound to GCP service account
       containers:
       - name: aegra
+        image: gcr.io/YOUR_PROJECT/aegra:latest
         env:
         - name: MODEL_ARMOR_ENABLED
-          value: "true"  # Or omit to auto-enable
+          value: "true"
         - name: MODEL_ARMOR_PROJECT_ID
-          value: "production-project-id"
+          value: "your-project-id"
         - name: MODEL_ARMOR_LOCATION
           value: "us-central1"
         - name: MODEL_ARMOR_TEMPLATE_ID
-          value: "production-template"
-        - name: MODEL_ARMOR_SERVICE_ACCOUNT_PATH
-          value: "/etc/model-armor/key.json"
-        - name: MODEL_ARMOR_TIMEOUT
-          value: "5.0"
-        - name: MODEL_ARMOR_LOG_VIOLATIONS
-          value: "true"
-        - name: MODEL_ARMOR_FAIL_OPEN
-          value: "false"
-        volumeMounts:
-        - name: model-armor-sa
-          mountPath: /etc/model-armor
-          readOnly: true
-      volumes:
-      - name: model-armor-sa
-        secret:
-          secretName: model-armor-sa
+          value: "aegra-production"
+        # No credentials needed!
 ```
 
-3. Deploy:
+**Verify Workload Identity**:
 ```bash
-kubectl apply -f deployments/k8s/deployment.yaml
+# Check service account binding
+gcloud iam service-accounts get-iam-policy \
+  model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+
+# Check Kubernetes annotation
+kubectl get serviceaccount aegra-sa -n aegra-prod -o yaml | grep gcp-service-account
+
+# Test from inside pod
+kubectl exec -it deployment/aegra -n aegra-prod -- \
+  curl -H "Metadata-Flavor: Google" \
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email
 ```
 
-4. Monitor rollout:
-```bash
-# Watch pod status
-kubectl rollout status deployment/aegra -n aegra-prod
+## Troubleshooting
 
-# Check logs for Model Armor initialization
-kubectl logs -f deployment/aegra -n aegra-prod | grep MODEL_ARMOR
+### Authentication Errors
+
+**Error: "Failed to generate Model Armor access token"**
+
+Check which authentication method is being used:
+```bash
+# View logs for authentication method
+# [MODEL_ARMOR] Using Application Default Credentials (gcloud CLI)
+# [MODEL_ARMOR] Using service account file for authentication
+# [MODEL_ARMOR] Using service account JSON from environment variable
 ```
 
-### Rollback
-
-To disable Model Armor without code changes:
-
-**Railway**:
+**For ADC (gcloud CLI)**:
 ```bash
-# Set variable in Railway dashboard
+# Re-authenticate
+gcloud auth application-default login
+
+# Verify credentials file exists
+ls -la ~/.config/gcloud/application_default_credentials.json
+
+# Test token generation
+gcloud auth application-default print-access-token
+```
+
+**For Service Account JSON**:
+```bash
+# Validate JSON format
+echo $MODEL_ARMOR_SERVICE_ACCOUNT_JSON | jq .
+
+# Check required fields
+echo $MODEL_ARMOR_SERVICE_ACCOUNT_JSON | jq 'keys'
+# Should include: type, project_id, private_key_id, private_key, client_email
+```
+
+**For Service Account File**:
+```bash
+# Check file exists
+ls -la $MODEL_ARMOR_SERVICE_ACCOUNT_PATH
+
+# Validate JSON
+cat $MODEL_ARMOR_SERVICE_ACCOUNT_PATH | jq .
+```
+
+### Permission Errors
+
+**Error: "Permission denied" or "403 Forbidden"**
+
+```bash
+# Check if service account has correct role
+gcloud projects get-iam-policy YOUR_PROJECT_ID \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:serviceAccount:model-armor-sa@*"
+
+# Should show: roles/modelarmor.user
+
+# Add permission if missing
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:model-armor-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/modelarmor.user"
+```
+
+### API Errors
+
+**Error: "Model Armor API not enabled"**
+
+```bash
+# Check if API is enabled
+gcloud services list --enabled | grep modelarmor
+
+# Enable it
+gcloud services enable modelarmor.googleapis.com
+```
+
+**Error: "Model Armor API timeout"**
+
+Increase timeout or enable fail open:
+```bash
+MODEL_ARMOR_TIMEOUT=10.0
+MODEL_ARMOR_FAIL_OPEN=true  # Allow requests despite timeout
+```
+
+### Configuration Errors
+
+**Error: "Missing required configuration: MODEL_ARMOR_PROJECT_ID"**
+
+Check all required variables are set:
+```bash
+echo $MODEL_ARMOR_PROJECT_ID
+echo $MODEL_ARMOR_LOCATION
+echo $MODEL_ARMOR_TEMPLATE_ID
+```
+
+**Error: "Service account file not found"**
+
+```bash
+# Check path is absolute, not relative
+# Wrong: MODEL_ARMOR_SERVICE_ACCOUNT_PATH=./key.json
+# Right: MODEL_ARMOR_SERVICE_ACCOUNT_PATH=/absolute/path/to/key.json
+```
+
+## Monitoring
+
+### Key Metrics
+
+1. **Violation Rate**: Percentage of requests blocked
+2. **Latency**: Pre-call + post-call sanitization time
+3. **Error Rate**: API timeouts, authentication failures
+4. **Availability**: Model Armor API uptime
+
+### Log Analysis
+
+```bash
+# View all Model Armor logs
+grep "\[MODEL_ARMOR\]" logs/app.log
+
+# Count violations by type
+grep "User prompt blocked" logs/app.log | \
+  jq -r '.filter_results.rai.raiFilterResult.raiFilterTypeResults | to_entries[] | select(.value.matchState == "MATCH_FOUND") | .key' | \
+  sort | uniq -c
+
+# Check average latency
+grep "Sanitizing" logs/app.log | \
+  awk '{print $NF}' | \
+  awk '{sum+=$1; count++} END {print "Average:", sum/count "ms"}'
+```
+
+### Alerting
+
+Recommended alerts:
+- Model Armor API error rate > 1%
+- Latency p95 > 1000ms
+- Violation rate spike (sudden increase)
+- Authentication failures
+
+## Security Best Practices
+
+### Service Account Management
+
+1. **Least Privilege**: Only grant `roles/modelarmor.user`, not `roles/owner` or `roles/editor`
+2. **Separate Accounts**: Use different service accounts for dev/staging/production
+3. **Key Rotation**: Rotate keys every 90 days (for Railway/non-GKE deployments)
+4. **Never Commit Keys**: Add `*.json` to `.gitignore`, use environment variables
+
+### Secret Management
+
+```bash
+# Bad - Never do this
+git add service-account.json
+echo "MODEL_ARMOR_SERVICE_ACCOUNT_JSON={...}" >> .env
+git commit -m "Add credentials"  # NEVER!
+
+# Good
+echo "*.json" >> .gitignore
+echo ".env" >> .gitignore
+# Store JSON in Railway secrets / K8s secrets / environment variables
+```
+
+### Logging
+
+Current implementation logs violation details for analysis. To disable:
+```bash
+MODEL_ARMOR_LOG_VIOLATIONS=false
+```
+
+### Error Messages
+
+User-facing error messages are generic and don't expose filter details:
+- "Sorry, but I'm unable to process that request as it violates our content policy."
+- "I apologize, but I cannot provide that information. How else can I assist you with your hotel reservation?"
+
+## Deployment Checklist
+
+### Pre-Deployment
+
+- [ ] Model Armor API enabled in GCP project
+- [ ] Template created and configured
+- [ ] Service account created (for Railway/Cloud deployments)
+- [ ] Service account granted `roles/modelarmor.user`
+- [ ] Workload Identity configured (for GKE)
+- [ ] Environment variables configured
+- [ ] Secrets stored securely (never committed)
+
+### Testing
+
+- [ ] Unit tests pass (`uv run pytest tests/unit/test_middleware/`)
+- [ ] Clean content passes through
+- [ ] Harmful content blocked
+- [ ] Custom error messages returned
+- [ ] Logs show correct authentication method
+- [ ] Latency acceptable (<1s total)
+
+### Monitoring
+
+- [ ] Log aggregation configured (e.g., Cloud Logging)
+- [ ] Alerts configured for error rate, latency
+- [ ] Dashboard created for violation metrics
+- [ ] On-call runbook updated with troubleshooting steps
+
+### Rollback Plan
+
+If issues occur, disable Model Armor:
+```bash
+# Set environment variable
 MODEL_ARMOR_ENABLED=false
+
+# Or redeploy without Model Armor environment variables
 ```
 
-**GKE**:
+## Advanced Configuration
+
+### Custom Error Messages
+
+Edit `graphs/ava_v1/middleware/model_armor.py`:
+
+```python
+# User prompt violation (line 176)
+return self._create_violation_response(
+    request,
+    "Your custom user prompt error message"
+)
+
+# Model response violation (line 204)
+return self._create_violation_response(
+    request,
+    "Your custom model response error message"
+)
+```
+
+### Multiple Templates
+
+Use different templates for different environments:
+
 ```bash
-# Update deployment
-kubectl set env deployment/aegra MODEL_ARMOR_ENABLED=false -n aegra-prod
+# Development (lenient)
+MODEL_ARMOR_TEMPLATE_ID=aegra-dev
 
-# Or edit YAML and reapply
-kubectl edit deployment aegra -n aegra-prod
+# Staging (moderate)
+MODEL_ARMOR_TEMPLATE_ID=aegra-staging
+
+# Production (strict)
+MODEL_ARMOR_TEMPLATE_ID=aegra-production
 ```
 
-## Security Considerations
+### Regional Deployment
 
-1. **Service Account Permissions**: Use least-privilege principle
-   - Grant only `roles/modelarmor.user` role
-   - Do not grant `roles/owner` or broad permissions
-   - Use separate service accounts for staging/production
+Use closest Model Armor region for lowest latency:
 
-2. **Secret Management**: Never commit credentials
-   - Add `*-key.json` to `.gitignore`
-   - Use environment variables or secret managers
-   - Rotate service account keys periodically (90 days)
-   - Audit service account usage regularly
+```bash
+# US deployments
+MODEL_ARMOR_LOCATION=us-central1
 
-3. **Logging Safety**: Sanitize sensitive data
-   - Middleware logs violation metadata, not full content
-   - User prompts only logged at DEBUG level (disabled in production)
-   - Filter logs before sharing externally
+# Europe deployments
+MODEL_ARMOR_LOCATION=europe-west4
 
-4. **Error Messages**: Don't expose policy details
-   - Generic error messages to users
-   - Detailed violations only in server logs
-   - No raw API responses in user-facing errors
-
-5. **Network Security**:
-   - API calls use HTTPS (TLS 1.2+)
-   - Service account tokens expire after 1 hour
-   - Tokens regenerated per request (no caching)
+# Asia deployments
+MODEL_ARMOR_LOCATION=asia-southeast1
+```
 
 ## FAQ
 
-### Q: Does Model Armor check the entire conversation history?
+**Q: Does Model Armor check the entire conversation history?**
+A: No, only the last user message and each model response. This reduces latency and costs.
 
-**A**: No, it only checks the last user message per turn. This reduces latency and cost while focusing on new user input.
+**Q: What happens if a violation is detected mid-conversation?**
+A: The request is blocked immediately and a safe error message is returned. The conversation can continue with different input.
 
-### Q: What happens if the Model Armor API is down?
+**Q: Can I customize which filter categories to enforce?**
+A: Yes, configure this in your Model Armor template in GCP Console.
 
-**A**: Depends on `MODEL_ARMOR_FAIL_OPEN`:
-- `false` (default): Requests are blocked, user sees error
-- `true`: Requests proceed, error is logged
+**Q: Does this work with streaming responses?**
+A: Yes, but the entire response is buffered before checking, so streaming appears slower.
 
-### Q: Can I use Model Armor in local development?
+**Q: What's the cost?**
+A: Model Armor pricing varies by region and volume. Check [GCP Pricing](https://cloud.google.com/model-armor/pricing).
 
-**A**: Yes, but you need a GCP project with Model Armor enabled and a service account. For local testing, consider using a sandbox GCP project with a test template.
+**Q: Can I disable Model Armor for specific users or requests?**
+A: Not currently supported. It's enabled/disabled globally per environment.
 
-### Q: Does Model Armor work with other graphs besides ava_v1?
+**Q: How do I test locally without a GCP project?**
+A: Set `MODEL_ARMOR_ENABLED=false` in your `.env` file. The middleware will be disabled.
 
-**A**: Currently, it's only integrated with ava_v1. To add to other graphs, include `ModelArmorMiddleware()` in their middleware list.
+## Support
 
-### Q: How much does Model Armor cost?
-
-**A**: See [Model Armor Pricing](https://cloud.google.com/model-armor/pricing). Costs scale with API call volume. Typical usage: 2 API calls per LLM interaction (pre-call + post-call).
-
-### Q: Can I customize the error messages?
-
-**A**: Yes, edit the violation response messages in `graphs/ava_v1/middleware/model_armor.py`:
-- User prompt violation: Line ~155
-- Model response violation: Line ~185
-
-### Q: How do I test without triggering real violations?
-
-**A**: Create a test Model Armor template with strict policies, then use test content that you know violates those policies. Monitor logs to verify blocks.
-
-### Q: Can I disable Model Armor for specific users or conversations?
-
-**A**: Not currently supported. Model Armor applies to all ava_v1 conversations when enabled. To add per-user controls, modify the middleware to check user metadata before sanitizing.
-
-## Additional Resources
-
-- [Google Model Armor Documentation](https://cloud.google.com/model-armor/docs)
-- [Model Armor API Reference](https://cloud.google.com/model-armor/docs/reference)
-- [GCP Service Accounts Guide](https://cloud.google.com/iam/docs/service-accounts)
-- [Aegra Authentication Guide](./jwt-authentication.md)
+- **Issues**: https://github.com/ibbybuilds/aegra/issues
+- **GCP Support**: https://cloud.google.com/support
+- **Model Armor Docs**: https://cloud.google.com/model-armor/docs

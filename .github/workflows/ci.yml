@@ -46,7 +46,7 @@ jobs:
         run: uv run mypy src/
         continue-on-error: true
 
-      - name:
+      - name: Run tests with pytest
         env:
           AEGRA_CONFIG: ""
           POSTGRES_USER: "user"

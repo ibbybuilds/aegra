@@ -1,6 +1,7 @@
 """Integration tests for EventStore service with real database"""
 
 import asyncio
+import sys
 from datetime import UTC, datetime
 
 import pytest
@@ -9,105 +10,154 @@ from src.agent_server.core.sse import SSEEvent
 from src.agent_server.services.event_store import EventStore
 from src.agent_server.settings import settings
 
+# Fix Windows event loop policy for psycopg3 compatibility
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 
 @pytest.fixture(scope="session")
 def database_available():
     """Check if database is available for integration tests"""
-    from sqlalchemy import create_engine, text
+    import structlog
+
+    logger = structlog.get_logger(__name__)
 
     try:
-        engine = create_engine(settings.db.database_url_sync, echo=False)
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        # Use psycopg (psycopg3) directly instead of SQLAlchemy sync engine
+        # This matches what the application actually uses
+        import psycopg
+
+        # Parse the database URL to get connection parameters
+        db_url = settings.db.database_url_sync
+        # Remove postgresql:// prefix and parse
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "", 1)
+
+        # Extract connection parts
+        parts = db_url.split("@")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid database URL format: {db_url}")
+
+        auth, host_db = parts
+        user, password = auth.split(":")
+        host_port, database = host_db.split("/")
+        if ":" in host_port:
+            host, port = host_port.split(":")
+        else:
+            host = host_port
+            port = "5432"
+
+        # Test connection with psycopg3
+        with (
+            psycopg.connect(
+                host=host,
+                port=int(port),
+                user=user,
+                password=password,
+                dbname=database,
+                connect_timeout=5,
+            ) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute("SELECT 1")
+            cur.fetchone()
+
+        logger.info("Database connection successful for integration tests")
         yield True
-    except Exception:
+    except Exception as e:
+        logger.warning(
+            f"Database not available for integration tests: {e}. "
+            "These tests require a running PostgreSQL database. "
+            "Set POSTGRES_* environment variables or ensure database is running."
+        )
         yield False
-    finally:
-        if "engine" in locals():
-            engine.dispose()
 
 
 @pytest.fixture
 def clean_event_store_tables(database_available):
     """Clean up event store tables before and after tests"""
-    from sqlalchemy import create_engine, text
+    import psycopg
 
     if not database_available:
         pytest.skip("Database not available for integration tests")
 
-    engine = create_engine(settings.db.database_url_sync, echo=False)
+    # Parse database URL
+    db_url = settings.db.database_url_sync
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "", 1)
+
+    parts = db_url.split("@")
+    auth, host_db = parts
+    user, password = auth.split(":")
+    host_port, database = host_db.split("/")
+    if ":" in host_port:
+        host, port = host_port.split(":")
+    else:
+        host = host_port
+        port = "5432"
 
     # Clean up before test
-    with engine.connect() as conn:
-        conn.execute(text("DELETE FROM run_events"))
+    with psycopg.connect(
+        host=host,
+        port=int(port),
+        user=user,
+        password=password,
+        dbname=database,
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM run_events")
         conn.commit()
 
     yield
 
     # Clean up after test
-    with engine.connect() as conn:
-        conn.execute(text("DELETE FROM run_events"))
+    with psycopg.connect(
+        host=host,
+        port=int(port),
+        user=user,
+        password=password,
+        dbname=database,
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM run_events")
         conn.commit()
-
-    engine.dispose()
 
 
 @pytest.fixture
-def event_store(clean_event_store_tables):
+async def event_store(clean_event_store_tables):
     """Create EventStore instance with real database"""
     from unittest.mock import patch
 
-    from sqlalchemy import create_engine
+    from psycopg.rows import dict_row
+    from psycopg_pool import AsyncConnectionPool
 
-    # Create a sync engine for testing
-    sync_engine = create_engine(settings.db.database_url_sync, echo=False)
+    # Create a real async connection pool for testing
+    # EventStore uses db_manager.lg_pool which is an AsyncConnectionPool
+    # Use open=False and open explicitly to avoid RuntimeError
+    # Set row_factory=dict_row to match db_manager configuration
+    test_pool = AsyncConnectionPool(
+        conninfo=settings.db.database_url_sync,
+        min_size=1,
+        max_size=2,
+        open=False,
+        kwargs={"row_factory": dict_row},  # Return dicts instead of tuples
+    )
 
-    # Patch db_manager.get_engine to return our sync engine wrapped for async
-    class AsyncEngineWrapper:
-        def __init__(self, sync_engine):
-            self.sync_engine = sync_engine
+    # Open the pool explicitly
+    await test_pool.open()
 
-        def begin(self):
-            return AsyncConnectionWrapper(self.sync_engine.connect())
-
-    class AsyncConnectionWrapper:
-        def __init__(self, sync_conn):
-            self.sync_conn = sync_conn
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            if exc_type is None:
-                # Commit on successful exit
-                self.sync_conn.commit()
-            else:
-                # Rollback on error
-                self.sync_conn.rollback()
-            self.sync_conn.close()
-
-        async def execute(self, stmt, params=None):
-            # Run sync execute in thread pool
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            if params:
-                result = await loop.run_in_executor(
-                    None, lambda: self.sync_conn.execute(stmt, params)
-                )
-            else:
-                result = await loop.run_in_executor(
-                    None, lambda: self.sync_conn.execute(stmt)
-                )
-            return result
-
+    # Patch db_manager.lg_pool to use our test pool
     with patch(
-        "src.agent_server.services.event_store.db_manager.get_engine",
-        return_value=AsyncEngineWrapper(sync_engine),
+        "src.agent_server.services.event_store.db_manager.lg_pool",
+        test_pool,
     ):
         yield EventStore()
 
-    sync_engine.dispose()
+    # Cleanup: close the test pool
+    from contextlib import suppress
+
+    with suppress(Exception):
+        await test_pool.close()  # Ignore cleanup errors
 
 
 class TestEventStoreIntegration:

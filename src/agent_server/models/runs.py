@@ -34,7 +34,7 @@ class RunCreate(BaseModel):
     )
     on_disconnect: str | None = Field(
         None,
-        description="Behavior on client disconnect: 'cancel' or 'continue' (default).",
+        description="Behavior on client disconnect: 'cancel' (default) or 'continue'.",
     )
 
     multitask_strategy: str | None = Field(

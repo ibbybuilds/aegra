@@ -28,7 +28,7 @@ class HttpConfig(TypedDict, total=False):
     app: str
     """Import path for custom Starlette/FastAPI app to mount"""
     enable_custom_route_auth: bool
-    """Apply Aegra authentication middleware to custom routes"""
+    """Apply Aegra authentication dependency to custom routes (uses FastAPI dependencies, not middleware)"""
     cors: CorsConfig | None
     """Custom CORS configuration"""
 
@@ -66,13 +66,27 @@ class StoreConfig(TypedDict, total=False):
     """Vector index configuration for semantic search"""
 
 
+class AuthConfig(TypedDict, total=False):
+    """Auth configuration options."""
+
+    path: str
+    """Import path for auth handler in format './file.py:variable' or 'module:variable'.
+    Examples:
+    - './auth.py:auth' - Load 'auth' from auth.py in project root
+    - './src/auth/firebase.py:auth' - Load from nested path
+    - 'mypackage.auth:auth' - Load from installed package
+    """
+    disable_studio_auth: bool
+    """Disable authentication for LangGraph Studio connections"""
+
+
 def _resolve_config_path() -> Path | None:
-    """Resolve config file path using the same logic as LangGraphService.
+    """Resolve config file path using standard resolution order.
 
     Resolution order:
     1) AEGRA_CONFIG env var (absolute or relative path) - returned even if doesn't exist
     2) aegra.json in CWD
-    3) langgraph.json in CWD (fallback)
+        3) langgraph.json in CWD (fallback for compatibility)
 
     Returns:
         Path to config file or None if not found
@@ -95,7 +109,7 @@ def _resolve_config_path() -> Path | None:
 
 
 def load_config() -> dict | None:
-    """Load full config file using the same resolution logic as LangGraphService.
+    """Load full config file using standard resolution order.
 
     Returns:
         Full config dict or None if not found
@@ -115,7 +129,7 @@ def load_config() -> dict | None:
 def load_http_config() -> HttpConfig | None:
     """Load HTTP config from aegra.json or langgraph.json.
 
-    Uses the same config resolution logic as LangGraphService to ensure consistency.
+    Uses standard config resolution order.
 
     Returns:
         HTTP configuration dict or None if not found
@@ -136,7 +150,7 @@ def load_http_config() -> HttpConfig | None:
 def load_store_config() -> StoreConfig | None:
     """Load store config from aegra.json or langgraph.json.
 
-    Uses the same config resolution logic as LangGraphService to ensure consistency.
+    Uses standard config resolution order.
 
     Returns:
         Store configuration dict or None if not found
@@ -150,5 +164,26 @@ def load_store_config() -> StoreConfig | None:
         config_path = _resolve_config_path()
         logger.info(f"Loaded store config from {config_path}")
         return store_config
+
+    return None
+
+
+def load_auth_config() -> AuthConfig | None:
+    """Load auth config from aegra.json or langgraph.json.
+
+    Uses standard config resolution order.
+
+    Returns:
+        Auth configuration dict or None if not found
+    """
+    config = load_config()
+    if config is None:
+        return None
+
+    auth_config = config.get("auth")
+    if auth_config:
+        config_path = _resolve_config_path()
+        logger.info(f"Loaded auth config from {config_path}")
+        return auth_config
 
     return None

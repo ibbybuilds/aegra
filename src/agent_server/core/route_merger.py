@@ -1,59 +1,15 @@
 """Route merging utilities for combining custom apps with Aegra core routes"""
 
-import sys
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 
 import structlog
-from starlette.applications import Starlette
-from starlette.routing import BaseRoute, Mount
+from fastapi import FastAPI
 
 logger = structlog.get_logger(__name__)
 
 
-def merge_routes(
-    user_app: Starlette,
-    unshadowable_routes: list[BaseRoute],
-    shadowable_routes: list[BaseRoute],
-    protected_mount: Mount,
-) -> Starlette:
-    """Merge user app routes with Aegra core routes following priority order.
-
-    Route priority:
-    1. Unshadowable routes (health, docs, openapi) - always accessible
-    2. User custom routes - can override shadowable routes
-    3. Shadowable routes (root, info) - can be overridden by custom routes
-    4. Protected core API mount (assistants, threads, runs, store) - mounted last
-
-    Args:
-        user_app: User's FastAPI/Starlette application
-        unshadowable_routes: Routes that cannot be overridden (health, docs)
-        shadowable_routes: Routes that can be overridden (root, info)
-        protected_mount: Mount containing protected core API routes
-
-    Returns:
-        Modified user_app with merged routes
-    """
-    # Extract custom routes from user app
-    custom_routes = list(user_app.routes)
-
-    # Log custom route paths for debugging
-    custom_paths = [
-        getattr(route, "path", None)
-        for route in custom_routes
-        if hasattr(route, "path")
-    ]
-    logger.info(f"Custom route paths: {custom_paths}")
-
-    # Merge routes in priority order
-    user_app.router.routes = (
-        unshadowable_routes + custom_routes + shadowable_routes + [protected_mount]
-    )
-
-    return user_app
-
-
-def merge_lifespans(user_app: Starlette, core_lifespan: Callable) -> Starlette:
+def merge_lifespans(user_app: FastAPI, core_lifespan: Callable) -> FastAPI:
     """Merge user lifespan with Aegra's core lifespan.
 
     Both lifespans will run, with core lifespan wrapping user lifespan.
@@ -92,8 +48,8 @@ def merge_lifespans(user_app: Starlette, core_lifespan: Callable) -> Starlette:
 
 
 def merge_exception_handlers(
-    user_app: Starlette, core_exception_handlers: dict[type, Callable]
-) -> Starlette:
+    user_app: FastAPI, core_exception_handlers: dict[type, Callable]
+) -> FastAPI:
     """Merge core exception handlers with user exception handlers.
 
     Core handlers are added only if user hasn't defined a handler for that exception type.
@@ -113,24 +69,3 @@ def merge_exception_handlers(
             logger.debug(f"User app overrides exception handler for {exc_type}")
 
     return user_app
-
-
-def update_openapi_spec(user_app: Starlette) -> None:
-    """Update OpenAPI spec if user app is FastAPI.
-
-    If the user app is a FastAPI instance, its OpenAPI spec will be automatically
-    merged with Aegra's default spec when FastAPI generates the combined spec.
-
-    Args:
-        user_app: User's FastAPI/Starlette application
-    """
-    if "fastapi" in sys.modules:
-        from fastapi import FastAPI
-
-        if isinstance(user_app, FastAPI):
-            # FastAPI automatically merges routes into OpenAPI spec
-            # The /docs and /openapi.json endpoints will show both
-            # Aegra routes and custom routes
-            logger.info(
-                "Custom FastAPI app detected - OpenAPI spec will include custom routes"
-            )

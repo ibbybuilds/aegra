@@ -163,3 +163,78 @@ class TestRunsStreamingEndpoints:
             await stream_run("t", "r", user=mock_user, session=mock_session)
 
         assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_execute_run_async_error_handling(
+        self, mock_user: User, mock_session: AsyncMock
+    ) -> None:
+        """Test that errors during streaming are properly caught and sent to broker"""
+        from agent_server.api.runs import execute_run_async
+        from agent_server.services.broker import RunBroker, broker_manager
+
+        run_id = str(uuid4())
+        thread_id = str(uuid4())
+        graph_id = "test-graph"
+
+        # Create broker to capture events
+        broker = RunBroker(run_id)
+        broker_manager._brokers[run_id] = broker
+
+        async def failing_stream():
+            """Stream that raises error immediately"""
+            yield ("values", {"test": "data"})
+            raise ValueError("Test error during streaming")
+
+        with (
+            patch("agent_server.api.runs.get_langgraph_service") as mock_lg_service,
+            patch(
+                "agent_server.api.runs.stream_graph_events",
+                return_value=failing_stream(),
+            ),
+            patch("agent_server.api.runs.update_run_status", new_callable=AsyncMock),
+            patch("agent_server.api.runs.set_thread_status", new_callable=AsyncMock),
+            patch("agent_server.api.runs._get_session_maker") as mock_session_maker,
+        ):
+            mock_graph = MagicMock()
+            mock_lg_service.return_value.get_graph.return_value.__aenter__ = AsyncMock(
+                return_value=mock_graph
+            )
+            mock_lg_service.return_value.get_graph.return_value.__aexit__ = AsyncMock(
+                return_value=None
+            )
+
+            mock_session_maker.return_value = lambda: mock_session
+
+            # Execute should raise the error
+            with pytest.raises(ValueError, match="Test error during streaming"):
+                await execute_run_async(
+                    run_id=run_id,
+                    thread_id=thread_id,
+                    graph_id=graph_id,
+                    input_data={},
+                    user=mock_user,
+                    config={},
+                    context={},
+                    stream_mode=["values"],
+                )
+
+            # Verify error event was sent to broker
+            events = []
+            try:
+                async for event_id, raw_event in broker.aiter():
+                    events.append((event_id, raw_event))
+                    if len(events) >= 5:
+                        break
+            except Exception:
+                pass
+
+            # Should have error event
+            error_events = [
+                evt for _, evt in events if isinstance(evt, tuple) and evt[0] == "error"
+            ]
+            assert len(error_events) > 0, "Error event should be sent to broker"
+
+            error_event = error_events[0]
+            assert error_event[0] == "error"
+            assert error_event[1]["error"] == "ValueError"
+            assert "Test error during streaming" in str(error_event[1]["message"])

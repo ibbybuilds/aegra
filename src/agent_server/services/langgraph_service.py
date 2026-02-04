@@ -19,10 +19,12 @@ import structlog
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
+from src.agent_server.constants import ASSISTANT_NAMESPACE_UUID
+from src.agent_server.observability.base import (
+    get_tracing_callbacks,
+    get_tracing_metadata,
+)
 from src.agent_server.settings import settings
-
-from ..constants import ASSISTANT_NAMESPACE_UUID
-from ..observability.base import get_tracing_callbacks, get_tracing_metadata
 
 State = TypeVar("State")
 logger = structlog.get_logger(__name__)
@@ -364,9 +366,23 @@ def get_langgraph_service() -> LangGraphService:
     return _langgraph_service
 
 
-def inject_user_context(user, base_config: dict = None) -> dict:
-    """Inject user context into LangGraph configuration for user isolation"""
-    config = (base_config or {}).copy()
+def inject_user_context(
+    user: Any | None, base_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Inject user context into LangGraph configuration for user isolation.
+
+    Passes ALL user fields (including custom auth handler fields like
+    subscription_tier, team_id, etc.) to the graph config under
+    'langgraph_auth_user'.
+
+    Args:
+        user: User object with identity and optional extra fields
+        base_config: Base configuration to extend
+
+    Returns:
+        Configuration dict with user context injected
+    """
+    config: dict[str, Any] = (base_config or {}).copy()
     config["configurable"] = config.get("configurable", {})
 
     # All user-related data injection (only if user exists)
@@ -374,15 +390,16 @@ def inject_user_context(user, base_config: dict = None) -> dict:
         # Basic user identity for multi-tenant scoping
         config["configurable"].setdefault("user_id", user.identity)
         config["configurable"].setdefault(
-            "user_display_name", getattr(user, "display_name", user.identity)
+            "user_display_name", getattr(user, "display_name", None) or user.identity
         )
 
-        # Full auth payload for graph nodes
+        # Full auth payload for graph nodes - includes ALL fields from auth handler
         if "langgraph_auth_user" not in config["configurable"]:
             try:
-                config["configurable"]["langgraph_auth_user"] = user.to_dict()  # type: ignore[attr-defined]
+                # user.to_dict() returns all fields including extras from auth handlers
+                config["configurable"]["langgraph_auth_user"] = user.to_dict()
             except Exception:
-                # Fallback: minimal dict if to_dict unavailable
+                # Fallback: minimal dict if to_dict unavailable or fails
                 config["configurable"]["langgraph_auth_user"] = {
                     "identity": user.identity
                 }

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth_ctx import with_auth_ctx
 from ..core.auth_deps import get_current_user
+from ..core.auth_handlers import build_auth_context, handle_event
 from ..core.orm import Assistant as AssistantORM
 from ..core.orm import Run as RunORM
 from ..core.orm import Thread as ThreadORM
@@ -23,6 +24,7 @@ from ..core.orm import _get_session_maker, get_session
 from ..core.serializers import GeneralSerializer
 from ..core.sse import create_end_event, get_sse_headers
 from ..models import Run, RunCreate, RunStatus, User
+from ..services.broker import broker_manager
 from ..services.graph_streaming import stream_graph_events
 from ..services.langgraph_service import create_run_config, get_langgraph_service
 from ..services.streaming_service import streaming_service
@@ -32,7 +34,7 @@ from ..utils.run_utils import (
 )
 from ..utils.status_compat import validate_run_status
 
-router = APIRouter()
+router = APIRouter(tags=["Runs"])
 
 logger = structlog.getLogger(__name__)
 serializer = GeneralSerializer()
@@ -171,6 +173,21 @@ async def create_run(
     session: AsyncSession = Depends(get_session),
 ) -> Run:
     """Create and execute a new run (persisted)."""
+    # Authorization check (create_run action on threads resource)
+    ctx = build_auth_context(user, "threads", "create_run")
+    value = {**request.model_dump(), "thread_id": thread_id}
+    filters = await handle_event(ctx, value)
+
+    # If handler modified config/context, update request
+    if filters:
+        if "config" in filters:
+            request.config = {**(request.config or {}), **filters["config"]}
+        if "context" in filters:
+            request.context = {**(request.context or {}), **filters["context"]}
+    elif value.get("config"):
+        request.config = {**(request.config or {}), **value["config"]}
+    elif value.get("context"):
+        request.context = {**(request.context or {}), **value["context"]}
 
     # Validate resume command requirements early
     await _validate_resume_command(session, thread_id, request.command)
@@ -402,7 +419,10 @@ async def create_and_stream_run(
         stream_mode = config["stream_mode"]
 
     # Stream immediately from broker (which will also include replay of any early events)
-    cancel_on_disconnect = (request.on_disconnect or "continue").lower() == "cancel"
+    # Default to cancel on disconnect - this matches user expectation that clicking
+    # "Cancel" in the frontend will stop the backend task. Users can explicitly
+    # set on_disconnect="continue" if they want the task to continue.
+    cancel_on_disconnect = (request.on_disconnect or "cancel").lower() == "cancel"
 
     return StreamingResponse(
         streaming_service.stream_run_execution(
@@ -427,6 +447,11 @@ async def get_run(
     session: AsyncSession = Depends(get_session),
 ) -> Run:
     """Get run by ID (persisted)."""
+    # Authorization check (read action on runs resource)
+    ctx = build_auth_context(user, "runs", "read")
+    value = {"run_id": run_id, "thread_id": thread_id}
+    await handle_event(ctx, value)
+
     stmt = select(RunORM).where(
         RunORM.run_id == str(run_id),
         RunORM.thread_id == thread_id,
@@ -956,38 +981,68 @@ async def execute_run_async(
             with_auth_ctx(user, []),
         ):
             # Stream events using the graph_streaming service
-            async for event_type, event_data in stream_graph_events(
-                graph=graph,
-                input_data=execution_input,
-                config=run_config,
-                stream_mode=stream_mode_list,
-                context=context,
-                subgraphs=subgraphs,
-                on_checkpoint=lambda _: None,  # Can add checkpoint handling if needed
-                on_task_result=lambda _: None,  # Can add task result handling if needed
-            ):
-                # Increment event counter
-                event_counter += 1
-                event_id = f"{run_id}_event_{event_counter}"
+            try:
+                async for event_type, event_data in stream_graph_events(
+                    graph=graph,
+                    input_data=execution_input,
+                    config=run_config,
+                    stream_mode=stream_mode_list,
+                    context=context,
+                    subgraphs=subgraphs,
+                    on_checkpoint=lambda _: None,  # Can add checkpoint handling if needed
+                    on_task_result=lambda _: None,  # Can add task result handling if needed
+                ):
+                    try:
+                        # Increment event counter
+                        event_counter += 1
+                        event_id = f"{run_id}_event_{event_counter}"
 
-                # Create event tuple for broker/storage
-                event_tuple = (event_type, event_data)
+                        # Create event tuple for broker/storage
+                        event_tuple = (event_type, event_data)
 
-                # Forward to broker for live consumers (already filtered by graph_streaming)
-                await streaming_service.put_to_broker(run_id, event_id, event_tuple)
+                        # Forward to broker for live consumers (already filtered by graph_streaming)
+                        await streaming_service.put_to_broker(
+                            run_id, event_id, event_tuple
+                        )
 
-                # Store for replay (already filtered by graph_streaming)
-                await streaming_service.store_event_from_raw(
-                    run_id, event_id, event_tuple
+                        # Store for replay (already filtered by graph_streaming)
+                        await streaming_service.store_event_from_raw(
+                            run_id, event_id, event_tuple
+                        )
+
+                        # Check for interrupt
+                        if (
+                            isinstance(event_data, dict)
+                            and "__interrupt__" in event_data
+                        ):
+                            has_interrupt = True
+
+                        # Track final output from values events (handles both "values" and "values|namespace")
+                        if event_type.startswith("values"):
+                            final_output = event_data
+
+                    except Exception as event_error:
+                        # Error processing individual event - send error to frontend immediately
+                        logger.error(
+                            f"[execute_run_async] error processing event for run_id={run_id}: {event_error}"
+                        )
+                        error_type = type(event_error).__name__
+                        await streaming_service.signal_run_error(
+                            run_id, str(event_error), error_type
+                        )
+                        raise
+
+            except Exception as stream_error:
+                # Error during streaming (e.g., graph execution error)
+                # Send error to frontend before re-raising
+                logger.error(
+                    f"[execute_run_async] streaming error for run_id={run_id}: {stream_error}"
                 )
-
-                # Check for interrupt
-                if isinstance(event_data, dict) and "__interrupt__" in event_data:
-                    has_interrupt = True
-
-                # Track final output from values events (handles both "values" and "values|namespace")
-                if event_type.startswith("values"):
-                    final_output = event_data
+                error_type = type(stream_error).__name__
+                await streaming_service.signal_run_error(
+                    run_id, str(stream_error), error_type
+                )
+                raise
 
         if has_interrupt:
             await update_run_status(
@@ -1033,8 +1088,12 @@ async def execute_run_async(
             ) from None
         # Set thread status to "error" when run fails (matches API specification)
         await set_thread_status(session, thread_id, "error")
-        # Signal error to broker
-        await streaming_service.signal_run_error(run_id, str(e))
+        # Note: Error event already sent to broker in inner exception handler
+        # Only signal if broker still exists (cleanup not yet called)
+        broker = broker_manager.get_broker(run_id)
+        if broker and not broker.is_finished():
+            error_type = type(e).__name__
+            await streaming_service.signal_run_error(run_id, str(e), error_type)
         raise
     finally:
         # Clean up broker
@@ -1100,6 +1159,11 @@ async def delete_run(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    """Delete run by ID"""
+    # Authorization check (delete action on runs resource)
+    ctx = build_auth_context(user, "runs", "delete")
+    value = {"run_id": run_id, "thread_id": thread_id}
+    await handle_event(ctx, value)
     """
     Delete a run record.
 

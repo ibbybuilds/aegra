@@ -15,6 +15,9 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 
 - **[Main README](../README.md)** - Project overview and quick start
 - **[Contributing Guide](../CONTRIBUTING.md)** - How to contribute to Aegra
+- **[Configuration](configuration.md)** - Complete configuration reference for aegra.json
+- **[Authentication & Authorization](authentication.md)** - Configure authentication and authorization handlers
+- **[Custom Routes](custom-routes.md)** - Add custom FastAPI endpoints
 
 ## Observability
 

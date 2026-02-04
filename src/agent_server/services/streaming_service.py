@@ -167,17 +167,44 @@ class StreamingService:
 
         broker_manager.cleanup_broker(run_id)
 
-    async def signal_run_error(self, run_id: str, error_message: str):
-        """Signal that a run encountered an error"""
+    async def signal_run_error(
+        self, run_id: str, error_message: str, error_type: str = "Error"
+    ):
+        """Signal that a run encountered an error.
+
+        Sends a proper 'error' event to the broker and stores it for replay.
+        Also sends an 'end' event to signal stream completion.
+
+        Args:
+            run_id: The run ID.
+            error_message: Human-readable error message.
+            error_type: Error type/class name (e.g., "ValueError", "GraphRecursionError").
+        """
         counter = self.event_counters.get(run_id, 0) + 1
         self.event_counters[run_id] = counter
-        event_id = generate_event_id(run_id, counter)
+        error_event_id = generate_event_id(run_id, counter)
+
+        # Create structured error payload
+        error_payload = {"error": error_type, "message": error_message}
 
         broker = broker_manager.get_or_create_broker(run_id)
         if broker:
-            await broker.put(
-                event_id, ("end", {"status": "error", "error": error_message})
+            # Send dedicated error event (so frontend receives the error details)
+            await broker.put(error_event_id, ("error", error_payload))
+
+            # Store error event for replay support
+            await store_sse_event(
+                run_id,
+                error_event_id,
+                "error",
+                {"error": error_type, "message": error_message},
             )
+
+            # Send end event to signal stream completion
+            counter += 1
+            self.event_counters[run_id] = counter
+            end_event_id = generate_event_id(run_id, counter)
+            await broker.put(end_event_id, ("end", {"status": "error"}))
 
         broker_manager.cleanup_broker(run_id)
 
@@ -253,38 +280,61 @@ class StreamingService:
                     yield sse_event
                     last_sent_sequence = current_sequence
 
-    def _cancel_background_task(self, run_id: str):
-        """Cancel background task on disconnect"""
+    def _cancel_background_task(self, run_id: str) -> bool:
+        """Cancel the asyncio task for a run.
+
+        @param run_id: The ID of the run to cancel.
+        @return: True if task was cancelled, False otherwise.
+        """
         try:
             from ..api.runs import active_runs
 
             task = active_runs.get(run_id)
             if task and not task.done():
+                logger.info(f"Cancelling asyncio task for run {run_id}")
                 task.cancel()
+                return True
+            elif task and task.done():
+                logger.debug(f"Task for run {run_id} already completed")
+                return False
+            else:
+                logger.debug(f"No active task found for run {run_id}")
+                return False
         except Exception as e:
-            logger.warning(
-                f"Failed to cancel background task for run {run_id} on disconnect: {e}"
-            )
+            logger.warning(f"Failed to cancel background task for run {run_id}: {e}")
+            return False
 
     async def _convert_raw_to_sse(self, event_id: str, raw_event: Any) -> str | None:
         """Convert a raw event from broker to SSE format"""
         return self.event_converter.convert_raw_to_sse(event_id, raw_event)
 
     async def interrupt_run(self, run_id: str) -> bool:
-        """Interrupt a running execution"""
+        """Interrupt a running execution.
+
+        Cancels the asyncio task and signals interruption to broker.
+        The task's CancelledError handler will set status to 'interrupted'.
+        """
         try:
+            # Cancel the asyncio task first so it stops processing
+            self._cancel_background_task(run_id)
+            # Signal interruption to broker for any connected clients
             await self.signal_run_error(run_id, "Run was interrupted")
-            await self._update_run_status(run_id, "interrupted")
             return True
         except Exception as e:
             logger.error(f"Error interrupting run {run_id}: {e}")
             return False
 
     async def cancel_run(self, run_id: str) -> bool:
-        """Cancel a pending or running execution - uses standard status"""
+        """Cancel a pending or running execution.
+
+        Cancels the asyncio task and signals cancellation to broker.
+        The task's CancelledError handler will set status to 'interrupted'.
+        """
         try:
+            # Cancel the asyncio task first so it stops processing
+            self._cancel_background_task(run_id)
+            # Signal cancellation to broker for any connected clients
             await self.signal_run_cancelled(run_id)
-            await self._update_run_status(run_id, "interrupted")  # Standard status
             return True
         except Exception as e:
             logger.error(f"Error cancelling run {run_id}: {e}")

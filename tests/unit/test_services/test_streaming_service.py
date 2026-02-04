@@ -231,27 +231,83 @@ class TestStreamingService:
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
     async def test_signal_run_error(self) -> None:
-        """Test signalling run error"""
+        """Test signalling run error sends proper error event and stores it"""
         service = StreamingService()
         run_id = "run-123"
         error_msg = "Something went wrong"
+        error_type = "ValueError"
 
         mock_broker = AsyncMock()
 
-        with patch(
-            "agent_server.services.streaming_service.broker_manager"
-        ) as mock_manager:
+        with (
+            patch(
+                "agent_server.services.streaming_service.broker_manager"
+            ) as mock_manager,
+            patch(
+                "agent_server.services.streaming_service.store_sse_event",
+                new_callable=AsyncMock,
+            ) as mock_store,
+        ):
+            mock_manager.get_or_create_broker.return_value = mock_broker
+
+            await service.signal_run_error(run_id, error_msg, error_type)
+
+            # Should put error event first (not end event)
+            assert mock_broker.put.await_count >= 1
+            call_args_list = mock_broker.put.call_args_list
+
+            # First call should be error event
+            first_call = call_args_list[0]
+            event_type, event_data = first_call[0][1]
+            assert event_type == "error"
+            assert event_data["error"] == error_type
+            assert event_data["message"] == error_msg
+
+            # Should store error event for replay
+            mock_store.assert_awaited_once()
+            store_call = mock_store.call_args
+            assert store_call[0][0] == run_id  # run_id
+            assert store_call[0][2] == "error"  # event_type
+            assert store_call[0][3]["error"] == error_type
+            assert store_call[0][3]["message"] == error_msg
+
+            # Should also send end event
+            assert mock_broker.put.await_count >= 2
+            second_call = call_args_list[1]
+            end_event_type, end_event_data = second_call[0][1]
+            assert end_event_type == "end"
+            assert end_event_data["status"] == "error"
+
+            # Should cleanup broker
+            mock_manager.cleanup_broker.assert_called_with(run_id)
+
+    async def test_signal_run_error_default_type(self) -> None:
+        """Test signal_run_error with default error type"""
+        service = StreamingService()
+        run_id = "run-123"
+        error_msg = "Generic error"
+
+        mock_broker = AsyncMock()
+
+        with (
+            patch(
+                "agent_server.services.streaming_service.broker_manager"
+            ) as mock_manager,
+            patch(
+                "agent_server.services.streaming_service.store_sse_event",
+                new_callable=AsyncMock,
+            ),
+        ):
             mock_manager.get_or_create_broker.return_value = mock_broker
 
             await service.signal_run_error(run_id, error_msg)
 
-            # Should put end event with error
-            mock_broker.put.assert_awaited()
-            args = mock_broker.put.call_args
-            assert args[0][1] == ("end", {"status": "error", "error": error_msg})
-
-            # Should cleanup broker
-            mock_manager.cleanup_broker.assert_called_with(run_id)
+            # Should use default error type "Error"
+            call_args = mock_broker.put.call_args_list[0]
+            event_type, event_data = call_args[0][1]
+            assert event_type == "error"
+            assert event_data["error"] == "Error"
+            assert event_data["message"] == error_msg
 
     async def test_stream_run_execution(self) -> None:
         """Test overall streaming execution"""
@@ -359,34 +415,38 @@ class TestStreamingService:
             mock_task.cancel.assert_called_once()
 
     async def test_interrupt_run(self) -> None:
-        """Test run interruption"""
+        """Test run interruption cancels task and signals to broker"""
         service = StreamingService()
         run_id = "run-123"
 
         with (
+            patch.object(service, "_cancel_background_task") as mock_cancel,
             patch.object(service, "signal_run_error") as mock_signal,
-            patch.object(service, "_update_run_status") as mock_update,
         ):
             success = await service.interrupt_run(run_id)
 
             assert success is True
+            # Task should be cancelled first
+            mock_cancel.assert_called_once_with(run_id)
+            # Then signal interruption to broker
             mock_signal.assert_awaited_with(run_id, "Run was interrupted")
-            mock_update.assert_awaited_with(run_id, "interrupted")
 
     async def test_cancel_run(self) -> None:
-        """Test run cancellation"""
+        """Test run cancellation cancels task and signals to broker"""
         service = StreamingService()
         run_id = "run-123"
 
         with (
+            patch.object(service, "_cancel_background_task") as mock_cancel,
             patch.object(service, "signal_run_cancelled") as mock_signal,
-            patch.object(service, "_update_run_status") as mock_update,
         ):
             success = await service.cancel_run(run_id)
 
             assert success is True
+            # Task should be cancelled first
+            mock_cancel.assert_called_once_with(run_id)
+            # Then signal cancellation to broker
             mock_signal.assert_awaited_with(run_id)
-            mock_update.assert_awaited_with(run_id, "interrupted")
 
     async def test_is_run_streaming(self) -> None:
         """Test fetching if run is streaming"""

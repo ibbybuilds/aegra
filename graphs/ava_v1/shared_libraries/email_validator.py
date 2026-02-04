@@ -1,14 +1,22 @@
-"""Email validation module with tiered approach (Tier 1: Free checks only).
+"""Email validation module with tiered approach for cost optimization.
 
-This module provides cost-optimized email validation by running free checks first:
-1. Syntax validation (regex)
-2. Disposable domain blocklist check
-3. MX record validation (DNS lookup)
-4. Trusted provider whitelist (Gmail, Yahoo, etc.)
+This module provides cost-optimized email validation by running checks in order:
 
-Future tiers (not yet implemented):
-- Tier 2: CRM lookup for repeat customers
-- Tier 3: IPQS API for unknown domains from first-time customers
+Tier 1 - FREE checks (always run):
+    1. Syntax validation (regex)
+    2. Disposable domain blocklist check
+    3. Trusted provider whitelist (Gmail, Yahoo, etc.) → ACCEPT, skip Tier 2 & 3
+    4. MX record validation (DNS lookup)
+
+Tier 2 - CRM lookup (free, for unknown domains):
+    - Check if email exists in CRM (repeat customer)
+    - If customer exists → ACCEPT, skip Tier 3 (IPQS)
+    - If CRM unavailable → Continue to Tier 3
+
+Tier 3 - IPQS API (paid, only for unknown domains from new customers):
+    - Checks: honeypot, disposable, smtp_score, valid, spam_trap_score, recent_abuse
+    - Does NOT use fraud_score (too many false positives)
+    - If API unavailable → ACCEPT (free checks already passed)
 """
 
 import logging
@@ -21,6 +29,7 @@ from typing import Tuple
 import dns.resolver
 import httpx
 
+from ava_v1.shared_libraries.crm_client import check_existing_customer
 from ava_v1.shared_libraries.validation import _validate_email
 
 logger = logging.getLogger(__name__)
@@ -350,13 +359,18 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
     Tier 1 - FREE checks (always run):
         1. Syntax validation
         2. Disposable domain blocklist
-        3. Trusted provider whitelist → ACCEPT, skip IPQS
+        3. Trusted provider whitelist → ACCEPT, skip Tier 2 & 3
         4. MX record validation
 
-    Tier 2 - IPQS API (only for unknown domains that pass Tier 1):
+    Tier 2 - CRM lookup (free, for unknown domains):
+        - Check if email exists in CRM (repeat customer)
+        - If customer exists → ACCEPT, skip Tier 3 (IPQS)
+        - If CRM unavailable → Continue to Tier 3
+
+    Tier 3 - IPQS API (paid, only for unknown domains from new customers):
         - Checks: honeypot, disposable, smtp_score, valid, spam_trap_score, recent_abuse
         - Does NOT use fraud_score (too many false positives)
-        - If API fails → ACCEPT (free checks already passed)
+        - If API unavailable → ACCEPT (free checks already passed)
 
     Args:
         email: Email address to validate
@@ -393,9 +407,9 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
             "The email is from a temporary/disposable email service. Ask the user for a permanent email address they check regularly.",
         )
 
-    # Check 3: Trusted provider whitelist (skip IPQS)
+    # Check 3: Trusted provider whitelist (skip CRM and IPQS)
     if is_trusted_provider(domain):
-        logger.info(f"[EMAIL_VALIDATOR] ACCEPTED - trusted_provider, Domain: {domain}, IPQS: skipped")
+        logger.info(f"[EMAIL_VALIDATOR] ACCEPTED - trusted_provider, Domain: {domain}, CRM: skipped, IPQS: skipped")
         return (True, None)
 
     # Check 4: MX record validation
@@ -407,9 +421,20 @@ async def check_email_validity(email: str) -> Tuple[bool, str | None]:
         )
 
     # =========================================================================
-    # TIER 2: IPQS API (only for unknown domains)
+    # TIER 2: CRM LOOKUP (free, check if repeat customer)
     # =========================================================================
-    logger.info(f"[EMAIL_VALIDATOR] Tier 1 passed, calling IPQS for domain: {domain}")
+    logger.info(f"[EMAIL_VALIDATOR] Tier 1 passed, checking CRM for domain: {domain}")
+
+    is_repeat_customer = await check_existing_customer(email)
+
+    if is_repeat_customer:
+        logger.info(f"[EMAIL_VALIDATOR] ACCEPTED - crm_repeat_customer, Domain: {domain}, IPQS: skipped")
+        return (True, None)
+
+    # =========================================================================
+    # TIER 3: IPQS API (only for unknown domains from new customers)
+    # =========================================================================
+    logger.info(f"[EMAIL_VALIDATOR] Tier 2 passed (new customer), calling IPQS for domain: {domain}")
 
     ipqs_response = await validate_email_with_ipqs(email)
 

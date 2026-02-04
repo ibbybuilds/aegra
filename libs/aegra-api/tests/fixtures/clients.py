@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 def install_dummy_user_middleware(app: FastAPI) -> None:
     """Install middleware that injects a dummy user for testing"""
-    from aegra_api.fixtures.auth import DummyUser
+    from tests.fixtures.auth import DummyUser
 
     @app.middleware("http")
     async def inject_dummy_user(request, call_next):

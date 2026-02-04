@@ -198,6 +198,12 @@ async def validate_email_with_ipqs(email: str) -> dict | None:
         logger.warning("[IPQS] API key not configured")
         return None
 
+    # Normalize email to lowercase for consistent validation
+    email = email.strip().lower()
+    domain = email.split('@')[-1]
+
+    logger.info(f"[IPQS] Querying IPQS with full email (showing domain for privacy): {domain}")
+
     # URL-encode email for API call
     encoded_email = urllib.parse.quote(email, safe="")
     url = f"https://www.ipqualityscore.com/api/json/email/{api_key}/{encoded_email}"

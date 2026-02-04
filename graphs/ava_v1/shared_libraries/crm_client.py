@@ -110,7 +110,11 @@ async def check_existing_customer(email: str) -> bool:
         logger.warning("[CRM_CLIENT] CRM_JWT_SECRET not configured, skipping CRM lookup")
         return False
 
-    logger.info(f"[CRM_CLIENT] Checking if customer exists: {email.split('@')[-1]} (domain only for privacy)")
+    # Normalize email to lowercase for consistent matching
+    email = email.strip().lower()
+    domain = email.split('@')[-1]
+
+    logger.info(f"[CRM_CLIENT] Querying CRM with full email (showing domain for privacy): {domain}")
 
     try:
         # Generate JWT token

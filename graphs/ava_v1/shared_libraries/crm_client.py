@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 CRM_ENDPOINTS = {
     "LOCAL": "https://crm-git-dev-etc-incubator.vercel.app",
     "DEVELOPMENT": "https://crm-git-dev-etc-incubator.vercel.app",
-    "STAGING": "https://crm-env-qa-etc-incubator.vercel.app",
+    "STAGING": "https://crm-git-dev-etc-incubator.vercel.app",  # Uses DEV CRM (same data)
     "PRODUCTION": "https://crm-self-alpha.vercel.app",
 }
 

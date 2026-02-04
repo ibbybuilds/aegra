@@ -108,17 +108,17 @@ class ModelArmorMiddleware(AgentMiddleware):
         return None
 
     def _create_violation_response(
-        self, request: ModelRequest, message: str
+        self, request: ModelRequest
     ) -> ModelResponse:
         """Create a ModelResponse with a safe error message for policy violations.
 
         Args:
             request: Original ModelRequest
-            message: Safe error message to return to user
 
         Returns:
-            ModelResponse with AIMessage containing the error message
+            ModelResponse with AIMessage containing a simple, friendly error message
         """
+        message = "I'm sorry, I cannot assist with that request."
         return ModelResponse(
             result=[AIMessage(content=message)],
         )
@@ -171,10 +171,7 @@ class ModelArmorMiddleware(AgentMiddleware):
             logger.warning(
                 f"[MODEL_ARMOR] User prompt blocked: {e.filter_results.get('reason', 'Unknown')}"
             )
-            return self._create_violation_response(
-                request,
-                "Sorry, but I'm unable to process that request as it violates our content policy.",
-            )
+            return self._create_violation_response(request)
         except ModelArmorConfigError as e:
             # API error - fail closed by default (already logged in client)
             # Re-raise to abort request (don't call model)
@@ -199,10 +196,7 @@ class ModelArmorMiddleware(AgentMiddleware):
             logger.warning(
                 f"[MODEL_ARMOR] Model response blocked: {e.filter_results.get('reason', 'Unknown')}"
             )
-            return self._create_violation_response(
-                request,
-                "I apologize, but I cannot provide that information. How else can I assist you with your hotel reservation?",
-            )
+            return self._create_violation_response(request)
         except ModelArmorConfigError as e:
             # API error - fail closed by default (already logged in client)
             # Re-raise to abort response

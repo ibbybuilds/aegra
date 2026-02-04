@@ -95,7 +95,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18
     container_name: {slug}-postgres
     environment:
       POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}

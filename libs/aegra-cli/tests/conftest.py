@@ -143,7 +143,7 @@ def mock_compose_file(tmp_path: Path) -> Path:
 version: "3.8"
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18
 """
     )
     return compose_file

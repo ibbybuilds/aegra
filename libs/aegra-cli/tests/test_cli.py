@@ -504,7 +504,8 @@ class TestConfigDiscovery:
 
                 assert result.exit_code == 0
                 assert "Using config:" in result.output
-                assert "aegra.json" in result.output
+                # Check for path parts (Rich may wrap long paths across lines)
+                assert "aegra" in result.output and ".json" in result.output
 
     def test_dev_uses_specified_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command uses config specified with -c flag."""

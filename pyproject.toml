@@ -58,4 +58,5 @@ skips = [
     "B101",  # assert statements
     "B404",  # import subprocess (needed for CLI)
     "B603",  # subprocess without shell=True (needed for CLI)
+    "B607",  # partial executable path (needed for CLI to run docker, systemctl, etc.)
 ]

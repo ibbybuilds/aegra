@@ -11,6 +11,7 @@ from rich.table import Table
 
 from aegra_cli import __version__
 from aegra_cli.commands import db, init
+from aegra_cli.utils.docker import ensure_postgres_running
 
 console = Console()
 
@@ -67,12 +68,48 @@ def version():
     help="Application import path.",
     show_default=True,
 )
-def dev(host: str, port: int, app: str):
+@click.option(
+    "--no-db-check",
+    is_flag=True,
+    default=False,
+    help="Skip automatic PostgreSQL/Docker check.",
+)
+@click.option(
+    "--file",
+    "-f",
+    "compose_file",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to docker-compose.yml file for PostgreSQL.",
+)
+def dev(host: str, port: int, app: str, no_db_check: bool, compose_file: Path | None):
     """Run the development server with hot reload.
 
     Starts uvicorn with --reload flag for development.
     The server will automatically restart when code changes are detected.
+
+    By default, Aegra will check if Docker is running and start PostgreSQL
+    automatically if needed. Use --no-db-check to skip this behavior.
+
+    Examples:
+
+        aegra dev                    # Start with auto-PostgreSQL
+
+        aegra dev --no-db-check      # Start without database check
+
+        aegra dev -f ./docker-compose.prod.yml
     """
+    # Check and start PostgreSQL unless disabled
+    if not no_db_check:
+        console.print()
+        if not ensure_postgres_running(compose_file):
+            console.print(
+                "\n[bold red]Cannot start server without PostgreSQL.[/bold red]\n"
+                "[dim]Use --no-db-check to skip this check.[/dim]"
+            )
+            sys.exit(1)
+        console.print()
+
     console.print(
         Panel(
             f"[bold green]Starting Aegra development server[/bold green]\n\n"

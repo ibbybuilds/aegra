@@ -38,13 +38,17 @@ class TestVersion:
 
 
 class TestDevCommand:
-    """Tests for the dev command."""
+    """Tests for the dev command.
+
+    Note: Most tests use --no-db-check to skip automatic PostgreSQL/Docker checks,
+    allowing us to test the uvicorn command building in isolation.
+    """
 
     def test_dev_builds_correct_command(self, cli_runner: CliRunner) -> None:
         """Test that dev command builds the correct uvicorn command."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["dev"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
             # Verify subprocess.run was called
             mock_run.assert_called_once()
@@ -61,7 +65,7 @@ class TestDevCommand:
         """Test that dev command uses default host and port."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["dev"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
             call_args = mock_run.call_args[0][0]
             assert "--host" in call_args
@@ -76,7 +80,7 @@ class TestDevCommand:
         """Test that dev command accepts custom host."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["dev", "--host", "0.0.0.0"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--host", "0.0.0.0"])
 
             call_args = mock_run.call_args[0][0]
             host_idx = call_args.index("--host")
@@ -86,7 +90,7 @@ class TestDevCommand:
         """Test that dev command accepts custom port."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["dev", "--port", "3000"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--port", "3000"])
 
             call_args = mock_run.call_args[0][0]
             port_idx = call_args.index("--port")
@@ -96,7 +100,7 @@ class TestDevCommand:
         """Test that dev command accepts custom app path."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["dev", "--app", "myapp.main:app"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--app", "myapp.main:app"])
 
             call_args = mock_run.call_args[0][0]
             assert "myapp.main:app" in call_args
@@ -105,7 +109,7 @@ class TestDevCommand:
         """Test error handling when uvicorn is not installed."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.side_effect = FileNotFoundError("uvicorn not found")
-            result = cli_runner.invoke(cli, ["dev"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
             assert result.exit_code == 1
             assert "uvicorn is not installed" in result.output
@@ -114,7 +118,7 @@ class TestDevCommand:
         """Test handling of keyboard interrupt during dev server."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.side_effect = KeyboardInterrupt()
-            result = cli_runner.invoke(cli, ["dev"])
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
             assert result.exit_code == 0
             assert "Server stopped by user" in result.output
@@ -123,7 +127,9 @@ class TestDevCommand:
         """Test that dev command shows server info in output."""
         with patch("aegra_cli.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["dev", "--host", "0.0.0.0", "--port", "9000"])
+            result = cli_runner.invoke(
+                cli, ["dev", "--no-db-check", "--host", "0.0.0.0", "--port", "9000"]
+            )
 
             assert "0.0.0.0" in result.output
             assert "9000" in result.output

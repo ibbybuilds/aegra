@@ -59,6 +59,7 @@ jobs:
     if: inputs.package == 'aegra-api' || inputs.package == 'both'
     needs: [build-api]
     runs-on: ubuntu-latest
+    environment: release-api
     permissions:
       id-token: write  # Required for trusted publishing
 
@@ -122,6 +123,7 @@ jobs:
     needs: [build-cli]
     if: inputs.package == 'aegra-cli' || inputs.package == 'both'
     runs-on: ubuntu-latest
+    environment: release-cli
     permissions:
       id-token: write  # Required for trusted publishing
 

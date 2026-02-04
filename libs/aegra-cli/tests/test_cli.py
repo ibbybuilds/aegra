@@ -9,7 +9,13 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from aegra_cli.cli import cli, find_config_file
+from aegra_cli.cli import (
+    cli,
+    ensure_docker_compose_dev,
+    ensure_docker_files_prod,
+    find_config_file,
+    get_project_slug,
+)
 
 if TYPE_CHECKING:
     pass
@@ -552,3 +558,284 @@ class TestConfigDiscovery:
         assert result.exit_code == 0
         assert "--config" in result.output
         assert "-c" in result.output
+
+
+class TestGetProjectSlug:
+    """Tests for the get_project_slug helper function."""
+
+    def test_get_project_slug_from_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that get_project_slug reads name from config file."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            config_path = Path("aegra.json")
+            config_path.write_text('{"name": "My Test Project"}')
+            slug = get_project_slug(config_path)
+            assert slug == "my_test_project"
+
+    def test_get_project_slug_fallback_to_dirname(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that get_project_slug falls back to directory name."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            slug = get_project_slug(None)
+            # Falls back to current directory name
+            assert slug is not None
+            assert len(slug) > 0
+
+    def test_get_project_slug_invalid_json(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that get_project_slug handles invalid JSON gracefully."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            config_path = Path("aegra.json")
+            config_path.write_text("not valid json")
+            slug = get_project_slug(config_path)
+            # Should fall back to directory name
+            assert slug is not None
+
+    def test_get_project_slug_no_name_in_config(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that get_project_slug handles config without name field."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            config_path = Path("aegra.json")
+            config_path.write_text('{"graphs": {}}')
+            slug = get_project_slug(config_path)
+            # Should fall back to directory name
+            assert slug is not None
+
+
+class TestEnsureDockerFiles:
+    """Tests for ensure_docker_compose_dev and ensure_docker_files_prod."""
+
+    def test_ensure_docker_compose_dev_creates_file(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that ensure_docker_compose_dev creates the compose file."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            project_path = Path.cwd()
+            result = ensure_docker_compose_dev(project_path, "myapp")
+            assert result.exists()
+            assert result.name == "docker-compose.yml"
+            content = result.read_text()
+            assert "postgres" in content
+            assert "myapp-postgres" in content
+
+    def test_ensure_docker_compose_dev_skips_existing(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that ensure_docker_compose_dev doesn't overwrite existing file."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            project_path = Path.cwd()
+            compose_path = project_path / "docker-compose.yml"
+            compose_path.write_text("existing content")
+            result = ensure_docker_compose_dev(project_path, "myapp")
+            assert result.read_text() == "existing content"
+
+    def test_ensure_docker_files_prod_creates_files(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that ensure_docker_files_prod creates compose and Dockerfile."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            project_path = Path.cwd()
+            result = ensure_docker_files_prod(project_path, "myapp")
+            assert result.exists()
+            assert result.name == "docker-compose.prod.yml"
+
+            dockerfile = project_path / "Dockerfile"
+            assert dockerfile.exists()
+            assert "aegra" in dockerfile.read_text()
+
+    def test_ensure_docker_files_prod_skips_existing(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that ensure_docker_files_prod doesn't overwrite existing files."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            project_path = Path.cwd()
+            compose_path = project_path / "docker-compose.prod.yml"
+            compose_path.write_text("existing compose")
+            dockerfile_path = project_path / "Dockerfile"
+            dockerfile_path.write_text("existing dockerfile")
+
+            ensure_docker_files_prod(project_path, "myapp")
+
+            assert compose_path.read_text() == "existing compose"
+            assert dockerfile_path.read_text() == "existing dockerfile"
+
+
+class TestServeCommand:
+    """Tests for the serve command."""
+
+    def test_serve_help(self, cli_runner: CliRunner) -> None:
+        """Test that serve --help shows all options."""
+        result = cli_runner.invoke(cli, ["serve", "--help"])
+        assert result.exit_code == 0
+        assert "--host" in result.output
+        assert "--port" in result.output
+        assert "--workers" in result.output
+        assert "-w" in result.output
+        assert "--config" in result.output
+
+    def test_serve_fails_without_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that serve fails when no config file is found."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["serve"])
+            assert result.exit_code == 1
+            assert "Could not find aegra.json" in result.output
+
+    def test_serve_runs_uvicorn(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that serve runs uvicorn with correct arguments."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["serve"])
+
+                assert result.exit_code == 0
+                mock_run.assert_called_once()
+                cmd = mock_run.call_args[0][0]
+                assert "uvicorn" in cmd
+                assert "--host" in cmd
+                assert "0.0.0.0" in cmd
+                assert "--port" in cmd
+                assert "8000" in cmd
+                # No --reload flag (production mode)
+                assert "--reload" not in cmd
+
+    def test_serve_with_workers(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that serve passes workers flag when > 1."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["serve", "-w", "4"])
+
+                assert result.exit_code == 0
+                cmd = mock_run.call_args[0][0]
+                assert "--workers" in cmd
+                assert "4" in cmd
+
+    def test_serve_uvicorn_not_installed(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test error handling when uvicorn is not installed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.side_effect = FileNotFoundError("uvicorn not found")
+                result = cli_runner.invoke(cli, ["serve"])
+
+                assert result.exit_code == 1
+                assert "uvicorn is not installed" in result.output
+
+
+class TestUpCommandExtended:
+    """Extended tests for the up command with new features."""
+
+    def test_up_with_dev_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that up --dev uses development compose."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up", "--dev"])
+
+                assert result.exit_code == 0
+                assert "development" in result.output
+                cmd = mock_run.call_args[0][0]
+                # Should use docker-compose.yml, not docker-compose.prod.yml
+                assert "docker-compose.yml" in " ".join(cmd)
+                # Should not have --build flag in dev mode
+                assert "--build" not in cmd
+
+    def test_up_with_no_build_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that up --no-build skips building."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up", "--no-build"])
+
+                assert result.exit_code == 0
+                cmd = mock_run.call_args[0][0]
+                assert "--build" not in cmd
+
+    def test_up_auto_generates_prod_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that up auto-generates production Docker files."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up"])
+
+                assert result.exit_code == 0
+                # Files should be created
+                assert Path("docker-compose.prod.yml").exists()
+                assert Path("Dockerfile").exists()
+
+    def test_up_auto_generates_dev_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that up --dev auto-generates development Docker files."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up", "--dev"])
+
+                assert result.exit_code == 0
+                assert Path("docker-compose.yml").exists()
+
+    def test_up_nonexistent_custom_file(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that up fails with nonexistent custom compose file."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["up", "-f", "nonexistent.yml"])
+            assert result.exit_code == 1
+            assert "not found" in result.output
+
+
+class TestDownCommandExtended:
+    """Extended tests for the down command with new features."""
+
+    def test_down_with_all_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that down --all stops both dev and prod services."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            # Create both compose files
+            Path("docker-compose.yml").write_text("services: {}")
+            Path("docker-compose.prod.yml").write_text("services: {}")
+
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["down", "--all"])
+
+                assert result.exit_code == 0
+                # Should be called twice (once for each compose file)
+                assert mock_run.call_count == 2
+
+    def test_down_prefers_prod_over_dev(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that down prefers prod compose file when both exist."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("docker-compose.yml").write_text("services: {}")
+            Path("docker-compose.prod.yml").write_text("services: {}")
+
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["down"])
+
+                assert result.exit_code == 0
+                # Should only be called once (prod file)
+                assert mock_run.call_count == 1
+                cmd = mock_run.call_args[0][0]
+                assert "docker-compose.prod.yml" in " ".join(cmd)
+
+    def test_down_falls_back_to_dev(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that down falls back to dev compose when no prod exists."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("docker-compose.yml").write_text("services: {}")
+
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["down"])
+
+                assert result.exit_code == 0
+                cmd = mock_run.call_args[0][0]
+                assert "docker-compose.yml" in " ".join(cmd)
+
+    def test_down_no_compose_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that down handles missing compose files gracefully."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["down"])
+            assert result.exit_code == 0
+            assert "No docker-compose files found" in result.output

@@ -145,6 +145,33 @@ class TestDevCommand:
             assert "0.0.0.0" in result.output
             assert "9000" in result.output
 
+    def test_dev_with_env_file(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command loads .env file when specified."""
+        # Create a test .env file
+        env_file = tmp_path / ".env"
+        env_file.write_text("POSTGRES_USER=testuser\nPOSTGRES_DB=testdb\n")
+
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--env-file", str(env_file)])
+
+            assert result.exit_code == 0
+            assert "Loaded environment from" in result.output
+            # Check that .env is mentioned (path may be wrapped by Rich)
+            assert ".env" in result.output
+
+    def test_dev_with_env_file_short_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command accepts -e short flag for env file."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("TEST_VAR=value\n")
+
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "-e", str(env_file)])
+
+            assert result.exit_code == 0
+            assert "Loaded environment from" in result.output
+
 
 class TestUpCommand:
     """Tests for the up command."""
@@ -350,6 +377,8 @@ class TestCLIHelp:
         assert "--host" in result.output
         assert "--port" in result.output
         assert "--app" in result.output
+        assert "--env-file" in result.output
+        assert "-e" in result.output
 
     def test_up_help(self, cli_runner: CliRunner) -> None:
         """Test that up command shows help."""

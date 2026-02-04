@@ -49,6 +49,52 @@ def version():
     console.print()
 
 
+def load_env_file(env_file: Path | None) -> Path | None:
+    """Load environment variables from a .env file.
+
+    Args:
+        env_file: Path to .env file, or None to use default (.env in cwd)
+
+    Returns:
+        Path to the loaded .env file, or None if not found
+    """
+    import os
+
+    # Determine which file to load
+    if env_file is not None:
+        target = env_file
+    else:
+        # Default: look for .env in current directory
+        target = Path.cwd() / ".env"
+
+    if not target.exists():
+        return None
+
+    # Load the .env file into environment
+    # Simple parser - handles KEY=value format
+    with open(target, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            # Skip empty lines and comments
+            if not line or line.startswith("#"):
+                continue
+            # Parse KEY=value (handle = in value)
+            if "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Remove surrounding quotes if present
+                if (value.startswith('"') and value.endswith('"')) or (
+                    value.startswith("'") and value.endswith("'")
+                ):
+                    value = value[1:-1]
+                # Only set if not already in environment (env vars take precedence)
+                if key and key not in os.environ:
+                    os.environ[key] = value
+
+    return target
+
+
 @cli.command()
 @click.option(
     "--host",
@@ -70,6 +116,14 @@ def version():
     show_default=True,
 )
 @click.option(
+    "--env-file",
+    "-e",
+    "env_file",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to .env file (default: .env in current directory).",
+)
+@click.option(
     "--no-db-check",
     is_flag=True,
     default=False,
@@ -83,7 +137,14 @@ def version():
     type=click.Path(exists=True, path_type=Path),
     help="Path to docker-compose.yml file for PostgreSQL.",
 )
-def dev(host: str, port: int, app: str, no_db_check: bool, compose_file: Path | None):
+def dev(
+    host: str,
+    port: int,
+    app: str,
+    env_file: Path | None,
+    no_db_check: bool,
+    compose_file: Path | None,
+):
     """Run the development server with hot reload.
 
     Starts uvicorn with --reload flag for development.
@@ -94,12 +155,22 @@ def dev(host: str, port: int, app: str, no_db_check: bool, compose_file: Path | 
 
     Examples:
 
-        aegra dev                    # Start with auto-PostgreSQL
+        aegra dev                        # Start with auto-PostgreSQL
 
-        aegra dev --no-db-check      # Start without database check
+        aegra dev -e /path/to/.env       # Use specific .env file
+
+        aegra dev --no-db-check          # Start without database check
 
         aegra dev -f ./docker-compose.prod.yml
     """
+    # Load environment variables from .env file
+    loaded_env = load_env_file(env_file)
+    if loaded_env:
+        console.print(f"[dim]Loaded environment from: {loaded_env}[/dim]")
+    elif env_file is not None:
+        # User specified a file but it doesn't exist (shouldn't happen due to click validation)
+        console.print(f"[yellow]Warning: .env file not found: {env_file}[/yellow]")
+
     # Check and start PostgreSQL unless disabled
     if not no_db_check:
         console.print()
@@ -111,13 +182,20 @@ def dev(host: str, port: int, app: str, no_db_check: bool, compose_file: Path | 
             sys.exit(1)
         console.print()
 
+    # Build info panel content
+    info_lines = [
+        "[bold green]Starting Aegra development server[/bold green]\n",
+        f"[cyan]Host:[/cyan] {host}",
+        f"[cyan]Port:[/cyan] {port}",
+        f"[cyan]App:[/cyan] {app}",
+    ]
+    if loaded_env:
+        info_lines.append(f"[cyan]Env:[/cyan] {loaded_env}")
+    info_lines.append("\n[dim]Press Ctrl+C to stop the server[/dim]")
+
     console.print(
         Panel(
-            f"[bold green]Starting Aegra development server[/bold green]\n\n"
-            f"[cyan]Host:[/cyan] {host}\n"
-            f"[cyan]Port:[/cyan] {port}\n"
-            f"[cyan]App:[/cyan] {app}\n\n"
-            f"[dim]Press Ctrl+C to stop the server[/dim]",
+            "\n".join(info_lines),
             title="[bold]Aegra Dev Server[/bold]",
             border_style="green",
         )

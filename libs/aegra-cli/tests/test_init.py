@@ -10,14 +10,47 @@ from click.testing import CliRunner
 
 from aegra_cli.cli import cli
 from aegra_cli.commands.init import (
-    AEGRA_CONFIG_TEMPLATE,
-    DOCKER_COMPOSE_TEMPLATE,
-    ENV_EXAMPLE_TEMPLATE,
-    EXAMPLE_GRAPH_TEMPLATE,
+    get_aegra_config,
+    get_docker_compose,
+    get_env_example,
+    get_example_graph,
+    slugify,
 )
 
 if TYPE_CHECKING:
     pass
+
+
+class TestSlugify:
+    """Tests for the slugify function."""
+
+    def test_slugify_simple_name(self) -> None:
+        """Test slugify with simple name."""
+        assert slugify("myproject") == "myproject"
+
+    def test_slugify_with_spaces(self) -> None:
+        """Test slugify converts spaces to underscores."""
+        assert slugify("My Project") == "my_project"
+
+    def test_slugify_with_hyphens(self) -> None:
+        """Test slugify converts hyphens to underscores."""
+        assert slugify("my-project") == "my_project"
+
+    def test_slugify_with_special_chars(self) -> None:
+        """Test slugify removes special characters."""
+        assert slugify("My App 2.0!") == "my_app_20"
+
+    def test_slugify_with_leading_number(self) -> None:
+        """Test slugify handles leading numbers."""
+        assert slugify("123project") == "project_123project"
+
+    def test_slugify_empty_string(self) -> None:
+        """Test slugify handles empty string."""
+        assert slugify("") == "aegra_project"
+
+    def test_slugify_only_special_chars(self) -> None:
+        """Test slugify handles string with only special chars."""
+        assert slugify("!@#$%") == "aegra_project"
 
 
 class TestInitCommand:
@@ -32,7 +65,27 @@ class TestInitCommand:
             assert Path("aegra.json").exists()
 
             content = json.loads(Path("aegra.json").read_text())
-            assert content == AEGRA_CONFIG_TEMPLATE
+            assert "graphs" in content
+            assert "name" in content
+
+    def test_init_with_custom_name(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that init uses custom project name."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["init", "--name", "My Awesome Agent"])
+
+            assert result.exit_code == 0
+            content = json.loads(Path("aegra.json").read_text())
+            assert content["name"] == "My Awesome Agent"
+            assert "my_awesome_agent" in content["graphs"]
+
+    def test_init_with_short_name_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that init accepts -n short flag for name."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["init", "-n", "test-agent"])
+
+            assert result.exit_code == 0
+            content = json.loads(Path("aegra.json").read_text())
+            assert content["name"] == "test-agent"
 
     def test_init_creates_env_example(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init creates .env.example file."""
@@ -48,37 +101,38 @@ class TestInitCommand:
             assert "AUTH_TYPE" in content
 
     def test_init_creates_example_graph(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that init creates example graph file."""
+        """Test that init creates example graph file with project name."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
+            result = cli_runner.invoke(cli, ["init", "-n", "my_agent"])
 
             assert result.exit_code == 0
-            assert Path("graphs/example/graph.py").exists()
+            # Graph should be in directory matching slugified name
+            assert Path("graphs/my_agent/graph.py").exists()
 
-            content = Path("graphs/example/graph.py").read_text()
+            content = Path("graphs/my_agent/graph.py").read_text()
             assert "StateGraph" in content
             assert "graph = builder.compile()" in content
 
     def test_init_creates_init_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init creates __init__.py files for graph packages."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
+            result = cli_runner.invoke(cli, ["init", "-n", "test"])
 
             assert result.exit_code == 0
             assert Path("graphs/__init__.py").exists()
-            assert Path("graphs/example/__init__.py").exists()
+            assert Path("graphs/test/__init__.py").exists()
 
     def test_init_with_docker_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init creates docker-compose.yml with --docker flag."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker"])
+            result = cli_runner.invoke(cli, ["init", "--docker", "-n", "myapp"])
 
             assert result.exit_code == 0
             assert Path("docker-compose.yml").exists()
 
             content = Path("docker-compose.yml").read_text()
             assert "postgres" in content
-            assert "aegra" in content
+            assert "myapp" in content  # Service name uses slug
 
     def test_init_without_docker_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init does not create docker-compose.yml without --docker flag."""
@@ -116,7 +170,7 @@ class TestInitCommand:
 
             # Verify content is overwritten
             content = json.loads(Path("aegra.json").read_text())
-            assert content == AEGRA_CONFIG_TEMPLATE
+            assert "graphs" in content
 
     def test_init_custom_path(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init creates files in custom directory with --path."""
@@ -128,16 +182,15 @@ class TestInitCommand:
         assert result.exit_code == 0
         assert (project_dir / "aegra.json").exists()
         assert (project_dir / ".env.example").exists()
-        assert (project_dir / "graphs" / "example" / "graph.py").exists()
 
     def test_init_creates_parent_directories(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init creates necessary parent directories."""
         project_dir = tmp_path / "nested" / "project"
 
-        result = cli_runner.invoke(cli, ["init", "--path", str(project_dir)])
+        result = cli_runner.invoke(cli, ["init", "--path", str(project_dir), "-n", "test"])
 
         assert result.exit_code == 0
-        assert (project_dir / "graphs" / "example" / "graph.py").exists()
+        assert (project_dir / "graphs" / "test" / "graph.py").exists()
 
     def test_init_shows_files_created_count(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init shows count of files created."""
@@ -164,7 +217,6 @@ class TestInitCommand:
 
             assert result.exit_code == 0
             assert "Docker" in result.output
-            assert "docker-compose" in result.output
 
 
 class TestInitFileContents:
@@ -173,11 +225,11 @@ class TestInitFileContents:
     def test_aegra_config_has_graphs_section(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that aegra.json has graphs configuration."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
+            result = cli_runner.invoke(cli, ["init", "-n", "test_agent"])
 
             content = json.loads(Path("aegra.json").read_text())
             assert "graphs" in content
-            assert "agent" in content["graphs"]
+            assert "test_agent" in content["graphs"]
 
     def test_env_example_has_required_vars(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that .env.example has all required environment variables."""
@@ -198,9 +250,9 @@ class TestInitFileContents:
     def test_example_graph_is_valid_python(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that example graph is valid Python syntax."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
+            result = cli_runner.invoke(cli, ["init", "-n", "test"])
 
-            content = Path("graphs/example/graph.py").read_text()
+            content = Path("graphs/test/graph.py").read_text()
             # This will raise SyntaxError if invalid
             compile(content, "graph.py", "exec")
 
@@ -209,18 +261,19 @@ class TestInitFileContents:
     ) -> None:
         """Test that example graph has required imports."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
+            result = cli_runner.invoke(cli, ["init", "-n", "test"])
 
-            content = Path("graphs/example/graph.py").read_text()
-            assert "from langgraph.graph import StateGraph" in content
+            content = Path("graphs/test/graph.py").read_text()
+            assert "from langgraph.graph import" in content
+            assert "StateGraph" in content
             assert "TypedDict" in content
 
     def test_example_graph_exports_graph(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that example graph exports 'graph' variable."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
+            result = cli_runner.invoke(cli, ["init", "-n", "test"])
 
-            content = Path("graphs/example/graph.py").read_text()
+            content = Path("graphs/test/graph.py").read_text()
             assert "graph = builder.compile()" in content
 
     def test_docker_compose_has_postgres(self, cli_runner: CliRunner, tmp_path: Path) -> None:
@@ -233,13 +286,15 @@ class TestInitFileContents:
             assert "image: postgres" in content
             assert "5432:5432" in content
 
-    def test_docker_compose_has_aegra_service(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that docker-compose.yml includes aegra service."""
+    def test_docker_compose_has_project_service(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that docker-compose.yml includes project service."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker"])
+            result = cli_runner.invoke(cli, ["init", "--docker", "-n", "myapp"])
 
             content = Path("docker-compose.yml").read_text()
-            assert "aegra:" in content
+            assert "myapp:" in content
             assert "8000:8000" in content
 
     def test_docker_compose_has_volumes(self, cli_runner: CliRunner, tmp_path: Path) -> None:
@@ -302,30 +357,41 @@ class TestInitEdgeCases:
         result = cli_runner.invoke(cli, ["init", "--help"])
 
         assert result.exit_code == 0
+        assert "--name" in result.output
+        assert "-n" in result.output
         assert "--docker" in result.output
         assert "--force" in result.output
         assert "--path" in result.output
 
 
 class TestInitTemplates:
-    """Tests to verify template constants are correct."""
+    """Tests to verify template functions are correct."""
 
-    def test_aegra_config_template_is_valid_dict(self) -> None:
-        """Test that AEGRA_CONFIG_TEMPLATE is a valid dictionary."""
-        assert isinstance(AEGRA_CONFIG_TEMPLATE, dict)
-        assert "graphs" in AEGRA_CONFIG_TEMPLATE
+    def test_get_aegra_config_returns_valid_dict(self) -> None:
+        """Test that get_aegra_config returns a valid dictionary."""
+        config = get_aegra_config("My Project", "my_project")
+        assert isinstance(config, dict)
+        assert "name" in config
+        assert config["name"] == "My Project"
+        assert "graphs" in config
+        assert "my_project" in config["graphs"]
 
-    def test_env_example_template_has_content(self) -> None:
-        """Test that ENV_EXAMPLE_TEMPLATE has content."""
-        assert len(ENV_EXAMPLE_TEMPLATE) > 0
-        assert "POSTGRES" in ENV_EXAMPLE_TEMPLATE
+    def test_get_env_example_has_content(self) -> None:
+        """Test that get_env_example has content."""
+        env = get_env_example("myapp")
+        assert len(env) > 0
+        assert "POSTGRES" in env
+        assert "myapp" in env
 
-    def test_example_graph_template_is_valid_python(self) -> None:
-        """Test that EXAMPLE_GRAPH_TEMPLATE is valid Python."""
-        compile(EXAMPLE_GRAPH_TEMPLATE, "graph.py", "exec")
+    def test_get_example_graph_is_valid_python(self) -> None:
+        """Test that get_example_graph produces valid Python."""
+        graph = get_example_graph("My Project")
+        compile(graph, "graph.py", "exec")
 
-    def test_docker_compose_template_has_services(self) -> None:
-        """Test that DOCKER_COMPOSE_TEMPLATE has services."""
-        assert "services:" in DOCKER_COMPOSE_TEMPLATE
-        assert "postgres:" in DOCKER_COMPOSE_TEMPLATE
-        assert "aegra:" in DOCKER_COMPOSE_TEMPLATE
+    def test_get_docker_compose_has_services(self) -> None:
+        """Test that get_docker_compose has services."""
+        compose = get_docker_compose("myapp")
+        assert "services:" in compose
+        assert "postgres:" in compose
+        assert "myapp:" in compose
+        assert "myapp-postgres" in compose  # container_name

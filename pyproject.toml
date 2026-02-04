@@ -54,4 +54,8 @@ ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "libs/aegra-api/.venv", "libs/aegra-cli/.venv"]
-skips = ["B101"]  # assert statements
+skips = [
+    "B101",  # assert statements
+    "B404",  # import subprocess (needed for CLI)
+    "B603",  # subprocess without shell=True (needed for CLI)
+]

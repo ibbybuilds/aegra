@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from aegra_cli.cli import cli
+from aegra_cli.cli import cli, find_config_file
 
 if TYPE_CHECKING:
     pass
@@ -51,126 +51,153 @@ class TestDevCommand:
 
     Note: Most tests use --no-db-check to skip automatic PostgreSQL/Docker checks,
     allowing us to test the uvicorn command building in isolation.
+    All tests create an aegra.json file since dev command requires a config.
     """
 
-    def test_dev_builds_correct_command(self, cli_runner: CliRunner) -> None:
+    def test_dev_builds_correct_command(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command builds the correct uvicorn command."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            # Verify subprocess.Popen was called
-            mock_popen.assert_called_once()
-            call_args = mock_popen.call_args[0][0]
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
-            # Check command structure
-            assert call_args[0] == sys.executable
-            assert "-m" in call_args
-            assert "uvicorn" in call_args
-            assert "aegra_api.main:app" in call_args
-            assert "--reload" in call_args
+                # Verify subprocess.Popen was called
+                mock_popen.assert_called_once()
+                call_args = mock_popen.call_args[0][0]
 
-    def test_dev_default_host_and_port(self, cli_runner: CliRunner) -> None:
+                # Check command structure
+                assert call_args[0] == sys.executable
+                assert "-m" in call_args
+                assert "uvicorn" in call_args
+                assert "aegra_api.main:app" in call_args
+                assert "--reload" in call_args
+
+    def test_dev_default_host_and_port(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command uses default host and port."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            call_args = mock_popen.call_args[0][0]
-            assert "--host" in call_args
-            host_idx = call_args.index("--host")
-            assert call_args[host_idx + 1] == "127.0.0.1"
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
-            assert "--port" in call_args
-            port_idx = call_args.index("--port")
-            assert call_args[port_idx + 1] == "8000"
+                call_args = mock_popen.call_args[0][0]
+                assert "--host" in call_args
+                host_idx = call_args.index("--host")
+                assert call_args[host_idx + 1] == "127.0.0.1"
 
-    def test_dev_custom_host(self, cli_runner: CliRunner) -> None:
+                assert "--port" in call_args
+                port_idx = call_args.index("--port")
+                assert call_args[port_idx + 1] == "8000"
+
+    def test_dev_custom_host(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command accepts custom host."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--host", "0.0.0.0"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            call_args = mock_popen.call_args[0][0]
-            host_idx = call_args.index("--host")
-            assert call_args[host_idx + 1] == "0.0.0.0"
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--host", "0.0.0.0"])
 
-    def test_dev_custom_port(self, cli_runner: CliRunner) -> None:
+                call_args = mock_popen.call_args[0][0]
+                host_idx = call_args.index("--host")
+                assert call_args[host_idx + 1] == "0.0.0.0"
+
+    def test_dev_custom_port(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command accepts custom port."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--port", "3000"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            call_args = mock_popen.call_args[0][0]
-            port_idx = call_args.index("--port")
-            assert call_args[port_idx + 1] == "3000"
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--port", "3000"])
 
-    def test_dev_custom_app(self, cli_runner: CliRunner) -> None:
+                call_args = mock_popen.call_args[0][0]
+                port_idx = call_args.index("--port")
+                assert call_args[port_idx + 1] == "3000"
+
+    def test_dev_custom_app(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command accepts custom app path."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--app", "myapp.main:app"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            call_args = mock_popen.call_args[0][0]
-            assert "myapp.main:app" in call_args
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--app", "myapp.main:app"])
 
-    def test_dev_uvicorn_not_installed(self, cli_runner: CliRunner) -> None:
+                call_args = mock_popen.call_args[0][0]
+                assert "myapp.main:app" in call_args
+
+    def test_dev_uvicorn_not_installed(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test error handling when uvicorn is not installed."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.side_effect = FileNotFoundError("uvicorn not found")
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            assert result.exit_code == 1
-            assert "uvicorn is not installed" in result.output
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.side_effect = FileNotFoundError("uvicorn not found")
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
-    def test_dev_keyboard_interrupt(self, cli_runner: CliRunner) -> None:
+                assert result.exit_code == 1
+                assert "uvicorn is not installed" in result.output
+
+    def test_dev_keyboard_interrupt(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test handling of keyboard interrupt during dev server."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_process = create_mock_popen(0)
-            mock_process.wait.side_effect = KeyboardInterrupt()
-            mock_popen.return_value = mock_process
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            assert result.exit_code == 0
-            assert "Server stopped by user" in result.output
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_process = create_mock_popen(0)
+                mock_process.wait.side_effect = KeyboardInterrupt()
+                mock_popen.return_value = mock_process
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
-    def test_dev_shows_server_info(self, cli_runner: CliRunner) -> None:
+                assert result.exit_code == 0
+                assert "Server stopped by user" in result.output
+
+    def test_dev_shows_server_info(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command shows server info in output."""
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(
-                cli, ["dev", "--no-db-check", "--host", "0.0.0.0", "--port", "9000"]
-            )
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            assert "0.0.0.0" in result.output
-            assert "9000" in result.output
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(
+                    cli, ["dev", "--no-db-check", "--host", "0.0.0.0", "--port", "9000"]
+                )
+
+                assert "0.0.0.0" in result.output
+                assert "9000" in result.output
 
     def test_dev_with_env_file(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command loads .env file when specified."""
-        # Create a test .env file
-        env_file = tmp_path / ".env"
-        env_file.write_text("POSTGRES_USER=testuser\nPOSTGRES_DB=testdb\n")
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            # Create a test .env file
+            Path(".env").write_text("POSTGRES_USER=testuser\nPOSTGRES_DB=testdb\n")
 
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--env-file", str(env_file)])
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--env-file", ".env"])
 
-            assert result.exit_code == 0
-            assert "Loaded environment from" in result.output
-            # Check that .env is mentioned (path may be wrapped by Rich)
-            assert ".env" in result.output
+                assert result.exit_code == 0
+                assert "Loaded environment from" in result.output
+                # Check that .env is mentioned (path may be wrapped by Rich)
+                assert ".env" in result.output
 
     def test_dev_with_env_file_short_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command accepts -e short flag for env file."""
-        env_file = tmp_path / ".env"
-        env_file.write_text("TEST_VAR=value\n")
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("TEST_VAR=value\n")
 
-        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = create_mock_popen(0)
-            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "-e", str(env_file)])
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "-e", ".env"])
 
-            assert result.exit_code == 0
-            assert "Loaded environment from" in result.output
+                assert result.exit_code == 0
+                assert "Loaded environment from" in result.output
 
 
 class TestUpCommand:
@@ -418,3 +445,109 @@ class TestCLIEdgeCases:
         """Test that down command handles nonexistent compose file."""
         result = cli_runner.invoke(cli, ["down", "-f", "/nonexistent/docker-compose.yml"])
         assert result.exit_code != 0
+
+
+class TestConfigDiscovery:
+    """Tests for config file auto-discovery."""
+
+    def test_find_config_file_aegra_json(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that find_config_file finds aegra.json in current directory."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            result = find_config_file()
+            assert result is not None
+            assert result.name == "aegra.json"
+
+    def test_find_config_file_langgraph_json(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that find_config_file finds langgraph.json as fallback."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("langgraph.json").write_text('{"graphs": {}}')
+
+            result = find_config_file()
+            assert result is not None
+            assert result.name == "langgraph.json"
+
+    def test_find_config_file_prefers_aegra(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that find_config_file prefers aegra.json over langgraph.json."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path("langgraph.json").write_text('{"graphs": {}}')
+
+            result = find_config_file()
+            assert result is not None
+            assert result.name == "aegra.json"
+
+    def test_find_config_file_not_found(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that find_config_file returns None when no config found."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = find_config_file()
+            assert result is None
+
+    def test_dev_fails_without_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command fails when no config file is found."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+
+            assert result.exit_code == 1
+            assert "Could not find aegra.json" in result.output
+
+    def test_dev_uses_discovered_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command uses auto-discovered config."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            # Create aegra.json
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+
+                assert result.exit_code == 0
+                assert "Using config:" in result.output
+                assert "aegra.json" in result.output
+
+    def test_dev_uses_specified_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command uses config specified with -c flag."""
+        # Create config file outside the isolated filesystem
+        config_file = tmp_path / "custom" / "aegra.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text('{"graphs": {}}')
+
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "-c", str(config_file)])
+
+            assert result.exit_code == 0
+            assert "Using config:" in result.output
+            assert "aegra.json" in result.output
+
+    def test_dev_sets_aegra_config_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command sets AEGRA_CONFIG environment variable."""
+        import os
+
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            # Clear any existing AEGRA_CONFIG
+            original = os.environ.pop("AEGRA_CONFIG", None)
+            try:
+                with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+                    mock_popen.return_value = create_mock_popen(0)
+                    result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+
+                    # The env var should have been set before Popen was called
+                    assert "AEGRA_CONFIG" in os.environ
+                    assert os.environ["AEGRA_CONFIG"].endswith("aegra.json")
+            finally:
+                # Restore original
+                if original:
+                    os.environ["AEGRA_CONFIG"] = original
+                else:
+                    os.environ.pop("AEGRA_CONFIG", None)
+
+    def test_dev_help_shows_config_option(self, cli_runner: CliRunner) -> None:
+        """Test that dev --help shows the config option."""
+        result = cli_runner.invoke(cli, ["dev", "--help"])
+        assert result.exit_code == 0
+        assert "--config" in result.output
+        assert "-c" in result.output

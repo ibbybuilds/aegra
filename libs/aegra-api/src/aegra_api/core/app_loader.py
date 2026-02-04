@@ -10,7 +10,7 @@ from fastapi import FastAPI
 logger = structlog.get_logger(__name__)
 
 
-def load_custom_app(app_import: str) -> FastAPI | None:
+def load_custom_app(app_import: str, base_dir: Path | None = None) -> FastAPI | None:
     """Load custom FastAPI app from import path.
 
     Supports both file-based and module-based imports:
@@ -19,6 +19,7 @@ def load_custom_app(app_import: str) -> FastAPI | None:
 
     Args:
         app_import: Import path in format "path/to/file.py:variable" or "module.path:variable"
+        base_dir: Base directory for resolving relative file paths (e.g., config file directory)
 
     Returns:
         Loaded FastAPI app instance or None if path is invalid
@@ -41,16 +42,20 @@ def load_custom_app(app_import: str) -> FastAPI | None:
     try:
         # Determine if it's a file path or module path
         path_obj = Path(path)
-        is_file_path = path_obj.is_file() or path.endswith(".py")
+        is_file_path = path_obj.suffix == ".py" or path.startswith("./") or path.startswith("../")
 
         if is_file_path:
+            # Resolve relative paths from base_dir if provided
+            if not path_obj.is_absolute() and base_dir is not None:
+                path_obj = (base_dir / path_obj).resolve()
+
             # Import from file path
             if not path_obj.exists():
-                raise FileNotFoundError(f"Custom app file not found: {path}")
+                raise FileNotFoundError(f"Custom app file not found: {path_obj}")
 
-            spec = importlib.util.spec_from_file_location("custom_app_module", str(path))
+            spec = importlib.util.spec_from_file_location("custom_app_module", str(path_obj))
             if spec is None or spec.loader is None:
-                raise ImportError(f"Cannot load spec from {path}")
+                raise ImportError(f"Cannot load spec from {path_obj}")
 
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)

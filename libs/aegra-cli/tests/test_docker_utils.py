@@ -244,34 +244,44 @@ class TestDevCommandWithDockerCheck:
         assert result.exit_code == 0
         assert "--file" in result.output or "-f" in result.output
 
-    def test_dev_fails_when_docker_not_installed(self, cli_runner) -> None:
+    def test_dev_fails_when_docker_not_installed(self, cli_runner, tmp_path) -> None:
         """Test that dev fails gracefully when Docker is not installed."""
+        from pathlib import Path
+
         from aegra_cli.cli import cli
 
-        with patch("aegra_cli.utils.docker.is_docker_installed") as mock_installed:
-            mock_installed.return_value = False
-            result = cli_runner.invoke(cli, ["dev"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            assert result.exit_code == 1
-            assert "Docker is not installed" in result.output
+            with patch("aegra_cli.utils.docker.is_docker_installed") as mock_installed:
+                mock_installed.return_value = False
+                result = cli_runner.invoke(cli, ["dev"])
 
-    def test_dev_fails_when_docker_not_running(self, cli_runner) -> None:
+                assert result.exit_code == 1
+                assert "Docker is not installed" in result.output
+
+    def test_dev_fails_when_docker_not_running(self, cli_runner, tmp_path) -> None:
         """Test that dev fails gracefully when Docker is not running."""
+        from pathlib import Path
+
         from aegra_cli.cli import cli
 
-        with (
-            patch("aegra_cli.utils.docker.is_docker_installed") as mock_installed,
-            patch("aegra_cli.utils.docker.is_docker_running") as mock_running,
-            patch("aegra_cli.utils.docker.try_start_docker") as mock_try_start,
-        ):
-            mock_installed.return_value = True
-            mock_running.return_value = False
-            mock_try_start.return_value = False
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
 
-            result = cli_runner.invoke(cli, ["dev"])
+            with (
+                patch("aegra_cli.utils.docker.is_docker_installed") as mock_installed,
+                patch("aegra_cli.utils.docker.is_docker_running") as mock_running,
+                patch("aegra_cli.utils.docker.try_start_docker") as mock_try_start,
+            ):
+                mock_installed.return_value = True
+                mock_running.return_value = False
+                mock_try_start.return_value = False
 
-            assert result.exit_code == 1
-            assert "Docker is not running" in result.output
+                result = cli_runner.invoke(cli, ["dev"])
+
+                assert result.exit_code == 1
+                assert "Docker is not running" in result.output
 
 
 @pytest.fixture

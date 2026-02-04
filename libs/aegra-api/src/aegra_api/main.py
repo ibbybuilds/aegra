@@ -30,7 +30,7 @@ from aegra_api.api.assistants import router as assistants_router
 from aegra_api.api.runs import router as runs_router
 from aegra_api.api.store import router as store_router
 from aegra_api.api.threads import router as threads_router
-from aegra_api.config import HttpConfig, load_http_config
+from aegra_api.config import HttpConfig, get_config_dir, load_http_config
 from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
@@ -243,7 +243,8 @@ def create_app() -> FastAPI:
     user_app = None
     if http_config and http_config.get("app"):
         try:
-            user_app = load_custom_app(http_config["app"])
+            config_dir = get_config_dir()
+            user_app = load_custom_app(http_config["app"], base_dir=config_dir)
             logger.info("Custom app loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load custom app: {e}", exc_info=True)

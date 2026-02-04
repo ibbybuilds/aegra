@@ -278,8 +278,17 @@ class LangGraphService:
         return await self._get_base_graph(graph_id)
 
     async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]):
-        """Load graph from filesystem"""
-        file_path = Path(graph_info["file_path"])
+        """Load graph from filesystem.
+
+        Paths are resolved relative to the config file's directory.
+        """
+        raw_path = graph_info["file_path"]
+        file_path = Path(raw_path)
+
+        # Resolve relative paths from config file directory
+        if not file_path.is_absolute():
+            file_path = (self.config_path.parent / file_path).resolve()
+
         if not file_path.exists():
             raise ValueError(f"Graph file not found: {file_path}")
 

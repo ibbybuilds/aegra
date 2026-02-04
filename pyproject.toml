@@ -30,20 +30,8 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["aegra_api", "aegra_cli"]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-testpaths = ["libs/aegra-api/tests"]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::UserWarning",
-]
-addopts = "-v --tb=short"
-markers = [
-    "unit: Unit tests (no external dependencies)",
-    "integration: Integration tests (may require database)",
-    "e2e: End-to-end tests (require running server)",
-]
+# Note: pytest config is in each package's pyproject.toml
+# Run tests from: libs/aegra-api or libs/aegra-cli
 
 [tool.mypy]
 python_version = "3.11"

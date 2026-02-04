@@ -34,8 +34,9 @@ You can also configure CORS:
 """
 
 from fastapi import Depends, FastAPI
-from src.agent_server.core.auth_deps import require_auth
-from src.agent_server.models.auth import User
+
+from aegra_api.core.auth_deps import require_auth
+from aegra_api.models.auth import User
 
 # Create your FastAPI app instance
 # This will be merged with Aegra's core routes

@@ -25,13 +25,14 @@ services:
       - .env
     environment:
       - POSTGRES_HOST=postgres
+      - PYTHONPATH=/app/src
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
       - ./examples:/app/examples:ro
-      - ./libs/aegra-api/src/aegra_api:/app/src/aegra_api:ro # for hot reload support
+      - ./libs/aegra-api/src:/app/src:ro  # Mount full src for PYTHONPATH to work
       - ./libs/aegra-api/alembic:/app/alembic:ro # for migrations
       - ./.env:/app/.env:ro
     command: >

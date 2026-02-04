@@ -24,7 +24,7 @@ from starlette.authentication import (
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 
-from aegra_api.config import load_auth_config
+from aegra_api.config import get_config_dir, load_auth_config
 from aegra_api.models.errors import AgentProtocolError
 from aegra_api.settings import settings
 
@@ -103,6 +103,8 @@ class LangGraphAuthBackend(AuthenticationBackend):
     def _load_from_path(self, path: str) -> Auth | None:
         """Load auth instance from path in format './file.py:var' or 'module:var'.
 
+        Relative paths are resolved from the config file directory.
+
         Args:
             path: Import path in format './file.py:variable' or 'module.path:variable'
 
@@ -115,13 +117,19 @@ class LangGraphAuthBackend(AuthenticationBackend):
 
         module_path, var_name = path.rsplit(":", 1)
 
-        # Handle file path format: ./file.py or ./path/to/file.py
-        if module_path.startswith("./") or module_path.startswith("/"):
-            # Resolve relative to CWD
-            if module_path.startswith("./"):
-                file_path = Path.cwd() / module_path[2:]
-            else:
-                file_path = Path(module_path)
+        # Handle file path format: ./file.py or ./path/to/file.py or ../file.py
+        is_file_path = module_path.endswith(".py") or module_path.startswith("./") or module_path.startswith("../")
+        if is_file_path:
+            file_path = Path(module_path)
+
+            # Resolve relative paths from config directory
+            if not file_path.is_absolute():
+                config_dir = get_config_dir()
+                if config_dir:
+                    file_path = (config_dir / file_path).resolve()
+                else:
+                    # Fallback to CWD if no config found
+                    file_path = (Path.cwd() / file_path).resolve()
 
             return self._load_from_file(file_path, var_name)
 

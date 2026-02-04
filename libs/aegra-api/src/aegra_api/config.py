@@ -187,3 +187,18 @@ def load_auth_config() -> AuthConfig | None:
         return auth_config
 
     return None
+
+
+def get_config_dir() -> Path | None:
+    """Get the directory containing the config file.
+
+    This is used to resolve relative paths in the config file
+    (graphs, http.app, auth.path) relative to the config location.
+
+    Returns:
+        Path to config directory or None if no config found
+    """
+    config_path = _resolve_config_path()
+    if config_path and config_path.exists():
+        return config_path.parent.resolve()
+    return None

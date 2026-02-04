@@ -95,6 +95,25 @@ def load_env_file(env_file: Path | None) -> Path | None:
     return target
 
 
+def find_config_file() -> Path | None:
+    """Find aegra.json or langgraph.json in current directory.
+
+    Returns:
+        Path to config file if found, None otherwise
+    """
+    # Check for aegra.json first
+    aegra_config = Path.cwd() / "aegra.json"
+    if aegra_config.exists():
+        return aegra_config
+
+    # Fallback to langgraph.json
+    langgraph_config = Path.cwd() / "langgraph.json"
+    if langgraph_config.exists():
+        return langgraph_config
+
+    return None
+
+
 @cli.command()
 @click.option(
     "--host",
@@ -116,12 +135,20 @@ def load_env_file(env_file: Path | None) -> Path | None:
     show_default=True,
 )
 @click.option(
+    "--config",
+    "-c",
+    "config_file",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to aegra.json config file (auto-discovered if not specified).",
+)
+@click.option(
     "--env-file",
     "-e",
     "env_file",
     default=None,
     type=click.Path(exists=True, path_type=Path),
-    help="Path to .env file (default: .env in current directory).",
+    help="Path to .env file (default: .env in project directory).",
 )
 @click.option(
     "--no-db-check",
@@ -141,6 +168,7 @@ def dev(
     host: str,
     port: int,
     app: str,
+    config_file: Path | None,
     env_file: Path | None,
     no_db_check: bool,
     compose_file: Path | None,
@@ -150,20 +178,53 @@ def dev(
     Starts uvicorn with --reload flag for development.
     The server will automatically restart when code changes are detected.
 
+    Aegra auto-discovers aegra.json by walking up the directory tree, so you
+    can run 'aegra dev' from any subdirectory of your project.
+
     By default, Aegra will check if Docker is running and start PostgreSQL
     automatically if needed. Use --no-db-check to skip this behavior.
 
     Examples:
 
-        aegra dev                        # Start with auto-PostgreSQL
+        aegra dev                        # Auto-discover config, start server
+
+        aegra dev -c /path/to/aegra.json # Use specific config file
 
         aegra dev -e /path/to/.env       # Use specific .env file
 
         aegra dev --no-db-check          # Start without database check
-
-        aegra dev -f ./docker-compose.prod.yml
     """
+    import os
+
+    # Discover or validate config file
+    if config_file is not None:
+        # User specified a config file explicitly
+        resolved_config = config_file.resolve()
+    else:
+        # Auto-discover config file by walking up directory tree
+        resolved_config = find_config_file()
+
+    if resolved_config is None:
+        console.print(
+            "[bold red]Error:[/bold red] Could not find aegra.json or langgraph.json.\n"
+            "Run [cyan]aegra init[/cyan] to create a new project, or specify "
+            "[cyan]--config[/cyan] to point to your config file."
+        )
+        sys.exit(1)
+
+    console.print(f"[dim]Using config: {resolved_config}[/dim]")
+
+    # Set AEGRA_CONFIG env var so aegra-api resolves paths relative to config location
+    os.environ["AEGRA_CONFIG"] = str(resolved_config)
+
     # Load environment variables from .env file
+    # Default: look in config file's directory first, then cwd
+    if env_file is None:
+        # Try config directory first
+        config_dir_env = resolved_config.parent / ".env"
+        if config_dir_env.exists():
+            env_file = config_dir_env
+
     loaded_env = load_env_file(env_file)
     if loaded_env:
         console.print(f"[dim]Loaded environment from: {loaded_env}[/dim]")
@@ -188,6 +249,7 @@ def dev(
         f"[cyan]Host:[/cyan] {host}",
         f"[cyan]Port:[/cyan] {port}",
         f"[cyan]App:[/cyan] {app}",
+        f"[cyan]Config:[/cyan] {resolved_config}",
     ]
     if loaded_env:
         info_lines.append(f"[cyan]Env:[/cyan] {loaded_env}")

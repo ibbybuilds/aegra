@@ -1,19 +1,39 @@
 coverage:
   # Badge color thresholds: red < 50%, yellow 50-70%, green >= 70%
-  # Note: Badge may take time to update after changing this setting
   range: 50..70
   round: down
   precision: 2
   status:
-    # Fail PRs that reduce total coverage by more than 2%
     project:
+      # Overall project coverage
       default:
         target: auto
         threshold: 2%
-    # Treat patch coverage as informational only
+      # Per-package coverage status
+      aegra-api:
+        flags:
+          - aegra-api
+        target: auto
+        threshold: 2%
+      aegra-cli:
+        flags:
+          - aegra-cli
+        target: auto
+        threshold: 2%
     patch:
       default:
         informational: true
+
+# Define flags for monorepo packages
+flags:
+  aegra-api:
+    paths:
+      - libs/aegra-api/src/
+    carryforward: true
+  aegra-cli:
+    paths:
+      - libs/aegra-cli/src/
+    carryforward: true
 
 comment:
   # Use condensed layout for cleaner, more focused PR comments

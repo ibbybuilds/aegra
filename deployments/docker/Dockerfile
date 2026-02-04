@@ -75,6 +75,8 @@ USER app
 # Railway sets PORT env var dynamically, fallback to 8000 for local
 # Using --host '0.0.0.0' to bind to all IPv4 interfaces
 # This works with Railway's networking and Docker's internal networking
-CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host '0.0.0.0' --port ${PORT:-8000}"]
+# timeout-keep-alive: 1800s (30min) for long-lived SSE streams
+# limit-concurrency: 350 to handle 300+ concurrent connections gracefully
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host '0.0.0.0' --port ${PORT:-8000} --timeout-keep-alive 1800 --limit-concurrency 350"]
 
 

@@ -37,6 +37,8 @@ services:
     build:
       context: .
       dockerfile: deployments/docker/Dockerfile
+      args:
+        - GH_PAT=${GH_PAT}
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
     environment:
@@ -56,6 +58,12 @@ services:
       - AEGRA_JWT_AUDIENCE=${AEGRA_JWT_AUDIENCE}
       - AEGRA_JWT_VERIFY_EXPIRATION=${AEGRA_JWT_VERIFY_EXPIRATION:-true}
       - AEGRA_JWT_LEEWAY_SECONDS=${AEGRA_JWT_LEEWAY_SECONDS:-30}
+      # Database connection pool (for load testing high-capacity configuration)
+      - DB_POOL_SIZE=150
+      - DB_MAX_OVERFLOW=50
+      - DB_POOL_TIMEOUT=60
+      - DB_POOL_RECYCLE=3600
+      - DB_POOL_PRE_PING=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,7 +81,7 @@ services:
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload --timeout-keep-alive 1800 --limit-concurrency 350
       "
 
   # Redis Stack (required for ava_v1 graph - includes RedisJSON, RedisSearch, etc.)

@@ -74,4 +74,6 @@ USER app
 # Production command: run migrations then start server without hot-reload
 # Using --host '::' for IPv6 dual-stack binding (accepts both IPv4 and IPv6 connections)
 # Railway's internal networking uses IPv6 for better performance and native support
-CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host '::' --port 8000"]
+# timeout-keep-alive: 1800s (30min) for long-lived SSE streams
+# limit-concurrency: 350 to handle 300+ concurrent connections gracefully
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.agent_server.main:app --host '::' --port 8000 --timeout-keep-alive 1800 --limit-concurrency 350"]

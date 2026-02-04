@@ -88,10 +88,11 @@ graph = builder.compile()
 '''
 
 
-def get_docker_compose(slug: str) -> str:
-    """Generate docker-compose.yml content."""
+def get_docker_compose_dev(slug: str) -> str:
+    """Generate docker-compose.yml for development (postgres only)."""
     return f"""\
-version: "3.8"
+# Development docker-compose - PostgreSQL only
+# Use with: aegra dev (starts postgres + local uvicorn)
 
 services:
   postgres:
@@ -102,7 +103,36 @@ services:
       POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
       POSTGRES_DB: ${{POSTGRES_DB:-{slug}}}
     ports:
-      - "5432:5432"
+      - "${{POSTGRES_PORT:-5432}}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-{slug}}}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+"""
+
+
+def get_docker_compose_prod(slug: str) -> str:
+    """Generate docker-compose.prod.yml for production (full stack)."""
+    return f"""\
+# Production docker-compose - Full stack
+# Use with: aegra up (builds and starts all services)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: {slug}-postgres
+    environment:
+      POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}
+      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
+      POSTGRES_DB: ${{POSTGRES_DB:-{slug}}}
+    ports:
+      - "${{POSTGRES_PORT:-5432}}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -115,13 +145,14 @@ services:
     build: .
     container_name: {slug}-api
     ports:
-      - "8000:8000"
+      - "${{PORT:-8000}}:8000"
     environment:
       - POSTGRES_USER=${{POSTGRES_USER:-{slug}}}
       - POSTGRES_PASSWORD=${{POSTGRES_PASSWORD:-{slug}_secret}}
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=${{POSTGRES_DB:-{slug}}}
       - AUTH_TYPE=${{AUTH_TYPE:-noop}}
+      - PORT=${{PORT:-8000}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,6 +163,40 @@ services:
 volumes:
   postgres_data:
 """
+
+
+def get_dockerfile() -> str:
+    """Generate Dockerfile for production builds."""
+    return """\
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    gcc \\
+    libpq-dev \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Install aegra
+RUN pip install --no-cache-dir aegra
+
+# Copy project files
+COPY aegra.json .
+COPY graphs/ ./graphs/
+
+# Expose port
+EXPOSE 8000
+
+# Run the server
+CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+"""
+
+
+# Keep old function for backwards compatibility during transition
+def get_docker_compose(slug: str) -> str:
+    """Generate docker-compose.yml content (deprecated, use get_docker_compose_dev)."""
+    return get_docker_compose_dev(slug)
 
 
 def write_file(path: Path, content: str, force: bool) -> bool:
@@ -240,10 +305,25 @@ def init(name: str | None, docker: bool, force: bool, path: str):
     else:
         files_skipped += 1
 
-    # Create docker-compose.yml if requested
+    # Create Docker files if requested
     if docker:
-        docker_compose_path = project_path / "docker-compose.yml"
-        if write_file(docker_compose_path, get_docker_compose(slug), force):
+        # Development docker-compose (postgres only)
+        docker_compose_dev_path = project_path / "docker-compose.yml"
+        if write_file(docker_compose_dev_path, get_docker_compose_dev(slug), force):
+            files_created += 1
+        else:
+            files_skipped += 1
+
+        # Production docker-compose (full stack)
+        docker_compose_prod_path = project_path / "docker-compose.prod.yml"
+        if write_file(docker_compose_prod_path, get_docker_compose_prod(slug), force):
+            files_created += 1
+        else:
+            files_skipped += 1
+
+        # Dockerfile for production builds
+        dockerfile_path = project_path / "Dockerfile"
+        if write_file(dockerfile_path, get_dockerfile(), force):
             files_created += 1
         else:
             files_skipped += 1
@@ -269,4 +349,6 @@ def init(name: str | None, docker: bool, force: bool, path: str):
     if docker:
         console.print()
         console.print("[bold]Docker:[/bold]")
-        console.print("  Run [cyan]aegra up[/cyan] to start all services")
+        console.print("  [cyan]aegra dev[/cyan]  - Start postgres + local dev server")
+        console.print("  [cyan]aegra up[/cyan]   - Start all services in Docker")
+        console.print("  [cyan]aegra down[/cyan] - Stop all services")

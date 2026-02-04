@@ -361,7 +361,7 @@ class TestDownCommand:
             result = cli_runner.invoke(cli, ["down"])
 
             assert result.exit_code == 1
-            assert "Error" in result.output
+            assert "failed to stop" in result.output
 
     def test_down_docker_not_installed(self, cli_runner: CliRunner) -> None:
         """Test error handling when docker is not installed."""

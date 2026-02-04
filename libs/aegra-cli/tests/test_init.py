@@ -11,7 +11,9 @@ from click.testing import CliRunner
 from aegra_cli.cli import cli
 from aegra_cli.commands.init import (
     get_aegra_config,
-    get_docker_compose,
+    get_docker_compose_dev,
+    get_docker_compose_prod,
+    get_dockerfile,
     get_env_example,
     get_example_graph,
     slugify,
@@ -123,24 +125,37 @@ class TestInitCommand:
             assert Path("graphs/test/__init__.py").exists()
 
     def test_init_with_docker_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that init creates docker-compose.yml with --docker flag."""
+        """Test that init creates Docker files with --docker flag."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
             result = cli_runner.invoke(cli, ["init", "--docker", "-n", "myapp"])
 
             assert result.exit_code == 0
+            # Dev compose file
             assert Path("docker-compose.yml").exists()
-
             content = Path("docker-compose.yml").read_text()
             assert "postgres" in content
-            assert "myapp" in content  # Service name uses slug
+            assert "myapp-postgres" in content
+
+            # Prod compose file
+            assert Path("docker-compose.prod.yml").exists()
+            prod_content = Path("docker-compose.prod.yml").read_text()
+            assert "postgres" in prod_content
+            assert "myapp:" in prod_content  # Service name uses slug
+
+            # Dockerfile
+            assert Path("Dockerfile").exists()
+            dockerfile_content = Path("Dockerfile").read_text()
+            assert "aegra" in dockerfile_content
 
     def test_init_without_docker_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that init does not create docker-compose.yml without --docker flag."""
+        """Test that init does not create Docker files without --docker flag."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
             result = cli_runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
             assert not Path("docker-compose.yml").exists()
+            assert not Path("docker-compose.prod.yml").exists()
+            assert not Path("Dockerfile").exists()
 
     def test_init_skips_existing_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init skips existing files without --force."""
@@ -276,35 +291,55 @@ class TestInitFileContents:
             content = Path("graphs/test/graph.py").read_text()
             assert "graph = builder.compile()" in content
 
-    def test_docker_compose_has_postgres(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that docker-compose.yml includes postgres service."""
+    def test_docker_compose_dev_has_postgres(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that docker-compose.yml (dev) includes postgres service only."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
             result = cli_runner.invoke(cli, ["init", "--docker"])
 
             content = Path("docker-compose.yml").read_text()
             assert "postgres:" in content
             assert "image: pgvector/pgvector:pg18" in content
-            assert "5432:5432" in content
+            assert "POSTGRES_PORT" in content  # Uses env var for port
+            # Dev compose should NOT have the app service
+            assert "build:" not in content
 
-    def test_docker_compose_has_project_service(
+    def test_docker_compose_prod_has_project_service(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """Test that docker-compose.yml includes project service."""
+        """Test that docker-compose.prod.yml includes project service."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
             result = cli_runner.invoke(cli, ["init", "--docker", "-n", "myapp"])
 
-            content = Path("docker-compose.yml").read_text()
+            content = Path("docker-compose.prod.yml").read_text()
             assert "myapp:" in content
-            assert "8000:8000" in content
+            assert "PORT" in content  # Uses env var for port
+            assert "build:" in content  # Prod has build context
 
     def test_docker_compose_has_volumes(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that docker-compose.yml includes volumes section."""
+        """Test that docker-compose files include volumes section."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
             result = cli_runner.invoke(cli, ["init", "--docker"])
 
-            content = Path("docker-compose.yml").read_text()
-            assert "volumes:" in content
-            assert "postgres_data:" in content
+            # Check dev compose
+            dev_content = Path("docker-compose.yml").read_text()
+            assert "volumes:" in dev_content
+            assert "postgres_data:" in dev_content
+
+            # Check prod compose
+            prod_content = Path("docker-compose.prod.yml").read_text()
+            assert "volumes:" in prod_content
+            assert "postgres_data:" in prod_content
+
+    def test_dockerfile_content(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that Dockerfile has proper content."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            result = cli_runner.invoke(cli, ["init", "--docker"])
+
+            content = Path("Dockerfile").read_text()
+            assert "FROM python" in content
+            assert "pip install" in content
+            assert "aegra" in content
+            assert "EXPOSE 8000" in content
 
 
 class TestInitEdgeCases:
@@ -388,10 +423,29 @@ class TestInitTemplates:
         graph = get_example_graph("My Project")
         compile(graph, "graph.py", "exec")
 
-    def test_get_docker_compose_has_services(self) -> None:
-        """Test that get_docker_compose has services."""
-        compose = get_docker_compose("myapp")
+    def test_get_docker_compose_dev_has_postgres_only(self) -> None:
+        """Test that get_docker_compose_dev has postgres only."""
+        compose = get_docker_compose_dev("myapp")
         assert "services:" in compose
         assert "postgres:" in compose
-        assert "myapp:" in compose
         assert "myapp-postgres" in compose  # container_name
+        # Should NOT have app service
+        assert "build:" not in compose
+
+    def test_get_docker_compose_prod_has_all_services(self) -> None:
+        """Test that get_docker_compose_prod has all services."""
+        compose = get_docker_compose_prod("myapp")
+        assert "services:" in compose
+        assert "postgres:" in compose
+        assert "myapp:" in compose  # app service
+        assert "myapp-postgres" in compose  # postgres container_name
+        assert "myapp-api" in compose  # app container_name
+        assert "build:" in compose  # has build context
+
+    def test_get_dockerfile_has_aegra(self) -> None:
+        """Test that get_dockerfile installs aegra."""
+        dockerfile = get_dockerfile()
+        assert "FROM python" in dockerfile
+        assert "pip install" in dockerfile
+        assert "aegra" in dockerfile
+        assert '"aegra"' in dockerfile  # CMD uses JSON array format

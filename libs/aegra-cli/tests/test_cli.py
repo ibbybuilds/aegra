@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
@@ -13,6 +13,15 @@ from aegra_cli.cli import cli
 
 if TYPE_CHECKING:
     pass
+
+
+def create_mock_popen(returncode: int = 0):
+    """Create a mock Popen object that behaves like a completed process."""
+    mock_process = MagicMock()
+    mock_process.poll.return_value = returncode  # Process has finished
+    mock_process.wait.return_value = returncode
+    mock_process.returncode = returncode
+    return mock_process
 
 
 class TestVersion:
@@ -46,13 +55,13 @@ class TestDevCommand:
 
     def test_dev_builds_correct_command(self, cli_runner: CliRunner) -> None:
         """Test that dev command builds the correct uvicorn command."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
             result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
-            # Verify subprocess.run was called
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args[0][0]
+            # Verify subprocess.Popen was called
+            mock_popen.assert_called_once()
+            call_args = mock_popen.call_args[0][0]
 
             # Check command structure
             assert call_args[0] == sys.executable
@@ -63,11 +72,11 @@ class TestDevCommand:
 
     def test_dev_default_host_and_port(self, cli_runner: CliRunner) -> None:
         """Test that dev command uses default host and port."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
             result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_popen.call_args[0][0]
             assert "--host" in call_args
             host_idx = call_args.index("--host")
             assert call_args[host_idx + 1] == "127.0.0.1"
@@ -78,37 +87,37 @@ class TestDevCommand:
 
     def test_dev_custom_host(self, cli_runner: CliRunner) -> None:
         """Test that dev command accepts custom host."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
             result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--host", "0.0.0.0"])
 
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_popen.call_args[0][0]
             host_idx = call_args.index("--host")
             assert call_args[host_idx + 1] == "0.0.0.0"
 
     def test_dev_custom_port(self, cli_runner: CliRunner) -> None:
         """Test that dev command accepts custom port."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
             result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--port", "3000"])
 
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_popen.call_args[0][0]
             port_idx = call_args.index("--port")
             assert call_args[port_idx + 1] == "3000"
 
     def test_dev_custom_app(self, cli_runner: CliRunner) -> None:
         """Test that dev command accepts custom app path."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
             result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--app", "myapp.main:app"])
 
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_popen.call_args[0][0]
             assert "myapp.main:app" in call_args
 
     def test_dev_uvicorn_not_installed(self, cli_runner: CliRunner) -> None:
         """Test error handling when uvicorn is not installed."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("uvicorn not found")
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.side_effect = FileNotFoundError("uvicorn not found")
             result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
             assert result.exit_code == 1
@@ -116,8 +125,10 @@ class TestDevCommand:
 
     def test_dev_keyboard_interrupt(self, cli_runner: CliRunner) -> None:
         """Test handling of keyboard interrupt during dev server."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.side_effect = KeyboardInterrupt()
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_process = create_mock_popen(0)
+            mock_process.wait.side_effect = KeyboardInterrupt()
+            mock_popen.return_value = mock_process
             result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
 
             assert result.exit_code == 0
@@ -125,8 +136,8 @@ class TestDevCommand:
 
     def test_dev_shows_server_info(self, cli_runner: CliRunner) -> None:
         """Test that dev command shows server info in output."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("aegra_cli.cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = create_mock_popen(0)
             result = cli_runner.invoke(
                 cli, ["dev", "--no-db-check", "--host", "0.0.0.0", "--port", "9000"]
             )

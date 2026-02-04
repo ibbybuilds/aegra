@@ -1,5 +1,6 @@
 """Aegra CLI - Command-line interface for managing self-hosted agent deployments."""
 
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -134,9 +135,31 @@ def dev(host: str, port: int, app: str, no_db_check: bool, compose_file: Path | 
         "--reload",
     ]
 
+    process = None
     try:
-        result = subprocess.run(cmd, check=False)
-        sys.exit(result.returncode)
+        # Use Popen for better signal handling across platforms
+        process = subprocess.Popen(cmd)
+
+        # Set up signal handler to forward signals to child process
+        def signal_handler(signum, frame):
+            if process and process.poll() is None:  # Process still running
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            console.print("\n[yellow]Server stopped by user.[/yellow]")
+            sys.exit(0)
+
+        # Register signal handlers (SIGTERM not available on Windows)
+        signal.signal(signal.SIGINT, signal_handler)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, signal_handler)
+
+        # Wait for the process to complete
+        returncode = process.wait()
+        sys.exit(returncode)
+
     except FileNotFoundError:
         console.print(
             "[bold red]Error:[/bold red] uvicorn is not installed.\n"
@@ -144,6 +167,13 @@ def dev(host: str, port: int, app: str, no_db_check: bool, compose_file: Path | 
         )
         sys.exit(1)
     except KeyboardInterrupt:
+        # Fallback handler if signal handler didn't catch it
+        if process and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
         console.print("\n[yellow]Server stopped by user.[/yellow]")
         sys.exit(0)
 

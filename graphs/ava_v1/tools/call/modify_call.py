@@ -281,16 +281,30 @@ async def modify_call(
 
     # Handle pay-transfer (requires booking details from context_stack)
     if action_type == "pay-transfer":
-        logger.info("[modify_call] Handling pay-transfer")
+        logger.info("[modify_call] === PAY-TRANSFER DEBUG START ===")
 
-        # Get context_stack from runtime state (or empty list if runtime is None)
-        context_stack = runtime.state.get("context_stack", []) if runtime else []
+        # Check if runtime exists
+        if runtime is None:
+            logger.error("[modify_call] CRITICAL: runtime is None - cannot access state")
+            context_stack = []
+        else:
+            logger.info(f"[modify_call] runtime.state keys: {list(runtime.state.keys())}")
+            context_stack = runtime.state.get("context_stack", [])
+
         logger.info(f"[modify_call] Context stack length: {len(context_stack)}")
 
-        # Log what's in the stack for debugging
+        # Log what's in the stack for debugging (always log, even if empty)
         if context_stack:
             stack_types = [ctx.get("type", "unknown") for ctx in context_stack if isinstance(ctx, dict)]
-            logger.info(f"[modify_call] Context stack contents: {stack_types}")
+            logger.info(f"[modify_call] Context stack types: {stack_types}")
+            # Log full context stack for debugging (excluding large data)
+            for i, ctx in enumerate(context_stack):
+                if isinstance(ctx, dict):
+                    ctx_type = ctx.get("type", "unknown")
+                    ctx_keys = list(ctx.keys())
+                    logger.info(f"[modify_call] Stack[{i}]: type={ctx_type}, keys={ctx_keys}")
+        else:
+            logger.warning("[modify_call] Context stack is EMPTY - no BookingPending possible")
 
         # Find the most recent BookingPending context
         booking_context = None
@@ -300,6 +314,7 @@ async def modify_call(
                 break
 
         if not booking_context:
+            logger.error(f"[modify_call] BookingPending NOT FOUND in context_stack (len={len(context_stack)})")
             result = {
                 "status": "error",
                 "error": {
@@ -312,7 +327,7 @@ async def modify_call(
                     ),
                 },
             }
-            logger.info(f"[modify_call] No booking found error: {result}")
+            logger.info(f"[modify_call] === PAY-TRANSFER DEBUG END (error) ===")
             return json.dumps(result, indent=2)
 
         # Extract required fields from BookingPending context

@@ -123,6 +123,21 @@ def runs_client():
     return make_client(app)
 
 
+@pytest.fixture(autouse=True)
+def clear_auth_cache():
+    """Clear auth instance cache before and after each test.
+
+    The get_auth_instance() function uses @lru_cache which can cause
+    test isolation issues when different tests need different auth configurations.
+    This fixture ensures each test starts with a clean auth state.
+    """
+    from aegra_api.core.auth_middleware import get_auth_instance
+
+    get_auth_instance.cache_clear()
+    yield
+    get_auth_instance.cache_clear()
+
+
 # --- AUTO-SKIP GEO-BLOCK FAILURES ---
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):

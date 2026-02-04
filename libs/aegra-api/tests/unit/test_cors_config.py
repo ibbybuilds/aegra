@@ -29,10 +29,20 @@ def isolated_module_reload(tmp_path, monkeypatch):
     """
     monkeypatch.chdir(tmp_path)
 
-    # Save original module state
+    # Save original module state - make a copy of the dict
     original_modules = dict(sys.modules)
 
+    # Save and update the settings AEGRA_CONFIG to point to our temp config file
+    from aegra_api.settings import settings
+
+    original_aegra_config = settings.app.AEGRA_CONFIG
+    # Use object.__setattr__ to bypass pydantic's frozen model protection
+    object.__setattr__(settings.app, "AEGRA_CONFIG", str(tmp_path / "aegra.json"))
+
     yield tmp_path
+
+    # Restore original AEGRA_CONFIG
+    object.__setattr__(settings.app, "AEGRA_CONFIG", original_aegra_config)
 
     # Restore original module state after test
     # First, remove any new modules that were added
@@ -48,28 +58,28 @@ def isolated_module_reload(tmp_path, monkeypatch):
 
 
 def reload_main_module():
-    """Clear agent_server modules from cache and reimport main.
+    """Clear aegra_api.main and aegra_api.config from cache and reimport main.
 
-    Note: We preserve certain modules to avoid corrupting global singleton
-    state that other tests depend on (observability manager, database/ORM).
+    Note: We only clear main and config modules. Settings module is NOT cleared
+    to avoid test pollution - settings object is modified directly instead.
     """
-    # Modules to preserve (singletons or global state that shouldn't be reset)
-    preserve_prefixes = [
-        "aegra_api.observability",
-        "aegra_api.core.database",
-        "aegra_api.core.orm",
-        "aegra_api.services.event_store",
-    ]
-
+    # Remove main, config, and the aegra_api package reference to force fresh imports
+    # The order matters - remove submodules first, then package
     modules_to_remove = [
-        k for k in sys.modules if "agent_server" in k and not any(k.startswith(prefix) for prefix in preserve_prefixes)
+        k for k in list(sys.modules.keys()) if k in ("aegra_api.main", "aegra_api.config", "aegra_api")
     ]
     for mod in modules_to_remove:
-        del sys.modules[mod]
+        if mod in sys.modules:
+            del sys.modules[mod]
 
-    from aegra_api import main
+    # Force fresh import
+    import importlib
 
-    return main
+    import aegra_api.main as main_module
+
+    importlib.reload(main_module)
+
+    return main_module
 
 
 @pytest.mark.unit

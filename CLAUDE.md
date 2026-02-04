@@ -14,6 +14,30 @@ This file provides context for AI coding agents working with this repository.
 
 ## Quick Start Commands
 
+### Using the CLI (Recommended)
+
+```bash
+# Install the CLI
+pip install aegra-cli
+
+# Initialize a new project
+aegra init --docker
+
+# Start PostgreSQL with Docker
+aegra up postgres
+
+# Apply database migrations
+aegra db upgrade
+
+# Run development server with hot reload
+aegra dev
+
+# Or start all services with Docker
+aegra up
+```
+
+### Manual Setup
+
 ```bash
 # Install dependencies
 cd libs/aegra-api && uv sync
@@ -68,6 +92,28 @@ cd libs/aegra-api && uv run bandit -r src
 
 ## Database Migrations
 
+### Using the CLI (Recommended)
+
+```bash
+# Apply all pending migrations
+aegra db upgrade
+
+# Check current migration version
+aegra db current
+
+# Show migration history
+aegra db history
+aegra db history --verbose
+
+# Downgrade by one revision
+aegra db downgrade
+
+# Downgrade to specific revision
+aegra db downgrade abc123
+```
+
+### Using Alembic Directly
+
 ```bash
 # Apply migrations
 cd libs/aegra-api && alembic upgrade head
@@ -108,8 +154,12 @@ aegra/
 │   │   ├── alembic/                  # Database migrations
 │   │   └── pyproject.toml
 │   │
-│   └── aegra-cli/                    # CLI package (coming soon)
+│   └── aegra-cli/                    # CLI package
 │       └── src/aegra_cli/
+│           ├── cli.py                # Main CLI entry point
+│           └── commands/             # Command implementations
+│               ├── db.py             # Database migration commands
+│               └── init.py           # Project initialization
 │
 ├── examples/                         # Example agents and configs
 │   ├── react_agent/                  # Basic ReAct agent

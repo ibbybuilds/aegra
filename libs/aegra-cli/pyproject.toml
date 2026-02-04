@@ -46,6 +46,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+ignore = ["F841"]  # Unused variables (common in tests where we invoke but check side effects)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,7 +1,7 @@
 services:
   # PostgreSQL database for LangGraph and metadata
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:pg18
     env_file:
       - .env
     ports:

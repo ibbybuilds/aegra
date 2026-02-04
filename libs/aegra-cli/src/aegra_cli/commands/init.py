@@ -95,7 +95,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:pg18
     container_name: {slug}-postgres
     environment:
       POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}

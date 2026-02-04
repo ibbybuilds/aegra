@@ -104,15 +104,40 @@ def try_start_docker() -> bool:
                 return _wait_for_docker_ready()
 
         elif system == "windows":
-            # Windows - try to start Docker Desktop
-            # Use PowerShell to start Docker Desktop
-            result = subprocess.run(
-                ["powershell", "-Command", "Start-Process", "Docker Desktop"],
-                capture_output=True,
-                timeout=10,
-            )
-            if result.returncode == 0:
-                return _wait_for_docker_ready()
+            # Windows - try multiple methods to start Docker Desktop
+            # Method 1: Try common Docker Desktop paths
+            import os
+
+            docker_paths = [
+                os.path.expandvars(r"%ProgramFiles%\Docker\Docker\Docker Desktop.exe"),
+                os.path.expandvars(r"%LOCALAPPDATA%\Docker\Docker Desktop.exe"),
+                r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
+            ]
+
+            for docker_path in docker_paths:
+                if os.path.exists(docker_path):
+                    try:
+                        # Start Docker Desktop without waiting
+                        subprocess.Popen(
+                            [docker_path],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        return _wait_for_docker_ready()
+                    except (OSError, subprocess.SubprocessError):
+                        continue
+
+            # Method 2: Try using PowerShell Start-Process
+            try:
+                result = subprocess.run(
+                    ["powershell", "-Command", "Start-Process 'Docker Desktop'"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    return _wait_for_docker_ready()
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
 
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
         pass
@@ -131,15 +156,32 @@ def _wait_for_docker_ready(timeout_seconds: int = 60) -> bool:
     """
     import time
 
-    console.print("[dim]Waiting for Docker to be ready...[/dim]")
+    from rich.progress import Progress, SpinnerColumn, TextColumn
 
-    start_time = time.time()
-    while time.time() - start_time < timeout_seconds:
-        if is_docker_running():
-            console.print("[green]Docker is ready![/green]")
-            return True
-        time.sleep(2)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[dim]Waiting for Docker to be ready..."),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("waiting", total=None)
 
+        start_time = time.time()
+        check_count = 0
+        while time.time() - start_time < timeout_seconds:
+            if is_docker_running():
+                progress.stop()
+                console.print("[green]Docker is ready![/green]")
+                return True
+
+            check_count += 1
+            elapsed = int(time.time() - start_time)
+            progress.update(
+                task, description=f"[dim]Waiting for Docker to be ready... ({elapsed}s)"
+            )
+            time.sleep(2)
+
+    console.print(f"[yellow]Timed out after {timeout_seconds}s waiting for Docker.[/yellow]")
     return False
 
 

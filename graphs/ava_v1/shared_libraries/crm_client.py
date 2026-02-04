@@ -18,11 +18,12 @@ import jwt
 logger = logging.getLogger(__name__)
 
 # CRM endpoints by environment
+# TODO: Update PRODUCTION to use production CRM when ready
 CRM_ENDPOINTS = {
     "LOCAL": "https://crm-git-dev-etc-incubator.vercel.app",
     "DEVELOPMENT": "https://crm-git-dev-etc-incubator.vercel.app",
     "STAGING": "https://crm-git-dev-etc-incubator.vercel.app",  # Uses DEV CRM (same data)
-    "PRODUCTION": "https://crm-self-alpha.vercel.app",
+    "PRODUCTION": "https://crm-env-qa-etc-incubator.vercel.app",  # Temporarily uses QA CRM
 }
 
 # Vercel protection bypass token (required for all environments)

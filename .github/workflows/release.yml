@@ -56,8 +56,11 @@ jobs:
           path: libs/aegra-api/dist/
 
   publish-api:
-    if: inputs.package == 'aegra-api' || inputs.package == 'both'
     needs: [build-api]
+    if: |
+      always() &&
+      needs.build-api.result == 'success' &&
+      (inputs.package == 'aegra-api' || inputs.package == 'both')
     runs-on: ubuntu-latest
     environment: release-api
     permissions:
@@ -121,7 +124,10 @@ jobs:
 
   publish-cli:
     needs: [build-cli]
-    if: inputs.package == 'aegra-cli' || inputs.package == 'both'
+    if: |
+      always() &&
+      needs.build-cli.result == 'success' &&
+      (inputs.package == 'aegra-cli' || inputs.package == 'both')
     runs-on: ubuntu-latest
     environment: release-cli
     permissions:

@@ -283,7 +283,7 @@ class TestInitFileContents:
 
             content = Path("docker-compose.yml").read_text()
             assert "postgres:" in content
-            assert "image: postgres" in content
+            assert "image: pgvector/pgvector:pg18" in content
             assert "5432:5432" in content
 
     def test_docker_compose_has_project_service(

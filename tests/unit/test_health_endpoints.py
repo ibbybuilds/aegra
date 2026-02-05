@@ -12,46 +12,62 @@ async def test_livez_always_returns_alive():
     from src.agent_server.core.health import liveness_check
 
     response = await liveness_check()
-    assert response.status == "alive"
+    assert response.status == "healthy"
+    assert response.timestamp
+    assert "T" in response.timestamp
 
 
 @pytest.mark.asyncio
 async def test_readyz_success_all_dependencies_healthy():
     """Test that /readyz returns 200 when all critical dependencies pass"""
-    from src.agent_server.core.health import readiness_check
+    from src.agent_server.core.health import CheckResult, readiness_check
 
-    # Mock all critical dependencies as healthy
+    # Mock all dependencies as healthy
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "connected",
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(status="healthy", message="Connected"),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         response = await readiness_check()
         assert response.status == "ready"
-        assert response.database == "connected"
-        assert response.langgraph_checkpointer == "connected"
-        assert response.langgraph_store == "connected"
-        assert response.redis == "connected"
+        assert response.checks["database"].status == "healthy"
+        assert response.checks["langgraph_checkpointer"].status == "healthy"
+        assert response.checks["langgraph_store"].status == "healthy"
+        assert response.checks["redis"].status == "healthy"
+        assert response.timestamp
+        assert "T" in response.timestamp
 
 
 @pytest.mark.asyncio
 async def test_readyz_failure_database_error():
     """Test that /readyz returns 503 when database fails"""
-    from src.agent_server.core.health import readiness_check
+    from src.agent_server.core.health import CheckResult, readiness_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "error: connection timeout",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "connected",
+            "database": CheckResult(
+                status="unhealthy",
+                message="Connection failed",
+                error="connection timeout",
+            ),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(status="healthy", message="Connected"),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         with pytest.raises(HTTPException) as exc_info:
@@ -62,16 +78,24 @@ async def test_readyz_failure_database_error():
 @pytest.mark.asyncio
 async def test_readyz_failure_langgraph_checkpointer_error():
     """Test that /readyz returns 503 when LangGraph checkpointer fails"""
-    from src.agent_server.core.health import readiness_check
+    from src.agent_server.core.health import CheckResult, readiness_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "error: connection refused",
-            "langgraph_store": "connected",
-            "redis": "connected",
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(
+                status="unhealthy",
+                message="Connection failed",
+                error="connection refused",
+            ),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(status="healthy", message="Connected"),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         with pytest.raises(HTTPException) as exc_info:
@@ -82,16 +106,22 @@ async def test_readyz_failure_langgraph_checkpointer_error():
 @pytest.mark.asyncio
 async def test_readyz_failure_langgraph_store_error():
     """Test that /readyz returns 503 when LangGraph store fails"""
-    from src.agent_server.core.health import readiness_check
+    from src.agent_server.core.health import CheckResult, readiness_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "error: timeout",
-            "redis": "connected",
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(
+                status="unhealthy", message="Connection failed", error="timeout"
+            ),
+            "redis": CheckResult(status="healthy", message="Connected"),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         with pytest.raises(HTTPException) as exc_info:
@@ -102,16 +132,24 @@ async def test_readyz_failure_langgraph_store_error():
 @pytest.mark.asyncio
 async def test_readyz_failure_redis_error():
     """Test that /readyz returns 503 when Redis is unavailable (critical)"""
-    from src.agent_server.core.health import readiness_check
+    from src.agent_server.core.health import CheckResult, readiness_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "error: connection refused",
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(
+                status="unhealthy",
+                message="Connection failed",
+                error="connection refused",
+            ),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         with pytest.raises(HTTPException) as exc_info:
@@ -120,153 +158,116 @@ async def test_readyz_failure_redis_error():
 
 
 @pytest.mark.asyncio
-async def test_readyz_success_redis_not_available():
-    """Test that /readyz returns 200 when Redis is not_available (ava_v1 not loaded)"""
-    from src.agent_server.core.health import readiness_check
+async def test_readyz_success_redis_not_required():
+    """Test that /readyz returns 200 when Redis is not required (ava_v1 not loaded)"""
+    from src.agent_server.core.health import CheckResult, readiness_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "not_available",
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(status="healthy", message="Not required"),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         response = await readiness_check()
         assert response.status == "ready"
-        assert response.redis == "not_available"
+        assert response.checks["redis"].status == "healthy"
+        assert response.checks["redis"].message == "Not required"
+        assert response.timestamp
 
 
 @pytest.mark.asyncio
 async def test_healthz_identical_to_readyz():
     """Test that /healthz behaves identically to /readyz"""
-    from src.agent_server.core.health import healthz_check
+    from src.agent_server.core.health import CheckResult, healthz_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
+        "src.agent_server.core.health._check_all_dependencies"
     ) as mock_check:
         mock_check.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "connected",
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(status="healthy", message="Connected"),
+            "model_armor": CheckResult(status="degraded", message="Not configured"),
+            "cache_worker": CheckResult(status="degraded", message="Not configured"),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
         response = await healthz_check()
         assert response.status == "ready"
-        assert response.database == "connected"
-        assert response.langgraph_checkpointer == "connected"
-        assert response.langgraph_store == "connected"
-        assert response.redis == "connected"
+        assert response.checks["database"].status == "healthy"
+        assert response.checks["langgraph_checkpointer"].status == "healthy"
+        assert response.checks["langgraph_store"].status == "healthy"
+        assert response.checks["redis"].status == "healthy"
+        assert response.timestamp
 
 
 @pytest.mark.asyncio
-async def test_detailed_health_success_all_critical_pass():
-    """Test that /health/detailed returns 200 when all critical dependencies pass"""
-    from src.agent_server.core.health import detailed_health_check
+async def test_readyz_success_with_degraded_non_critical():
+    """Test that /readyz returns 200 when critical deps are healthy but optional are degraded"""
+    from src.agent_server.core.health import CheckResult, readiness_check
 
     with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
-    ) as mock_critical, patch(
-        "src.agent_server.core.health._check_model_armor"
-    ) as mock_armor, patch(
-        "src.agent_server.core.health._check_cache_worker"
-    ) as mock_cache, patch(
-        "src.agent_server.core.health._check_pinecone"
-    ) as mock_pinecone, patch(
-        "src.agent_server.core.health._check_crm"
-    ) as mock_crm:
-        mock_critical.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "connected",
+        "src.agent_server.core.health._check_all_dependencies"
+    ) as mock_check:
+        mock_check.return_value = {
+            "database": CheckResult(status="healthy", message="Connected"),
+            "langgraph_checkpointer": CheckResult(status="healthy", message="Connected"),
+            "langgraph_store": CheckResult(status="healthy", message="Connected"),
+            "redis": CheckResult(status="healthy", message="Connected"),
+            "model_armor": CheckResult(
+                status="degraded",
+                message="Service unavailable",
+                error="connection refused",
+            ),
+            "cache_worker": CheckResult(
+                status="degraded",
+                message="Service unavailable",
+                error="timeout after 2 seconds",
+            ),
+            "pinecone": CheckResult(status="degraded", message="Not configured"),
+            "crm": CheckResult(status="degraded", message="Not configured"),
         }
-        mock_armor.return_value = "connected"
-        mock_cache.return_value = "connected"
-        mock_pinecone.return_value = "connected"
-        mock_crm.return_value = "configured"
 
-        response = await detailed_health_check()
-        assert response.status == "healthy"
-        assert response.critical["database"] == "connected"
-        assert response.optional["model_armor"] == "connected"
-        assert response.optional["cache_worker"] == "connected"
-        assert response.optional["pinecone"] == "connected"
-        assert response.optional["crm"] == "configured"
+        response = await readiness_check()
+        assert response.status == "ready"
+        assert response.checks["database"].status == "healthy"
+        assert response.checks["model_armor"].status == "degraded"
+        assert response.checks["cache_worker"].status == "degraded"
+        assert response.timestamp
 
 
 @pytest.mark.asyncio
-async def test_detailed_health_success_optional_fail():
-    """Test that /health/detailed returns 200 when critical pass but optional fail"""
-    from src.agent_server.core.health import detailed_health_check
+async def test_timeout_protection():
+    """Test that checks are protected by timeout wrapper"""
+    import asyncio
 
-    with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
-    ) as mock_critical, patch(
-        "src.agent_server.core.health._check_model_armor"
-    ) as mock_armor, patch(
-        "src.agent_server.core.health._check_cache_worker"
-    ) as mock_cache, patch(
-        "src.agent_server.core.health._check_pinecone"
-    ) as mock_pinecone, patch(
-        "src.agent_server.core.health._check_crm"
-    ) as mock_crm:
-        mock_critical.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "connected",
-            "langgraph_store": "connected",
-            "redis": "connected",
-        }
-        mock_armor.return_value = "error: connection refused"
-        mock_cache.return_value = "error: timeout"
-        mock_pinecone.return_value = "not_configured"
-        mock_crm.return_value = "not_configured"
+    from src.agent_server.core.health import _run_check_with_timeout
 
-        response = await detailed_health_check()
-        assert response.status == "healthy"
-        assert response.critical["database"] == "connected"
-        assert "error" in response.optional["model_armor"]
-        assert "error" in response.optional["cache_worker"]
+    async def slow_check():
+        await asyncio.sleep(5)
+        from src.agent_server.core.health import CheckResult
 
+        return CheckResult(status="healthy", message="Connected")
 
-@pytest.mark.asyncio
-async def test_detailed_health_failure_critical_fail():
-    """Test that /health/detailed returns 503 when any critical dependency fails"""
-    from src.agent_server.core.health import detailed_health_check
-
-    with patch(
-        "src.agent_server.core.health._check_critical_dependencies"
-    ) as mock_critical, patch(
-        "src.agent_server.core.health._check_model_armor"
-    ) as mock_armor, patch(
-        "src.agent_server.core.health._check_cache_worker"
-    ) as mock_cache, patch(
-        "src.agent_server.core.health._check_pinecone"
-    ) as mock_pinecone, patch(
-        "src.agent_server.core.health._check_crm"
-    ) as mock_crm:
-        mock_critical.return_value = {
-            "database": "connected",
-            "langgraph_checkpointer": "error: connection timeout",
-            "langgraph_store": "connected",
-            "redis": "connected",
-        }
-        mock_armor.return_value = "connected"
-        mock_cache.return_value = "connected"
-        mock_pinecone.return_value = "connected"
-        mock_crm.return_value = "configured"
-
-        with pytest.raises(HTTPException) as exc_info:
-            await detailed_health_check()
-        assert exc_info.value.status_code == 503
+    result = await _run_check_with_timeout(slow_check, timeout=0.1)
+    assert result.status == "unhealthy"
+    assert result.message == "Check timed out"
+    assert "timeout" in result.error
 
 
 @pytest.mark.asyncio
 async def test_optional_dependencies_not_configured():
-    """Test optional dependency checks return not_configured when disabled"""
+    """Test optional dependency checks return degraded when disabled"""
     from src.agent_server.core.health import (
         _check_cache_worker,
         _check_crm,
@@ -276,26 +277,30 @@ async def test_optional_dependencies_not_configured():
 
     with patch.dict("os.environ", {}, clear=True):
         # Model Armor not in production and not enabled
-        armor_status = await _check_model_armor()
-        assert armor_status == "not_configured"
+        armor_result = await _check_model_armor()
+        assert armor_result.status == "degraded"
+        assert armor_result.message == "Not configured"
 
         # Cache Worker - missing URL
-        cache_status = await _check_cache_worker()
-        assert cache_status == "not_configured"
+        cache_result = await _check_cache_worker()
+        assert cache_result.status == "degraded"
+        assert cache_result.message == "Not configured"
 
         # Pinecone - missing URL
-        pinecone_status = await _check_pinecone()
-        assert pinecone_status == "not_configured"
+        pinecone_result = await _check_pinecone()
+        assert pinecone_result.status == "degraded"
+        assert pinecone_result.message == "Not configured"
 
         # CRM - not enabled
-        crm_status = await _check_crm()
-        assert crm_status == "not_configured"
+        crm_result = await _check_crm()
+        assert crm_result.status == "degraded"
+        assert crm_result.message == "Not configured"
 
 
 @pytest.mark.asyncio
-async def test_check_critical_dependencies_database_success():
-    """Test _check_critical_dependencies correctly checks database"""
-    from src.agent_server.core.health import _check_critical_dependencies
+async def test_check_database_success():
+    """Test _check_database correctly checks database connectivity"""
+    from src.agent_server.core.health import _check_database
 
     # Create mock database manager
     mock_engine = MagicMock()
@@ -305,53 +310,31 @@ async def test_check_critical_dependencies_database_success():
     mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_engine.begin.return_value.__aexit__ = AsyncMock()
 
-    mock_checkpointer = MagicMock()
-    mock_checkpointer.aget_tuple = AsyncMock()
-
-    mock_store = MagicMock()
-    mock_store.aget = AsyncMock()
-
-    with patch(
-        "src.agent_server.core.database.db_manager"
-    ) as mock_db_manager, patch(
-        "graphs.ava_v1.shared_libraries.redis_client.get_redis_client"
-    ) as mock_redis:
+    with patch("src.agent_server.core.database.db_manager") as mock_db_manager:
         mock_db_manager.engine = mock_engine
-        mock_db_manager.get_checkpointer = AsyncMock(return_value=mock_checkpointer)
-        mock_db_manager.get_store = AsyncMock(return_value=mock_store)
 
-        mock_redis_client = MagicMock()
-        mock_redis_client.ping = AsyncMock()
-        mock_redis.return_value = mock_redis_client
+        result = await _check_database()
 
-        statuses = await _check_critical_dependencies()
-
-        assert statuses["database"] == "connected"
-        assert statuses["langgraph_checkpointer"] == "connected"
-        assert statuses["langgraph_store"] == "connected"
-        assert statuses["redis"] == "connected"
+        assert result.status == "healthy"
+        assert result.message == "Connected"
 
 
 @pytest.mark.asyncio
-async def test_check_critical_dependencies_redis_import_error():
-    """Test Redis returns not_available when ava_v1 is not loaded"""
-    # This test verifies the logic but is simplified due to import complexity
-    # The actual ImportError handling is tested in integration tests
-    pass
+async def test_check_redis_import_error():
+    """Test Redis returns healthy when ava_v1 is not loaded"""
+    from src.agent_server.core.health import _check_redis
 
+    # Mock the import to raise ImportError (simulating ava_v1 not loaded)
+    import sys
+    from unittest.mock import MagicMock
 
-@pytest.mark.asyncio
-async def test_model_armor_check_production_enabled():
-    """Test Model Armor check in production mode"""
-    # Simplified test - actual credential validation tested in integration
-    pass
+    mock_module = MagicMock()
+    mock_module.get_redis_client.side_effect = ImportError
 
-
-@pytest.mark.asyncio
-async def test_cache_worker_check_success():
-    """Test Cache Worker health check success"""
-    # Simplified test - actual HTTP checks tested in integration
-    pass
+    with patch.dict(sys.modules, {"graphs.ava_v1.shared_libraries.redis_client": None}):
+        result = await _check_redis()
+        assert result.status == "healthy"
+        assert result.message == "Not required"
 
 
 @pytest.mark.asyncio
@@ -371,8 +354,9 @@ async def test_pinecone_check_success():
         mock_client_instance.__aexit__ = AsyncMock()
         mock_client.return_value = mock_client_instance
 
-        status = await _check_pinecone()
-        assert status == "connected"
+        result = await _check_pinecone()
+        assert result.status == "healthy"
+        assert result.message == "Connected"
 
 
 @pytest.mark.asyncio
@@ -388,8 +372,9 @@ async def test_crm_check_configured():
             "CRM_API_KEY": "test-key",
         },
     ):
-        status = await _check_crm()
-        assert status == "configured"
+        result = await _check_crm()
+        assert result.status == "healthy"
+        assert result.message == "Configured"
 
 
 @pytest.mark.asyncio
@@ -402,5 +387,7 @@ async def test_crm_check_missing_config():
         {"CRM_LOOKUP_ENABLED": "true"},
         clear=True,
     ):
-        status = await _check_crm()
-        assert "error: missing configuration" in status
+        result = await _check_crm()
+        assert result.status == "degraded"
+        assert result.message == "Configuration incomplete"
+        assert "missing" in result.error

@@ -6,7 +6,8 @@ import os
 from datetime import UTC, datetime
 from typing import Callable, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -201,7 +202,7 @@ async def _check_all_dependencies() -> dict[str, CheckResult]:
 
 
 @router.get("/readyz", response_model=ReadinessResponse)
-async def readiness_check() -> ReadinessResponse:
+async def readiness_check():
     """Kubernetes readiness probe endpoint - all critical dependencies must be healthy"""
     checks = await _check_all_dependencies()
 
@@ -213,11 +214,16 @@ async def readiness_check() -> ReadinessResponse:
         checks[dep].status == "unhealthy" for dep in critical_deps
     )
 
-    if has_critical_failure:
-        response = ReadinessResponse(status="not_ready", checks=checks)
-        raise HTTPException(status_code=503, detail=response.model_dump())
-    else:
-        return ReadinessResponse(status="ready", checks=checks)
+    response = ReadinessResponse(
+        status="not_ready" if has_critical_failure else "ready",
+        checks=checks
+    )
+
+    status_code = 503 if has_critical_failure else 200
+    return JSONResponse(
+        status_code=status_code,
+        content=response.model_dump(mode="json")
+    )
 
 
 @router.get("/healthz", response_model=ReadinessResponse)

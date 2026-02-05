@@ -1,9 +1,9 @@
 """Unit tests for health check endpoints"""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 
 
 @pytest.mark.asyncio
@@ -38,13 +38,15 @@ async def test_readyz_success_all_dependencies_healthy():
         }
 
         response = await readiness_check()
-        assert response.status == "ready"
-        assert response.checks["database"].status == "healthy"
-        assert response.checks["langgraph_checkpointer"].status == "healthy"
-        assert response.checks["langgraph_store"].status == "healthy"
-        assert response.checks["redis"].status == "healthy"
-        assert response.timestamp
-        assert "T" in response.timestamp
+        assert response.status_code == 200
+        data = json.loads(response.body)
+        assert data["status"] == "ready"
+        assert data["checks"]["database"]["status"] == "healthy"
+        assert data["checks"]["langgraph_checkpointer"]["status"] == "healthy"
+        assert data["checks"]["langgraph_store"]["status"] == "healthy"
+        assert data["checks"]["redis"]["status"] == "healthy"
+        assert "timestamp" in data
+        assert "T" in data["timestamp"]
 
 
 @pytest.mark.asyncio
@@ -70,9 +72,10 @@ async def test_readyz_failure_database_error():
             "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
-        with pytest.raises(HTTPException) as exc_info:
-            await readiness_check()
-        assert exc_info.value.status_code == 503
+        response = await readiness_check()
+        assert response.status_code == 503
+        data = json.loads(response.body)
+        assert data["status"] == "not_ready"
 
 
 @pytest.mark.asyncio
@@ -98,9 +101,10 @@ async def test_readyz_failure_langgraph_checkpointer_error():
             "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
-        with pytest.raises(HTTPException) as exc_info:
-            await readiness_check()
-        assert exc_info.value.status_code == 503
+        response = await readiness_check()
+        assert response.status_code == 503
+        data = json.loads(response.body)
+        assert data["status"] == "not_ready"
 
 
 @pytest.mark.asyncio
@@ -124,9 +128,10 @@ async def test_readyz_failure_langgraph_store_error():
             "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
-        with pytest.raises(HTTPException) as exc_info:
-            await readiness_check()
-        assert exc_info.value.status_code == 503
+        response = await readiness_check()
+        assert response.status_code == 503
+        data = json.loads(response.body)
+        assert data["status"] == "not_ready"
 
 
 @pytest.mark.asyncio
@@ -152,9 +157,10 @@ async def test_readyz_failure_redis_error():
             "crm": CheckResult(status="degraded", message="Not configured"),
         }
 
-        with pytest.raises(HTTPException) as exc_info:
-            await readiness_check()
-        assert exc_info.value.status_code == 503
+        response = await readiness_check()
+        assert response.status_code == 503
+        data = json.loads(response.body)
+        assert data["status"] == "not_ready"
 
 
 @pytest.mark.asyncio
@@ -177,10 +183,12 @@ async def test_readyz_success_redis_not_required():
         }
 
         response = await readiness_check()
-        assert response.status == "ready"
-        assert response.checks["redis"].status == "healthy"
-        assert response.checks["redis"].message == "Not required"
-        assert response.timestamp
+        assert response.status_code == 200
+        data = json.loads(response.body)
+        assert data["status"] == "ready"
+        assert data["checks"]["redis"]["status"] == "healthy"
+        assert data["checks"]["redis"]["message"] == "Not required"
+        assert "timestamp" in data
 
 
 @pytest.mark.asyncio
@@ -203,12 +211,14 @@ async def test_healthz_identical_to_readyz():
         }
 
         response = await healthz_check()
-        assert response.status == "ready"
-        assert response.checks["database"].status == "healthy"
-        assert response.checks["langgraph_checkpointer"].status == "healthy"
-        assert response.checks["langgraph_store"].status == "healthy"
-        assert response.checks["redis"].status == "healthy"
-        assert response.timestamp
+        assert response.status_code == 200
+        data = json.loads(response.body)
+        assert data["status"] == "ready"
+        assert data["checks"]["database"]["status"] == "healthy"
+        assert data["checks"]["langgraph_checkpointer"]["status"] == "healthy"
+        assert data["checks"]["langgraph_store"]["status"] == "healthy"
+        assert data["checks"]["redis"]["status"] == "healthy"
+        assert "timestamp" in data
 
 
 @pytest.mark.asyncio
@@ -239,11 +249,13 @@ async def test_readyz_success_with_degraded_non_critical():
         }
 
         response = await readiness_check()
-        assert response.status == "ready"
-        assert response.checks["database"].status == "healthy"
-        assert response.checks["model_armor"].status == "degraded"
-        assert response.checks["cache_worker"].status == "degraded"
-        assert response.timestamp
+        assert response.status_code == 200
+        data = json.loads(response.body)
+        assert data["status"] == "ready"
+        assert data["checks"]["database"]["status"] == "healthy"
+        assert data["checks"]["model_armor"]["status"] == "degraded"
+        assert data["checks"]["cache_worker"]["status"] == "degraded"
+        assert "timestamp" in data
 
 
 @pytest.mark.asyncio

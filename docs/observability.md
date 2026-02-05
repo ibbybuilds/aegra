@@ -9,7 +9,7 @@ Out of the box, Aegra supports:
 
 - **Langfuse** (Native integration via OTLP)
 - **Arize Phoenix** (Great for local debugging and evaluation)
-- **Generic OTLP** (Any compatible backend: Jaeger, Honeycomb, Datadog, etc.)
+- **Generic OTLP** (Any compatible backend: Jaeger, Honeycomb, Datadog, MLFlow etc.)
 
 ## Configuration
 
@@ -54,6 +54,18 @@ Phoenix is excellent for local trace visualization.
 # Default local Phoenix endpoint
 PHOENIX_COLLECTOR_ENDPOINT=http://127.0.0.1:6006/v1/traces
 PHOENIX_API_KEY=  # Optional
+```
+
+#### MLFlow Configuration
+
+MLflow is using the generic OTLP exporter. The important part is the OTLP headers.
+You must first create a new MLflow experiment, then click the info button for that experiment to obtain its experiment ID.
+
+```bash
+# Default local MLFlow endpoint
+OTEL_TARGETS="GENERIC"
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:5000/v1/traces
+OTEL_EXPORTER_OTLP_HEADERS=x-mlflow-experiment-id=1
 ```
 
 #### Generic OTLP Configuration

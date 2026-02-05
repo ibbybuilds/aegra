@@ -1,22 +1,37 @@
 """Health check endpoints"""
 
 import contextlib
+import os
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
 
 router = APIRouter()
 
 
-class HealthResponse(BaseModel):
-    """Health check response model"""
+class LivenessResponse(BaseModel):
+    """Liveness check response model"""
 
-    status: str
+    status: Literal["alive"]
+
+
+class ReadinessResponse(BaseModel):
+    """Readiness check response model"""
+
+    status: Literal["ready", "not_ready"]
     database: str
     langgraph_checkpointer: str
     langgraph_store: str
     redis: str
+
+
+class DetailedHealthResponse(BaseModel):
+    """Detailed health check response model"""
+
+    status: Literal["healthy", "unhealthy"]
+    critical: dict[str, str]
+    optional: dict[str, str]
 
 
 class InfoResponse(BaseModel):
@@ -41,14 +56,23 @@ async def info() -> InfoResponse:
     )
 
 
-@router.get("/health", response_model=HealthResponse)
-async def health_check() -> dict[str, str]:
-    """Comprehensive health check endpoint"""
-    # Import here to avoid circular dependency
+@router.get("/livez", response_model=LivenessResponse)
+async def liveness_check() -> LivenessResponse:
+    """Kubernetes liveness probe endpoint - basic process health"""
+    return LivenessResponse(status="alive")
+
+
+async def _check_critical_dependencies() -> dict[str, str]:
+    """Check all critical dependencies and return their status.
+
+    Returns:
+        Dictionary with status for each critical dependency
+    """
+    from sqlalchemy import text
+
     from .database import db_manager
 
-    health_status = {
-        "status": "healthy",
+    statuses = {
         "database": "unknown",
         "langgraph_checkpointer": "unknown",
         "langgraph_store": "unknown",
@@ -60,97 +84,178 @@ async def health_check() -> dict[str, str]:
         if db_manager.engine:
             async with db_manager.engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
-            health_status["database"] = "connected"
+            statuses["database"] = "connected"
         else:
-            health_status["database"] = "not_initialized"
-            health_status["status"] = "unhealthy"
+            statuses["database"] = "not_initialized"
     except Exception as e:
-        health_status["database"] = f"error: {str(e)}"
-        health_status["status"] = "unhealthy"
+        statuses["database"] = f"error: {str(e)}"
 
-    # LangGraph checkpointer (lazy-init)
+    # LangGraph checkpointer
     try:
         checkpointer = await db_manager.get_checkpointer()
-        # probe - will raise if connection is bad; tuple may not exist which is fine
         with contextlib.suppress(Exception):
             await checkpointer.aget_tuple(
                 {"configurable": {"thread_id": "health-check"}}
             )
-        health_status["langgraph_checkpointer"] = "connected"
+        statuses["langgraph_checkpointer"] = "connected"
     except Exception as e:
-        health_status["langgraph_checkpointer"] = f"error: {str(e)}"
-        health_status["status"] = "unhealthy"
+        statuses["langgraph_checkpointer"] = f"error: {str(e)}"
 
-    # LangGraph store (lazy-init)
+    # LangGraph store
     try:
         store = await db_manager.get_store()
         with contextlib.suppress(Exception):
             await store.aget(("health",), "check")
-        health_status["langgraph_store"] = "connected"
+        statuses["langgraph_store"] = "connected"
     except Exception as e:
-        health_status["langgraph_store"] = f"error: {str(e)}"
-        health_status["status"] = "unhealthy"
+        statuses["langgraph_store"] = f"error: {str(e)}"
 
-    # Redis health check (only if ava_v1 is loaded)
+    # Redis (now CRITICAL)
     try:
         from graphs.ava_v1.shared_libraries.redis_client import get_redis_client
 
         redis_client = get_redis_client()
         await redis_client.ping()
-        health_status["redis"] = "healthy"
+        statuses["redis"] = "connected"
     except ImportError:
-        # ava_v1 not available
-        health_status["redis"] = "not_required"
+        statuses["redis"] = "not_available"
     except Exception as e:
-        health_status["redis"] = f"unhealthy: {str(e)}"
-        health_status["status"] = "degraded"
+        statuses["redis"] = f"error: {str(e)}"
 
-    if health_status["status"] == "unhealthy":
-        raise HTTPException(status_code=503, detail="Service unhealthy")
-
-    return health_status
+    return statuses
 
 
-@router.get("/ready")
-async def readiness_check() -> dict[str, str]:
-    """Kubernetes readiness probe endpoint"""
-    from .database import db_manager
+@router.get("/readyz", response_model=ReadinessResponse)
+async def readiness_check() -> ReadinessResponse:
+    """Kubernetes readiness probe endpoint - all critical dependencies must be healthy"""
+    statuses = await _check_critical_dependencies()
 
-    # Engine must exist and respond to a trivial query
-    if not db_manager.engine:
-        raise HTTPException(
-            status_code=503,
-            detail="Service not ready - database engine not initialized",
+    # Check if any critical dependency failed
+    is_ready = all(
+        status == "connected" or status == "not_available"
+        for status in statuses.values()
+    )
+
+    if is_ready:
+        return ReadinessResponse(status="ready", **statuses)
+    else:
+        response = ReadinessResponse(status="not_ready", **statuses)
+        raise HTTPException(status_code=503, detail=response.model_dump())
+
+
+@router.get("/healthz", response_model=ReadinessResponse)
+async def healthz_check() -> ReadinessResponse:
+    """Health check endpoint - synonym for readiness check"""
+    return await readiness_check()
+
+
+async def _check_model_armor() -> str:
+    """Check Model Armor API connectivity"""
+    try:
+        env_mode = os.getenv("ENV_MODE", "")
+        enabled = os.getenv("MODEL_ARMOR_ENABLED", "").lower() == "true"
+
+        if env_mode != "PRODUCTION" and not enabled:
+            return "not_configured"
+
+        project_id = os.getenv("MODEL_ARMOR_PROJECT_ID")
+        if not project_id:
+            return "not_configured"
+
+        from graphs.ava_v1.middleware.model_armor_client import _get_credentials
+
+        _get_credentials()
+        return "connected"
+    except ImportError:
+        return "not_configured"
+    except Exception as e:
+        return f"error: {str(e)}"
+
+
+async def _check_cache_worker() -> str:
+    """Check Cache Worker API connectivity"""
+    try:
+        from graphs.ava_v1.shared_libraries.cache_worker_client import (
+            get_cache_worker_base_url,
         )
-    try:
-        async with db_manager.engine.begin() as conn:
-            await conn.execute(text("SELECT 1"))
+
+        base_url = get_cache_worker_base_url()
+        if not base_url:
+            return "not_configured"
+
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{base_url}/health", timeout=2.0)
+            response.raise_for_status()
+            return "connected"
+    except ImportError:
+        return "not_configured"
     except Exception as e:
-        raise HTTPException(
-            status_code=503, detail=f"Service not ready - database error: {str(e)}"
-        ) from e
+        return f"error: {str(e)}"
 
-    # Check that LangGraph components can be obtained (lazy init) and respond
+
+async def _check_pinecone() -> str:
+    """Check Pinecone service connectivity"""
     try:
-        checkpointer = await db_manager.get_checkpointer()
-        store = await db_manager.get_store()
-        # lightweight probes
-        with contextlib.suppress(Exception):
-            await checkpointer.aget_tuple(
-                {"configurable": {"thread_id": "ready-check"}}
-            )
-        with contextlib.suppress(Exception):
-            await store.aget(("ready",), "check")
+        pinecone_url = os.getenv("PINECONE_SERVICE_URL")
+        if not pinecone_url:
+            return "not_configured"
+
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{pinecone_url}/health", timeout=2.0)
+            response.raise_for_status()
+            return "connected"
     except Exception as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Service not ready - components unavailable: {str(e)}",
-        ) from e
-
-    return {"status": "ready"}
+        return f"error: {str(e)}"
 
 
-@router.get("/live")
-async def liveness_check() -> dict[str, str]:
-    """Kubernetes liveness probe endpoint"""
-    return {"status": "alive"}
+async def _check_crm() -> str:
+    """Check CRM API availability"""
+    try:
+        enabled = os.getenv("CRM_LOOKUP_ENABLED", "").lower() == "true"
+        if not enabled:
+            return "not_configured"
+
+        base_url = os.getenv("CRM_BASE_URL")
+        api_key = os.getenv("CRM_API_KEY")
+
+        if not base_url or not api_key:
+            return "error: missing configuration"
+
+        return "configured"
+    except Exception as e:
+        return f"error: {str(e)}"
+
+
+@router.get("/health/detailed", response_model=DetailedHealthResponse)
+async def detailed_health_check() -> DetailedHealthResponse:
+    """Comprehensive health check with critical and optional dependencies"""
+    # Check critical dependencies
+    critical_statuses = await _check_critical_dependencies()
+
+    # Check optional dependencies
+    optional_statuses = {
+        "model_armor": await _check_model_armor(),
+        "cache_worker": await _check_cache_worker(),
+        "pinecone": await _check_pinecone(),
+        "crm": await _check_crm(),
+    }
+
+    # Determine overall health based on critical dependencies only
+    is_healthy = all(
+        status == "connected" or status == "not_available"
+        for status in critical_statuses.values()
+    )
+
+    if is_healthy:
+        return DetailedHealthResponse(
+            status="healthy", critical=critical_statuses, optional=optional_statuses
+        )
+    else:
+        response = DetailedHealthResponse(
+            status="unhealthy", critical=critical_statuses, optional=optional_statuses
+        )
+        raise HTTPException(status_code=503, detail=response.model_dump())

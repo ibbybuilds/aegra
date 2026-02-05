@@ -119,7 +119,7 @@ class LangGraphAuthBackend(AuthenticationBackend):
             AuthenticationError: If authentication fails
         """
         # Skip authentication for health check and status endpoints
-        UNAUTHENTICATED_PATHS = {"/", "/health", "/live", "/ready", "/info"}
+        UNAUTHENTICATED_PATHS = {"/", "/livez", "/readyz", "/healthz", "/health/detailed", "/info"}
         if conn.url.path in UNAUTHENTICATED_PATHS:
             return None
 

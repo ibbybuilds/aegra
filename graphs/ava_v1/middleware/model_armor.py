@@ -4,7 +4,13 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelRequest,
+    ModelResponse,
+    after_model,
+    hook_config,
+)
 from langchain_core.messages import AIMessage, HumanMessage
 
 from ava_v1.shared_libraries.model_armor_client import (
@@ -16,6 +22,50 @@ from ava_v1.shared_libraries.model_armor_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Marker for blocked messages
+MODEL_ARMOR_BLOCKED_MARKER = "MODEL_ARMOR_BLOCKED"
+
+
+@after_model
+def check_for_model_armor_block(state: dict[str, Any], runtime: Any) -> dict[str, Any] | None:
+    """After-model hook to emit proper messages/partial events for Model Armor violations.
+
+    When Model Armor blocks a request, the middleware returns a clean message which gets
+    streamed as an "updates" event. This hook detects that message and emits it again
+    as a "messages/partial" event for proper TTS support in conversation-relay.
+
+    Args:
+        state: Current agent state with messages
+        runtime: Runtime context
+
+    Returns:
+        None (we emit streaming events but don't modify state to avoid duplicates)
+    """
+    messages = state.get("messages")
+    if not messages:
+        return None
+
+    # Get the last message from the state
+    last_message = messages[-1]
+
+    # Check if this is the Model Armor violation message
+    # (We recognize it by the content since we no longer use a marker)
+    if isinstance(last_message, AIMessage) and last_message.content == "I'm sorry, I cannot assist with that request.":
+        logger.debug("[MODEL_ARMOR] Detected violation message, emitting as messages/partial event")
+
+        # Emit as messages/partial event for TTS support
+        try:
+            if hasattr(runtime, "stream_writer") and runtime.stream_writer:
+                runtime.stream_writer(("messages/partial", [last_message.model_dump()]))
+                logger.debug("[MODEL_ARMOR] Emitted messages/partial event for TTS")
+        except Exception as e:
+            logger.warning(f"[MODEL_ARMOR] Failed to emit messages event: {e}")
+
+        # Don't return state update - message is already in state, we just emitted the event
+        return None
+
+    return None
 
 
 class ModelArmorMiddleware(AgentMiddleware):
@@ -110,17 +160,23 @@ class ModelArmorMiddleware(AgentMiddleware):
     def _create_violation_response(
         self, request: ModelRequest
     ) -> ModelResponse:
-        """Create a ModelResponse with a safe error message for policy violations.
+        """Create a ModelResponse with clean violation message for policy violations.
+
+        Note: Middleware responses are streamed as "updates" events, but conversation-relay
+        needs "messages" events for TTS. We emit a manual messages/partial event via
+        stream_writer if available (handled by after_model hook).
 
         Args:
             request: Original ModelRequest
 
         Returns:
-            ModelResponse with AIMessage containing a simple, friendly error message
+            ModelResponse with AIMessage containing the violation message
         """
-        message = "I'm sorry, I cannot assist with that request."
+        # Return the clean message directly
+        ai_message = AIMessage(content="I'm sorry, I cannot assist with that request.")
+
         return ModelResponse(
-            result=[AIMessage(content=message)],
+            result=[ai_message],
         )
 
     async def awrap_model_call(
@@ -205,4 +261,4 @@ class ModelArmorMiddleware(AgentMiddleware):
         return response
 
 
-__all__ = ["ModelArmorMiddleware"]
+__all__ = ["ModelArmorMiddleware", "check_for_model_armor_block"]

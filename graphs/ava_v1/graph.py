@@ -7,7 +7,10 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langgraph.graph.state import CompiledStateGraph
 
 from ava_v1.middleware import ForcedRetryMiddleware, customize_agent_prompt
-from ava_v1.middleware.model_armor import ModelArmorMiddleware
+from ava_v1.middleware.model_armor import (
+    ModelArmorMiddleware,
+    check_for_model_armor_block,
+)
 from ava_v1.prompt import TRAVEL_ASSISTANT_PROMPT
 from ava_v1.state import AvaV1State
 from ava_v1.tools import (
@@ -57,6 +60,7 @@ agent: CompiledStateGraph = create_agent(
         customize_agent_prompt,
         ForcedRetryMiddleware(),
         ModelArmorMiddleware(),
+        check_for_model_armor_block,  # After-model hook to replace blocked marker
     ],  # Dynamic prompt based on CallContext
     state_schema=AvaV1State,
 )

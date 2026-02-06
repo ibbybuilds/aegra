@@ -288,10 +288,10 @@ async def test_optional_dependencies_not_configured():
     )
 
     with patch.dict("os.environ", {}, clear=True):
-        # Model Armor not in production and not enabled
+        # Model Armor - not in production and not enabled
         armor_result = await _check_model_armor()
         assert armor_result.status == "degraded"
-        assert armor_result.message == "Not configured"
+        assert armor_result.message == "Disabled"
 
         # Cache Worker - missing URL
         cache_result = await _check_cache_worker()
@@ -303,10 +303,10 @@ async def test_optional_dependencies_not_configured():
         assert pinecone_result.status == "degraded"
         assert pinecone_result.message == "Not configured"
 
-        # CRM - not enabled
+        # CRM - missing JWT secret (enabled by default)
         crm_result = await _check_crm()
         assert crm_result.status == "degraded"
-        assert crm_result.message == "Not configured"
+        assert crm_result.message == "Configuration incomplete"
 
 
 @pytest.mark.asyncio
@@ -380,8 +380,7 @@ async def test_crm_check_configured():
         "os.environ",
         {
             "CRM_LOOKUP_ENABLED": "true",
-            "CRM_BASE_URL": "https://crm.example.com",
-            "CRM_API_KEY": "test-key",
+            "CRM_JWT_SECRET": "test-jwt-secret",
         },
     ):
         result = await _check_crm()
@@ -402,4 +401,4 @@ async def test_crm_check_missing_config():
         result = await _check_crm()
         assert result.status == "degraded"
         assert result.message == "Configuration incomplete"
-        assert "missing" in result.error
+        assert "CRM_JWT_SECRET" in result.error

@@ -33,6 +33,15 @@ def _is_jwt_enabled() -> bool:
     return env_mode in ["PRODUCTION", "DEVELOPMENT"]
 
 
+def get_cache_worker_base_url() -> str | None:
+    """Get cache-worker base URL from environment variables.
+
+    Returns:
+        Cache worker URL or None if not configured
+    """
+    return os.getenv("CACHE_WORKER_URL")
+
+
 def _get_cache_worker_config() -> dict[str, Any]:
     """Get cache-worker configuration from environment variables.
 

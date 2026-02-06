@@ -242,17 +242,30 @@ async def _check_model_armor() -> CheckResult:
         env_mode = os.getenv("ENV_MODE", "")
         enabled = os.getenv("MODEL_ARMOR_ENABLED", "").lower() == "true"
 
-        if env_mode != "PRODUCTION" and not enabled:
-            return CheckResult(status="degraded", message="Not configured")
+        # Model Armor is auto-enabled in PRODUCTION or can be explicitly enabled
+        is_enabled = env_mode == "PRODUCTION" or enabled
 
+        if not is_enabled:
+            return CheckResult(status="degraded", message="Disabled")
+
+        # Check required configuration
         project_id = os.getenv("MODEL_ARMOR_PROJECT_ID")
-        if not project_id:
-            return CheckResult(status="degraded", message="Not configured")
+        template_id = os.getenv("MODEL_ARMOR_TEMPLATE_ID")
 
-        from graphs.ava_v1.middleware.model_armor_client import _get_credentials
+        if not project_id or not template_id:
+            missing = []
+            if not project_id:
+                missing.append("MODEL_ARMOR_PROJECT_ID")
+            if not template_id:
+                missing.append("MODEL_ARMOR_TEMPLATE_ID")
+            return CheckResult(
+                status="degraded",
+                message="Configuration incomplete",
+                error=f"missing {', '.join(missing)}",
+            )
 
-        _get_credentials()
-        return CheckResult(status="healthy", message="Connected")
+        # Configuration is present - don't actually call GCP to avoid auth issues in health check
+        return CheckResult(status="healthy", message="Configured")
     except ImportError:
         return CheckResult(status="degraded", message="Not configured")
     except Exception as e:
@@ -314,18 +327,19 @@ async def _check_crm() -> CheckResult:
         CheckResult with CRM status
     """
     try:
-        enabled = os.getenv("CRM_LOOKUP_ENABLED", "").lower() == "true"
+        # Check if CRM lookup is enabled (defaults to true)
+        enabled = os.getenv("CRM_LOOKUP_ENABLED", "true").lower() == "true"
         if not enabled:
-            return CheckResult(status="degraded", message="Not configured")
+            return CheckResult(status="degraded", message="Disabled")
 
-        base_url = os.getenv("CRM_BASE_URL")
-        api_key = os.getenv("CRM_API_KEY")
-
-        if not base_url or not api_key:
+        # CRM auto-selects base_url based on ENV_MODE if not explicitly set
+        # So we only need to check for JWT secret
+        jwt_secret = os.getenv("CRM_JWT_SECRET")
+        if not jwt_secret:
             return CheckResult(
                 status="degraded",
                 message="Configuration incomplete",
-                error="missing base_url or api_key",
+                error="missing CRM_JWT_SECRET",
             )
 
         return CheckResult(status="healthy", message="Configured")

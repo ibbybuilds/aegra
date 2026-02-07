@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from aegra_api.core.auth_deps import get_current_user
+from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.models import (
     StoreDeleteRequest,
@@ -14,7 +14,7 @@ from aegra_api.models import (
     User,
 )
 
-router = APIRouter(tags=["Store"])
+router = APIRouter(tags=["Store"], dependencies=auth_dependency)
 
 
 @router.put("/store/items")

@@ -25,7 +25,7 @@ from aegra_api.core.accountability_orm import DiscoveredOpportunity
 from aegra_api.services.opportunity_service import OpportunityService
 from aegra_api.services.opportunity_discovery import opportunity_engine
 
-router = APIRouter(prefix="/opportunities", tags=["opportunities"])
+router = APIRouter(prefix="/opportunities")
 
 
 # ── Pydantic Models ──────────────────────────────────────────────────

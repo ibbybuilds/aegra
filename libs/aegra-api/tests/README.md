@@ -36,18 +36,21 @@ tests/
 ## Test Categories
 
 ### Unit Tests (`tests/unit/`)
+
 - **Purpose**: Test individual functions/classes in isolation
 - **Dependencies**: Mocks only, no external services
 - **Speed**: ⚡ Very fast (milliseconds)
 - **Run with**: `pytest tests/unit/`
 
 ### Integration Tests (`tests/integration/`)
+
 - **Purpose**: Test multiple components working together
 - **Dependencies**: Real database, mocked external APIs
 - **Speed**: 🐢 Slower (100ms-1s per test)
 - **Run with**: `pytest tests/integration/`
 
 ### E2E Tests (`tests/e2e/`)
+
 - **Purpose**: Test complete user workflows
 - **Dependencies**: Full system, real database, real services
 - **Speed**: 🐌 Slowest (1s-10s per test)
@@ -56,11 +59,13 @@ tests/
 ## Running Tests
 
 ### Run all tests
+
 ```bash
 pytest
 ```
 
 ### Run by category
+
 ```bash
 pytest tests/unit/          # Only unit tests
 pytest tests/integration/   # Only integration tests
@@ -68,6 +73,7 @@ pytest tests/e2e/          # Only E2E tests
 ```
 
 ### Run by marker
+
 ```bash
 pytest -m unit              # All unit tests
 pytest -m integration       # All integration tests
@@ -76,16 +82,19 @@ pytest -m "not slow"       # Skip slow tests
 ```
 
 ### Run specific test file
+
 ```bash
 pytest tests/unit/test_middleware/test_double_encoded_json.py
 ```
 
 ### Run with verbose output
+
 ```bash
 pytest -v
 ```
 
 ### Run with coverage
+
 ```bash
 pytest --cov=src/aegra_api --cov-report=html
 ```
@@ -102,6 +111,7 @@ Tests can be marked with pytest markers for categorization:
 ## Fixtures
 
 Shared fixtures are available from:
+
 - `tests/conftest.py` - Global fixtures
 - `tests/fixtures/` - Organized fixture modules
 - `tests/{category}/conftest.py` - Category-specific fixtures
@@ -118,6 +128,7 @@ from tests.fixtures.clients import create_test_app, make_client
 ## Writing New Tests
 
 ### Unit Test Example
+
 ```python
 # tests/unit/test_utils/test_sse_utils.py
 import pytest
@@ -130,6 +141,7 @@ def test_generate_event_id():
 ```
 
 ### Integration Test Example
+
 ```python
 # tests/integration/test_services/test_assistant_service.py
 import pytest
@@ -142,6 +154,7 @@ async def test_create_assistant():
 ```
 
 ### E2E Test Example
+
 ```python
 # tests/e2e/test_assistants/test_assistant_crud.py
 import pytest
@@ -178,20 +191,26 @@ This ensures fast failure detection and efficient resource usage.
 ## Troubleshooting
 
 ### Import Errors
+
 Make sure you're running pytest from the project root:
+
 ```bash
 cd /path/to/aegra
 pytest tests/
 ```
 
 ### Database Errors in Integration Tests
+
 Ensure Docker Compose is running:
+
 ```bash
 docker compose up -d
 ```
 
 ### Slow Tests
+
 Run only fast tests during development:
+
 ```bash
 pytest -m "not slow"
 ```

@@ -71,10 +71,10 @@ class SchedulerService:
                 id="expire_opportunities",
                 replace_existing=True,
             )
-            # Discovery — every 2 min (testing)
+            # Discovery — once daily
             self.scheduler.add_job(
                 self.run_discovery_job,
-                IntervalTrigger(minutes=20),
+                IntervalTrigger(hours=24),
                 id="run_discovery_job",
                 replace_existing=True,
             )

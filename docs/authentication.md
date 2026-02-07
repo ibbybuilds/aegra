@@ -114,21 +114,21 @@ async def authenticate(headers: dict) -> dict:
     auth_header = headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise Exception("Missing or invalid Authorization header")
-    
+
     token = auth_header.replace("Bearer ", "")
-    
+
     # Verify token (your logic here)
     # For JWT: verify signature, check expiration, etc.
     # For OAuth: validate access token
     # For Firebase: verify ID token
-    
+
     # Return user data
     return {
         "identity": "user123",           # Required: unique user identifier
         "display_name": "John Doe",      # Optional: display name
         "permissions": ["read", "write"], # Optional: list of permissions
         "is_authenticated": True,        # Optional: authentication status
-        
+
         # Custom fields are preserved and accessible in routes
         "role": "admin",
         "team_id": "team456",
@@ -155,14 +155,14 @@ Raise an exception to deny authentication:
 @auth.authenticate
 async def authenticate(headers: dict) -> dict:
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     if not token:
         raise Exception("Authentication required")
-    
+
     # Verify token
     if not is_valid_token(token):
         raise Exception("Invalid token")
-    
+
     return user_data
 ```
 
@@ -235,12 +235,12 @@ The `ctx` parameter provides:
 
 ### Handler Return Values
 
-| Return Value | Behavior |
-|-------------|----------|
-| `None` or `True` | Allow request, no filters |
-| `False` | Deny request (403 Forbidden) |
-| `dict` | Allow with filters applied (e.g., `{"metadata": {"team_id": "123"}}`) |
-| Modified `value` | Allow with modified request data |
+| Return Value     | Behavior                                                              |
+| ---------------- | --------------------------------------------------------------------- |
+| `None` or `True` | Allow request, no filters                                             |
+| `False`          | Deny request (403 Forbidden)                                          |
+| `dict`           | Allow with filters applied (e.g., `{"metadata": {"team_id": "123"}}`) |
+| Modified `value` | Allow with modified request data                                      |
 
 ### Non-Interruptive Design
 
@@ -277,7 +277,7 @@ auth = Auth()
 async def authenticate(headers: dict) -> dict:
     """OAuth authentication."""
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     # Verify token with OAuth provider
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -286,7 +286,7 @@ async def authenticate(headers: dict) -> dict:
         )
         response.raise_for_status()
         user_info = response.json()
-    
+
     return {
         "identity": user_info["sub"],
         "display_name": user_info["name"],
@@ -307,10 +307,10 @@ auth = Auth()
 async def authenticate(headers: dict) -> dict:
     """Firebase authentication."""
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     # Verify Firebase ID token
     decoded_token = firebase_auth.verify_id_token(token)
-    
+
     return {
         "identity": decoded_token["uid"],
         "display_name": decoded_token.get("name", ""),

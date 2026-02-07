@@ -9,6 +9,7 @@ These tests verify the authentication and authorization functionality of Aegra. 
 ## When to Run These Tests
 
 Run these tests when:
+
 - Making changes to `aegra_api/core/auth_middleware.py`
 - Making changes to `aegra_api/core/auth_handlers.py`
 - Making changes to `aegra_api/core/auth_deps.py`
@@ -19,6 +20,7 @@ Run these tests when:
 ## How to Run
 
 1. **Create an auth config file** (e.g., `my_auth_config.json`):
+
    ```json
    {
      "graphs": {
@@ -35,6 +37,7 @@ Run these tests when:
    ```
 
 2. **Start the server with auth enabled:**
+
    ```bash
    AEGRA_CONFIG=my_auth_config.json python run_server.py
    # OR for Docker:
@@ -42,6 +45,7 @@ Run these tests when:
    ```
 
 3. **Run the manual auth tests:**
+
    ```bash
    # Run all manual auth tests
    pytest tests/e2e/manual_auth_tests/ -v -m manual_auth
@@ -54,7 +58,7 @@ Run these tests when:
 ## Test Files
 
 - `test_auth_e2e.py` - Core authentication flow tests (JWT, custom routes, error handling)
-- `test_authorization_handlers_e2e.py` - Authorization handler tests (@auth.on.* decorators)
+- `test_authorization_handlers_e2e.py` - Authorization handler tests (@auth.on.\* decorators)
 
 ## Notes
 

@@ -1,7 +1,7 @@
 services:
   # PostgreSQL database for LangGraph and metadata
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:pg18
     env_file:
       - .env
     ports:
@@ -25,24 +25,22 @@ services:
       - .env
     environment:
       - POSTGRES_HOST=postgres
+      - PYTHONPATH=/app/src
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
-      - ./graphs:/app/graphs:ro
-      - ./src:/app/src:ro # for hot reload support of server
-      - ./jwt_mock_auth_example.py:/app/jwt_mock_auth_example.py:ro
+      - ./examples:/app/examples:ro
+      - ./libs/aegra-api/src:/app/src:ro  # Mount full src for PYTHONPATH to work
+      - ./libs/aegra-api/alembic:/app/alembic:ro # for migrations
       - ./.env:/app/.env:ro
-      - ./alembic:/app/alembic:ro # for migrations
-      # Mount custom route files dynamically (add your custom routes file here)
-      - ./custom_routes_example.py:/app/custom_routes_example.py:ro
     command: >
       sh -c "
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
       "
 
   # Redis (optional - for advanced queuing in future phases)

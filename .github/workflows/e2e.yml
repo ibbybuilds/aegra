@@ -3,6 +3,8 @@ name: E2E Tests
 on:
   push:
     branches: [main]
+  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   e2e-tests:
@@ -36,36 +38,37 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
-      - name: Install dependencies
+      - name: Install aegra-api dependencies
+        working-directory: libs/aegra-api
         run: uv sync
 
       - name: Run database migrations
+        working-directory: libs/aegra-api
         env:
-          AEGRA_CONFIG: ""
           POSTGRES_USER: "user"
           POSTGRES_PASSWORD: "password"
           POSTGRES_HOST: "localhost"
-          POSTGRES_PORT: 5432
+          POSTGRES_PORT: "5432"
           POSTGRES_DB: "aegra"
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
-          LANGFUSE_LOGGING: true
         run: uv run alembic upgrade head
 
       - name: Start Aegra server in background
         env:
-          AEGRA_CONFIG: ""
+          AEGRA_CONFIG: ${{ github.workspace }}/aegra.json
           POSTGRES_USER: "user"
           POSTGRES_PASSWORD: "password"
           POSTGRES_HOST: "localhost"
-          POSTGRES_PORT: 5432
+          POSTGRES_PORT: "5432"
           POSTGRES_DB: "aegra"
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/aegra
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AUTH_TYPE: noop
-          PORT: 8000
-          LANGFUSE_LOGGING: true
+          HOST: "0.0.0.0"
+          PORT: "8000"
+          # Add examples to Python path for graph imports
+          PYTHONPATH: ${{ github.workspace }}/examples
+        working-directory: libs/aegra-api
         run: |
-          uv run python run_server.py > server.log 2>&1 &
+          uv run uvicorn aegra_api.main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
           echo $! > server.pid
           echo "Waiting for server to be ready..."
           for i in {1..30}; do
@@ -81,26 +84,22 @@ jobs:
           exit 1
 
       - name: Run E2E tests
+        working-directory: libs/aegra-api
         env:
-          AEGRA_CONFIG: ""
-          POSTGRES_USER: "user"
-          POSTGRES_PASSWORD: "password"
-          POSTGRES_HOST: "localhost"
-          POSTGRES_PORT: 5432
-          POSTGRES_DB: "aegra"
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERVER_URL: http://localhost:8000
-          LANGFUSE_LOGGING: true
-        run: uv run pytest tests/e2e -v --tb=short
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest tests/e2e -v --tb=short --ignore=tests/e2e/manual_auth_tests
 
       - name: Show server logs on failure
         if: failure()
+        working-directory: libs/aegra-api
         run: |
           echo "=== Server Logs ==="
           cat server.log || echo "No server logs found"
 
       - name: Stop server
         if: always()
+        working-directory: libs/aegra-api
         run: |
           if [ -f server.pid ]; then
             kill $(cat server.pid) || true

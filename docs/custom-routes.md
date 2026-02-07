@@ -72,7 +72,7 @@ When enabled, Aegra will automatically apply the authentication dependency to al
 Alternatively, you can apply auth manually to specific routes:
 
 ```python
-from agent_server.core.auth_deps import require_auth
+from aegra_api.core.auth_deps import require_auth
 from fastapi import Depends
 
 @app.get("/my-protected-route")

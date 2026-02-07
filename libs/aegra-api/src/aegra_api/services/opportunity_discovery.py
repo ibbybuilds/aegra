@@ -161,8 +161,8 @@ class OpportunityDiscoveryEngine:
         brave_api_key: str | None = None,
         anthropic_api_key: str | None = None,
     ) -> None:
-        self.brave_api_key = brave_api_key or settings.app.BRAVE_API_KEY
-        self.anthropic_api_key = anthropic_api_key or settings.app.ANTHROPIC_API_KEY
+        self.brave_api_key = brave_api_key or settings.discovery.BRAVE_API_KEY
+        self.anthropic_api_key = anthropic_api_key or settings.discovery.ANTHROPIC_API_KEY
         self.lms_base_url = settings.app.LMS_URL
 
     # ------------------------------------------------------------------

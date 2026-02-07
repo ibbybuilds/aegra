@@ -4,16 +4,16 @@ import asyncio
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "libs", "aegra-api", "src"))
 
-from src.agent_server.services.opportunity_discovery import opportunity_engine
-from src.agent_server.settings import settings
+from aegra_api.services.opportunity_discovery import opportunity_engine
+from aegra_api.settings import settings
 
 
 async def test_brave_search():
     """Test Brave Search API with job queries."""
-    print(f"Brave API Key configured: {bool(settings.app.BRAVE_API_KEY)}")
-    print(f"Key prefix: {settings.app.BRAVE_API_KEY[:8] if settings.app.BRAVE_API_KEY else 'N/A'}...")
+    print(f"Brave API Key configured: {bool(settings.discovery.BRAVE_API_KEY)}")
+    print(f"Key prefix: {settings.discovery.BRAVE_API_KEY[:8] if settings.discovery.BRAVE_API_KEY else 'N/A'}...")
     
     # Test job queries
     location = "remote"

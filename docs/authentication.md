@@ -325,8 +325,8 @@ Custom routes can use authentication via the `require_auth` dependency:
 
 ```python
 from fastapi import Depends
-from src.agent_server.core.auth_deps import require_auth
-from src.agent_server.models.auth import User
+from aegra_api.core.auth_deps import require_auth
+from aegra_api.models.auth import User
 
 @app.get("/custom/whoami")
 async def whoami(user: User = Depends(require_auth)):

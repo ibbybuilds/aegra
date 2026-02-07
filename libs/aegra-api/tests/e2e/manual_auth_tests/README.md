@@ -9,9 +9,9 @@ These tests verify the authentication and authorization functionality of Aegra. 
 ## When to Run These Tests
 
 Run these tests when:
-- Making changes to `src/agent_server/core/auth_middleware.py`
-- Making changes to `src/agent_server/core/auth_handlers.py`
-- Making changes to `src/agent_server/core/auth_deps.py`
+- Making changes to `aegra_api/core/auth_middleware.py`
+- Making changes to `aegra_api/core/auth_handlers.py`
+- Making changes to `aegra_api/core/auth_deps.py`
 - Making changes to authorization handler resolution logic
 - Adding new authentication features
 - Fixing authentication-related bugs

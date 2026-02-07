@@ -266,22 +266,22 @@ python3 scripts/migrate.py upgrade    # Apply again
 
 ```
 aegra/
-├── alembic/                    # Database migrations
-│   ├── versions/              # Migration files
-│   ├── env.py                 # Alembic configuration
-│   └── script.py.mako         # Migration template
-├── src/agent_server/          # Main application code
-│   ├── core/database.py       # Database connection
-│   ├── api/                   # API endpoints
-│   ├── services/              # Core services (LangGraph, etc.)
-│   └── models/                # Data models
-├── scripts/
-│   └── migrate.py             # Migration helper script
-├── docs/
-│   ├── developer-guide.md     # This file
-│   └── migrations.md          # Detailed migration docs
-├── alembic.ini                # Alembic configuration
-└── docker compose.yml         # Database setup
+├── libs/aegra-api/            # Main API package
+│   ├── src/aegra_api/         # Application code
+│   │   ├── core/database.py   # Database connection
+│   │   ├── api/               # API endpoints
+│   │   ├── services/          # Core services (LangGraph, etc.)
+│   │   └── models/            # Data models
+│   ├── alembic/               # Database migrations
+│   │   ├── versions/          # Migration files
+│   │   └── env.py             # Alembic configuration
+│   ├── pyproject.toml         # Package dependencies
+│   └── tests/                 # Tests
+├── examples/                  # Example graph implementations
+├── scripts/                   # Utility scripts
+├── docs/                      # Documentation
+├── docker-compose.yml         # Docker setup
+└── pyproject.toml             # Root workspace config (uv)
 ```
 
 ## 🔄 LangGraph Service Architecture
@@ -454,10 +454,10 @@ chmod +x scripts/migrate.py
 pytest
 
 # Run specific test file
-pytest tests/test_api/test_assistants.py
+pytest tests/unit/test_assistants.py
 
 # Run with coverage
-pytest --cov=src/agent_server
+pytest --cov=src/aegra_api
 ```
 
 ### Testing Database Changes

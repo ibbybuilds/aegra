@@ -26,15 +26,22 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from aegra_api.api.accountability import router as accountability_router
+from aegra_api.api.activity_logs import router as activity_logs_router
 from aegra_api.api.assistants import router as assistants_router
+from aegra_api.api.career_advisors import router as career_advisors_router
+from aegra_api.api.management import router as management_router
+from aegra_api.api.opportunities import router as opportunities_router
 from aegra_api.api.runs import router as runs_router
 from aegra_api.api.store import router as store_router
 from aegra_api.api.threads import router as threads_router
+from aegra_api.api.web_push import router as web_push_router
 from aegra_api.config import HttpConfig, get_config_dir, load_http_config
 from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
 from aegra_api.core.health import router as health_router
+from aegra_api.core.redis import redis_manager
 from aegra_api.core.route_merger import (
     merge_exception_handlers,
     merge_lifespans,
@@ -44,6 +51,7 @@ from aegra_api.models.errors import AgentProtocolError, get_error_type
 from aegra_api.observability.setup import setup_observability
 from aegra_api.services.event_store import event_store
 from aegra_api.services.langgraph_service import get_langgraph_service
+from aegra_api.services.scheduler import scheduler_service
 from aegra_api.settings import settings
 from aegra_api.utils.setup_logging import setup_logging
 
@@ -63,6 +71,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 
+    # Initialize Redis if configured
+    await redis_manager.initialize()
+
     # Observability
     setup_observability()
 
@@ -73,15 +84,23 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Initialize event store cleanup task
     await event_store.start_cleanup_task()
 
+    # Start Scheduler
+    scheduler_service.start()
+
     yield
 
     # Shutdown: Clean up connections and cancel active runs
+    scheduler_service.shutdown()
+
     for task in active_runs.values():
         if not task.done():
             task.cancel()
 
     # Stop event store cleanup task
     await event_store.stop_cleanup_task()
+
+    # Close Redis connection if configured
+    await redis_manager.close()
 
     await db_manager.close()
 
@@ -111,8 +130,35 @@ async def general_exception_handler(_request: Request, exc: Exception) -> JSONRe
     )
 
 
+async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
+    """Handle JSON decode and validation errors"""
+    error_msg = str(exc)
+    logger.error(f"Validation error: {error_msg}")
+
+    # Check if it's a JSON decode error
+    if "JSON" in error_msg or "json" in error_msg.lower():
+        return JSONResponse(
+            status_code=400,
+            content=AgentProtocolError(
+                error="invalid_request",
+                message="Invalid JSON in request body. Ensure file content is properly encoded.",
+                details={"error": error_msg},
+            ).model_dump(),
+        )
+
+    return JSONResponse(
+        status_code=400,
+        content=AgentProtocolError(
+            error="validation_error",
+            message=error_msg,
+            details={"exception": str(exc)},
+        ).model_dump(),
+    )
+
+
 exception_handlers = {
     HTTPException: agent_protocol_exception_handler,
+    ValueError: value_error_handler,
     Exception: general_exception_handler,
 }
 
@@ -228,6 +274,12 @@ def _include_core_routers(app: FastAPI) -> None:
     app.include_router(threads_router, dependencies=auth_dependency, prefix="", tags=["Threads"])
     app.include_router(runs_router, dependencies=auth_dependency, prefix="", tags=["Runs"])
     app.include_router(store_router, dependencies=auth_dependency, prefix="", tags=["Store"])
+    app.include_router(activity_logs_router, dependencies=auth_dependency, prefix="", tags=["Activity Logs"])
+    app.include_router(management_router, dependencies=auth_dependency, prefix="", tags=["Management"])
+    app.include_router(career_advisors_router, dependencies=auth_dependency, prefix="", tags=["Career Advisors"])
+    app.include_router(accountability_router, dependencies=auth_dependency, prefix="", tags=["Accountability"])
+    app.include_router(opportunities_router, dependencies=auth_dependency, prefix="", tags=["Opportunities"])
+    app.include_router(web_push_router, dependencies=auth_dependency, prefix="", tags=["Web Push"])
 
 
 def create_app() -> FastAPI:

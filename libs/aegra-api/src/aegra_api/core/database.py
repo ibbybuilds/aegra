@@ -82,6 +82,10 @@ class DatabaseManager:
             embed_model = index_config.get("embed", "unknown")
             logger.info(f"Semantic store enabled with embeddings: {embed_model}")
 
+        # Initialize the session maker for ORM operations
+        from .orm import initialize_session_maker
+        initialize_session_maker()
+
         logger.info("✅ Database and LangGraph components initialized")
 
     async def close(self) -> None:
@@ -97,6 +101,10 @@ class DatabaseManager:
             self.lg_pool = None
             self._checkpointer = None
             self._store = None
+
+        # Reset the session maker cache
+        from .orm import reset_session_maker
+        reset_session_maker()
 
         logger.info("✅ Database connections closed")
 

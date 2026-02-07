@@ -75,7 +75,7 @@ ADMIN_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ### 4. Initialize Database
 
 ```bash
-python -m src.agent_server.tools.rag.ingest --init-db
+python -m aegra_api.tools.rag.ingest --init-db
 ```
 
 ## Usage
@@ -85,18 +85,18 @@ python -m src.agent_server.tools.rag.ingest --init-db
 #### Index a Single Course
 
 ```bash
-python -m src.agent_server.tools.rag.ingest --course-id <course_id>
+python -m aegra_api.tools.rag.ingest --course-id <course_id>
 ```
 
 Example:
 ```bash
-python -m src.agent_server.tools.rag.ingest --course-id 67890abcdef
+python -m aegra_api.tools.rag.ingest --course-id 67890abcdef
 ```
 
 #### Index All Courses
 
 ```bash
-python -m src.agent_server.tools.rag.ingest --all
+python -m aegra_api.tools.rag.ingest --all
 ```
 
 This will:
@@ -109,13 +109,13 @@ This will:
 #### Check Indexing Status
 
 ```bash
-python -m src.agent_server.tools.rag.ingest --status <course_id>
+python -m aegra_api.tools.rag.ingest --status <course_id>
 ```
 
 ### Using the Retriever in Code
 
 ```python
-from src.agent_server.tools.rag import CourseRetriever
+from aegra_api.tools.rag import CourseRetriever
 
 # Initialize retriever
 retriever = CourseRetriever()
@@ -202,7 +202,7 @@ Check indexing status at any time:
 
 ```bash
 # View status for a specific course
-python -m src.agent_server.tools.rag.ingest --status <course_id>
+python -m aegra_api.tools.rag.ingest --status <course_id>
 ```
 
 This shows:

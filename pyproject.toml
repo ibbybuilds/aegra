@@ -1,5 +1,8 @@
-# Root pyproject.toml - Dev tools configuration only
+# Root pyproject.toml - Workspace configuration
 # The actual packages are in libs/aegra-api and libs/aegra-cli
+
+[tool.uv.workspace]
+members = ["libs/aegra-api"]
 
 [tool.ruff]
 line-length = 120

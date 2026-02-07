@@ -4,15 +4,15 @@ import asyncio
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "libs", "aegra-api", "src"))
 
 import httpx
-from src.agent_server.settings import settings
+from aegra_api.settings import settings
 
 
 async def test_linkedin_job_search():
     """Test Brave Search API with LinkedIn job queries."""
-    api_key = settings.app.BRAVE_API_KEY
+    api_key = settings.discovery.BRAVE_API_KEY
     print(f"Brave API Key: {api_key[:10]}..." if api_key else "NOT SET")
     
     # Test queries - exactly as user specified

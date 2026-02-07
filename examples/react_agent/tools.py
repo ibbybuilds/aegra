@@ -30,11 +30,11 @@ try:
 
     # Add src to path if needed
     project_root = Path(__file__).parent.parent.parent
-    src_path = project_root / "src"
+    src_path = project_root / "libs" / "aegra-api" / "src"
     if src_path.exists() and str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
 
-    from agent_server.tools.rag import CourseRetriever
+    from aegra_api.tools.rag import CourseRetriever
 
     RAG_AVAILABLE = True
     logger.info("RAG course search module loaded successfully")

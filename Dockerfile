@@ -15,48 +15,54 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # Builder stage
 # -----------------------------
 FROM base AS builder
+
+# Retrieve the uv binary directly from the official image.
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+
+# Install system build dependencies required for compiling Python extensions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project metadata and source
-COPY pyproject.toml ./
-COPY README.md ./
-COPY src/ ./src/
+# Copy aegra-api package files
+COPY libs/aegra-api/pyproject.toml libs/aegra-api/uv.lock libs/aegra-api/README.md ./
 
-# Install project (builds wheel and installs dependencies specified in pyproject)
-RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir .
+# Install dependencies strictly from uv.lock.
+RUN uv export --frozen --no-dev --no-emit-project --format=requirements-txt > requirements.txt && \
+    uv pip install --system --compile-bytecode -r requirements.txt && \
+    rm requirements.txt
+
+# Copy the actual project source code.
+COPY libs/aegra-api/src/ ./src/
+
+# Install the project package itself.
+RUN uv pip install --system --compile-bytecode --no-deps .
 
 # -----------------------------
 # Final, minimal runtime image
 # -----------------------------
 FROM base AS final
 
-# Install only minimal runtime libs (psycopg[binary] used, so libpq not required at runtime)
+# Install only minimal runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed Python packages and console scripts from builder
+# Copy installed Python packages from the builder stage.
 COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
 # Copy runtime assets required by the app and alembic
-COPY alembic.ini ./alembic.ini
-COPY alembic/ ./alembic/
+COPY libs/aegra-api/alembic.ini ./alembic.ini
+COPY libs/aegra-api/alembic/ ./alembic/
 COPY aegra.json ./aegra.json
 COPY auth.py ./auth.py
-COPY graphs/ ./graphs/
-
-# Copy src to keep compatibility with current compose command using 'src.agent_server.main:app'
-# (We can switch compose to 'agent_server.main:app' later and drop this for a smaller image.)
-COPY src/ ./src/
+COPY examples/ ./examples/
 
 EXPOSE 8000
 
-# Add a small entrypoint that attempts migrations then starts the app
+# Add entrypoint that attempts migrations then starts the app
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
@@ -65,6 +71,6 @@ USER app
 
 # Entrypoint will attempt to run alembic (best-effort) then exec the CMD below
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["uvicorn", "src.agent_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 

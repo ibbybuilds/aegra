@@ -4,15 +4,15 @@ import asyncio
 import os
 import sys
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add libs/aegra-api/src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "libs", "aegra-api", "src"))
 
 from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-from src.agent_server.core.accountability_orm import DiscoveredOpportunity
-from src.agent_server.settings import settings
+from aegra_api.core.accountability_orm import DiscoveredOpportunity
+from aegra_api.settings import settings
 
 
 async def clear_all_opportunities():

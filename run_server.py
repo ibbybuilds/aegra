@@ -8,9 +8,14 @@ This script:
 3. Can be used for testing our LangGraph integration
 """
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
+
+# Fix for Windows: psycopg async requires SelectorEventLoop, not ProactorEventLoop
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import structlog
 import uvicorn
@@ -47,9 +52,7 @@ def configure_logging(level: str = "DEBUG"):
     logging.getLogger("uvicorn.access").disabled = True
 
     # Ensure our package/module loggers are at least at the configured level
-    logging.getLogger("agent_server").setLevel(log_level)
-    logging.getLogger("src.agent_server").setLevel(log_level)
-    logging.getLogger("aegra").setLevel(log_level)
+    logging.getLogger("aegra_api").setLevel(log_level)
 
 
 def main():

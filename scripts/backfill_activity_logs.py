@@ -20,11 +20,11 @@ from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add libs/aegra-api/src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "libs" / "aegra-api" / "src"))
 
-from src.agent_server.core.orm import ActivityLog as ActivityLogORM
-from src.agent_server.core.orm import Run as RunORM
+from aegra_api.core.orm import ActivityLog as ActivityLogORM
+from aegra_api.core.orm import Run as RunORM
 
 # Load environment variables from .env file
 load_dotenv()

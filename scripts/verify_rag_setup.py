@@ -112,8 +112,8 @@ def check_rag_import():
     print("\n🔍 Checking RAG module imports...")
 
     try:
-        # Add src to path if needed
-        src_path = project_root / "src"
+        # Add libs/aegra-api/src to path if needed
+        src_path = project_root / "libs" / "aegra-api" / "src"
         if src_path.exists() and str(src_path) not in sys.path:
             sys.path.insert(0, str(src_path))
 
@@ -203,9 +203,9 @@ def main():
         print("\n🎉 All checks passed! Your RAG system is ready to use.")
         print("\nNext steps:")
         print("  1. Initialize database schema:")
-        print("     python -m agent_server.tools.rag.ingest --init-db")
+        print("     python -m aegra_api.tools.rag.ingest --init-db")
         print("\n  2. Index your courses:")
-        print("     python -m agent_server.tools.rag.ingest --all")
+        print("     python -m aegra_api.tools.rag.ingest --all")
         print("\n  3. Start using the agent with course search! 🚀")
         return 0
     else:

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BeforeValidator, computed_field
+from pydantic import BeforeValidator, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,6 +47,14 @@ class AppSettings(EnvBase):
     # Logging
     LOG_LEVEL: UpperStr = "INFO"
     LOG_VERBOSITY: LowerStr = "verbose"
+
+    # Custom LMS Integration
+    LMS_JWT_SECRET: str | None = None
+    LMS_URL: str = "http://localhost:3000"
+    ADMIN_TOKEN: str | None = None
+
+    # Title Generator
+    TITLE_GENERATOR_MODEL: str = "openai/gpt-4o-mini"
 
 
 class DatabaseSettings(EnvBase):
@@ -124,11 +132,18 @@ class PushNotificationSettings(EnvBase):
 class DiscoverySettings(EnvBase):
     """Opportunity discovery settings."""
 
-    BRAVE_API_KEY: str | None = None
+    BRAVE_API_KEY: str | None = Field(None, validation_alias="BRAVE_SEARCH_API_KEY")
     ANTHROPIC_API_KEY: str | None = None
     DISCOVERY_MAX_TRACKS: int = 2
     DISCOVERY_QUERIES_PER_CATEGORY: int = 1
     DISCOVERY_PROVIDER: str = "brave"  # brave, claude, or auto
+
+
+class RedisSettings(EnvBase):
+    """Redis streaming settings."""
+
+    REDIS_URL: str | None = None
+    STREAMING_BROKER: LowerStr = "auto"
 
 
 class Settings:
@@ -139,6 +154,7 @@ class Settings:
         self.observability = ObservabilitySettings()
         self.push = PushNotificationSettings()
         self.discovery = DiscoverySettings()
+        self.redis = RedisSettings()
 
 
 settings = Settings()

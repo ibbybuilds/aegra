@@ -33,9 +33,9 @@ class WebPushService:
     """Manages Web Push subscriptions and message delivery."""
 
     def __init__(self) -> None:
-        self.vapid_public_key = settings.app.VAPID_PUBLIC_KEY
-        self.vapid_private_key = settings.app.VAPID_PRIVATE_KEY
-        self.vapid_claims = {"sub": settings.app.VAPID_CLAIMS_EMAIL}
+        self.vapid_public_key = settings.push.VAPID_PUBLIC_KEY
+        self.vapid_private_key = settings.push.VAPID_PRIVATE_KEY
+        self.vapid_claims = {"sub": settings.push.VAPID_CLAIMS_EMAIL}
 
     @property
     def is_configured(self) -> bool:

@@ -5,9 +5,9 @@ This script fetches course data from the LMS API and indexes it
 for semantic search and retrieval.
 
 Usage:
-    python -m agent_server.tools.rag.ingest --course-id <course_id>
-    python -m agent_server.tools.rag.ingest --all
-    python -m agent_server.tools.rag.ingest --status <course_id>
+    python -m aegra_api.tools.rag.ingest --course-id <course_id>
+    python -m aegra_api.tools.rag.ingest --all
+    python -m aegra_api.tools.rag.ingest --status <course_id>
 """
 
 import argparse
@@ -197,13 +197,13 @@ async def main() -> None:
         epilog="""
 Examples:
   # Index a specific course
-  python -m agent_server.tools.rag.ingest --course-id 12345
+  python -m aegra_api.tools.rag.ingest --course-id 12345
 
   # Index all courses
-  python -m agent_server.tools.rag.ingest --all
+  python -m aegra_api.tools.rag.ingest --all
 
   # Check indexing status
-  python -m agent_server.tools.rag.ingest --status 12345
+  python -m aegra_api.tools.rag.ingest --status 12345
         """,
     )
 

@@ -60,4 +60,4 @@ clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov 2>/dev/null || true
 
 run:
-	cd libs/aegra-api && uv run uvicorn aegra_api.main:app --reload
+	cd libs/aegra-api && uv run python -m aegra_api

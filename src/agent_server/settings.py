@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BeforeValidator, computed_field
+from pydantic import BeforeValidator, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +55,15 @@ class AppSettings(EnvBase):
 
     # Title Generator
     TITLE_GENERATOR_MODEL: str = "openai/gpt-4o-mini"
+
+    # Opportunity Discovery
+    BRAVE_API_KEY: str | None = Field(None, validation_alias="BRAVE_SEARCH_API_KEY")
+    ANTHROPIC_API_KEY: str | None = None
+
+    # Web Push (VAPID)
+    VAPID_PUBLIC_KEY: str | None = None
+    VAPID_PRIVATE_KEY: str | None = None
+    VAPID_CLAIMS_EMAIL: str = "mailto:admin@dedatahub.com"
 
 
 class DatabaseSettings(EnvBase):

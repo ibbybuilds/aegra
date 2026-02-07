@@ -1,10 +1,12 @@
 """Enhanced Scheduler service for the Accountability Partner system.
 
 Features:
-- Tiered deadline reminders (24h, 2h, overdue)
-- Inactivity detection (3 days, 7 days)
-- Cleanup of old notifications
-- Opportunity expiration
+- Tiered deadline reminders (7d, 3d, 24h, 2h, overdue, severe overdue)
+- Inactivity detection (3d, 7d, 10d, 15d)
+- Progress celebration checks
+- Notification cleanup
+- Opportunity expiration + daily discovery
+- Frequency-aware notification creation via NotificationEngine
 """
 
 from datetime import UTC, datetime, timedelta
@@ -15,13 +17,15 @@ from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import
 from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from agent_server.core.accountability_orm import (
+from ..core.accountability_orm import (
     ActionItem,
     DiscoveredOpportunity,
     Notification,
     UserActivityTracking,
 )
-from agent_server.core.database import db_manager
+from ..core.database import db_manager
+from ..services.notification_engine import notification_engine
+from ..services.opportunity_discovery import opportunity_engine
 
 logger = structlog.getLogger(__name__)
 
@@ -32,103 +36,72 @@ class SchedulerService:
 
     def start(self) -> None:
         if not self.scheduler.running:
-            # Deadline reminder job (every 15 minutes)
+            # Deadline reminders — every 15 min
             self.scheduler.add_job(
                 self.check_deadlines,
                 IntervalTrigger(minutes=15),
                 id="check_deadlines",
                 replace_existing=True,
             )
-
-            # Inactivity check job (every 6 hours)
+            # Inactivity check — every 6 h
             self.scheduler.add_job(
                 self.check_inactivity,
                 IntervalTrigger(hours=6),
                 id="check_inactivity",
                 replace_existing=True,
             )
-
-            # Cleanup job (runs daily)
+            # Celebration check — every 4 h
+            self.scheduler.add_job(
+                self.check_celebrations,
+                IntervalTrigger(hours=4),
+                id="check_celebrations",
+                replace_existing=True,
+            )
+            # Cleanup old notifications — daily
             self.scheduler.add_job(
                 self.check_cleanup,
                 IntervalTrigger(hours=24),
                 id="check_cleanup",
                 replace_existing=True,
             )
-
-            # Opportunity expiration job (runs hourly)
+            # Expire opportunities — hourly
             self.scheduler.add_job(
                 self.expire_opportunities,
                 IntervalTrigger(hours=1),
                 id="expire_opportunities",
                 replace_existing=True,
             )
+            # Discovery — every 2 min (testing)
+            self.scheduler.add_job(
+                self.run_discovery_job,
+                IntervalTrigger(minutes=20),
+                id="run_discovery_job",
+                replace_existing=True,
+            )
 
             self.scheduler.start()
-            logger.info("Scheduler service started with enhanced accountability jobs")
+            logger.info("Scheduler started with all accountability jobs")
 
     def shutdown(self) -> None:
         if self.scheduler.running:
             self.scheduler.shutdown()
-            logger.info("Scheduler service stopped")
 
-    async def check_cleanup(self) -> None:
-        """Cleanup old notifications to maintain database health."""
-        logger.debug("Running notification cleanup")
-        try:
-            if not db_manager.engine:
-                logger.debug("Database not available, skipping cleanup")
-                return
-
-            session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
-            async with session_maker() as session:
-                now = datetime.now(UTC)
-                cutoff_read = now - timedelta(days=7)  # Keep read notifications for 7 days
-                cutoff_old = now - timedelta(days=30)  # Keep unread notifications for 30 days
-
-                stmt = delete(Notification).where(
-                    or_(
-                        and_(
-                            Notification.status == "read",
-                            Notification.created_at < cutoff_read,
-                        ),
-                        Notification.created_at < cutoff_old,
-                    )
-                )
-
-                result = await session.execute(stmt)
-                if result.rowcount > 0:
-                    logger.info("Cleanup completed", deleted_count=result.rowcount)
-
-                await session.commit()
-        except Exception as e:
-            logger.error("Error in check_cleanup", error=str(e), exc_info=True)
-
+    # ------------------------------------------------------------------
+    # Deadline reminders
+    # ------------------------------------------------------------------
     async def check_deadlines(self) -> None:
-        """Check for upcoming deadlines and generate tiered notifications.
-
-        Tiers:
-        - 24 hours before: Friendly reminder
-        - 2 hours before: Urgent reminder
-        - Overdue: Overdue alert
-        """
-        logger.debug("Checking deadlines")
+        """Generate tiered deadline notifications through NotificationEngine."""
         try:
             if not db_manager.engine:
-                logger.debug("Database not available, skipping deadline check")
                 return
-
             session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
             async with session_maker() as session:
                 now = datetime.now(UTC)
-                two_hours_from_now = now + timedelta(hours=2)
-                twenty_four_hours_from_now = now + timedelta(hours=24)
 
-                # Get all pending action items with due dates
                 result = await session.execute(
                     select(ActionItem).where(
                         and_(
-                            ActionItem.status == "pending",
+                            ActionItem.status.in_(["pending", "in_progress"]),
                             ActionItem.due_date.isnot(None),
                         )
                     )
@@ -136,120 +109,87 @@ class SchedulerService:
                 items = result.scalars().all()
 
                 for item in items:
-                    due_date = item.due_date
-                    if not due_date:
+                    if not item.due_date:
                         continue
 
-                    # Determine reminder tier
-                    reminder_tier = None
-                    priority = "normal"
-                    title = ""
-                    content = ""
-
-                    if due_date < now:
-                        # Overdue
-                        reminder_tier = "overdue"
-                        priority = "critical"
-                        title = "⚠️ Action Item Overdue"
-                        content = f"Your task is overdue: {item.description}"
-                    elif due_date <= two_hours_from_now:
-                        # 2 hours warning
-                        reminder_tier = "2h"
-                        priority = "high"
-                        title = "⏰ Task Due in 2 Hours"
-                        content = f"Almost time! {item.description}"
-                    elif due_date <= twenty_four_hours_from_now:
-                        # 24 hours warning
-                        reminder_tier = "24h"
-                        priority = "normal"
-                        title = "📅 Task Due Tomorrow"
-                        content = f"Friendly reminder: {item.description}"
-
-                    if not reminder_tier:
+                    tier, priority, title, content_tpl = (
+                        notification_engine.compute_deadline_tier(item.due_date, now)
+                    )
+                    if not tier:
                         continue
 
-                    # Check if we should send (based on reminder_sent_count and last_reminder_sent)
-                    should_send = await self._should_send_reminder(
-                        item, reminder_tier, now
+                    # Check if we should send based on last reminder timing
+                    should_send = await self._should_send_reminder(item, tier, now)
+                    if not should_send:
+                        continue
+
+                    # Compute template values
+                    hours_diff = (item.due_date - now).total_seconds() / 3600
+                    days = max(1, abs(int(hours_diff / 24)))
+                    content = content_tpl.format(
+                        description=item.description, days=days
                     )
 
-                    if should_send:
-                        # Create notification
-                        new_notif = Notification(
-                            user_id=item.user_id,
-                            title=title,
-                            content=content,
-                            channel="in_app",
-                            priority=priority,
-                            category="deadline",
-                            status="pending",
-                            metadata_json={
-                                "action_item_id": item.id,
-                                "reminder_tier": reminder_tier,
+                    notif = await notification_engine.create_notification(
+                        session=session,
+                        user_id=item.user_id,
+                        title=title,
+                        content=content,
+                        category="deadline",
+                        priority=priority,
+                        persona=item.advisor_persona,
+                        action_buttons=[
+                            {"action": "complete", "title": "Mark Complete"},
+                            {"action": "snooze", "title": "Snooze 1hr"},
+                            {
+                                "action": "chat",
+                                "title": "Talk to Advisor",
+                                "url": "/dashboard/ai-career-advisor",
                             },
-                            action_buttons=[
-                                {"action": "complete", "title": "Mark Complete"},
-                                {"action": "snooze", "title": "Snooze 1hr"},
-                            ],
-                        )
-                        session.add(new_notif)
+                        ],
+                        metadata={"action_item_id": item.id, "reminder_tier": tier},
+                        check_frequency=True,
+                    )
 
-                        # Update item's reminder tracking
+                    if notif:
                         item.reminder_sent_count += 1
                         item.last_reminder_sent = now
-
                         logger.info(
-                            "Sent deadline reminder",
-                            action_item_id=item.id,
-                            tier=reminder_tier,
-                            reminder_count=item.reminder_sent_count,
+                            "deadline_reminder_sent",
+                            item_id=item.id,
+                            tier=tier,
+                            count=item.reminder_sent_count,
                         )
 
                 await session.commit()
-
         except Exception as e:
-            logger.error("Error in check_deadlines", error=str(e), exc_info=True)
+            logger.error("check_deadlines error", error=str(e), exc_info=True)
 
     async def _should_send_reminder(
         self, item: ActionItem, tier: str, now: datetime
     ) -> bool:
-        """Determine if a reminder should be sent based on tier and timing."""
-        # If never sent a reminder, always send
         if item.reminder_sent_count == 0:
             return True
-
-        # If last reminder was recent (within 2 hours), skip
         if item.last_reminder_sent:
-            hours_since_last = (now - item.last_reminder_sent).total_seconds() / 3600
-            if hours_since_last < 2:
+            hours_since = (now - item.last_reminder_sent).total_seconds() / 3600
+            if hours_since < 2:
                 return False
-
-        # For overdue, limit to 3 reminders
-        if tier == "overdue" and item.reminder_sent_count >= 3:
+        if tier.startswith("overdue") and item.reminder_sent_count >= 5:
             return False
-
         return True
 
+    # ------------------------------------------------------------------
+    # Inactivity detection
+    # ------------------------------------------------------------------
     async def check_inactivity(self) -> None:
-        """Check for inactive users and generate check-in notifications.
-
-        Tiers:
-        - 3 days inactive: Friendly check-in
-        - 7 days inactive: Re-engagement prompt
-        """
-        logger.debug("Checking for inactive users")
         try:
             if not db_manager.engine:
-                logger.debug("Database not available, skipping inactivity check")
                 return
-
             session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
             async with session_maker() as session:
                 now = datetime.now(UTC)
                 three_days_ago = now - timedelta(days=3)
-                seven_days_ago = now - timedelta(days=7)
 
-                # Find inactive users
                 result = await session.execute(
                     select(UserActivityTracking).where(
                         or_(
@@ -272,26 +212,18 @@ class SchedulerService:
                         ),
                         default=None,
                     )
-
                     if not last_activity:
                         continue
 
                     days_inactive = (now - last_activity).days
-
-                    # Determine notification content
-                    if days_inactive >= 7:
-                        title = "👋 We miss you!"
-                        content = "It's been a week since we last saw you. Your learning goals are waiting for you!"
-                        priority = "high"
-                    elif days_inactive >= 3:
-                        title = "👋 Quick check-in"
-                        content = "Haven't seen you in a few days. Ready to continue your learning journey?"
-                        priority = "normal"
-                    else:
+                    tier, priority, title, content_tpl = (
+                        notification_engine.compute_inactivity_tier(days_inactive)
+                    )
+                    if not tier:
                         continue
 
-                    # Check for existing recent inactivity notification
-                    exists_result = await session.execute(
+                    # Deduplicate — only one inactivity notification per 3 days
+                    exists = await session.execute(
                         select(Notification).where(
                             and_(
                                 Notification.user_id == activity.user_id,
@@ -300,65 +232,237 @@ class SchedulerService:
                             )
                         )
                     )
+                    if exists.scalars().first():
+                        continue
 
-                    if exists_result.scalars().first():
-                        continue  # Already sent recently
+                    content = content_tpl.format(days=days_inactive)
 
-                    new_notif = Notification(
+                    await notification_engine.create_notification(
+                        session=session,
                         user_id=activity.user_id,
                         title=title,
                         content=content,
-                        channel="in_app",
-                        priority=priority,
                         category="inactivity",
-                        status="pending",
+                        priority=priority,
                         action_buttons=[
-                            {"action": "resume", "title": "Resume Learning"},
+                            {
+                                "action": "resume",
+                                "title": "Resume Learning",
+                                "url": "/dashboard/my-tracks",
+                            },
+                            {
+                                "action": "chat",
+                                "title": "Talk to Advisor",
+                                "url": "/dashboard/ai-career-advisor",
+                            },
                         ],
+                        check_frequency=True,
                     )
-                    session.add(new_notif)
                     logger.info(
-                        "Sent inactivity notification",
+                        "inactivity_notification",
                         user_id=activity.user_id,
-                        days_inactive=days_inactive,
+                        days=days_inactive,
+                        tier=tier,
                     )
 
                 await session.commit()
-
         except Exception as e:
-            logger.error("Error in check_inactivity", error=str(e), exc_info=True)
+            logger.error("check_inactivity error", error=str(e), exc_info=True)
 
-    async def expire_opportunities(self) -> None:
-        """Mark expired opportunities as expired."""
-        logger.debug("Checking for expired opportunities")
+    # ------------------------------------------------------------------
+    # Progress celebrations
+    # ------------------------------------------------------------------
+    async def check_celebrations(self) -> None:
         try:
             if not db_manager.engine:
-                logger.debug("Database not available, skipping opportunity expiration")
                 return
+            session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
+            async with session_maker() as session:
+                result = await session.execute(select(UserActivityTracking.user_id))
+                user_ids = result.scalars().all()
 
+                for user_id in user_ids:
+                    celebrations = await notification_engine.check_celebrations(
+                        session, user_id
+                    )
+                    for cel in celebrations:
+                        # Deduplicate by type
+                        exists = await session.execute(
+                            select(Notification).where(
+                                and_(
+                                    Notification.user_id == user_id,
+                                    Notification.category == "celebration",
+                                    Notification.metadata_json["celebration_type"].astext
+                                    == cel["type"],
+                                    Notification.created_at
+                                    > (datetime.now(UTC) - timedelta(days=1)),
+                                )
+                            )
+                        )
+                        if exists.scalars().first():
+                            continue
+
+                        await notification_engine.create_notification(
+                            session=session,
+                            user_id=user_id,
+                            title=cel["title"],
+                            content=cel["content"],
+                            category="celebration",
+                            priority=cel.get("priority", "normal"),
+                            metadata={"celebration_type": cel["type"]},
+                            check_frequency=True,
+                        )
+
+                await session.commit()
+        except Exception as e:
+            logger.error("check_celebrations error", error=str(e), exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+    async def check_cleanup(self) -> None:
+        try:
+            if not db_manager.engine:
+                return
             session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
             async with session_maker() as session:
                 now = datetime.now(UTC)
+                cutoff_read = now - timedelta(days=7)
+                cutoff_old = now - timedelta(days=30)
 
+                stmt = delete(Notification).where(
+                    or_(
+                        and_(
+                            Notification.status.in_(["read", "dismissed"]),
+                            Notification.created_at < cutoff_read,
+                        ),
+                        Notification.created_at < cutoff_old,
+                    )
+                )
+                result = await session.execute(stmt)
+                if result.rowcount > 0:
+                    logger.info("notification_cleanup", deleted=result.rowcount)
+                await session.commit()
+        except Exception as e:
+            logger.error("check_cleanup error", error=str(e), exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Opportunity expiration
+    # ------------------------------------------------------------------
+    async def expire_opportunities(self) -> None:
+        try:
+            if not db_manager.engine:
+                return
+            session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
+            async with session_maker() as session:
+                now = datetime.now(UTC)
                 stmt = (
                     update(DiscoveredOpportunity)
                     .where(
                         and_(
                             DiscoveredOpportunity.expires_at < now,
-                            DiscoveredOpportunity.status.notin_(["expired", "dismissed", "applied"]),
+                            DiscoveredOpportunity.status.notin_(
+                                ["expired", "dismissed", "applied"]
+                            ),
                         )
                     )
                     .values(status="expired")
                 )
-
                 result = await session.execute(stmt)
                 if result.rowcount > 0:
-                    logger.info("Expired opportunities", count=result.rowcount)
-
+                    logger.info("opportunities_expired", count=result.rowcount)
                 await session.commit()
-
         except Exception as e:
-            logger.error("Error in expire_opportunities", error=str(e), exc_info=True)
+            logger.error("expire_opportunities error", error=str(e), exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Discovery job
+    # ------------------------------------------------------------------
+    async def run_discovery_job(self) -> None:
+        """Periodic opportunity discovery for all active users."""
+        logger.info("discovery_job_started")
+        try:
+            if not db_manager.engine:
+                logger.warning("discovery_job_aborted", reason="no db engine")
+                return
+            session_maker = async_sessionmaker(db_manager.engine, expire_on_commit=False)
+            async with session_maker() as session:
+                result = await session.execute(select(UserActivityTracking.user_id))
+                user_ids = result.scalars().all()
+                logger.info("discovery_job_users_found", count=len(user_ids), user_ids=user_ids)
+
+                if not user_ids:
+                    logger.warning("discovery_job_no_users", reason="user_activity_tracking table is empty")
+                    return
+
+                for user_id in user_ids:
+                    try:
+                        logger.info("discovery_job_user_start", user_id=user_id)
+                        discovered = await opportunity_engine.discover_for_user(
+                            session=session,
+                            user_id=user_id,
+                            auth_token="",
+                            max_tracks=2,
+                            queries_per_category=1,
+                        )
+                        logger.info(
+                            "discovery_job_user_done",
+                            user_id=user_id,
+                            opportunities_found=len(discovered),
+                        )
+                        for opp in discovered:
+                            # Use notification_engine so web push is triggered
+                            type_label = opp.opportunity_type
+                            if type_label == "event":
+                                title = "🎯 New Event Matches Your Track"
+                                content = (
+                                    f"We found a {opp.matched_track} event: "
+                                    f"{opp.title}"
+                                )
+                            elif type_label == "job":
+                                company_part = f" at {opp.company}" if opp.company else ""
+                                title = "💼 Job Opportunity Alert"
+                                content = (
+                                    f"New {opp.matched_track} role: "
+                                    f"{opp.title}{company_part}"
+                                )
+                            else:
+                                title = "🎓 Learning Opportunity"
+                                content = (
+                                    f"Free resource for your {opp.matched_track} journey: "
+                                    f"{opp.title}"
+                                )
+
+                            await notification_engine.create_notification(
+                                session=session,
+                                user_id=user_id,
+                                title=title,
+                                content=content,
+                                priority="normal",
+                                category="opportunity",
+                                action_buttons=[
+                                    {"action": "view", "title": "View", "url": opp.url},
+                                    {"action": "dismiss", "title": "Dismiss"},
+                                ],
+                                metadata={
+                                    "opportunity_id": opp.id,
+                                    "opportunity_type": opp.opportunity_type,
+                                    "url": opp.url,
+                                },
+                                check_frequency=False,
+                            )
+                            opp.status = "notified"
+                        await session.commit()
+                        logger.info("discovery_job_notifications_sent", user_id=user_id, count=len(discovered))
+                    except Exception as e:
+                        logger.error(
+                            "discovery_failed_for_user",
+                            user_id=user_id,
+                            error=str(e),
+                            exc_info=True,
+                        )
+        except Exception as e:
+            logger.error("run_discovery_job error", error=str(e), exc_info=True)
 
 
 # Global instance

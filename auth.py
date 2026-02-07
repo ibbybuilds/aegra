@@ -13,7 +13,7 @@ from typing import Any
 import structlog
 from langgraph_sdk import Auth
 
-from src.agent_server.settings import settings
+from aegra_api.settings import settings
 
 logger = structlog.getLogger(__name__)
 

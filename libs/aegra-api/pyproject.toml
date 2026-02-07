@@ -1,0 +1,132 @@
+[project]
+name = "aegra-api"
+version = "0.2.0"
+description = "Aegra core API - Self-hosted Agent Protocol server"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Muhammad Ibrahim", email = "mibrahim37612@gmail.com" }]
+keywords = ["langgraph", "agents", "llm", "fastapi", "agent-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    # Core
+    "fastapi>=0.116.1",
+    "uvicorn>=0.35.0",
+    "pydantic>=2.11.7",
+    "pydantic-settings>=2.12.0",
+
+    # LangGraph
+    "langgraph>=1.0.3",
+    "langgraph-checkpoint-postgres>=2.0.23",
+    "langchain>=1.0.8",
+    "langchain-openai>=1.0.3",
+
+    # Database
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.30.0",
+    "psycopg[binary]>=3.2.9",
+    "alembic>=1.16.4",
+    "greenlet>=3.2.3",
+
+    # Observability (OpenTelemetry)
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-sdk>=1.39.1",
+    "opentelemetry-exporter-otlp>=1.39.1",
+    "openinference-instrumentation-langchain>=0.1.58",
+
+    # Utils
+    "structlog>=25.4.0",
+    "python-dotenv>=1.1.1",
+    "asgi-correlation-id>=4.3.4",
+    "pyjwt>=2.10.1",
+
+    # Scheduling & Push Notifications
+    "apscheduler>=3.11.2",
+    "python-dateutil>=2.9.0.post0",
+    "pywebpush>=2.0.0",
+
+    # Discovery & AI
+    "langchain-anthropic>=0.3.0",
+    "httpx>=0.28.1",
+
+    # RAG
+    "langchain-text-splitters>=0.3.0",
+    "langchain-community>=0.3.31",
+    "pgvector>=0.3.0",
+    "pypdf>=5.1.0",
+    "python-docx>=1.1.2",
+    "openpyxl>=3.1.5",
+
+    # Redis
+    "redis>=5.0.0",
+
+    # Langfuse
+    "langfuse>=3.3.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/ibbybuilds/aegra"
+Documentation = "https://github.com/ibbybuilds/aegra#readme"
+Repository = "https://github.com/ibbybuilds/aegra"
+Issues = "https://github.com/ibbybuilds/aegra/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegra_api"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "ARG",   # flake8-unused-arguments
+    "SIM",   # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # Within an except clause, raise exceptions with `raise ... from err`
+    "ARG001", # Unused function argument
+    "ARG002", # Unused method argument
+    "ARG005", # Unused lambda argument
+    "SIM108", # Use ternary operator (less readable in many cases)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegra_api", "aegra_cli"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-mock>=3.15.1",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.13.0",
+    "mypy>=1.14.0",
+    "bandit>=1.8.0",
+    "pre-commit>=4.0.1",
+]

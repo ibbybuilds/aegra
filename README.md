@@ -9,9 +9,15 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/aegra/"><img src="https://img.shields.io/pypi/v/aegra?label=aegra&color=blue" alt="PyPI"></a>
+  <a href="https://pypi.org/project/aegra-cli/"><img src="https://img.shields.io/pypi/v/aegra-cli?label=aegra-cli&color=blue" alt="PyPI CLI"></a>
+  <a href="https://github.com/ibbybuilds/aegra/actions/workflows/ci.yml"><img src="https://github.com/ibbybuilds/aegra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://app.codecov.io/gh/ibbybuilds/aegra"><img src="https://codecov.io/gh/ibbybuilds/aegra/graph/badge.svg" alt="Codecov"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/ibbybuilds/aegra/stargazers"><img src="https://img.shields.io/github/stars/ibbybuilds/aegra" alt="GitHub stars"></a>
   <a href="https://github.com/ibbybuilds/aegra/blob/main/LICENSE"><img src="https://img.shields.io/github/license/ibbybuilds/aegra" alt="License"></a>
-  <a href="https://github.com/ibbybuilds/aegra/issues"><img src="https://img.shields.io/github/issues/ibbybuilds/aegra" alt="Issues"></a>
   <a href="https://discord.com/invite/D5M3ZPS25e"><img src="https://img.shields.io/badge/Discord-Join-7289DA?logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://patreon.com/aegra"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=github-sponsors&logoColor=white" alt="Sponsor"></a>
 </p>
@@ -24,7 +30,23 @@ Aegra is a drop-in replacement for LangGraph Platform. Use the same LangGraph SD
 
 ## 🚀 Quick Start
 
-**Prerequisites:** Docker, Python 3.11+
+### Using the CLI (Recommended)
+
+**Prerequisites:** Python 3.11+, Docker (for PostgreSQL)
+
+```bash
+pip install aegra
+
+# Initialize a new project
+aegra init --docker
+cp .env.example .env
+# Add your OPENAI_API_KEY to .env
+
+# Start PostgreSQL and run the development server
+aegra dev
+```
+
+### From Source
 
 ```bash
 git clone https://github.com/ibbybuilds/aegra.git
@@ -74,19 +96,36 @@ async for chunk in client.runs.stream(
 - **[Streaming](docs/developer-guide.md)** - Real-time responses with network resilience
 - **[Persistent state](docs/developer-guide.md)** - PostgreSQL checkpoints via LangGraph
 - **[Configurable auth](docs/developer-guide.md)** - JWT, OAuth, Firebase, or none
-- **[Observable](docs/langfuse-usage.md)** - Langfuse integration for tracing
+- **[Unified Observability](docs/observability.md)** - Fan-out tracing support via OpenTelemetry
 - **[Semantic store](docs/semantic-store.md)** - Vector embeddings with pgvector
 - **[Custom routes](docs/custom-routes.md)** - Add your own FastAPI endpoints
+
+## 🛠️ CLI Commands
+
+```bash
+aegra init              # Initialize a new project
+aegra init --docker     # Include Docker configuration
+
+aegra dev               # Start development server (hot reload)
+aegra up                # Start all services with Docker
+aegra down              # Stop all services
+
+aegra db upgrade        # Apply database migrations
+aegra db current        # Show current migration version
+aegra db history        # Show migration history
+```
 
 ## 📚 Documentation
 
 | Topic | Description |
 |-------|-------------|
+| [Configuration](docs/configuration.md) | aegra.json format and environment variables |
 | [Developer Guide](docs/developer-guide.md) | Local setup, migrations, development workflow |
+| [Authentication & Authorization](docs/authentication.md) | Configure JWT, OAuth, or custom auth with fine-grained access control |
 | [Custom Routes](docs/custom-routes.md) | Add your own FastAPI endpoints |
 | [Semantic Store](docs/semantic-store.md) | Vector embeddings with pgvector |
 | [Dependencies](docs/dependencies.md) | Shared modules for graph imports |
-| [Langfuse Integration](docs/langfuse-usage.md) | Observability and tracing |
+| [Observability & Tracing](docs/observability.md) | Configure Langfuse, Phoenix, and generic OTLP exporters |
 | [Production Setup](docs/production-docker-setup.md) | Docker deployment for production |
 
 > ⚠️ **Upgrading from an older version?** See the [PostgreSQL 18 Migration Guide](docs/postgres-18-migration.md).
@@ -102,6 +141,7 @@ async for chunk in client.runs.stream(
 - [FastAPI](https://fastapi.tiangolo.com/) - HTTP layer
 - [LangGraph](https://github.com/langchain-ai/langgraph) - State management & graph execution
 - [PostgreSQL](https://www.postgresql.org/) - Persistence & checkpoints
+- [OpenTelemetry](https://opentelemetry.io/) - Observability standard
 - [pgvector](https://github.com/pgvector/pgvector) - Vector embeddings
 
 ## 🤝 Contributing

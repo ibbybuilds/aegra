@@ -7,14 +7,8 @@ on:
     branches: [main, develop]
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      matrix:
-        python-version: ["3.11"]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -23,39 +17,100 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Check formatting with ruff
+        run: uvx ruff format --check .
+
+      - name: Lint with ruff
+        run: uvx ruff check .
+
+  test-api:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: libs/aegra-api
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
 
       - name: Install dependencies
         run: uv sync
-
-      - name: Check formatting with ruff
-        run: uv run ruff format --check .
-
-      - name: Lint with ruff
-        run: uv run ruff check .
-
-      - name: Security check with bandit
-        run: uv run bandit -c pyproject.toml -r src/
-        continue-on-error: true
 
       - name: Type check with mypy
         run: uv run mypy src/
         continue-on-error: true
 
-      - name:
+      - name: Security check with bandit
+        run: uv run bandit -c ../../pyproject.toml -r src/
+        continue-on-error: true
+
+      - name: Run tests with pytest
         env:
           AEGRA_CONFIG: ""
           POSTGRES_USER: "user"
           POSTGRES_PASSWORD: "password"
           POSTGRES_HOST: "localhost"
-          POSTGRES_PORT: 5432
+          POSTGRES_PORT: "5432"
           POSTGRES_DB: "aegra"
-          LANGFUSE_LOGGING: true
-        run: uv run pytest --cov=src --cov-report=xml --cov-report=term --ignore=tests/e2e
+        run: uv run pytest tests/unit tests/integration --cov=src --cov-report=xml --cov-report=term
 
-      - name: Upload coverage reports to Codecov
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/aegra-api/coverage.xml
+          flags: aegra-api
+          name: aegra-api
+          fail_ci_if_error: false
+
+  test-cli:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: libs/aegra-cli
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests with pytest
+        run: uv run pytest tests/ --cov=src --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: libs/aegra-cli/coverage.xml
+          flags: aegra-cli
+          name: aegra-cli
           fail_ci_if_error: false

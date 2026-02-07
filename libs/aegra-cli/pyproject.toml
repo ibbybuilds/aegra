@@ -1,0 +1,60 @@
+[project]
+name = "aegra-cli"
+version = "0.2.0"
+description = "Aegra CLI - Manage your self-hosted agent deployments"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Muhammad Ibrahim", email = "mibrahim37612@gmail.com" }]
+keywords = ["langgraph", "agents", "cli", "docker", "deployment"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+]
+
+dependencies = [
+    # Core CLI
+    "click>=8.1.7",
+    "rich>=13.0",
+    "jinja2>=3.1",
+
+    # Server (always included)
+    "aegra-api>=0.1.0",
+]
+
+[project.scripts]
+aegra = "aegra_cli.cli:cli"
+
+[tool.uv.sources]
+aegra-api = { path = "../aegra-api", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegra_cli"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["F841"]  # Unused variables (common in tests where we invoke but check side effects)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.13.0",
+]

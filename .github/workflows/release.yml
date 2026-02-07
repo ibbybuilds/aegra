@@ -1,0 +1,197 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to release"
+        required: true
+        type: choice
+        options:
+          - aegra-api
+          - aegra-cli
+          - both
+        default: both
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  build-api:
+    if: inputs.package == 'aegra-api' || inputs.package == 'both'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Get version
+        id: get-version
+        working-directory: libs/aegra-api
+        run: |
+          VERSION=$(grep -m 1 "^version = " pyproject.toml | cut -d '"' -f 2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building aegra-api version $VERSION"
+
+      - name: Build package
+        working-directory: libs/aegra-api
+        run: uv build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-aegra-api
+          path: libs/aegra-api/dist/
+
+  publish-api:
+    needs: [build-api]
+    if: |
+      always() &&
+      needs.build-api.result == 'success' &&
+      (inputs.package == 'aegra-api' || inputs.package == 'both')
+    runs-on: ubuntu-latest
+    environment: release-api
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-aegra-api
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          verbose: true
+          print-hash: true
+          attestations: false
+
+  build-cli:
+    # CLI depends on aegra-api, so when releasing both:
+    # - Wait for publish-api to succeed so pip can find aegra-api
+    # When releasing CLI only, we just need to check aegra-api is already on PyPI
+    needs: [publish-api]
+    if: |
+      always() &&
+      (inputs.package == 'aegra-cli' || inputs.package == 'both') &&
+      (inputs.package == 'aegra-cli' || needs.publish-api.result == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Get version
+        id: get-version
+        working-directory: libs/aegra-cli
+        run: |
+          VERSION=$(grep -m 1 "^version = " pyproject.toml | cut -d '"' -f 2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building aegra-cli version $VERSION"
+
+      - name: Build package
+        working-directory: libs/aegra-cli
+        run: uv build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-aegra-cli
+          path: libs/aegra-cli/dist/
+
+  publish-cli:
+    needs: [build-cli]
+    if: |
+      always() &&
+      needs.build-cli.result == 'success' &&
+      (inputs.package == 'aegra-cli' || inputs.package == 'both')
+    runs-on: ubuntu-latest
+    environment: release-cli
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-aegra-cli
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          verbose: true
+          print-hash: true
+          attestations: false
+
+  create-release:
+    needs: [build-api, build-cli, publish-api, publish-cli]
+    if: |
+      always() &&
+      (needs.publish-api.result == 'success' || needs.publish-cli.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required for creating releases
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Determine release info
+        id: release-info
+        env:
+          PACKAGE: ${{ inputs.package }}
+          API_VERSION: ${{ needs.build-api.outputs.version }}
+          CLI_VERSION: ${{ needs.build-cli.outputs.version }}
+        run: |
+          if [[ "$PACKAGE" == "both" ]]; then
+            TAG="v${API_VERSION}"
+            NAME="Aegra v${API_VERSION}"
+          elif [[ "$PACKAGE" == "aegra-api" ]]; then
+            TAG="aegra-api-v${API_VERSION}"
+            NAME="aegra-api v${API_VERSION}"
+          else
+            TAG="aegra-cli-v${CLI_VERSION}"
+            NAME="aegra-cli v${CLI_VERSION}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "Creating release: $NAME (tag: $TAG)"
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "dist/*"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.release-info.outputs.tag }}
+          name: ${{ steps.release-info.outputs.name }}
+          generateReleaseNotes: true
+          commit: ${{ github.sha }}

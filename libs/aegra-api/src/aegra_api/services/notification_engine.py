@@ -12,7 +12,6 @@ Responsibilities
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -184,7 +183,7 @@ class NotificationEngine:
         persona = ADVISOR_PERSONAS.get(persona_name or DEFAULT_PERSONA, ADVISOR_PERSONAS[DEFAULT_PERSONA])
 
         try:
-            from langchain_core.messages import SystemMessage, HumanMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
             from langchain_openai import ChatOpenAI
 
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, max_tokens=200)

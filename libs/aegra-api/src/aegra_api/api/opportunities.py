@@ -11,19 +11,18 @@ Endpoints:
 - POST  /opportunities/discover      manual scan
 """
 
-import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aegra_api.core.accountability_orm import DiscoveredOpportunity
 from aegra_api.core.auth_deps import get_current_user
 from aegra_api.core.orm import get_session
 from aegra_api.models import User
-from aegra_api.core.accountability_orm import DiscoveredOpportunity
-from aegra_api.services.opportunity_service import OpportunityService
 from aegra_api.services.opportunity_discovery import opportunity_engine
+from aegra_api.services.opportunity_service import OpportunityService
 
 router = APIRouter(prefix="/opportunities")
 

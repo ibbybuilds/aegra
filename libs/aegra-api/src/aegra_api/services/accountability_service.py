@@ -9,11 +9,11 @@ Enhanced with:
 """
 
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegra_api.core.accountability_orm import (

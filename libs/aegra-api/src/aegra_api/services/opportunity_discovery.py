@@ -586,7 +586,7 @@ class OpportunityDiscoveryEngine:
         goals, follow_up.  Returns None on failure.
         """
         try:
-            from langchain_core.messages import SystemMessage, HumanMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
             from langchain_openai import ChatOpenAI
 
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, max_tokens=600)
@@ -630,7 +630,7 @@ class OpportunityDiscoveryEngine:
         cover_letter_angle, gap_mitigation, timeline.
         """
         try:
-            from langchain_core.messages import SystemMessage, HumanMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
             from langchain_openai import ChatOpenAI
 
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, max_tokens=600)

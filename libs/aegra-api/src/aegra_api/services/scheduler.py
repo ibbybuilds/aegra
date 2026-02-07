@@ -174,9 +174,7 @@ class SchedulerService:
             hours_since = (now - item.last_reminder_sent).total_seconds() / 3600
             if hours_since < 2:
                 return False
-        if tier.startswith("overdue") and item.reminder_sent_count >= 5:
-            return False
-        return True
+        return not (tier.startswith("overdue") and item.reminder_sent_count >= 5)
 
     # ------------------------------------------------------------------
     # Inactivity detection

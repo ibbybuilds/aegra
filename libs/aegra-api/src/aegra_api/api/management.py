@@ -1,8 +1,8 @@
 """Management dashboard endpoints for analytics and insights"""
 
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-
-from typing import Any, Iterable, cast
+from typing import cast
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query

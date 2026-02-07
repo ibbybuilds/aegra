@@ -5,11 +5,10 @@ and richer querying capabilities.
 """
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegra_api.core.accountability_orm import DiscoveredOpportunity

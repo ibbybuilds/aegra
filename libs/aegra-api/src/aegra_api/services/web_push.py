@@ -120,7 +120,7 @@ class WebPushService:
             return False
 
         try:
-            from pywebpush import webpush, WebPushException
+            from pywebpush import webpush
 
             webpush(
                 subscription_info=subscription_info,

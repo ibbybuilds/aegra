@@ -20,14 +20,14 @@ install:
 
 dev-install:
 	cd libs/aegra-api && uv sync
-	@uv run pre-commit install
-	@uv run pre-commit install --hook-type commit-msg
+	@uv run --project libs/aegra-api pre-commit install
+	@uv run --project libs/aegra-api pre-commit install --hook-type commit-msg
 	@echo ""
 	@echo "Done! Dependencies installed and git hooks set up."
 
 setup-hooks:
-	uv run pre-commit install
-	uv run pre-commit install --hook-type commit-msg
+	uv run --project libs/aegra-api pre-commit install
+	uv run --project libs/aegra-api pre-commit install --hook-type commit-msg
 	@echo ""
 	@echo "Git hooks reinstalled!"
 

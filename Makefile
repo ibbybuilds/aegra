@@ -16,46 +16,43 @@ help:
 	@echo "  make run           - Run the server"
 
 install:
-	uv sync --no-dev
+	cd libs/aegra-api && uv sync --no-dev
 
 dev-install:
-	uv sync
-	@python -m pre_commit install
-	@python -m pre_commit install --hook-type commit-msg
+	cd libs/aegra-api && uv sync
+	@uv run pre-commit install
+	@uv run pre-commit install --hook-type commit-msg
 	@echo ""
-	@echo "✅ Dependencies installed!"
-	@echo "✅ Git hooks installed!"
-	@echo "🚀 You're ready to develop!"
+	@echo "Done! Dependencies installed and git hooks set up."
 
 setup-hooks:
-	python -m pre_commit install
-	python -m pre_commit install --hook-type commit-msg
+	uv run pre-commit install
+	uv run pre-commit install --hook-type commit-msg
 	@echo ""
-	@echo "✅ Git hooks reinstalled!"
-	@echo "📝 Your commits will now be checked automatically"
+	@echo "Git hooks reinstalled!"
 
 format:
-	uv run ruff format .
-	uv run ruff check --fix .
+	cd libs/aegra-api && uv run ruff format .
+	cd libs/aegra-api && uv run ruff check --fix .
 
 lint:
-	uv run ruff check .
+	cd libs/aegra-api && uv run ruff check .
 
 type-check:
-	python -m mypy src/
+	cd libs/aegra-api && uv run mypy src/
 
 security:
-	python -m bandit -c pyproject.toml -r src/
+	cd libs/aegra-api && uv run bandit -c pyproject.toml -r src/
 
 test:
-	python -m pytest
+	cd libs/aegra-api && uv run pytest
 
 test-cov:
-	python -m pytest --cov=src --cov-report=html --cov-report=term
+	cd libs/aegra-api && uv run pytest --cov=src --cov-report=html --cov-report=term
 
 ci-check: format lint type-check security test
 	@echo ""
-	@echo "✅ All CI checks passed!"
+	@echo "All CI checks passed!"
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -63,4 +60,4 @@ clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov 2>/dev/null || true
 
 run:
-	uv run python run_server.py
+	cd libs/aegra-api && uv run python -m aegra_api

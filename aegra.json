@@ -5,6 +5,9 @@
     "subgraph_agent": "./graphs/subgraph_agent/graph.py:graph",
     "subgraph_hitl_agent": "./graphs/subgraph_hitl_agent/graph.py:graph"
   },
+  "auth": {
+    "path": "./auth.py:auth"
+  },
   "http": {
     "app": null
   }

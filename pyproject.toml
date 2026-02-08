@@ -1,81 +1,11 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# Root pyproject.toml - Workspace configuration
+# The actual packages are in libs/aegra-api and libs/aegra-cli
 
-[project]
-name = "aegra"
-version = "0.1.0"
-description = "Open source LangGraph Platform alternative - Self-hosted AI agent backend with FastAPI and PostgreSQL. Zero vendor lock-in, full control over your agent infrastructure."
-readme = "README.md"
-requires-python = ">=3.11"
-keywords = ["langgraph", "ai-agents", "self-hosted", "agent-backend", "fastapi", "postgresql", "langchain", "agent-protocol"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
-authors = [
-    {name = "Muhammad Ibrahim", email = "mibrahim37612@gmail.com"}
-]
-maintainers = [
-    {name = "Muhammad Ibrahim", email = "mibrahim37612@gmail.com"}
-]
-dependencies = [
-    "alembic>=1.16.4",
-    "asyncpg>=0.30.0",
-    "fastapi>=0.116.1",
-    "greenlet>=3.2.3",
-    "langchain-anthropic>=0.3.0",
-    "langchain-openai>=1.0.3",
-    "langchain-tavily>=0.2.0",
-    "langchain-core>=0.3.0",
-    "langchain-text-splitters>=0.3.0",
-    "langgraph>=1.0.3",
-    "langchain>=1.0.8",
-    "langgraph-checkpoint-postgres>=2.0.23",
-    "redis>=5.0.0",
-    "psycopg[binary]>=3.2.9",
-    "pydantic>=2.11.7",
-    "pyjwt>=2.10.1",
-    "python-dotenv>=1.1.1",
-    "sqlalchemy>=2.0.0",
-    "uvicorn>=0.35.0",
-    "langfuse>=3.3.4",
-    "httpx>=0.28.1",
-    "pgvector>=0.3.0",
-    "pypdf>=5.1.0",
-    "python-docx>=1.1.2",
-    "openpyxl>=3.1.5",
-    "langchain-community>=0.3.31",
-    "structlog>=25.4.0",
-    "asgi-correlation-id>=4.3.4",
-    "pydantic-settings>=2.12.0",
-    "apscheduler>=3.11.2",
-    "python-dateutil>=2.9.0.post0",
-]
-
-[project.urls]
-Homepage = "https://github.com/ibbybuilds/aegra"
-Repository = "https://github.com/ibbybuilds/aegra"
-Documentation = "https://github.com/ibbybuilds/aegra#readme"
-"Bug Tracker" = "https://github.com/ibbybuilds/aegra/issues"
-"Feature Requests" = "https://github.com/ibbybuilds/aegra/issues"
-
-
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/agent_server"]
-
-[tool.hatch.build.targets.wheel.sources]
-"graphs/react_agent" = "react_agent"
+[tool.uv.workspace]
+members = ["libs/aegra-api"]
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
@@ -89,88 +19,35 @@ select = [
     "UP",    # pyupgrade
     "ARG",   # flake8-unused-arguments
     "SIM",   # flake8-simplify
-    "TCH",   # flake8-type-checking
-    "PTH",   # flake8-use-pathlib
-    "ERA",   # eradicate (commented-out code)
 ]
 ignore = [
-    "E501",  # line too long (handled by formatter)
-    "B008",  # do not perform function calls in argument defaults (FastAPI Depends)
-    "UP007", # use X | Y for type annotations (keep Optional for clarity)
-    "TC002", # type-checking imports cause issues with SQLAlchemy, Pydantic, etc.
-    "TC003", # type-checking imports cause issues with SQLAlchemy, Pydantic, etc.
-    "ERA001", # eradicate commented-out code (allow for reference/documentation)
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # Within an except clause, raise exceptions with `raise ... from err`
+    "ARG001", # Unused function argument
+    "ARG002", # Unused method argument
+    "ARG005", # Unused lambda argument
+    "SIM108", # Use ternary operator (less readable in many cases)
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = [
-    "ARG",   # unused arguments in tests are common
-    "S101",  # assert statements are expected in tests
-]
-"alembic/**/*.py" = [
-    "ERA",   # commented code in migrations is intentional
-]
+[tool.ruff.lint.isort]
+known-first-party = ["aegra_api", "aegra_cli"]
 
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
+# Note: pytest config is in each package's pyproject.toml
+# Run tests from: libs/aegra-api or libs/aegra-cli
 
 [tool.mypy]
 python_version = "3.11"
-plugins = ["pydantic.mypy"]
 warn_return_any = true
-warn_unused_configs = true
+warn_unused_ignores = true
 disallow_untyped_defs = true
-explicit_package_bases = true
-mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
-namespace_packages = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short"
-asyncio_mode = "auto"
-markers = [
-    "e2e: marks tests as end-to-end tests",
-]
+ignore_missing_imports = true
 
 [tool.bandit]
-exclude_dirs = ["tests", ".venv", "alembic"]
-skips = ["B101"]
-
-[tool.coverage.run]
-source = ["src"]
-omit = ["*/tests/*", "*/__pycache__/*", "*/alembic/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-    "@abstractmethod",
-]
-precision = 2
-show_missing = true
-skip_covered = false
-
-[tool.coverage.html]
-directory = "htmlcov"
-
-[dependency-groups]
-dev = [
-    "ruff>=0.8.4",
-    "langgraph-sdk==0.2.4",
-    "mypy>=1.17.1",
-    "pytest>=8.4.1",
-    "pytest-asyncio>=1.1.0",
-    "pytest-cov>=6.2.1",
-    "pre-commit>=4.0.0",
-    "bandit[toml]>=1.8.0",
+exclude_dirs = ["tests", ".venv", "libs/aegra-api/.venv", "libs/aegra-cli/.venv"]
+skips = [
+    "B101",  # assert statements
+    "B404",  # import subprocess (needed for CLI)
+    "B603",  # subprocess without shell=True (needed for CLI)
+    "B607",  # partial executable path (needed for CLI to run docker, systemctl, etc.)
 ]

@@ -31,12 +31,16 @@ import sys
 import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from uuid import uuid5
 
+# Add libs/aegra-api/src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "libs" / "aegra-api" / "src"))
+
 from langgraph_sdk import get_client
 
-from src.agent_server.constants import ASSISTANT_NAMESPACE_UUID
+from aegra_api.constants import ASSISTANT_NAMESPACE_UUID
 
 DEFAULT_API_URL = os.getenv("AEGRA_API_URL", "http://localhost:8000")
 DEFAULT_PROMPT = os.getenv("AEGRA_PROMPT", "Hello from LangGraph SDK!")

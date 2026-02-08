@@ -1,17 +1,51 @@
 coverage:
+  # Badge color thresholds: red < 50%, yellow 50-70%, green >= 70%
+  range: 50..70
+  round: down
+  precision: 2
   status:
-    # Fail PRs that reduce total coverage by more than 2%
     project:
+      # Overall project coverage
       default:
         target: auto
         threshold: 2%
-    # Treat patch coverage as informational only
+      # Per-package coverage status
+      aegra-api:
+        flags:
+          - aegra-api
+        target: auto
+        threshold: 2%
+      aegra-cli:
+        flags:
+          - aegra-cli
+        target: auto
+        threshold: 2%
     patch:
       default:
         informational: true
 
+# Define flags for monorepo packages
+flags:
+  aegra-api:
+    paths:
+      - libs/aegra-api/src/
+    carryforward: true
+  aegra-cli:
+    paths:
+      - libs/aegra-cli/src/
+    carryforward: true
+
 comment:
-  hide_project_coverage: false
+  # Use condensed layout for cleaner, more focused PR comments
+  layout: "condensed_header, condensed_files, condensed_footer"
+  behavior: default  # Update existing comment, or post new if doesn't exist
+  # Only post if coverage changes (reduces noise)
+  require_changes: true
+  # Require both base and head reports for meaningful comparison
+  require_base: true
+  require_head: true
+  # Hide project coverage, focus on patch/diff coverage (cleaner view)
+  hide_project_coverage: true
 
 # When modifying this file, please validate using
 # curl -X POST --data-binary @codecov.yml https://codecov.io/validate

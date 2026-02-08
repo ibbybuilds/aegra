@@ -1,7 +1,7 @@
 services:
   # PostgreSQL database for LangGraph and metadata
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:pg18
     env_file:
       - .env
     ports:
@@ -10,19 +10,6 @@ services:
       - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # Redis cache for performance optimization on remote databases
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -38,33 +25,33 @@ services:
       - .env
     environment:
       - POSTGRES_HOST=postgres
-      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/aegra
-      - REDIS_URL=redis://redis:6379/0
-      - CACHE_ENABLED=true
-      - AUTH_TYPE=noop
-      - DEBUG=true
-      - PORT=${PORT:-8000}
+      - PYTHONPATH=/app/src
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
-      - ./graphs:/app/graphs:ro
-      - ./src:/app/src:ro # for hot reload support of server
-      - ./auth.py:/app/auth.py:ro
+      - ./examples:/app/examples:ro
+      - ./libs/aegra-api/src:/app/src:ro  # Mount full src for PYTHONPATH to work
+      - ./libs/aegra-api/alembic:/app/alembic:ro # for migrations
       - ./.env:/app/.env:ro
-      - ./alembic:/app/alembic:ro # for migrations
-      # Mount custom route files dynamically (add your custom routes file here)
-      - ./custom_routes_example.py:/app/custom_routes_example.py:ro
     command: >
       sh -c "
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
       "
+
+  # Redis (optional - for advanced queuing in future phases)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    profiles:
+      - redis
 
 volumes:
   postgres_data:

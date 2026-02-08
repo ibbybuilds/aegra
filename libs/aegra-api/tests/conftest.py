@@ -12,7 +12,6 @@ from httpx import HTTPStatusError
 from tests.fixtures.auth import DummyUser
 from tests.fixtures.clients import (
     create_test_app,
-    install_dummy_user_middleware,
     make_client,
 )
 from tests.fixtures.database import DummySessionBase, override_get_session_dep
@@ -54,7 +53,6 @@ __all__ = [
     "patch_langgraph_service",
     "create_test_app",
     "make_client",
-    "install_dummy_user_middleware",
     "BasicSession",
     "ThreadSession",
     "RunSession",

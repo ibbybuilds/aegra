@@ -3,24 +3,32 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
-def install_dummy_user_middleware(app: FastAPI) -> None:
-    """Install middleware that injects a dummy user for testing"""
-    from tests.fixtures.auth import DummyUser
-
-    @app.middleware("http")
-    async def inject_dummy_user(request, call_next):
-        request.scope["user"] = DummyUser()
-        return await call_next(request)
+from aegra_api.core.auth_deps import get_current_user, require_auth
+from aegra_api.models.auth import User
 
 
 def create_test_app(include_runs: bool = True, include_threads: bool = True) -> FastAPI:
-    """Build a FastAPI app with routers mounted and dummy user middleware
+    """Build a FastAPI app with routers mounted and configured auth mocks.
 
-    Dependency overrides must be installed by the caller to control DB behavior.
+    This setup automatically handles authentication overrides, ensuring that
+    tests run as 'test-user' without encountering 401 errors.
     """
     app = FastAPI()
-    install_dummy_user_middleware(app)
+
+    # --- [CLEANUP] Middleware removed ---
+    # We no longer use middleware as it was creating an "anonymous" user.
+    # Instead, we use dependency_overrides below for precise control.
+    # ------------------------------------
+
+    # 1. Create a proper test user
+    mock_user = User(identity="test-user", display_name="Test User")
+
+    # 2. Override dependencies
+    # require_auth: allows access to protected routes
+    app.dependency_overrides[require_auth] = lambda: mock_user
+
+    # get_current_user: ensures the 'user' variable inside the route equals our mock_user
+    app.dependency_overrides[get_current_user] = lambda: mock_user
 
     if include_threads:
         from aegra_api.api import threads as threads_module

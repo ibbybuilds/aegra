@@ -223,11 +223,11 @@ def _include_core_routers(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
-    app.include_router(health_router, prefix="", tags=["Health"])
-    app.include_router(assistants_router, dependencies=auth_dependency, prefix="", tags=["Assistants"])
-    app.include_router(threads_router, dependencies=auth_dependency, prefix="", tags=["Threads"])
-    app.include_router(runs_router, dependencies=auth_dependency, prefix="", tags=["Runs"])
-    app.include_router(store_router, dependencies=auth_dependency, prefix="", tags=["Store"])
+    app.include_router(health_router)
+    app.include_router(assistants_router)
+    app.include_router(threads_router)
+    app.include_router(runs_router)
+    app.include_router(store_router)
 
 
 def create_app() -> FastAPI:

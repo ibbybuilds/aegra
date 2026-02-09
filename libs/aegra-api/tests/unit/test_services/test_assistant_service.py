@@ -589,6 +589,19 @@ class TestAssistantServiceUpdate:
         mock_assistant.context = {}
         mock_assistant.metadata_dict = {}
 
+        mock_updated_assistant = Mock()
+        mock_updated_assistant.assistant_id = "test-id"
+        mock_updated_assistant.name = "Updated Assistant"
+        mock_updated_assistant.description = "An updated test assistant"
+        mock_updated_assistant.user_id = "user-123"
+        mock_updated_assistant.graph_id = "old-graph"
+        mock_updated_assistant.version = 2
+        mock_updated_assistant.created_at = datetime.now(UTC)
+        mock_updated_assistant.updated_at = datetime.now(UTC)
+        mock_updated_assistant.config = {"temperature": 0.8}
+        mock_updated_assistant.context = {}
+        mock_updated_assistant.metadata_dict = {"env": "updated"}
+
         mock_table = Mock()
         mock_column1 = Mock()
         mock_column1.name = "assistant_id"
@@ -605,7 +618,7 @@ class TestAssistantServiceUpdate:
         assistant_service.session.scalar.side_effect = [
             mock_assistant,
             1,
-            mock_assistant,
+            mock_updated_assistant,
         ]
         assistant_service.session.execute = AsyncMock()
         assistant_service.session.commit = AsyncMock()
@@ -613,7 +626,17 @@ class TestAssistantServiceUpdate:
         result = await assistant_service.update_assistant("test-id", sample_assistant_update, "user-123")
 
         assert isinstance(result, Assistant)
+        assert assistant_service.session.add.call_count == 1
+        version_record = assistant_service.session.add.call_args.args[0]
+        assert version_record.metadata_dict == {"env": "updated"}
         assistant_service.session.execute.assert_called_once()
+        executed_stmt = assistant_service.session.execute.call_args.args[0]
+        updated_metadata = None
+        for column, value in executed_stmt._values.items():
+            if getattr(column, "name", None) == "metadata":
+                updated_metadata = getattr(value, "value", value)
+                break
+        assert updated_metadata == {"env": "updated"}
         assistant_service.session.commit.assert_called()
 
     @pytest.mark.asyncio
@@ -696,7 +719,7 @@ class TestAssistantServiceVersionManagement:
         mock_assistant.updated_at = datetime.now(UTC)
         mock_assistant.config = {}
         mock_assistant.context = {}
-        mock_assistant.metadata_dict = {}
+        mock_assistant.metadata_dict = {"version": "latest"}
 
         # Mock existing version
         mock_version = Mock()
@@ -705,6 +728,7 @@ class TestAssistantServiceVersionManagement:
         mock_version.config = {"key": "value"}
         mock_version.context = {"ctx": "val"}
         mock_version.graph_id = "test-graph"
+        mock_version.metadata_dict = {"version": "latest"}
 
         assistant_service.session.scalar.side_effect = [
             mock_assistant,
@@ -718,6 +742,13 @@ class TestAssistantServiceVersionManagement:
 
         assert isinstance(result, Assistant)
         assistant_service.session.execute.assert_called_once()
+        executed_stmt = assistant_service.session.execute.call_args.args[0]
+        updated_metadata = None
+        for column, value in executed_stmt._values.items():
+            if getattr(column, "name", None) == "metadata":
+                updated_metadata = getattr(value, "value", value)
+                break
+        assert updated_metadata == {"version": "latest"}
         assistant_service.session.commit.assert_called_once()
 
     @pytest.mark.asyncio

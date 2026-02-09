@@ -360,6 +360,7 @@ class AssistantService:
                 graph_id=new_version_details["graph_id"],
                 config=new_version_details["config"],
                 context=new_version_details["context"],
+                metadata_dict=new_version_details["metadata_dict"],
                 version=new_version,
                 updated_at=now,
             )
@@ -415,6 +416,7 @@ class AssistantService:
                 config=assistant_version.config,
                 context=assistant_version.context,
                 graph_id=assistant_version.graph_id,
+                metadata_dict=assistant_version.metadata_dict,
                 version=version,
                 updated_at=datetime.now(UTC),
             )

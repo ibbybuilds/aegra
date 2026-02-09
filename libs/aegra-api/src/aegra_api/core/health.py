@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from aegra_api.core.database import db_manager
 
-router = APIRouter()
+router = APIRouter(tags=["Health"])
 
 
 class HealthResponse(BaseModel):

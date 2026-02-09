@@ -15,7 +15,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegra_api.core.auth_ctx import with_auth_ctx
-from aegra_api.core.auth_deps import get_current_user
+from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.core.orm import Run as RunORM
@@ -34,7 +34,7 @@ from aegra_api.utils.run_utils import (
 )
 from aegra_api.utils.status_compat import validate_run_status
 
-router = APIRouter(tags=["Runs"])
+router = APIRouter(tags=["Runs"], dependencies=auth_dependency)
 
 logger = structlog.getLogger(__name__)
 serializer = GeneralSerializer()

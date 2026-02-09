@@ -13,7 +13,7 @@ Architecture:
 
 from fastapi import APIRouter, Body, Depends
 
-from aegra_api.core.auth_deps import get_current_user
+from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.models import (
     Assistant,
@@ -25,7 +25,7 @@ from aegra_api.models import (
 )
 from aegra_api.services.assistant_service import AssistantService, get_assistant_service
 
-router = APIRouter(tags=["Assistants"])
+router = APIRouter(tags=["Assistants"], dependencies=auth_dependency)
 
 
 @router.post("/assistants", response_model=Assistant, response_model_by_alias=False)

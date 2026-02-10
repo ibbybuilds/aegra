@@ -105,7 +105,7 @@ services:
     ports:
       - "${{POSTGRES_PORT:-5432}}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-{slug}}}"]
       interval: 5s
@@ -134,7 +134,7 @@ services:
     ports:
       - "${{POSTGRES_PORT:-5432}}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-{slug}}}"]
       interval: 5s

@@ -81,7 +81,7 @@ services:
 
     # Remove development volume mounts (code baked in)
     volumes:
-      - postgres_data:/var/lib/postgresql/data  # Only data volumes
+      - postgres_data:/var/lib/postgresql  # Only data volumes
 
     # Production environment
     environment:

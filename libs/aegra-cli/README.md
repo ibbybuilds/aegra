@@ -68,7 +68,6 @@ aegra init [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--docker` | Include docker-compose.yml in the generated files |
 | `--force` | Overwrite existing files if they exist |
 | `--path PATH` | Project directory (default: current directory) |
 
@@ -77,9 +76,6 @@ aegra init [OPTIONS]
 ```bash
 # Initialize in current directory
 aegra init
-
-# Initialize with Docker Compose support
-aegra init --docker
 
 # Initialize in a specific directory, overwriting existing files
 aegra init --path ./my-project --force
@@ -92,7 +88,9 @@ aegra init --path ./my-project --force
 - `graphs/example/graph.py` - Example graph implementation
 - `graphs/__init__.py` - Package init file
 - `graphs/example/__init__.py` - Example package init file
-- `docker-compose.yml` - Docker configuration (only with `--docker` flag)
+- `docker-compose.yml` - Docker Compose for PostgreSQL (dev)
+- `docker-compose.prod.yml` - Docker Compose for full stack (prod)
+- `Dockerfile` - Production container build
 
 ---
 

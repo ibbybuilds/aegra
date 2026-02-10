@@ -21,7 +21,7 @@ This file provides context for AI coding agents working with this repository.
 pip install aegra-cli
 
 # Initialize a new project
-aegra init --docker
+aegra init
 
 # Start PostgreSQL with Docker
 aegra up postgres
@@ -244,9 +244,28 @@ graph = builder.compile()  # Must export as 'graph'
 
 ## Development Patterns
 
+### Type Annotations (STRICT)
+- **EVERY function MUST have explicit type annotations** for ALL parameters AND the return type. No exceptions.
+- If a function returns nothing, annotate it `-> None`. Never leave the return type blank.
+- Use `collections.abc` types (`Sequence`, `Mapping`, `Iterator`) over `typing` equivalents where possible.
+- Use `X | None` union syntax (Python 3.10+), not `Optional[X]`.
+- Annotate class attributes and module-level variables when the type is not obvious from the assignment.
+- This applies to **all** code you write or modify: production code, tests, helpers, fixtures, scripts — everything.
+
+```python
+# CORRECT
+def create_user(name: str, age: int) -> User: ...
+def process(items: list[str]) -> None: ...
+async def fetch(url: str) -> dict[str, Any]: ...
+
+# WRONG — missing return type, missing param types
+def create_user(name, age): ...
+def process(items): ...
+```
+
 ### Import Conventions
-- Use absolute imports with `aegra_api.*` prefix
-- Use proper Python typing everywhere (type hints for function parameters, return types, variables where helpful)
+- Use absolute imports with `aegra_api.*` prefix.
+- **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If you are unsure whether a circular dependency exists, put the import at the top — only move it inline after confirming the import cycle with an actual error.
 
 ### Database Access
 ```python

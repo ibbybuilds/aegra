@@ -35,6 +35,7 @@ from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
 from aegra_api.core.health import router as health_router
+from aegra_api.core.migrations import run_migrations_async
 from aegra_api.core.route_merger import (
     merge_exception_handlers,
     merge_lifespans,
@@ -60,6 +61,9 @@ DEFAULT_EXPOSE_HEADERS = ["Content-Location", "Location"]
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context manager for startup/shutdown"""
+    # Auto-apply pending database migrations before anything else
+    await run_migrations_async()
+
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 

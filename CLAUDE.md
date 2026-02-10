@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 This file provides context for AI coding agents working with this repository.
 
@@ -14,123 +14,32 @@ This file provides context for AI coding agents working with this repository.
 
 ## Quick Start Commands
 
-### Using the CLI (Recommended)
-
 ```bash
-# Install the CLI
-pip install aegra-cli
-
-# Initialize a new project
-aegra init
-
-# Start PostgreSQL with Docker
-aegra up postgres
-
-# Apply database migrations
-aegra db upgrade
-
-# Run development server with hot reload
-aegra dev
-
-# Or start all services with Docker
-aegra up
-```
-
-### Manual Setup
-
-```bash
-# Install all workspace dependencies (from repo root)
+# Install dependencies (from repo root)
 uv sync --all-packages
 
-# Start database
-docker compose up postgres -d
+# Start dev server (postgres + auto-migrations + hot reload)
+aegra dev
 
-# Apply migrations
-uv run --package aegra-api alembic upgrade head
-
-# Run development server
-uv run --package aegra-api uvicorn aegra_api.main:app --reload
-
-# Or run everything with Docker
-docker compose up aegra
-```
-
-## Testing
-
-```bash
-# Run all tests (or use: make test)
+# Run tests
 uv run --package aegra-api pytest libs/aegra-api/tests/
 uv run --package aegra-cli pytest libs/aegra-cli/tests/
 
-# Run specific test file
-uv run --package aegra-api pytest libs/aegra-api/tests/unit/test_api/test_assistants.py
-
-# Run with coverage (or use: make test-cov)
-uv run --package aegra-api pytest libs/aegra-api/tests/ --cov=libs/aegra-api/src --cov-report=html
-
-# Run e2e tests (requires running server)
-uv run --package aegra-api pytest libs/aegra-api/tests/e2e/
-
-# Health check
-curl http://localhost:8000/health
-```
-
-**Important:** Always run tests before completing tasks to verify changes don't break existing functionality.
-
-## Code Quality
-
-```bash
-# Linting (or use: make lint / make format)
+# Lint and format
 uv run ruff check .
 uv run ruff format .
 
-# Type checking (or use: make type-check)
+# Type checking
 uv run mypy libs/aegra-api/src/ libs/aegra-cli/src/
 
-# Security scanning (or use: make security)
-uv run bandit -c pyproject.toml -r libs/aegra-api/src/ libs/aegra-cli/src/
-
-# Run all CI checks locally (or use: make ci-check)
+# All CI checks at once
 make ci-check
-```
 
-## Database Migrations
-
-### Using the CLI (Recommended)
-
-```bash
-# Apply all pending migrations
-aegra db upgrade
-
-# Check current migration version
-aegra db current
-
-# Show migration history
-aegra db history
-aegra db history --verbose
-
-# Downgrade by one revision
-aegra db downgrade
-
-# Downgrade to specific revision
-aegra db downgrade abc123
-```
-
-### Using Alembic Directly
-
-```bash
-# Apply migrations (from repo root)
-uv run --package aegra-api alembic upgrade head
-
-# Create new migration
-uv run --package aegra-api alembic revision -m "description"
-
-# Auto-generate migration from model changes
-uv run --package aegra-api alembic revision --autogenerate -m "description"
-
-# Check status
-uv run --package aegra-api alembic current
-uv run --package aegra-api alembic history
+# Database migrations
+aegra db upgrade                    # Apply pending migrations
+aegra db current                    # Check current version
+aegra db history                    # Show history
+uv run --package aegra-api alembic revision --autogenerate -m "description"  # Create migration
 ```
 
 ## Project Structure
@@ -141,114 +50,35 @@ aegra/
 │   ├── aegra-api/                    # Core API package
 │   │   ├── src/aegra_api/            # Main application code
 │   │   │   ├── api/                  # Agent Protocol endpoints
-│   │   │   │   ├── assistants.py     # /assistants CRUD
-│   │   │   │   ├── threads.py        # /threads and state management
-│   │   │   │   ├── runs.py           # /runs execution and streaming
-│   │   │   │   └── store.py          # /store vector storage
 │   │   │   ├── services/             # Business logic layer
-│   │   │   ├── core/                 # Infrastructure (database, auth, orm)
+│   │   │   ├── core/                 # Infrastructure (database, auth, orm, migrations)
 │   │   │   ├── models/               # Pydantic request/response schemas
 │   │   │   ├── middleware/           # ASGI middleware
-│   │   │   ├── observability/        # OpenTelemetry tracing
-│   │   │   ├── utils/                # Helper functions
 │   │   │   ├── main.py               # FastAPI app entry point
-│   │   │   ├── config.py             # HTTP/store config loading
 │   │   │   └── settings.py           # Environment settings
 │   │   ├── tests/                    # Test suite
-│   │   ├── alembic/                  # Database migrations
-│   │   └── pyproject.toml
+│   │   └── alembic/                  # Database migrations
 │   │
 │   └── aegra-cli/                    # CLI package
 │       └── src/aegra_cli/
 │           ├── cli.py                # Main CLI entry point
 │           └── commands/             # Command implementations
-│               ├── db.py             # Database migration commands
-│               └── init.py           # Project initialization
 │
 ├── examples/                         # Example agents and configs
-│   ├── react_agent/                  # Basic ReAct agent
-│   ├── react_agent_hitl/             # ReAct with human-in-loop
-│   ├── subgraph_agent/               # Hierarchical agents
-│   ├── subgraph_hitl_agent/          # Hierarchical with HITL
-│   ├── custom_routes_example.py      # Custom routes example
-│   └── jwt_mock_auth_example.py      # JWT auth example
-│
 ├── docs/                             # Documentation
-├── deployments/                      # Docker configs
 ├── aegra.json                        # Agent graph definitions
 └── docker-compose.yml                # Local development setup
 ```
 
-## Architecture
-
-### Layered Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  FastAPI HTTP Layer (Agent Protocol API)                │
-│  └─ /assistants, /threads, /runs, /store endpoints     │
-├─────────────────────────────────────────────────────────┤
-│  Middleware Stack                                        │
-│  └─ Auth, CORS, Structured Logging, Correlation ID     │
-├─────────────────────────────────────────────────────────┤
-│  Service Layer (Business Logic)                          │
-│  └─ LangGraphService, AssistantService, StreamingService│
-├─────────────────────────────────────────────────────────┤
-│  LangGraph Runtime                                       │
-│  └─ Graph execution, state management, tool execution   │
-├─────────────────────────────────────────────────────────┤
-│  Database Layer (PostgreSQL)                             │
-│  └─ AsyncPostgresSaver (checkpoints), AsyncPostgresStore│
-└─────────────────────────────────────────────────────────┘
-```
-
 **Key principle:** LangGraph handles ALL state persistence and graph execution. FastAPI provides only HTTP/Agent Protocol compliance.
 
-### Database Architecture
-
-The system uses a hybrid approach with two connection pools:
-
-1. **SQLAlchemy Pool** (asyncpg driver) - Metadata tables: assistants, threads, runs
-2. **LangGraph Pool** (psycopg driver) - State checkpoints, vector embeddings
-
-**URL format difference:** LangGraph requires `postgresql://` while SQLAlchemy uses `postgresql+asyncpg://`
-
-### Configuration Files
-
-**aegra.json** - Central configuration:
-```json
-{
-  "graphs": {
-    "agent": "./examples/react_agent/graph.py:graph"
-  },
-  "http": {
-    "app": "./examples/custom_routes_example.py:app"
-  }
-}
-```
-
-**jwt_mock_auth_example.py** - Example authentication using LangGraph SDK Auth patterns:
-- `@auth.authenticate` decorator for user authentication
-- `@auth.on.{resource}.{action}` for authorization handlers
-- Returns `Auth.types.MinimalUserDict` with user identity
-
-### Graph Loading
-
-Agents are Python modules exporting a compiled `graph` variable:
-```python
-# examples/react_agent/graph.py
-builder = StateGraph(State)
-# ... define nodes and edges
-graph = builder.compile()  # Must export as 'graph'
-```
-
-## Development Patterns
+## Development Rules
 
 ### Type Annotations (STRICT)
 - **EVERY function MUST have explicit type annotations** for ALL parameters AND the return type. No exceptions.
 - If a function returns nothing, annotate it `-> None`. Never leave the return type blank.
-- Use `collections.abc` types (`Sequence`, `Mapping`, `Iterator`) over `typing` equivalents where possible.
 - Use `X | None` union syntax (Python 3.10+), not `Optional[X]`.
+- Use `collections.abc` types (`Sequence`, `Mapping`, `Iterator`) over `typing` equivalents where possible.
 - Annotate class attributes and module-level variables when the type is not obvious from the assignment.
 - This applies to **all** code you write or modify: production code, tests, helpers, fixtures, scripts — everything.
 
@@ -265,75 +95,103 @@ def process(items): ...
 
 ### Import Conventions
 - Use absolute imports with `aegra_api.*` prefix.
-- **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If you are unsure whether a circular dependency exists, put the import at the top — only move it inline after confirming the import cycle with an actual error.
-
-### Database Access
-```python
-# For LangGraph operations
-checkpointer = db_manager.get_checkpointer()
-store = db_manager.get_store()
-
-# For metadata queries
-engine = db_manager.get_engine()
-```
-
-### Authentication
-```python
-# Access authenticated user in routes
-from aegra_api.core.auth_deps import get_current_user
-
-@router.get("/example")
-async def example(user: AuthenticatedUser = Depends(get_current_user)):
-    # user.identity contains user ID
-    # user.metadata contains additional info
-    pass
-```
+- **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** (confirmed by actual `ImportError`) or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If unsure, put it at the top — only move inline after confirming the import cycle with an actual error.
 
 ### Error Handling
-- Use `Auth.exceptions.HTTPException` for auth errors
-- Use standard FastAPI `HTTPException` for other errors
+- **NEVER use bare `except:` or `except Exception: pass`.** Always catch specific exceptions.
+- Handle errors at function entry with **guard clauses and early returns** — place the happy path last.
+- Keep exactly **ONE statement** in each `try` block when possible. Narrow the scope of exception handling.
+- Use `HTTPException` for expected API errors. Use middleware for unexpected errors.
+- **NEVER silently swallow exceptions.** If you catch an exception, log it or re-raise it. `except SomeError: pass` is almost always wrong.
+- Use context managers (`with` statements) for resource cleanup.
 
-### Testing
-- Tests must be async-aware using pytest-asyncio
-- Use fixtures from `tests/conftest.py`
-- E2E tests require a running server instance
+```python
+# CORRECT — guard clause, specific exception
+def get_user(user_id: str) -> User:
+    if not user_id:
+        raise ValueError("user_id is required")
+    try:
+        return db.fetch_user(user_id)
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="User not found")
 
-## Key Dependencies
+# WRONG — broad catch, swallowed exception, happy path buried
+def get_user(user_id):
+    try:
+        if user_id:
+            user = db.fetch_user(user_id)
+            if user:
+                return user
+    except Exception:
+        pass
+    return None
+```
 
-| Package | Purpose |
-|---------|---------|
-| langgraph | Core graph execution framework |
-| langgraph-checkpoint-postgres | Official PostgreSQL state persistence |
-| langgraph-sdk | Authentication and SDK components |
-| psycopg[binary] | Required by LangGraph (not asyncpg) |
-| FastAPI + uvicorn | HTTP API layer |
-| SQLAlchemy | Agent Protocol metadata tables only |
-| alembic | Database migration management |
-| asyncpg | Async PostgreSQL for SQLAlchemy |
+### Function Design
+- **NEVER use mutable default arguments** (`def f(items=[])` or `def f(data={})`). Use `None` and create inside the function.
+- Functions with **5+ parameters MUST use keyword-only arguments** (add `*` separator).
+- Return early to reduce nesting.
+- Prefer pure functions — return values rather than modifying inputs.
 
-## Authentication System
+```python
+# CORRECT — keyword-only args, immutable default
+def create_assistant(name: str, *, graph_id: str, config: dict | None = None, metadata: dict | None = None) -> Assistant:
+    config = config or {}
+    ...
 
-**Environment-based switching:**
-- `AUTH_TYPE=noop` - No authentication (development)
-- `AUTH_TYPE=custom` - Custom authentication (production)
+# WRONG — mutable default, too many positional args
+def create_assistant(name, graph_id, config={}, metadata={}, version=1, context={}):
+    ...
+```
 
-**To implement custom auth:**
-1. Modify `@auth.authenticate` in your auth file for your auth service
-2. The `authorize()` function handles user-scoped access automatically
-3. Add required environment variables for your auth service
+### Testing (STRICT)
+- **Bug fixes REQUIRE regression tests. New features REQUIRE tests.** No exceptions.
+- Follow the **Arrange-Act-Assert** pattern.
+- Test **edge cases AND invalid inputs** — not just the happy path.
+- Test names must describe the expected behavior: `test_returns_404_when_assistant_not_found`, not `test_get_assistant_2`.
+- Use `pytest` — never `unittest` classes.
+- Tests must be async-aware using `pytest-asyncio`.
+- Use fixtures from `tests/conftest.py`.
+- Mock external dependencies (databases, APIs). Prefer `monkeypatch` over `unittest.mock` where possible.
+- **NEVER mark a task as complete without running the tests and confirming they pass.**
 
-## API Endpoints Overview
+### LLM Agent Anti-Patterns (IMPORTANT)
+These rules exist because AI agents repeatedly make these mistakes. Follow them carefully:
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /assistants` | Create assistant from graph_id |
-| `GET /assistants` | List user's assistants |
-| `POST /threads` | Create conversation thread |
-| `GET /threads/{id}/state` | Get thread state |
-| `POST /threads/{id}/runs` | Execute graph (streaming/background) |
-| `POST /runs/{id}/stream` | Stream run events |
-| `PUT /store` | Save to vector store |
-| `POST /store/search` | Semantic search |
+- **Only modify code related to the task at hand.** Do not "helpfully" refactor, rename, or clean up adjacent code — this introduces breakage and scope creep.
+- **When tests fail, fix the ROOT CAUSE, not the symptom.** Do not delete failing assertions, weaken test conditions, or add workarounds to make tests pass. Investigate why the test fails and fix the underlying bug.
+- **NEVER add conditional logic that returns hardcoded values for specific test inputs.** This is cheating, not fixing.
+- **Follow existing patterns EXACTLY.** Before writing new code, read the surrounding codebase and mimic its style, naming conventions, and patterns. Do not invent new patterns when established ones exist.
+- **Do not assume a library is available.** Check `pyproject.toml` before importing a new dependency.
+- **If you don't understand why code exists, ask or leave it alone** (Chesterton's Fence).
+- **NEVER commit commented-out code.** Delete it or keep it — no middle ground.
+
+### Security
+- NEVER store secrets, API keys, or passwords in code — only in `.env` files or environment variables.
+- NEVER log sensitive information (passwords, tokens, PII).
+- Use parameterized queries / ORM — never raw string SQL.
+- NEVER use `eval()`, `exec()`, or `pickle` on user input.
+- Use `subprocess.run([...], shell=False)` — never `shell=True` with user input.
+
+## Architecture
+
+### Database Architecture
+The system uses two connection pools:
+1. **SQLAlchemy Pool** (asyncpg driver) - Metadata tables: assistants, threads, runs
+2. **LangGraph Pool** (psycopg driver) - State checkpoints, vector embeddings
+
+**URL format:** LangGraph requires `postgresql://` while SQLAlchemy uses `postgresql+asyncpg://`
+
+### Configuration
+**aegra.json** defines graphs, auth, HTTP config, and store settings. See `docs/configuration.md` for full reference.
+
+### Graph Loading
+Agents are Python modules exporting a compiled `graph` variable:
+```python
+builder = StateGraph(State)
+# ... define nodes and edges
+graph = builder.compile()  # Must export as 'graph'
+```
 
 ## Common Tasks
 
@@ -353,33 +211,7 @@ async def example(user: AuthenticatedUser = Depends(get_current_user)):
 1. Modify SQLAlchemy models in `libs/aegra-api/src/aegra_api/core/orm.py`
 2. Generate migration: `uv run --package aegra-api alembic revision --autogenerate -m "description"`
 3. Review generated migration in `libs/aegra-api/alembic/versions/`
-4. Apply: `uv run --package aegra-api alembic upgrade head`
-
-## Environment Variables
-
-```bash
-# Database
-POSTGRES_USER=user
-POSTGRES_PASSWORD=password
-POSTGRES_HOST=localhost
-POSTGRES_DB=aegra
-
-# Auth
-AUTH_TYPE=noop  # or "custom"
-
-# Server
-HOST=0.0.0.0
-PORT=8000
-
-# Config
-AEGRA_CONFIG=aegra.json
-
-# LLM (for example agents)
-OPENAI_API_KEY=sk-...
-
-# Observability (optional)
-OTEL_TARGETS=LANGFUSE,PHOENIX
-```
+4. Apply: `aegra db upgrade`
 
 ## PR Guidelines
 
@@ -392,10 +224,8 @@ OTEL_TARGETS=LANGFUSE,PHOENIX
 ### Documentation Updates (STRICT)
 - **EVERY code change that affects user-facing behavior MUST include corresponding documentation updates.** This is NOT optional — treat docs as part of the implementation, not a follow-up task.
 - Check ALL of these locations for references that may need updating:
-  - `README.md` (root)
-  - `libs/aegra-api/README.md`
-  - `libs/aegra-cli/README.md`
-  - `CLAUDE.md` (agent instructions)
+  - `README.md` (root), `libs/aegra-api/README.md`, `libs/aegra-cli/README.md`
+  - `CLAUDE.md` (this file)
   - `docs/` directory (developer-guide, migration-cheatsheet, configuration, authentication, custom-routes, etc.)
 - When adding/removing CLI flags, commands, or config options: search all docs for the old flag/command name and update every occurrence.
 - When changing API behavior, default values, or startup behavior: update the relevant docs to reflect the new behavior.

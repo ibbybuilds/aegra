@@ -388,3 +388,15 @@ OTEL_TARGETS=LANGFUSE,PHOENIX
 - Include tests for new functionality
 - Update migrations if modifying database schema
 - Title format: `[component] Brief description`
+
+### Documentation Updates (STRICT)
+- **EVERY code change that affects user-facing behavior MUST include corresponding documentation updates.** This is NOT optional — treat docs as part of the implementation, not a follow-up task.
+- Check ALL of these locations for references that may need updating:
+  - `README.md` (root)
+  - `libs/aegra-api/README.md`
+  - `libs/aegra-cli/README.md`
+  - `CLAUDE.md` (agent instructions)
+  - `docs/` directory (developer-guide, migration-cheatsheet, configuration, authentication, custom-routes, etc.)
+- When adding/removing CLI flags, commands, or config options: search all docs for the old flag/command name and update every occurrence.
+- When changing API behavior, default values, or startup behavior: update the relevant docs to reflect the new behavior.
+- A PR that changes behavior without updating docs is **incomplete**. Do not consider the task done until docs are updated.

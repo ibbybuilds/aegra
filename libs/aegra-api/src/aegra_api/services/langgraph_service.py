@@ -24,7 +24,6 @@ from aegra_api.observability.base import (
     get_tracing_callbacks,
     get_tracing_metadata,
 )
-from aegra_api.settings import settings
 
 State = TypeVar("State")
 logger = structlog.get_logger(__name__)
@@ -39,9 +38,9 @@ class LangGraphService:
     - Thread-safe without locks via immutable cached state
     """
 
-    def __init__(self, config_path: str = "aegra.json"):
-        # Default path can be overridden via AEGRA_CONFIG or by placing aegra.json
-        self.config_path = Path(config_path)
+    def __init__(self, config_path: str | None = None):
+        self.config_path = Path(config_path) if config_path else Path("aegra.json")
+        self._explicit_config = config_path is not None
         self.config: dict[str, Any] | None = None
         self._graph_registry: dict[str, Any] = {}
         # Cache for base graph definitions (without checkpointer/store)
@@ -50,38 +49,24 @@ class LangGraphService:
     async def initialize(self):
         """Load configuration file and setup graph registry.
 
-        Uses shared config loading logic to ensure consistency.
         Resolution order:
-        1) AEGRA_CONFIG env var (absolute or relative path)
-        2) Explicit self.config_path if it exists
-        3) aegra.json in CWD
-        4) langgraph.json in CWD (fallback)
+        1) Explicit config_path passed to constructor (if it exists)
+        2) Shared resolution (AEGRA_CONFIG env var → aegra.json → langgraph.json)
         """
         from aegra_api.config import _resolve_config_path
 
-        # Priority: env var > explicit config_path > shared resolution
-        resolved_path: Path | None = None
-
-        # 1) Check env var first (via shared resolution logic)
-        env_resolved = _resolve_config_path()
-
-        # 2) If env var was set, use it (even if file doesn't exist yet - let error happen later)
-        env_path = settings.app.AEGRA_CONFIG
-        if env_path and env_resolved and env_resolved == Path(env_path):
-            resolved_path = env_resolved
-        # 3) Otherwise check explicit config_path (if provided and exists)
-        elif self.config_path and Path(self.config_path).exists():
-            resolved_path = Path(self.config_path)
-        # 4) Otherwise use shared resolution (fallback to aegra.json/langgraph.json)
+        # 1) Explicit path wins if provided and exists
+        if self._explicit_config and self.config_path.exists():
+            resolved_path = self.config_path
+        # 2) Otherwise use shared resolution
         else:
-            resolved_path = env_resolved
+            resolved_path = _resolve_config_path()
 
         if not resolved_path or not resolved_path.exists():
             raise ValueError(
                 "Configuration file not found. Expected one of: AEGRA_CONFIG path, ./aegra.json, or ./langgraph.json"
             )
 
-        # Persist selected path for later reference
         self.config_path = resolved_path
 
         with self.config_path.open() as f:

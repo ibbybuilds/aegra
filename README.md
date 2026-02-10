@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/aegra/"><img src="https://img.shields.io/pypi/v/aegra?label=aegra&color=blue" alt="PyPI"></a>
+  <a href="https://pypi.org/project/aegra-api/"><img src="https://img.shields.io/pypi/v/aegra-api?label=aegra-api&color=blue" alt="PyPI API"></a>
   <a href="https://pypi.org/project/aegra-cli/"><img src="https://img.shields.io/pypi/v/aegra-cli?label=aegra-cli&color=blue" alt="PyPI CLI"></a>
   <a href="https://github.com/ibbybuilds/aegra/actions/workflows/ci.yml"><img src="https://github.com/ibbybuilds/aegra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://app.codecov.io/gh/ibbybuilds/aegra"><img src="https://codecov.io/gh/ibbybuilds/aegra/graph/badge.svg" alt="Codecov"></a>
@@ -35,7 +35,7 @@ Aegra is a drop-in replacement for LangGraph Platform. Use the same LangGraph SD
 **Prerequisites:** Python 3.11+, Docker (for PostgreSQL)
 
 ```bash
-pip install aegra
+pip install aegra-cli
 
 # Initialize a new project
 aegra init --docker

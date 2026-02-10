@@ -223,7 +223,7 @@ def write_file(path: Path, content: str, force: bool) -> bool:
 )
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--path", type=click.Path(), default=".", help="Project directory")
-def init(name: str | None, force: bool, path: str):
+def init(name: str | None, force: bool, path: str) -> None:
     """Initialize a new Aegra project.
 
     Creates the necessary configuration files and directory structure

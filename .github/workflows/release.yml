@@ -47,7 +47,7 @@ jobs:
 
       - name: Build package
         working-directory: libs/aegra-api
-        run: uv build --output-dir dist/
+        run: uv build --out-dir dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -115,7 +115,7 @@ jobs:
 
       - name: Build package
         working-directory: libs/aegra-cli
-        run: uv build --output-dir dist/
+        run: uv build --out-dir dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

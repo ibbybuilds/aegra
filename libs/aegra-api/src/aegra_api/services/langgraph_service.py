@@ -58,8 +58,10 @@ class LangGraphService:
         # 1) Explicit path wins if provided and exists
         if self._explicit_config and self.config_path.exists():
             resolved_path = self.config_path
-        # 2) Otherwise use shared resolution
+        # 2) Otherwise use shared resolution (warn if explicit path was missing)
         else:
+            if self._explicit_config:
+                logger.warning(f"Explicit config path '{self.config_path}' not found, falling back to config discovery")
             resolved_path = _resolve_config_path()
 
         if not resolved_path or not resolved_path.exists():
@@ -304,7 +306,7 @@ class LangGraphService:
         """List all available graphs"""
         return {graph_id: info["file_path"] for graph_id, info in self._graph_registry.items()}
 
-    def invalidate_cache(self, graph_id: str = None):
+    def invalidate_cache(self, graph_id: str | None = None):
         """Invalidate graph cache for hot-reload.
 
         @param graph_id: Specific graph to invalidate, or None to clear all

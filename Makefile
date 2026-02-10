@@ -63,7 +63,7 @@ ci-check: format lint
 	-uv run bandit -c pyproject.toml -r libs/aegra-api/src/ libs/aegra-cli/src/
 	$(MAKE) test
 	@echo ""
-	@echo "All CI checks passed!"
+	@echo "All CI checks completed! (mypy and bandit are non-blocking)"
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

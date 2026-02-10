@@ -195,7 +195,6 @@ libs/aegra-api/
 ## Related Packages
 
 - **aegra-cli**: Command-line interface for project management
-- **aegra**: Meta-package that installs both aegra-api and aegra-cli
 
 ## Documentation
 

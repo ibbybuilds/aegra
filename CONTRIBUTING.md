@@ -20,7 +20,7 @@ make dev-install     # Installs dependencies + git hooks
 
 **Option 2: Using uv directly**
 ```bash
-uv sync
+uv sync --all-packages
 uv run pre-commit install
 uv run pre-commit install --hook-type commit-msg
 ```
@@ -147,10 +147,10 @@ make test
 make test-cov
 
 # Run specific test file
-uv run pytest tests/e2e/test_assistants/test_assistant_graph.py
+uv run --package aegra-api pytest libs/aegra-api/tests/e2e/test_assistants/test_assistant_graph.py
 
 # Run specific test
-uv run pytest tests/e2e/test_assistants/test_assistant_graph.py::test_create_assistant
+uv run --package aegra-api pytest libs/aegra-api/tests/e2e/test_assistants/test_assistant_graph.py::test_create_assistant
 ```
 
 ### Writing Tests

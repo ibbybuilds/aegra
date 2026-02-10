@@ -39,17 +39,17 @@ aegra up
 ### Manual Setup
 
 ```bash
-# Install dependencies
-cd libs/aegra-api && uv sync
+# Install all workspace dependencies (from repo root)
+uv sync --all-packages
 
 # Start database
 docker compose up postgres -d
 
 # Apply migrations
-cd libs/aegra-api && alembic upgrade head
+uv run --package aegra-api alembic upgrade head
 
 # Run development server
-cd libs/aegra-api && uv run uvicorn aegra_api.main:app --reload
+uv run --package aegra-api uvicorn aegra_api.main:app --reload
 
 # Or run everything with Docker
 docker compose up aegra
@@ -58,36 +58,40 @@ docker compose up aegra
 ## Testing
 
 ```bash
-# Run all tests
-cd libs/aegra-api && uv run pytest
+# Run all tests (or use: make test)
+uv run --package aegra-api pytest libs/aegra-api/tests/
+uv run --package aegra-cli pytest libs/aegra-cli/tests/
 
 # Run specific test file
-cd libs/aegra-api && uv run pytest tests/unit/test_api/test_assistants.py
+uv run --package aegra-api pytest libs/aegra-api/tests/unit/test_api/test_assistants.py
 
-# Run with coverage
-cd libs/aegra-api && uv run pytest --cov=src --cov-report=html
+# Run with coverage (or use: make test-cov)
+uv run --package aegra-api pytest libs/aegra-api/tests/ --cov=libs/aegra-api/src --cov-report=html
 
 # Run e2e tests (requires running server)
-cd libs/aegra-api && uv run pytest tests/e2e/
+uv run --package aegra-api pytest libs/aegra-api/tests/e2e/
 
 # Health check
 curl http://localhost:8000/health
 ```
 
-**Important:** Always run `uv run pytest` before completing tasks to verify changes don't break existing functionality.
+**Important:** Always run tests before completing tasks to verify changes don't break existing functionality.
 
 ## Code Quality
 
 ```bash
-# Linting
-cd libs/aegra-api && uv run ruff check .
-cd libs/aegra-api && uv run ruff format .
+# Linting (or use: make lint / make format)
+uv run ruff check .
+uv run ruff format .
 
-# Type checking
-cd libs/aegra-api && uv run mypy src
+# Type checking (or use: make type-check)
+uv run mypy libs/aegra-api/src/ libs/aegra-cli/src/
 
-# Security scanning
-cd libs/aegra-api && uv run bandit -r src
+# Security scanning (or use: make security)
+uv run bandit -c pyproject.toml -r libs/aegra-api/src/ libs/aegra-cli/src/
+
+# Run all CI checks locally (or use: make ci-check)
+make ci-check
 ```
 
 ## Database Migrations
@@ -115,18 +119,18 @@ aegra db downgrade abc123
 ### Using Alembic Directly
 
 ```bash
-# Apply migrations
-cd libs/aegra-api && alembic upgrade head
+# Apply migrations (from repo root)
+uv run --package aegra-api alembic upgrade head
 
 # Create new migration
-cd libs/aegra-api && alembic revision -m "description"
+uv run --package aegra-api alembic revision -m "description"
 
 # Auto-generate migration from model changes
-cd libs/aegra-api && alembic revision --autogenerate -m "description"
+uv run --package aegra-api alembic revision --autogenerate -m "description"
 
 # Check status
-cd libs/aegra-api && alembic current
-cd libs/aegra-api && alembic history
+uv run --package aegra-api alembic current
+uv run --package aegra-api alembic history
 ```
 
 ## Project Structure
@@ -328,9 +332,9 @@ async def example(user: AuthenticatedUser = Depends(get_current_user)):
 
 ### Database Schema Changes
 1. Modify SQLAlchemy models in `libs/aegra-api/src/aegra_api/core/orm.py`
-2. Generate migration: `cd libs/aegra-api && alembic revision --autogenerate -m "description"`
-3. Review generated migration in `alembic/versions/`
-4. Apply: `cd libs/aegra-api && alembic upgrade head`
+2. Generate migration: `uv run --package aegra-api alembic revision --autogenerate -m "description"`
+3. Review generated migration in `libs/aegra-api/alembic/versions/`
+4. Apply: `uv run --package aegra-api alembic upgrade head`
 
 ## Environment Variables
 
@@ -360,8 +364,8 @@ OTEL_TARGETS=LANGFUSE,PHOENIX
 
 ## PR Guidelines
 
-- Run `cd libs/aegra-api && uv run pytest` before committing
-- Run `cd libs/aegra-api && uv run ruff check .` for linting
+- Run `make test` (or `uv run --package aegra-api pytest libs/aegra-api/tests/`) before committing
+- Run `make lint` (or `uv run ruff check .`) for linting
 - Include tests for new functionality
 - Update migrations if modifying database schema
 - Title format: `[component] Brief description`

@@ -123,7 +123,11 @@ def load_config() -> dict | None:
 
     try:
         with config_path.open() as f:
-            return json.load(f)
+            data = json.load(f)
+        if not isinstance(data, dict):
+            logger.warning(f"Config file {config_path} does not contain a JSON object")
+            return None
+        return data
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}")
         return None

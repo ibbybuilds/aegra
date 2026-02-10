@@ -47,13 +47,14 @@ jobs:
 
       - name: Build package
         working-directory: libs/aegra-api
-        run: uv build
+        run: uv build --output-dir dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist-aegra-api
           path: libs/aegra-api/dist/
+          if-no-files-found: error
 
   publish-api:
     needs: [build-api]
@@ -114,13 +115,14 @@ jobs:
 
       - name: Build package
         working-directory: libs/aegra-cli
-        run: uv build
+        run: uv build --output-dir dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist-aegra-cli
           path: libs/aegra-cli/dist/
+          if-no-files-found: error
 
   publish-cli:
     needs: [build-cli]

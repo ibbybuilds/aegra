@@ -60,6 +60,11 @@ DEFAULT_EXPOSE_HEADERS = ["Content-Location", "Location"]
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context manager for startup/shutdown"""
+    # Auto-apply pending database migrations before anything else
+    from aegra_api.core.migrations import run_migrations_async
+
+    await run_migrations_async()
+
     # Startup: Initialize database and LangGraph components
     await db_manager.initialize()
 

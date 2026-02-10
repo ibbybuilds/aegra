@@ -2,12 +2,81 @@
 
 import subprocess
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.panel import Panel
 
 console = Console()
+
+
+def _get_alembic_config_args() -> list[str]:
+    """Get alembic CLI args to locate the correct config file.
+
+    Resolution order:
+    1. alembic.ini in CWD (repo development, Docker)
+    2. Bundled with aegra_api package (pip install)
+
+    Returns:
+        List of extra CLI args (e.g. ["-c", "/path/to/alembic.ini"]) or empty list
+    """
+    # 1. CWD has alembic.ini - use default behavior
+    if Path("alembic.ini").exists():
+        return []
+
+    # 2. Try to find from installed aegra-api package
+    try:
+        from aegra_api.core.migrations import find_alembic_ini
+
+        ini_path = find_alembic_ini()
+        return ["-c", str(ini_path)]
+    except (ImportError, FileNotFoundError):
+        return []
+
+
+def _build_alembic_cmd(*args: str) -> list[str]:
+    """Build a full alembic command with correct config path.
+
+    Args:
+        *args: Alembic subcommand and arguments (e.g. "upgrade", "head")
+
+    Returns:
+        Complete command list for subprocess.run
+    """
+    config_args = _get_alembic_config_args()
+    return [sys.executable, "-m", "alembic"] + config_args + list(args)
+
+
+def _run_alembic_cmd(cmd: list[str], success_msg: str, error_prefix: str) -> None:
+    """Run an alembic command with standard output handling.
+
+    Args:
+        cmd: Command list for subprocess.run
+        success_msg: Message to display on success
+        error_prefix: Prefix for error message
+    """
+    console.print(f"[dim]Running: {' '.join(cmd)}[/dim]\n")
+
+    try:
+        result = subprocess.run(cmd, check=False)
+        if result.returncode == 0:
+            console.print(f"\n[bold green]{success_msg}[/bold green]")
+        else:
+            console.print(
+                f"\n[bold red]Error:[/bold red] {error_prefix} "
+                f"failed with exit code {result.returncode}"
+            )
+        sys.exit(result.returncode)
+    except FileNotFoundError:
+        console.print(
+            "[bold red]Error:[/bold red] Alembic is not installed.\n"
+            "Install it with: [cyan]pip install aegra-api[/cyan]"
+        )
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Operation cancelled by user.[/yellow]")
+        sys.exit(1)
 
 
 @click.group()
@@ -39,28 +108,8 @@ def upgrade():
         )
     )
 
-    cmd = [sys.executable, "-m", "alembic", "upgrade", "head"]
-    console.print(f"[dim]Running: {' '.join(cmd)}[/dim]\n")
-
-    try:
-        result = subprocess.run(cmd, check=False)
-        if result.returncode == 0:
-            console.print("\n[bold green]Database upgraded successfully![/bold green]")
-        else:
-            console.print(
-                f"\n[bold red]Error:[/bold red] Alembic upgrade failed "
-                f"with exit code {result.returncode}"
-            )
-        sys.exit(result.returncode)
-    except FileNotFoundError:
-        console.print(
-            "[bold red]Error:[/bold red] Alembic is not installed.\n"
-            "Install it with: [cyan]pip install alembic[/cyan]"
-        )
-        sys.exit(1)
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Operation cancelled by user.[/yellow]")
-        sys.exit(1)
+    cmd = _build_alembic_cmd("upgrade", "head")
+    _run_alembic_cmd(cmd, "Database upgraded successfully!", "Alembic upgrade")
 
 
 @db.command()
@@ -96,28 +145,8 @@ def downgrade(revision: str):
     if revision == "base":
         console.print("[yellow]Warning:[/yellow] Downgrading to 'base' will remove all migrations!")
 
-    cmd = [sys.executable, "-m", "alembic", "downgrade", revision]
-    console.print(f"[dim]Running: {' '.join(cmd)}[/dim]\n")
-
-    try:
-        result = subprocess.run(cmd, check=False)
-        if result.returncode == 0:
-            console.print("\n[bold green]Database downgraded successfully![/bold green]")
-        else:
-            console.print(
-                f"\n[bold red]Error:[/bold red] Alembic downgrade failed "
-                f"with exit code {result.returncode}"
-            )
-        sys.exit(result.returncode)
-    except FileNotFoundError:
-        console.print(
-            "[bold red]Error:[/bold red] Alembic is not installed.\n"
-            "Install it with: [cyan]pip install alembic[/cyan]"
-        )
-        sys.exit(1)
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Operation cancelled by user.[/yellow]")
-        sys.exit(1)
+    cmd = _build_alembic_cmd("downgrade", revision)
+    _run_alembic_cmd(cmd, "Database downgraded successfully!", "Alembic downgrade")
 
 
 @db.command()
@@ -139,28 +168,8 @@ def current():
         )
     )
 
-    cmd = [sys.executable, "-m", "alembic", "current"]
-    console.print(f"[dim]Running: {' '.join(cmd)}[/dim]\n")
-
-    try:
-        result = subprocess.run(cmd, check=False)
-        if result.returncode == 0:
-            console.print("\n[bold green]Current revision displayed above.[/bold green]")
-        else:
-            console.print(
-                f"\n[bold red]Error:[/bold red] Alembic current failed "
-                f"with exit code {result.returncode}"
-            )
-        sys.exit(result.returncode)
-    except FileNotFoundError:
-        console.print(
-            "[bold red]Error:[/bold red] Alembic is not installed.\n"
-            "Install it with: [cyan]pip install alembic[/cyan]"
-        )
-        sys.exit(1)
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Operation cancelled by user.[/yellow]")
-        sys.exit(1)
+    cmd = _build_alembic_cmd("current")
+    _run_alembic_cmd(cmd, "Current revision displayed above.", "Alembic current")
 
 
 @db.command()
@@ -191,27 +200,8 @@ def history(verbose: bool):
         )
     )
 
-    cmd = [sys.executable, "-m", "alembic", "history"]
+    args = ["history"]
     if verbose:
-        cmd.append("--verbose")
-    console.print(f"[dim]Running: {' '.join(cmd)}[/dim]\n")
-
-    try:
-        result = subprocess.run(cmd, check=False)
-        if result.returncode == 0:
-            console.print("\n[bold green]Migration history displayed above.[/bold green]")
-        else:
-            console.print(
-                f"\n[bold red]Error:[/bold red] Alembic history failed "
-                f"with exit code {result.returncode}"
-            )
-        sys.exit(result.returncode)
-    except FileNotFoundError:
-        console.print(
-            "[bold red]Error:[/bold red] Alembic is not installed.\n"
-            "Install it with: [cyan]pip install alembic[/cyan]"
-        )
-        sys.exit(1)
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Operation cancelled by user.[/yellow]")
-        sys.exit(1)
+        args.append("--verbose")
+    cmd = _build_alembic_cmd(*args)
+    _run_alembic_cmd(cmd, "Migration history displayed above.", "Alembic history")

@@ -38,6 +38,7 @@ async def test_lifespan_registers_otel_provider(monkeypatch):
 
     # Mock all the dependencies
     with (
+        patch("aegra_api.core.migrations.run_migrations_async", new_callable=AsyncMock),
         patch("aegra_api.main.db_manager") as mock_db_manager,
         patch("aegra_api.main.get_langgraph_service") as mock_get_langgraph_service,
         patch("aegra_api.main.event_store") as mock_event_store,
@@ -77,6 +78,7 @@ async def test_lifespan_calls_required_initialization():
     from aegra_api.main import lifespan
 
     with (
+        patch("aegra_api.core.migrations.run_migrations_async", new_callable=AsyncMock) as mock_migrations,
         patch("aegra_api.main.db_manager") as mock_db_manager,
         patch("aegra_api.main.get_langgraph_service") as mock_get_langgraph_service,
         patch("aegra_api.main.event_store") as mock_event_store,
@@ -100,7 +102,8 @@ async def test_lifespan_calls_required_initialization():
         async with lifespan(mock_app):
             pass
 
-        # Verify all initialization functions were called
+        # Verify migrations run first, then initialization
+        mock_migrations.assert_called_once()
         mock_db_manager.initialize.assert_called_once()
         mock_langgraph_service.initialize.assert_called_once()
         mock_event_store.start_cleanup_task.assert_called_once()

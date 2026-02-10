@@ -63,6 +63,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/aegra_api"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"alembic.ini" = "aegra_api/alembic.ini"
+"alembic" = "aegra_api/alembic"
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

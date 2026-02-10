@@ -1,6 +1,7 @@
 """Alembic environment configuration for Aegra database migrations."""
 
 import asyncio
+import threading
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -24,8 +25,11 @@ config.set_section_option(section, "DB_NAME", settings.db.POSTGRES_DB)
 config.set_section_option(section, "DB_PASS", settings.db.POSTGRES_PASSWORD)
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# Only reconfigure logging when running from CLI (main thread).
+# When invoked programmatically via asyncio.to_thread(), fileConfig()
+# causes a cross-thread deadlock with the application's logging.
+# See: https://github.com/sqlalchemy/alembic/discussions/1483
+if config.config_file_name is not None and threading.current_thread() is threading.main_thread():
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here

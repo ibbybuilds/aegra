@@ -231,7 +231,7 @@ def start_postgres_container(compose_file: Path | None = None) -> bool:
     if compose_file:
         cmd.extend(["-f", str(compose_file)])
 
-    cmd.extend(["up", "-d", "postgres"])
+    cmd.extend(["up", "-d", "--wait", "postgres"])
 
     console.print("[cyan]Starting PostgreSQL container...[/cyan]")
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")

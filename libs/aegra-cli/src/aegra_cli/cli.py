@@ -297,6 +297,16 @@ def dev(
         if config_dir_env.exists():
             env_file = config_dir_env
 
+    # Auto-copy .env.example to .env if .env doesn't exist
+    if env_file is None:
+        dot_env = resolved_config.parent / ".env"
+        dot_env_example = resolved_config.parent / ".env.example"
+        if not dot_env.exists() and dot_env_example.exists():
+            import shutil
+
+            shutil.copy2(dot_env_example, dot_env)
+            console.print(f"[cyan]Created[/cyan] {dot_env} [dim](copied from .env.example)[/dim]")
+
     loaded_env = load_env_file(env_file)
     if loaded_env:
         console.print(f"[dim]Loaded environment from: {loaded_env}[/dim]")

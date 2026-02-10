@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 This file provides context for AI coding agents working with this repository.
 
@@ -163,7 +163,7 @@ These rules exist because AI agents repeatedly make these mistakes. Follow them 
 - **NEVER add conditional logic that returns hardcoded values for specific test inputs.** This is cheating, not fixing.
 - **Follow existing patterns EXACTLY.** Before writing new code, read the surrounding codebase and mimic its style, naming conventions, and patterns. Do not invent new patterns when established ones exist.
 - **Do not assume a library is available.** Check `pyproject.toml` before importing a new dependency.
-- **Do not touch code you cannot explain.** If you don't understand why code exists, ask or leave it alone (Chesterton's Fence).
+- **If you don't understand why code exists, ask or leave it alone** (Chesterton's Fence).
 - **NEVER commit commented-out code.** Delete it or keep it — no middle ground.
 
 ### Security

@@ -247,6 +247,7 @@ graph = builder.compile()  # Must export as 'graph'
 ### Import Conventions
 - Use absolute imports with `aegra_api.*` prefix
 - Use proper Python typing everywhere (type hints for function parameters, return types, variables where helpful)
+- **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If you are unsure whether a circular dependency exists, put the import at the top — only move it inline after confirming the import cycle with an actual error.
 
 ### Database Access
 ```python

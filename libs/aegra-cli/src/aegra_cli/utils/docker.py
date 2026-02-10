@@ -322,7 +322,7 @@ def ensure_postgres_running(compose_file: Path | None = None) -> bool:
         if compose_file is None:
             console.print(
                 "\n[bold red]No docker-compose.yml found![/bold red]\n\n"
-                "Create one with: [cyan]aegra init --docker[/cyan]\n"
+                "Create one with: [cyan]aegra init[/cyan]\n"
                 "Or create it manually with a postgres service."
             )
             return False

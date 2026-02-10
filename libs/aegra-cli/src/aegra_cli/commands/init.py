@@ -193,12 +193,6 @@ CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
 """
 
 
-# Keep old function for backwards compatibility during transition
-def get_docker_compose(slug: str) -> str:
-    """Generate docker-compose.yml content (deprecated, use get_docker_compose_dev)."""
-    return get_docker_compose_dev(slug)
-
-
 def write_file(path: Path, content: str, force: bool) -> bool:
     """Write content to a file, respecting the force flag.
 
@@ -227,10 +221,9 @@ def write_file(path: Path, content: str, force: bool) -> bool:
     default=None,
     help="Project name (defaults to directory name).",
 )
-@click.option("--docker", is_flag=True, help="Include docker-compose.yml")
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--path", type=click.Path(), default=".", help="Project directory")
-def init(name: str | None, docker: bool, force: bool, path: str):
+def init(name: str | None, force: bool, path: str):
     """Initialize a new Aegra project.
 
     Creates the necessary configuration files and directory structure
@@ -240,7 +233,9 @@ def init(name: str | None, docker: bool, force: bool, path: str):
     - aegra.json: Graph configuration with project name
     - .env.example: Environment variable template
     - graphs/<name>/graph.py: Example graph implementation
-    - docker-compose.yml: Docker configuration (with --docker flag)
+    - docker-compose.yml: Docker Compose for PostgreSQL (dev)
+    - docker-compose.prod.yml: Docker Compose for full stack (prod)
+    - Dockerfile: Production container build
 
     Examples:
 
@@ -248,7 +243,7 @@ def init(name: str | None, docker: bool, force: bool, path: str):
 
         aegra init --name "My AI Agent"     # Specify project name
 
-        aegra init -n myproject --docker    # With Docker support
+        aegra init -n myproject --force     # Overwrite existing files
     """
     project_path = Path(path).resolve()
 
@@ -305,28 +300,27 @@ def init(name: str | None, docker: bool, force: bool, path: str):
     else:
         files_skipped += 1
 
-    # Create Docker files if requested
-    if docker:
-        # Development docker-compose (postgres only)
-        docker_compose_dev_path = project_path / "docker-compose.yml"
-        if write_file(docker_compose_dev_path, get_docker_compose_dev(slug), force):
-            files_created += 1
-        else:
-            files_skipped += 1
+    # Create Docker files (always included — PostgreSQL is required)
+    # Development docker-compose (postgres only)
+    docker_compose_dev_path = project_path / "docker-compose.yml"
+    if write_file(docker_compose_dev_path, get_docker_compose_dev(slug), force):
+        files_created += 1
+    else:
+        files_skipped += 1
 
-        # Production docker-compose (full stack)
-        docker_compose_prod_path = project_path / "docker-compose.prod.yml"
-        if write_file(docker_compose_prod_path, get_docker_compose_prod(slug), force):
-            files_created += 1
-        else:
-            files_skipped += 1
+    # Production docker-compose (full stack)
+    docker_compose_prod_path = project_path / "docker-compose.prod.yml"
+    if write_file(docker_compose_prod_path, get_docker_compose_prod(slug), force):
+        files_created += 1
+    else:
+        files_skipped += 1
 
-        # Dockerfile for production builds
-        dockerfile_path = project_path / "Dockerfile"
-        if write_file(dockerfile_path, get_dockerfile(), force):
-            files_created += 1
-        else:
-            files_skipped += 1
+    # Dockerfile for production builds
+    dockerfile_path = project_path / "Dockerfile"
+    if write_file(dockerfile_path, get_dockerfile(), force):
+        files_created += 1
+    else:
+        files_skipped += 1
 
     # Print summary
     console.print()
@@ -345,10 +339,8 @@ def init(name: str | None, docker: bool, force: bool, path: str):
     console.print("  1. Copy [cyan].env.example[/cyan] to [cyan].env[/cyan] and configure")
     console.print("  2. Edit [cyan]aegra.json[/cyan] to add your graphs")
     console.print("  3. Run [cyan]aegra dev[/cyan] to start the server")
-
-    if docker:
-        console.print()
-        console.print("[bold]Docker:[/bold]")
-        console.print("  [cyan]aegra dev[/cyan]  - Start postgres + local dev server")
-        console.print("  [cyan]aegra up[/cyan]   - Start all services in Docker")
-        console.print("  [cyan]aegra down[/cyan] - Stop all services")
+    console.print()
+    console.print("[bold]Docker:[/bold]")
+    console.print("  [cyan]aegra dev[/cyan]  - Start postgres + local dev server")
+    console.print("  [cyan]aegra up[/cyan]   - Start all services in Docker")
+    console.print("  [cyan]aegra down[/cyan] - Stop all services")

@@ -21,7 +21,7 @@ This file provides context for AI coding agents working with this repository.
 pip install aegra-cli
 
 # Initialize a new project
-aegra init --docker
+aegra init
 
 # Start PostgreSQL with Docker
 aegra up postgres

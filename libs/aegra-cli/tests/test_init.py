@@ -124,10 +124,10 @@ class TestInitCommand:
             assert Path("graphs/__init__.py").exists()
             assert Path("graphs/test/__init__.py").exists()
 
-    def test_init_with_docker_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that init creates Docker files with --docker flag."""
+    def test_init_creates_docker_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that init always creates Docker files."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker", "-n", "myapp"])
+            result = cli_runner.invoke(cli, ["init", "-n", "myapp"])
 
             assert result.exit_code == 0
             # Dev compose file
@@ -146,16 +146,6 @@ class TestInitCommand:
             assert Path("Dockerfile").exists()
             dockerfile_content = Path("Dockerfile").read_text()
             assert "aegra" in dockerfile_content
-
-    def test_init_without_docker_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that init does not create Docker files without --docker flag."""
-        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init"])
-
-            assert result.exit_code == 0
-            assert not Path("docker-compose.yml").exists()
-            assert not Path("docker-compose.prod.yml").exists()
-            assert not Path("Dockerfile").exists()
 
     def test_init_skips_existing_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that init skips existing files without --force."""
@@ -226,9 +216,9 @@ class TestInitCommand:
             assert "aegra.json" in result.output
 
     def test_init_shows_docker_instructions(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that init shows Docker instructions when --docker is used."""
+        """Test that init always shows Docker instructions."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker"])
+            result = cli_runner.invoke(cli, ["init"])
 
             assert result.exit_code == 0
             assert "Docker" in result.output
@@ -294,7 +284,7 @@ class TestInitFileContents:
     def test_docker_compose_dev_has_postgres(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that docker-compose.yml (dev) includes postgres service only."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker"])
+            result = cli_runner.invoke(cli, ["init"])
 
             content = Path("docker-compose.yml").read_text()
             assert "postgres:" in content
@@ -308,7 +298,7 @@ class TestInitFileContents:
     ) -> None:
         """Test that docker-compose.prod.yml includes project service."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker", "-n", "myapp"])
+            result = cli_runner.invoke(cli, ["init", "-n", "myapp"])
 
             content = Path("docker-compose.prod.yml").read_text()
             assert "myapp:" in content
@@ -318,7 +308,7 @@ class TestInitFileContents:
     def test_docker_compose_has_volumes(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that docker-compose files include volumes section."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker"])
+            result = cli_runner.invoke(cli, ["init"])
 
             # Check dev compose
             dev_content = Path("docker-compose.yml").read_text()
@@ -333,7 +323,7 @@ class TestInitFileContents:
     def test_dockerfile_content(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that Dockerfile has proper content."""
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            result = cli_runner.invoke(cli, ["init", "--docker"])
+            result = cli_runner.invoke(cli, ["init"])
 
             content = Path("Dockerfile").read_text()
             assert "FROM python" in content
@@ -394,7 +384,6 @@ class TestInitEdgeCases:
         assert result.exit_code == 0
         assert "--name" in result.output
         assert "-n" in result.output
-        assert "--docker" in result.output
         assert "--force" in result.output
         assert "--path" in result.output
 

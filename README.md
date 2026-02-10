@@ -38,7 +38,7 @@ Aegra is a drop-in replacement for LangGraph Platform. Use the same LangGraph SD
 pip install aegra-cli
 
 # Initialize a new project
-aegra init --docker
+aegra init
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env
 
@@ -104,7 +104,6 @@ async for chunk in client.runs.stream(
 
 ```bash
 aegra init              # Initialize a new project
-aegra init --docker     # Include Docker configuration
 
 aegra dev               # Start development server (hot reload)
 aegra up                # Start all services with Docker

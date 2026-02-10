@@ -1,3 +1,5 @@
 """Aegra API - Self-hosted Agent Protocol server."""
 
-__version__ = "0.3.1"
+from importlib.metadata import version
+
+__version__ = version("aegra-api")

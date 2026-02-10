@@ -31,7 +31,7 @@ dependencies = [
 aegra = "aegra_cli.cli:cli"
 
 [tool.uv.sources]
-aegra-api = { path = "../aegra-api", editable = true }
+aegra-api = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

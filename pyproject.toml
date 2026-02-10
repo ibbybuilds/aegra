@@ -1,5 +1,21 @@
-# Root pyproject.toml - Dev tools configuration only
+# Root pyproject.toml - Workspace configuration + dev tools
 # The actual packages are in libs/aegra-api and libs/aegra-cli
+
+[project]
+name = "aegra-workspace"
+version = "0.0.0"
+requires-python = ">=3.11"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["libs/*"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0.1",
+]
 
 [tool.ruff]
 line-length = 120
@@ -41,7 +57,7 @@ disallow_untyped_defs = true
 ignore_missing_imports = true
 
 [tool.bandit]
-exclude_dirs = ["tests", ".venv", "libs/aegra-api/.venv", "libs/aegra-cli/.venv"]
+exclude_dirs = ["tests", ".venv"]
 skips = [
     "B101",  # assert statements
     "B404",  # import subprocess (needed for CLI)

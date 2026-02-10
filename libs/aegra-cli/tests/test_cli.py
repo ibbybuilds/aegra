@@ -209,38 +209,41 @@ class TestDevCommand:
 class TestUpCommand:
     """Tests for the up command."""
 
-    def test_up_builds_correct_command(self, cli_runner: CliRunner) -> None:
+    def test_up_builds_correct_command(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that up command builds the correct docker compose command."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["up"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up"])
 
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args[0][0]
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
 
-            assert call_args[0] == "docker"
-            assert call_args[1] == "compose"
-            assert "up" in call_args
-            assert "-d" in call_args
+                assert call_args[0] == "docker"
+                assert call_args[1] == "compose"
+                assert "up" in call_args
+                assert "-d" in call_args
 
-    def test_up_with_build_flag(self, cli_runner: CliRunner) -> None:
+    def test_up_with_build_flag(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that up command includes --build when specified."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["up", "--build"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up", "--build"])
 
-            call_args = mock_run.call_args[0][0]
-            assert "--build" in call_args
+                call_args = mock_run.call_args[0][0]
+                assert "--build" in call_args
 
-    def test_up_with_specific_services(self, cli_runner: CliRunner) -> None:
+    def test_up_with_specific_services(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that up command passes specific services."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["up", "postgres", "redis"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up", "postgres", "redis"])
 
-            call_args = mock_run.call_args[0][0]
-            assert "postgres" in call_args
-            assert "redis" in call_args
+                call_args = mock_run.call_args[0][0]
+                assert "postgres" in call_args
+                assert "redis" in call_args
 
     def test_up_with_compose_file(self, cli_runner: CliRunner, mock_compose_file: Path) -> None:
         """Test that up command accepts custom compose file."""
@@ -253,40 +256,44 @@ class TestUpCommand:
             file_idx = call_args.index("-f")
             assert call_args[file_idx + 1] == str(mock_compose_file)
 
-    def test_up_success_message(self, cli_runner: CliRunner) -> None:
+    def test_up_success_message(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that up command shows success message."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["up"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up"])
 
-            assert "Services started successfully" in result.output
+                assert "Services started successfully" in result.output
 
-    def test_up_failure_shows_error(self, cli_runner: CliRunner) -> None:
+    def test_up_failure_shows_error(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that up command shows error on failure."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 1
-            result = cli_runner.invoke(cli, ["up"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 1
+                result = cli_runner.invoke(cli, ["up"])
 
-            assert result.exit_code == 1
-            assert "Error" in result.output
+                assert result.exit_code == 1
+                assert "Error" in result.output
 
-    def test_up_docker_not_installed(self, cli_runner: CliRunner) -> None:
+    def test_up_docker_not_installed(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test error handling when docker is not installed."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("docker not found")
-            result = cli_runner.invoke(cli, ["up"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.side_effect = FileNotFoundError("docker not found")
+                result = cli_runner.invoke(cli, ["up"])
 
-            assert result.exit_code == 1
-            assert "docker is not installed" in result.output
+                assert result.exit_code == 1
+                assert "docker is not installed" in result.output
 
-    def test_up_shows_running_command(self, cli_runner: CliRunner) -> None:
+    def test_up_shows_running_command(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that up command shows the command being run."""
-        with patch("aegra_cli.cli.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            result = cli_runner.invoke(cli, ["up"])
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            with patch("aegra_cli.cli.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                result = cli_runner.invoke(cli, ["up"])
 
-            assert "Running:" in result.output
-            assert "docker compose" in result.output
+                assert "Running:" in result.output
+                assert "docker compose" in result.output
 
 
 class TestDownCommand:

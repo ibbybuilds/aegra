@@ -84,16 +84,19 @@ def _resolve_config_path() -> Path | None:
     """Resolve config file path using standard resolution order.
 
     Resolution order:
-    1) AEGRA_CONFIG env var (absolute or relative path) - returned even if doesn't exist
+    1) AEGRA_CONFIG env var (if set and file exists)
     2) aegra.json in CWD
-        3) langgraph.json in CWD (fallback for compatibility)
+    3) langgraph.json in CWD (fallback for compatibility)
 
     Returns:
         Path to config file or None if not found
     """
-    # 1) Env var override - return even if doesn't exist (let caller handle error)
+    # 1) Env var override - only use if file actually exists
     if env_path := settings.app.AEGRA_CONFIG:
-        return Path(env_path)
+        path = Path(env_path)
+        if path.exists():
+            return path
+        logger.warning(f"AEGRA_CONFIG={env_path!r} not found, falling back to config discovery")
 
     # 2) aegra.json if present
     aegra_path = Path("aegra.json")
@@ -120,7 +123,11 @@ def load_config() -> dict | None:
 
     try:
         with config_path.open() as f:
-            return json.load(f)
+            data = json.load(f)
+        if not isinstance(data, dict):
+            logger.warning(f"Config file {config_path} does not contain a JSON object")
+            return None
+        return data
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}")
         return None

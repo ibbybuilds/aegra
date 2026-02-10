@@ -34,7 +34,7 @@ Welcome to Aegra! This guide will help you get started with development, whether
 # 1. Clone and setup
 git clone https://github.com/ibbybuilds/aegra.git
 cd aegra
-uv sync
+uv sync --all-packages
 
 # 2. Activate environment (IMPORTANT!)
 source .venv/bin/activate  # Mac/Linux
@@ -61,7 +61,7 @@ make dev-install     # Installs dependencies + git hooks
 **Option 2: Using uv directly**
 
 ```bash
-uv sync
+uv sync --all-packages
 uv run pre-commit install
 uv run pre-commit install --hook-type commit-msg
 ```
@@ -175,20 +175,20 @@ python3 scripts/migrate.py reset
 
 ### Direct Alembic Commands
 
-If you prefer using Alembic directly:
+If you prefer using Alembic directly (from repo root):
 
 ```bash
 # Apply migrations
-alembic upgrade head
+uv run --package aegra-api alembic upgrade head
 
 # Create new migration
-alembic revision --autogenerate -m "Description"
+uv run --package aegra-api alembic revision --autogenerate -m "Description"
 
 # Rollback
-alembic downgrade -1
+uv run --package aegra-api alembic downgrade -1
 
 # Show history
-alembic history
+uv run --package aegra-api alembic history
 ```
 
 ## 🛠️ Development Workflow
@@ -450,14 +450,15 @@ chmod +x scripts/migrate.py
 ### Running Tests
 
 ```bash
-# Run all tests
-pytest
+# Run all tests (or use: make test)
+uv run --package aegra-api pytest libs/aegra-api/tests/
+uv run --package aegra-cli pytest libs/aegra-cli/tests/
 
 # Run specific test file
-pytest tests/test_api/test_assistants.py
+uv run --package aegra-api pytest libs/aegra-api/tests/unit/test_api/test_assistants.py
 
-# Run with coverage
-pytest --cov=src/agent_server
+# Run with coverage (or use: make test-cov)
+uv run --package aegra-api pytest libs/aegra-api/tests/ --cov=libs/aegra-api/src --cov-report=html
 ```
 
 ### Testing Database Changes
@@ -688,8 +689,8 @@ python3 scripts/migrate.py upgrade
 source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 
-# Install dependencies
-uv sync
+# Install all workspace dependencies
+uv sync --all-packages
 
 # Start everything
 docker compose up aegra
@@ -702,8 +703,8 @@ docker compose up aegra
 source .venv/bin/activate  # Mac/Linux
 # OR .venv/Scripts/activate  # Windows
 
-# Install dependencies
-uv sync
+# Install all workspace dependencies
+uv sync --all-packages
 
 # Start database
 docker compose up postgres -d

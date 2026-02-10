@@ -31,9 +31,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    defaults:
-      run:
-        working-directory: libs/aegra-api
 
     steps:
       - uses: actions/checkout@v4
@@ -48,15 +45,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      - name: Install dependencies
-        run: uv sync
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
 
       - name: Type check with mypy
-        run: uv run mypy src/
+        run: uv run mypy libs/aegra-api/src/
         continue-on-error: true
 
       - name: Security check with bandit
-        run: uv run bandit -c ../../pyproject.toml -r src/
+        run: uv run bandit -c pyproject.toml -r libs/aegra-api/src/
         continue-on-error: true
 
       - name: Run tests with pytest
@@ -67,13 +64,13 @@ jobs:
           POSTGRES_HOST: "localhost"
           POSTGRES_PORT: "5432"
           POSTGRES_DB: "aegra"
-        run: uv run pytest tests/unit tests/integration --cov=src --cov-report=xml --cov-report=term
+        run: uv run --package aegra-api pytest libs/aegra-api/tests/unit libs/aegra-api/tests/integration --cov=libs/aegra-api/src --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: libs/aegra-api/coverage.xml
+          files: coverage.xml
           flags: aegra-api
           name: aegra-api
           fail_ci_if_error: false
@@ -83,9 +80,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    defaults:
-      run:
-        working-directory: libs/aegra-cli
 
     steps:
       - uses: actions/checkout@v4
@@ -100,17 +94,17 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      - name: Install dependencies
-        run: uv sync
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
 
       - name: Run tests with pytest
-        run: uv run pytest tests/ --cov=src --cov-report=xml --cov-report=term
+        run: uv run --package aegra-cli pytest libs/aegra-cli/tests/ --cov=libs/aegra-cli/src --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: libs/aegra-cli/coverage.xml
+          files: coverage.xml
           flags: aegra-cli
           name: aegra-cli
           fail_ci_if_error: false

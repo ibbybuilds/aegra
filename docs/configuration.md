@@ -14,10 +14,12 @@ Example:
 
 ```bash
 # Use custom config file
-AEGRA_CONFIG=production.json python run_server.py
+AEGRA_CONFIG=production.json aegra dev
+# Or with uvicorn directly:
+AEGRA_CONFIG=production.json uv run --package aegra-api uvicorn aegra_api.main:app
 
 # Use default aegra.json
-python run_server.py
+aegra dev
 ```
 
 ## Configuration Schema

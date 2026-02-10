@@ -44,7 +44,7 @@ The current `docker-compose.yml` is optimized for **development** with:
    - Configure connection pooling limits
 
 3. **Optimized Startup**
-   - Pre-run migrations in init container or separate step
+   - Migrations run automatically on server startup (as of v0.3.0)
    - Health checks for all services
    - Graceful shutdown handling
 
@@ -75,11 +75,9 @@ version: "3.8"
 services:
   aegra:
     # Override command: remove --reload, add workers
+    # Migrations run automatically on startup (v0.3.0+)
     command: >
-      sh -c "
-        alembic upgrade head &&
-        uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --workers 4
-      "
+      uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-8000} --workers 4
 
     # Remove development volume mounts (code baked in)
     volumes:

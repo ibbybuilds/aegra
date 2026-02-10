@@ -50,7 +50,7 @@ async def authenticate(headers: dict) -> dict:
 3. **Start the server**:
 
 ```bash
-python run_server.py
+aegra dev
 # OR with Docker:
 docker compose up
 ```
@@ -93,7 +93,7 @@ Example:
 
 ```bash
 # Use custom config file
-AEGRA_CONFIG=production.json python run_server.py
+AEGRA_CONFIG=production.json aegra dev
 ```
 
 ## Authentication
@@ -114,21 +114,21 @@ async def authenticate(headers: dict) -> dict:
     auth_header = headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise Exception("Missing or invalid Authorization header")
-    
+
     token = auth_header.replace("Bearer ", "")
-    
+
     # Verify token (your logic here)
     # For JWT: verify signature, check expiration, etc.
     # For OAuth: validate access token
     # For Firebase: verify ID token
-    
+
     # Return user data
     return {
         "identity": "user123",           # Required: unique user identifier
         "display_name": "John Doe",      # Optional: display name
         "permissions": ["read", "write"], # Optional: list of permissions
         "is_authenticated": True,        # Optional: authentication status
-        
+
         # Custom fields are preserved and accessible in routes
         "role": "admin",
         "team_id": "team456",
@@ -155,14 +155,14 @@ Raise an exception to deny authentication:
 @auth.authenticate
 async def authenticate(headers: dict) -> dict:
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     if not token:
         raise Exception("Authentication required")
-    
+
     # Verify token
     if not is_valid_token(token):
         raise Exception("Invalid token")
-    
+
     return user_data
 ```
 
@@ -277,7 +277,7 @@ auth = Auth()
 async def authenticate(headers: dict) -> dict:
     """OAuth authentication."""
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     # Verify token with OAuth provider
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -286,7 +286,7 @@ async def authenticate(headers: dict) -> dict:
         )
         response.raise_for_status()
         user_info = response.json()
-    
+
     return {
         "identity": user_info["sub"],
         "display_name": user_info["name"],
@@ -307,10 +307,10 @@ auth = Auth()
 async def authenticate(headers: dict) -> dict:
     """Firebase authentication."""
     token = headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     # Verify Firebase ID token
     decoded_token = firebase_auth.verify_id_token(token)
-    
+
     return {
         "identity": decoded_token["uid"],
         "display_name": decoded_token.get("name", ""),
@@ -325,8 +325,8 @@ Custom routes can use authentication via the `require_auth` dependency:
 
 ```python
 from fastapi import Depends
-from src.agent_server.core.auth_deps import require_auth
-from src.agent_server.models.auth import User
+from aegra_api.core.auth_deps import require_auth
+from aegra_api.models.auth import User
 
 @app.get("/custom/whoami")
 async def whoami(user: User = Depends(require_auth)):
@@ -378,7 +378,7 @@ Auth tests are located in `tests/e2e/manual_auth_tests/` and are skipped by defa
 2. **Start server with auth**:
 
 ```bash
-AEGRA_CONFIG=my_auth_config.json python run_server.py
+AEGRA_CONFIG=my_auth_config.json aegra dev
 ```
 
 3. **Run auth tests**:

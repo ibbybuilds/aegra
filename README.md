@@ -46,6 +46,8 @@ cp .env.example .env
 aegra dev
 ```
 
+> **Note:** Always install `aegra-cli` directly — not the `aegra` meta-package. The `aegra` package on PyPI is a convenience wrapper that does not support version pinning.
+
 ### From Source
 
 ```bash

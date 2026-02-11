@@ -24,7 +24,7 @@ dependencies = [
     "jinja2>=3.1",
 
     # Server (always included)
-    "aegra-api>=0.1.0",
+    "aegra-api~=0.3.3",
 ]
 
 [project.scripts]

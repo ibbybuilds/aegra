@@ -57,15 +57,16 @@ def version():
 
 
 def load_env_file(env_file: Path | None) -> Path | None:
-    """Load environment variables from a .env file using python-dotenv.
-
-    Existing environment variables take precedence and are not overwritten.
-
-    Args:
-        env_file: Path to .env file, or None to use default (.env in cwd)
-
+    """
+    Load environment variables from a .env file into the process environment.
+    
+    Only variables that are not already set in the environment are applied.
+    
+    Parameters:
+        env_file (Path | None): Path to a .env file to load. If None, uses a .env file in the current working directory.
+    
     Returns:
-        Path to the loaded .env file, or None if not found
+        Path | None: Path to the loaded .env file, or None if no file was found.
     """
     import os
 

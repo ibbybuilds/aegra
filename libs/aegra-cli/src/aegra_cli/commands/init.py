@@ -42,10 +42,15 @@ def get_aegra_config(project_name: str, slug: str) -> dict:
 def get_env_example(slug: str) -> str:
     """Generate .env.example content."""
     return f"""\
-# PostgreSQL Configuration
+# --- Database ---
+# Option 1: Single connection string (standard for containers/cloud)
+# DATABASE_URL=postgresql://user:password@host:5432/{slug}
+#
+# Option 2: Individual fields (used when DATABASE_URL is not set)
 POSTGRES_USER={slug}
 POSTGRES_PASSWORD={slug}_secret
 POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
 POSTGRES_DB={slug}
 
 # Authentication Type

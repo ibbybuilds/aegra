@@ -243,6 +243,8 @@ class TestInitFileContents:
 
             content = Path(".env.example").read_text()
             required_vars = [
+                "PROJECT_NAME",
+                "VERSION",
                 "DATABASE_URL",
                 "POSTGRES_USER",
                 "POSTGRES_PASSWORD",

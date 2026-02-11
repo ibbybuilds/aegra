@@ -1,8 +1,7 @@
 import re
 from typing import Annotated
-from urllib.parse import unquote, urlparse
 
-from pydantic import BeforeValidator, computed_field, model_validator
+from pydantic import BeforeValidator, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,25 +66,6 @@ class DatabaseSettings(EnvBase):
     POSTGRES_PORT: str = "5432"
     POSTGRES_DB: str = "aegra"
     DB_ECHO_LOG: bool = False
-
-    @model_validator(mode="after")
-    def _parse_database_url(self) -> "DatabaseSettings":
-        """If DATABASE_URL is set, parse it into individual POSTGRES_* fields."""
-        if self.DATABASE_URL is None:
-            return self
-        parsed = urlparse(self.DATABASE_URL)
-        if parsed.username:
-            self.POSTGRES_USER = unquote(parsed.username)
-        if parsed.password:
-            self.POSTGRES_PASSWORD = unquote(parsed.password)
-        if parsed.hostname:
-            self.POSTGRES_HOST = parsed.hostname
-        if parsed.port:
-            self.POSTGRES_PORT = str(parsed.port)
-        db_name = parsed.path.lstrip("/")
-        if db_name:
-            self.POSTGRES_DB = db_name
-        return self
 
     @staticmethod
     def _normalize_scheme(url: str, target_scheme: str) -> str:

@@ -151,12 +151,39 @@ See [Semantic Store](semantic-store.md) for more details.
 
 ## Environment Variables
 
-You can override configuration using environment variables:
+You can override configuration using environment variables. See `.env.example` for a complete reference.
+
+### Database
+
+Two configuration modes are supported:
+
+**Option 1: `DATABASE_URL`** (recommended for containerized/cloud deployments)
+
+```bash
+DATABASE_URL=postgresql://user:password@host:5432/aegra?sslmode=require
+```
+
+The URL is used directly by both SQLAlchemy (async) and LangGraph (sync) with the appropriate driver prefix applied automatically. Query parameters (e.g., `?sslmode=require`) are preserved.
+
+**Option 2: Individual `POSTGRES_*` vars** (used when `DATABASE_URL` is not set)
+
+```bash
+POSTGRES_USER=aegra
+POSTGRES_PASSWORD=secret
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=aegra
+```
+
+> **Note:** `DATABASE_URL` takes precedence. When set, individual `POSTGRES_*` vars are ignored for connection URLs.
+
+### Other Variables
 
 - **`AEGRA_CONFIG`**: Path to config file (overrides default resolution)
-- **`DATABASE_URL`**: PostgreSQL connection string (overrides individual `POSTGRES_*` vars)
-- **`POSTGRES_USER`**, **`POSTGRES_PASSWORD`**, **`POSTGRES_HOST`**, **`POSTGRES_PORT`**, **`POSTGRES_DB`**: Individual database connection fields (used when `DATABASE_URL` is not set)
 - **`OPENAI_API_KEY`**: OpenAI API key for LLM operations
+- **`AUTH_TYPE`**: Authentication mode (`noop`, `custom`)
+- **`LOG_LEVEL`**: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
+- **`ENV_MODE`**: Environment mode (`LOCAL`, `DEVELOPMENT`, `PRODUCTION`)
 
 ## Examples
 

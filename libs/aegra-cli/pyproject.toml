@@ -1,6 +1,6 @@
 [project]
 name = "aegra-cli"
-version = "0.3.3"
+version = "0.4.0"
 description = "Aegra CLI - Manage your self-hosted agent deployments"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,7 +24,7 @@ dependencies = [
     "jinja2>=3.1",
 
     # Server (always included)
-    "aegra-api~=0.3.3",
+    "aegra-api~=0.4.0",
 ]
 
 [project.scripts]

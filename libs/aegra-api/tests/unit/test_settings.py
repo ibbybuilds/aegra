@@ -113,3 +113,24 @@ class TestDatabaseURLParsing:
 
         assert db.POSTGRES_USER == "custom_user"
         assert "custom_user:custom_pass@custom-host:5555/custom_db" in db.database_url
+
+    def test_legacy_postgres_scheme_normalized(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Legacy postgres:// scheme (Heroku/Render) is normalized to postgresql://."""
+        monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@host:5432/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert db.database_url.startswith("postgresql+asyncpg://")
+        assert db.database_url_sync.startswith("postgresql://")
+        assert "user:pass@host:5432/db" in db.database_url
+
+    def test_malformed_database_url_does_not_crash(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Malformed DATABASE_URL doesn't crash — fields fall back to defaults where unparseable."""
+        monkeypatch.setenv("DATABASE_URL", "not-a-url")
+
+        db = DatabaseSettings(_env_file=None)
+
+        # urlparse can't extract user/host/port, so defaults are preserved
+        assert db.POSTGRES_USER == "postgres"
+        assert db.POSTGRES_HOST == "localhost"
+        assert db.POSTGRES_PORT == "5432"

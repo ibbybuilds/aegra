@@ -90,7 +90,7 @@ class DatabaseSettings(EnvBase):
     @staticmethod
     def _normalize_scheme(url: str, target_scheme: str) -> str:
         """Replace the URL scheme/driver prefix with the target scheme."""
-        return re.sub(r"^postgresql(\+\w+)?://", f"{target_scheme}://", url)
+        return re.sub(r"^postgres(?:ql)?(\+\w+)?://", f"{target_scheme}://", url)
 
     @computed_field
     @property

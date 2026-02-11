@@ -15,7 +15,7 @@ members = [
 
 [[package]]
 name = "aegra-api"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "libs/aegra-api" }
 dependencies = [
     { name = "alembic" },
@@ -35,7 +35,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
-    { name = "python-dotenv" },
     { name = "sqlalchemy" },
     { name = "structlog" },
     { name = "uvicorn" },
@@ -72,7 +71,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "pyjwt", specifier = ">=2.10.1" },
-    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=25.4.0" },
     { name = "uvicorn", specifier = ">=0.35.0" },
@@ -92,12 +90,13 @@ dev = [
 
 [[package]]
 name = "aegra-cli"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "libs/aegra-cli" }
 dependencies = [
     { name = "aegra-api" },
     { name = "click" },
     { name = "jinja2" },
+    { name = "python-dotenv" },
     { name = "rich" },
 ]
 
@@ -114,6 +113,7 @@ requires-dist = [
     { name = "aegra-api", editable = "libs/aegra-api" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "rich", specifier = ">=13.0" },
 ]
 

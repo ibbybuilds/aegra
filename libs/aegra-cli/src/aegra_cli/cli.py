@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import click
+from dotenv import dotenv_values
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -56,7 +57,9 @@ def version():
 
 
 def load_env_file(env_file: Path | None) -> Path | None:
-    """Load environment variables from a .env file.
+    """Load environment variables from a .env file using python-dotenv.
+
+    Existing environment variables take precedence and are not overwritten.
 
     Args:
         env_file: Path to .env file, or None to use default (.env in cwd)
@@ -76,27 +79,10 @@ def load_env_file(env_file: Path | None) -> Path | None:
     if not target.exists():
         return None
 
-    # Load the .env file into environment
-    # Simple parser - handles KEY=value format
-    with open(target, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            # Skip empty lines and comments
-            if not line or line.startswith("#"):
-                continue
-            # Parse KEY=value (handle = in value)
-            if "=" in line:
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip()
-                # Remove surrounding quotes if present
-                if (value.startswith('"') and value.endswith('"')) or (
-                    value.startswith("'") and value.endswith("'")
-                ):
-                    value = value[1:-1]
-                # Only set if not already in environment (env vars take precedence)
-                if key and key not in os.environ:
-                    os.environ[key] = value
+    # Parse .env file and set vars (existing env vars take precedence)
+    for key, value in dotenv_values(target).items():
+        if key not in os.environ and value is not None:
+            os.environ[key] = value
 
     return target
 
@@ -478,13 +464,23 @@ def serve(host: str, port: int, app: str, config_file: Path | None, workers: int
     # Set AEGRA_CONFIG env var
     os.environ["AEGRA_CONFIG"] = str(resolved_config)
 
+    # Load .env file from config directory (same logic as dev command)
+    config_dir_env = resolved_config.parent / ".env"
+    loaded_env = load_env_file(config_dir_env if config_dir_env.exists() else None)
+
+    info_lines = [
+        "[bold green]Starting Aegra production server[/bold green]\n",
+        f"[cyan]Host:[/cyan] {host}",
+        f"[cyan]Port:[/cyan] {port}",
+        f"[cyan]Workers:[/cyan] {workers}",
+        f"[cyan]Config:[/cyan] {resolved_config}",
+    ]
+    if loaded_env:
+        info_lines.append(f"[cyan]Env:[/cyan] {loaded_env}")
+
     console.print(
         Panel(
-            f"[bold green]Starting Aegra production server[/bold green]\n\n"
-            f"[cyan]Host:[/cyan] {host}\n"
-            f"[cyan]Port:[/cyan] {port}\n"
-            f"[cyan]Workers:[/cyan] {workers}\n"
-            f"[cyan]Config:[/cyan] {resolved_config}",
+            "\n".join(info_lines),
             title="[bold]Aegra Server[/bold]",
             border_style="green",
         )

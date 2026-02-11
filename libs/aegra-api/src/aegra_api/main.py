@@ -1,25 +1,10 @@
 """FastAPI application for Aegra (Agent Protocol Server)"""
 
 import asyncio
-import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Add graphs directory to Python path so react_agent can be imported
-# This MUST happen before importing any modules that depend on graphs/
-current_dir = Path(__file__).parent.parent.parent  # Go up to aegra root
-graphs_dir = current_dir / "graphs"
-if str(graphs_dir) not in sys.path:
-    sys.path.insert(0, str(graphs_dir))
-
-# ruff: noqa: E402 - imports below require sys.path modification above
 import structlog
 from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, HTTPException, Request

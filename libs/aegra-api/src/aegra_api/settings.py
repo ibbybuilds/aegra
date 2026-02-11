@@ -22,8 +22,6 @@ UpperStr = Annotated[str, BeforeValidator(parse_upper)]
 
 class EnvBase(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 

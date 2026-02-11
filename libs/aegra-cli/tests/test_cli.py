@@ -15,6 +15,7 @@ from aegra_cli.cli import (
     ensure_docker_files_prod,
     find_config_file,
     get_project_slug,
+    load_env_file,
 )
 
 if TYPE_CHECKING:
@@ -846,3 +847,101 @@ class TestDownCommandExtended:
             result = cli_runner.invoke(cli, ["down"])
             assert result.exit_code == 0
             assert "No docker-compose files found" in result.output
+
+
+class TestLoadEnvFile:
+    """Tests for the .env file parser."""
+
+    def test_loads_simple_key_value(self, tmp_path: Path) -> None:
+        """Test basic KEY=value parsing."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("MY_VAR=hello\n")
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["MY_VAR"] == "hello"
+
+    def test_strips_inline_comments_from_unquoted_values(self, tmp_path: Path) -> None:
+        """Test that inline comments are stripped from unquoted values."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("ENV_MODE=LOCAL # this is a comment\n")
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["ENV_MODE"] == "LOCAL"
+
+    def test_preserves_hash_in_quoted_values(self, tmp_path: Path) -> None:
+        """Test that # inside quoted values is preserved."""
+        env_file = tmp_path / ".env"
+        env_file.write_text('PASSWORD="my#secret"\n')
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["PASSWORD"] == "my#secret"
+
+    def test_preserves_hash_in_single_quoted_values(self, tmp_path: Path) -> None:
+        """Test that # inside single-quoted values is preserved."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("PASSWORD='my#secret'\n")
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["PASSWORD"] == "my#secret"
+
+    def test_skips_comment_lines(self, tmp_path: Path) -> None:
+        """Test that full-line comments are skipped."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("# this is a comment\nKEY=value\n")
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ.get("KEY") == "value"
+            assert "# this is a comment" not in os.environ
+
+    def test_skips_empty_lines(self, tmp_path: Path) -> None:
+        """Test that empty lines are skipped."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("\n\nKEY=value\n\n")
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["KEY"] == "value"
+
+    def test_does_not_override_existing_env_vars(self, tmp_path: Path) -> None:
+        """Test that existing env vars are not overwritten."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("MY_VAR=from_file\n")
+        with patch.dict("os.environ", {"MY_VAR": "from_env"}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["MY_VAR"] == "from_env"
+
+    def test_returns_none_for_nonexistent_file(self, tmp_path: Path) -> None:
+        """Test that None is returned when .env file doesn't exist."""
+        result = load_env_file(tmp_path / "nonexistent.env")
+        assert result is None
+
+    def test_returns_path_on_success(self, tmp_path: Path) -> None:
+        """Test that the file path is returned on success."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("KEY=value\n")
+        with patch.dict("os.environ", {}, clear=True):
+            result = load_env_file(env_file)
+            assert result == env_file
+
+    def test_inline_comment_with_multiple_hashes(self, tmp_path: Path) -> None:
+        """Test stripping inline comment when value itself has no quotes."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("AUTH_TYPE=noop  # noop, custom\n")
+        with patch.dict("os.environ", {}, clear=True):
+            load_env_file(env_file)
+            import os
+
+            assert os.environ["AUTH_TYPE"] == "noop"

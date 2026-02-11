@@ -1,3 +1,4 @@
+import re
 from typing import Annotated
 
 from pydantic import BeforeValidator, computed_field
@@ -50,7 +51,14 @@ class AppSettings(EnvBase):
 
 
 class DatabaseSettings(EnvBase):
-    """Database connection settings."""
+    """Database connection settings.
+
+    Supports two configuration modes:
+    1. DATABASE_URL (standard for containerized deployments) — parsed into individual fields
+    2. Individual POSTGRES_* vars — used when DATABASE_URL is not set
+    """
+
+    DATABASE_URL: str | None = None
 
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
@@ -59,10 +67,17 @@ class DatabaseSettings(EnvBase):
     POSTGRES_DB: str = "aegra"
     DB_ECHO_LOG: bool = False
 
+    @staticmethod
+    def _normalize_scheme(url: str, target_scheme: str) -> str:
+        """Replace the URL scheme/driver prefix with the target scheme."""
+        return re.sub(r"^postgres(?:ql)?(\+\w+)?://", f"{target_scheme}://", url)
+
     @computed_field
     @property
     def database_url(self) -> str:
         """Async URL for SQLAlchemy (asyncpg)."""
+        if self.DATABASE_URL:
+            return self._normalize_scheme(self.DATABASE_URL, "postgresql+asyncpg")
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
@@ -72,6 +87,8 @@ class DatabaseSettings(EnvBase):
     @property
     def database_url_sync(self) -> str:
         """Sync URL for LangGraph/Psycopg (postgresql://)."""
+        if self.DATABASE_URL:
+            return self._normalize_scheme(self.DATABASE_URL, "postgresql")
         return (
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"

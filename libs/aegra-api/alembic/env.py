@@ -17,12 +17,9 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
-section = config.config_ini_section
-config.set_section_option(section, "DB_HOST", settings.db.POSTGRES_HOST)
-config.set_section_option(section, "DB_PORT", settings.db.POSTGRES_PORT)
-config.set_section_option(section, "DB_USER", settings.db.POSTGRES_USER)
-config.set_section_option(section, "DB_NAME", settings.db.POSTGRES_DB)
-config.set_section_option(section, "DB_PASS", settings.db.POSTGRES_PASSWORD)
+# Override the URL from settings — this respects DATABASE_URL, individual
+# POSTGRES_* vars, and preserves query params (e.g. ?sslmode=require).
+config.set_main_option("sqlalchemy.url", settings.db.database_url)
 
 # Interpret the config file for Python logging.
 # Only reconfigure logging when running from CLI (main thread).

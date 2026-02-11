@@ -154,7 +154,8 @@ See [Semantic Store](semantic-store.md) for more details.
 You can override configuration using environment variables:
 
 - **`AEGRA_CONFIG`**: Path to config file (overrides default resolution)
-- **`DATABASE_URL`**: PostgreSQL connection string
+- **`DATABASE_URL`**: PostgreSQL connection string (overrides individual `POSTGRES_*` vars)
+- **`POSTGRES_USER`**, **`POSTGRES_PASSWORD`**, **`POSTGRES_HOST`**, **`POSTGRES_PORT`**, **`POSTGRES_DB`**: Individual database connection fields (used when `DATABASE_URL` is not set)
 - **`OPENAI_API_KEY`**: OpenAI API key for LLM operations
 
 ## Examples

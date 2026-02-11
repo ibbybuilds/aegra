@@ -243,11 +243,18 @@ class TestInitFileContents:
 
             content = Path(".env.example").read_text()
             required_vars = [
+                "PROJECT_NAME",
+                "VERSION",
+                "DATABASE_URL",
                 "POSTGRES_USER",
                 "POSTGRES_PASSWORD",
                 "POSTGRES_HOST",
+                "POSTGRES_PORT",
                 "POSTGRES_DB",
                 "AUTH_TYPE",
+                "OPENAI_API_KEY",
+                "LOG_LEVEL",
+                "OTEL_SERVICE_NAME",
             ]
             for var in required_vars:
                 assert var in content

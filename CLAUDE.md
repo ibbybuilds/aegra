@@ -230,3 +230,23 @@ graph = builder.compile()  # Must export as 'graph'
 - When adding/removing CLI flags, commands, or config options: search all docs for the old flag/command name and update every occurrence.
 - When changing API behavior, default values, or startup behavior: update the relevant docs to reflect the new behavior.
 - A PR that changes behavior without updating docs is **incomplete**. Do not consider the task done until docs are updated.
+
+### Environment Variable Files (STRICT)
+- There are **two `.env.example` files** that MUST be kept in sync:
+  1. **`/.env.example`** — Root file used for development and documentation reference
+  2. **`libs/aegra-cli/src/aegra_cli/templates/env.example.template`** — Template used by `aegra init` to generate `.env.example` for new projects (uses `{slug}` placeholders for project-specific values)
+- When adding, removing, or modifying any environment variable: **update BOTH files**.
+- The template uses `{slug}` in place of project-specific values (`PROJECT_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL` comment). All other values should be identical between the two files.
+
+### Versioning (STRICT)
+- **`aegra-api` and `aegra-cli` MUST always have the same version.** Both versions live in their respective `pyproject.toml` files (`libs/aegra-api/pyproject.toml` and `libs/aegra-cli/pyproject.toml`).
+- **`aegra-cli` depends on `aegra-api~=X.Y.Z`** (compatible release). This allows patch updates (X.Y.Z+1) without changing the constraint, but a **minor or major bump requires updating the constraint** in `aegra-cli/pyproject.toml`.
+- **When to bump versions:**
+  - **Patch** (0.3.3 → 0.3.4): Bug fixes, small improvements, no breaking changes. Update `version` in BOTH `pyproject.toml` files.
+  - **Minor** (0.3.x → 0.4.0): New features, non-breaking additions. Update `version` in BOTH `pyproject.toml` files AND update the `aegra-api~=` constraint in `aegra-cli/pyproject.toml`.
+  - **Major** (0.x → 1.0): Breaking changes. Update `version` in BOTH `pyproject.toml` files AND update the `aegra-api~=` constraint in `aegra-cli/pyproject.toml`.
+- **Always bump the version before creating a PR.** Determine the bump type from the changes:
+  - Bug fix / small improvement → patch bump
+  - New feature / non-breaking addition → minor bump
+  - Breaking change → major bump
+- **`aegra` meta-package** (on PyPI, not in this repo) is a name reservation that points to `aegra-cli`. It does not need to be updated on every release.

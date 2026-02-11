@@ -2,6 +2,7 @@
 
 import json
 import re
+from importlib import resources
 from pathlib import Path
 
 import click
@@ -40,23 +41,9 @@ def get_aegra_config(project_name: str, slug: str) -> dict:
 
 
 def get_env_example(slug: str) -> str:
-    """Generate .env.example content."""
-    return f"""\
-# --- Database ---
-# Option 1: Single connection string (standard for containers/cloud)
-# DATABASE_URL=postgresql://user:password@host:5432/{slug}
-#
-# Option 2: Individual fields (used when DATABASE_URL is not set)
-POSTGRES_USER={slug}
-POSTGRES_PASSWORD={slug}_secret
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB={slug}
-
-# Authentication Type
-# Options: noop, api_key, jwt
-AUTH_TYPE=noop
-"""
+    """Generate .env.example content from bundled template."""
+    template = resources.files("aegra_cli.templates").joinpath("env.example.template").read_text()
+    return template.format(slug=slug)
 
 
 def get_example_graph(project_name: str) -> str:

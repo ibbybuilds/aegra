@@ -250,6 +250,9 @@ class TestInitFileContents:
                 "POSTGRES_PORT",
                 "POSTGRES_DB",
                 "AUTH_TYPE",
+                "OPENAI_API_KEY",
+                "LOG_LEVEL",
+                "OTEL_SERVICE_NAME",
             ]
             for var in required_vars:
                 assert var in content

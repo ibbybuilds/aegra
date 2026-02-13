@@ -160,7 +160,7 @@ Best for: Quick deployment without managing infrastructure.
 3. Set other env vars (`AUTH_TYPE`, `OPENAI_API_KEY`, etc.)
 
 **Procfile / Start Command:**
-```
+```text
 aegra serve --host 0.0.0.0 --port $PORT
 ```
 

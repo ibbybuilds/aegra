@@ -355,7 +355,5 @@ class TestDbCommandIntegration:
             ):
                 cli_runner.invoke(cli, ["db", cmd_name])
 
-                (
-                    mock_get_cfg.assert_called_once(),
-                    (f"db {cmd_name} should call get_alembic_config()"),
-                )
+                assert mock_get_cfg.called, f"db {cmd_name} should call get_alembic_config()"
+                mock_get_cfg.assert_called_once()

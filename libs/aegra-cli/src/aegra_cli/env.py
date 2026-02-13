@@ -25,7 +25,7 @@ def load_env_file(env_file: Path | None) -> Path | None:
         target = Path.cwd() / ".env"
 
     if not target.is_file():
-        return None
+        return
 
     # Parse .env file and set vars (existing env vars take precedence)
     for key, value in dotenv_values(target).items():

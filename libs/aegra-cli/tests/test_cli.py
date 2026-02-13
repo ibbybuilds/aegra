@@ -16,8 +16,8 @@ from aegra_cli.cli import (
     ensure_docker_files_prod,
     find_config_file,
     get_project_slug,
-    load_env_file,
 )
+from aegra_cli.env import load_env_file
 
 if TYPE_CHECKING:
     pass

@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import click
-from dotenv import dotenv_values
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -19,6 +18,7 @@ from aegra_cli.commands.init import (
     get_dockerfile,
     slugify,
 )
+from aegra_cli.env import load_env_file
 from aegra_cli.utils.docker import ensure_postgres_running
 
 console = Console()
@@ -54,37 +54,6 @@ def version():
     console.print()
     console.print(table)
     console.print()
-
-
-def load_env_file(env_file: Path | None) -> Path | None:
-    """Load environment variables from a .env file using python-dotenv.
-
-    Existing environment variables take precedence and are not overwritten.
-
-    Args:
-        env_file: Path to .env file, or None to use default (.env in cwd)
-
-    Returns:
-        Path to the loaded .env file, or None if not found
-    """
-    import os
-
-    # Determine which file to load
-    if env_file is not None:
-        target = env_file
-    else:
-        # Default: look for .env in current directory
-        target = Path.cwd() / ".env"
-
-    if not target.is_file():
-        return None
-
-    # Parse .env file and set vars (existing env vars take precedence)
-    for key, value in dotenv_values(target).items():
-        if key not in os.environ and value is not None:
-            os.environ[key] = value
-
-    return target
 
 
 def find_config_file() -> Path | None:

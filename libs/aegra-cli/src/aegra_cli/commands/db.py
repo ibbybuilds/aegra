@@ -1,96 +1,84 @@
-"""Database migration commands for Aegra."""
+"""Database migration commands for Aegra.
 
-import subprocess
+Uses alembic's Python API directly (instead of subprocess) so that
+script_location is resolved relative to the ini file — not the CWD.
+"""
+
 import sys
+from collections.abc import Callable
+from io import StringIO
 from pathlib import Path
 
 import click
+import structlog
+from aegra_api.core.migrations import get_alembic_config
+from alembic import command
+from alembic.util import CommandError
 from rich.console import Console
 from rich.panel import Panel
+from sqlalchemy.exc import SQLAlchemyError
+
+from aegra_cli.env import load_env_file
 
 console = Console()
+logger = structlog.get_logger(__name__)
 
 
-def _get_alembic_config_args() -> list[str]:
-    """Get alembic CLI args to locate the correct config file.
-
-    Resolution order:
-    1. alembic.ini in CWD (repo development, Docker)
-    2. Bundled with aegra_api package (pip install)
-
-    Returns:
-        List of extra CLI args (e.g. ["-c", "/path/to/alembic.ini"]) or empty list
-    """
-    # 1. CWD has alembic.ini - use default behavior
-    if Path("alembic.ini").exists():
-        return []
-
-    # 2. Try to find from installed aegra-api package
-    try:
-        from aegra_api.core.migrations import find_alembic_ini
-
-        ini_path = find_alembic_ini()
-        return ["-c", str(ini_path)]
-    except (ImportError, FileNotFoundError):
-        return []
-
-
-def _build_alembic_cmd(*args: str) -> list[str]:
-    """Build a full alembic command with correct config path.
-
-    Args:
-        *args: Alembic subcommand and arguments (e.g. "upgrade", "head")
-
-    Returns:
-        Complete command list for subprocess.run
-    """
-    config_args = _get_alembic_config_args()
-    return [sys.executable, "-m", "alembic"] + config_args + list(args)
-
-
-def _run_alembic_cmd(cmd: list[str], success_msg: str, error_prefix: str) -> None:
+def _run_alembic(
+    operation: str,
+    fn: Callable[[], None],
+    *,
+    success_msg: str,
+    error_prefix: str,
+) -> None:
     """Run an alembic command with standard output handling.
 
     Args:
-        cmd: Command list for subprocess.run
+        operation: Description of the operation for display
+        fn: Callable that invokes the alembic command
         success_msg: Message to display on success
         error_prefix: Prefix for error message
     """
-    console.print(f"[dim]Running: {' '.join(cmd)}[/dim]\n")
-
     try:
-        result = subprocess.run(cmd, check=False)
-        if result.returncode == 0:
-            console.print(f"\n[bold green]{success_msg}[/bold green]")
-        else:
-            console.print(
-                f"\n[bold red]Error:[/bold red] {error_prefix} "
-                f"failed with exit code {result.returncode}"
-            )
-        sys.exit(result.returncode)
-    except FileNotFoundError:
-        console.print(
-            "[bold red]Error:[/bold red] Alembic is not installed.\n"
-            "Install it with: [cyan]pip install aegra-api[/cyan]"
-        )
-        sys.exit(1)
+        fn()
+        console.print(f"\n[bold green]{success_msg}[/bold green]")
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user.[/yellow]")
+        sys.exit(1)
+    except (SQLAlchemyError, CommandError) as e:
+        logger.debug("Alembic operation failed", operation=operation, error=str(e))
+        console.print(f"\n[bold red]Error:[/bold red] {error_prefix} failed.")
+        sys.exit(1)
+    except Exception:
+        logger.debug(
+            "Unexpected error during alembic operation",
+            operation=operation,
+            exc_info=True,
+        )
+        console.print(f"\n[bold red]Error:[/bold red] {error_prefix} failed.")
         sys.exit(1)
 
 
 @click.group()
-def db():
+@click.option(
+    "--env-file",
+    "-e",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Path to .env file (default: .env in current directory).",
+)
+def db(env_file: str | None) -> None:
     """Database migration commands.
 
     Manage database migrations using Alembic.
     These commands are wrappers around common Alembic operations.
     """
-    pass
+    env_path = Path(env_file) if env_file else None
+    load_env_file(env_path)
 
 
 @db.command()
-def upgrade():
+def upgrade() -> None:
     """Apply all pending migrations.
 
     Runs 'alembic upgrade head' to apply all pending migrations
@@ -108,13 +96,22 @@ def upgrade():
         )
     )
 
-    cmd = _build_alembic_cmd("upgrade", "head")
-    _run_alembic_cmd(cmd, "Database upgraded successfully!", "Alembic upgrade")
+    cfg = get_alembic_config()
+
+    def run() -> None:
+        command.upgrade(cfg, "head")
+
+    _run_alembic(
+        "upgrade",
+        run,
+        success_msg="Database upgraded successfully!",
+        error_prefix="Alembic upgrade",
+    )
 
 
 @db.command()
 @click.argument("revision", default="-1")
-def downgrade(revision: str):
+def downgrade(revision: str) -> None:
     """Downgrade database to a previous revision.
 
     Runs 'alembic downgrade' with the specified revision.
@@ -145,12 +142,21 @@ def downgrade(revision: str):
     if revision == "base":
         console.print("[yellow]Warning:[/yellow] Downgrading to 'base' will remove all migrations!")
 
-    cmd = _build_alembic_cmd("downgrade", revision)
-    _run_alembic_cmd(cmd, "Database downgraded successfully!", "Alembic downgrade")
+    cfg = get_alembic_config()
+
+    def run() -> None:
+        command.downgrade(cfg, revision)
+
+    _run_alembic(
+        "downgrade",
+        run,
+        success_msg="Database downgraded successfully!",
+        error_prefix="Alembic downgrade",
+    )
 
 
 @db.command()
-def current():
+def current() -> None:
     """Show current migration version.
 
     Displays the current revision that the database is at.
@@ -168,8 +174,22 @@ def current():
         )
     )
 
-    cmd = _build_alembic_cmd("current")
-    _run_alembic_cmd(cmd, "Current revision displayed above.", "Alembic current")
+    cfg = get_alembic_config()
+    # Capture alembic output to stdout
+    output = StringIO()
+    cfg.print_stdout = output.write
+
+    def run() -> None:
+        command.current(cfg)
+
+    _run_alembic(
+        "current",
+        run,
+        success_msg="Current revision displayed above.",
+        error_prefix="Alembic current",
+    )
+    if output.getvalue():
+        console.print(output.getvalue().strip())
 
 
 @db.command()
@@ -180,7 +200,7 @@ def current():
     default=False,
     help="Show detailed migration information.",
 )
-def history(verbose: bool):
+def history(verbose: bool) -> None:
     """Show migration history.
 
     Displays the list of migrations in the Alembic history.
@@ -200,8 +220,18 @@ def history(verbose: bool):
         )
     )
 
-    args = ["history"]
-    if verbose:
-        args.append("--verbose")
-    cmd = _build_alembic_cmd(*args)
-    _run_alembic_cmd(cmd, "Migration history displayed above.", "Alembic history")
+    cfg = get_alembic_config()
+    output = StringIO()
+    cfg.print_stdout = output.write
+
+    def run() -> None:
+        command.history(cfg, verbose=verbose)
+
+    _run_alembic(
+        "history",
+        run,
+        success_msg="Migration history displayed above.",
+        error_prefix="Alembic history",
+    )
+    if output.getvalue():
+        console.print(output.getvalue().strip())

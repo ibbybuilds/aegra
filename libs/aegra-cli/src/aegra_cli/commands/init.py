@@ -143,6 +143,7 @@ services:
       - POSTGRES_PASSWORD=${{POSTGRES_PASSWORD:-{slug}_secret}}
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=${{POSTGRES_DB:-{slug}}}
+      - AEGRA_CONFIG=aegra.json
       - AUTH_TYPE=${{AUTH_TYPE:-noop}}
       - PORT=${{PORT:-8000}}
     depends_on:
@@ -171,7 +172,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
     && rm -rf /var/lib/apt/lists/*
 
 # Install aegra
-RUN pip install --no-cache-dir aegra
+RUN pip install --no-cache-dir aegra-cli
 
 # Copy project files
 COPY aegra.json .

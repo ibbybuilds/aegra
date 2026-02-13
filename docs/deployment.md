@@ -28,8 +28,8 @@ What it does:
 5. Migrations apply automatically on startup
 
 Options:
-- `--host` / `-h` — Host to bind to (default: `127.0.0.1`)
-- `--port` / `-p` — Port to bind to (default: `8000`)
+- `--host` — Host to bind to (default: `127.0.0.1`)
+- `--port` — Port to bind to (default: `8000`)
 - `--config` / `-c` — Path to aegra.json (auto-detected by default)
 - `--env-file` / `-e` — Path to .env file (default: `.env` in current directory)
 - `--file` / `-f` — Path to docker-compose.yml
@@ -50,9 +50,9 @@ What it does:
 5. Migrations apply automatically on startup
 
 Options:
-- `--build` / `-b` — Force rebuild of Docker images
+- `--build` — Build images before starting (default: true)
 - `--no-build` — Skip building images
-- `--dev` / `-d` — Use development compose file instead
+- `--dev` — Use development compose file instead
 - `--file` / `-f` — Path to a custom compose file
 - `SERVICE...` — Specific services to start
 

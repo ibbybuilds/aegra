@@ -5,23 +5,28 @@ script_location is resolved relative to the ini file — not the CWD.
 """
 
 import sys
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 
 import click
+import structlog
 from aegra_api.core.migrations import get_alembic_config
 from alembic import command
+from alembic.util import CommandError
 from rich.console import Console
 from rich.panel import Panel
+from sqlalchemy.exc import SQLAlchemyError
 
 from aegra_cli.env import load_env_file
 
 console = Console()
+logger = structlog.get_logger(__name__)
 
 
 def _run_alembic(
     operation: str,
-    fn: callable,
+    fn: Callable[[], None],
     *,
     success_msg: str,
     error_prefix: str,
@@ -40,8 +45,17 @@ def _run_alembic(
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user.[/yellow]")
         sys.exit(1)
-    except Exception as e:
-        console.print(f"\n[bold red]Error:[/bold red] {error_prefix} failed: {e}")
+    except (SQLAlchemyError, CommandError) as e:
+        logger.debug("Alembic operation failed", operation=operation, error=str(e))
+        console.print(f"\n[bold red]Error:[/bold red] {error_prefix} failed.")
+        sys.exit(1)
+    except Exception:
+        logger.debug(
+            "Unexpected error during alembic operation",
+            operation=operation,
+            exc_info=True,
+        )
+        console.print(f"\n[bold red]Error:[/bold red] {error_prefix} failed.")
         sys.exit(1)
 
 

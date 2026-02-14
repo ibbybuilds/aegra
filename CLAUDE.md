@@ -62,7 +62,8 @@ aegra/
 │   └── aegra-cli/                    # CLI package
 │       └── src/aegra_cli/
 │           ├── cli.py                # Main CLI entry point
-│           └── commands/             # Command implementations
+│           ├── commands/             # Command implementations
+│           └── templates/            # Project templates for `aegra init`
 │
 ├── examples/                         # Example agents and configs
 ├── docs/                             # Documentation

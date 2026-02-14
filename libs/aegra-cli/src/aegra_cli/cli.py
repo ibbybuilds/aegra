@@ -12,13 +12,13 @@ from rich.table import Table
 
 from aegra_cli import __version__
 from aegra_cli.commands import db, init
-from aegra_cli.commands.init import (
+from aegra_cli.env import load_env_file
+from aegra_cli.templates import (
     get_docker_compose_dev,
     get_docker_compose_prod,
     get_dockerfile,
     slugify,
 )
-from aegra_cli.env import load_env_file
 from aegra_cli.utils.docker import ensure_postgres_running
 
 console = Console()

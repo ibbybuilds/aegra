@@ -1,0 +1,20 @@
+"""$project_name — Simple chatbot with message memory."""
+
+from langchain_openai import ChatOpenAI
+from langgraph.graph import MessagesState, StateGraph
+
+model = ChatOpenAI(model="gpt-4o-mini")
+
+
+async def chatbot(state: MessagesState) -> dict:
+    """Process messages and generate a response."""
+    response = await model.ainvoke(state["messages"])
+    return {"messages": [response]}
+
+
+graph = (
+    StateGraph(MessagesState)
+    .add_node("chatbot", chatbot)
+    .add_edge("__start__", "chatbot")
+    .compile()
+)

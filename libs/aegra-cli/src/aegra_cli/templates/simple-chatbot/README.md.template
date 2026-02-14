@@ -1,0 +1,26 @@
+# $project_name
+
+Built with [Aegra](https://github.com/ibbybuilds/aegra) -- a self-hosted LangGraph Platform alternative.
+
+## Setup
+
+```bash
+cp .env.example .env     # Configure your environment
+pip install -e .          # Install dependencies
+aegra dev                 # Start developing!
+```
+
+## Project Structure
+
+```
+$slug/
+|-- aegra.json            # Graph configuration
+|-- pyproject.toml        # Project dependencies
+|-- .env.example          # Environment variable template
+|-- src/$slug/
+|   |-- __init__.py
+|   +-- graph.py          # Your agent graph
+|-- docker-compose.yml    # Development (PostgreSQL)
+|-- docker-compose.prod.yml  # Production (full stack)
++-- Dockerfile
+```

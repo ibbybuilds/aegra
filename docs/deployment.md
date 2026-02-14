@@ -109,15 +109,20 @@ Options on the `db` group:
 ### 1. Local Development
 
 ```bash
-# Initialize project
-aegra init --name "my-agent"
+# Initialize project (interactive template selection)
+aegra init ./my-agent
+
+# Or non-interactive with flags
+aegra init ./my-agent -t 1 -n "My Agent"
+
 cd my-agent
 
 # Copy and configure environment
 cp .env.example .env
 # Edit .env with your API keys
 
-# Start developing
+# Install dependencies and start developing
+pip install -e .
 aegra dev
 ```
 
@@ -127,7 +132,7 @@ Best for: VPS, dedicated servers, on-premise infrastructure.
 
 ```bash
 # Initialize project
-aegra init --name "my-agent"
+aegra init ./my-agent -t 1
 cd my-agent
 
 # Configure production environment

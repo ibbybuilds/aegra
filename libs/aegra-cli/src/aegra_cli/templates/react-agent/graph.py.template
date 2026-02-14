@@ -1,0 +1,26 @@
+"""$project_name — ReAct agent with tool calling."""
+
+from langchain_openai import ChatOpenAI
+from langgraph.graph import MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
+
+from $slug.tools import TOOLS
+
+model = ChatOpenAI(model="gpt-4o-mini").bind_tools(TOOLS)
+
+
+async def call_model(state: MessagesState) -> dict:
+    """Invoke the model with the current messages."""
+    response = await model.ainvoke(state["messages"])
+    return {"messages": [response]}
+
+
+graph = (
+    StateGraph(MessagesState)
+    .add_node("agent", call_model)
+    .add_node("tools", ToolNode(TOOLS))
+    .add_edge("__start__", "agent")
+    .add_conditional_edges("agent", tools_condition)
+    .add_edge("tools", "agent")
+    .compile()
+)

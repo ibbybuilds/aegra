@@ -1,339 +1,216 @@
-"""Initialize a new Aegra project."""
+"""Initialize a new Aegra project with interactive template selection."""
 
 import json
-import re
-from importlib import resources
 from pathlib import Path
+from string import Template
 
 import click
 from rich.console import Console
-from rich.panel import Panel
+
+from aegra_cli import __version__
+from aegra_cli.templates import (
+    get_docker_compose_dev,
+    get_docker_compose_prod,
+    get_dockerfile,
+    get_template_choices,
+    load_shared_file,
+    load_template_manifest,
+    render_env_example,
+    render_template_file,
+    slugify,
+)
 
 console = Console()
 
 
-def slugify(name: str) -> str:
-    """Convert a name to a valid Python/Docker identifier.
+def _resolve_name(path: Path, name: str | None) -> str:
+    """Determine project name from explicit --name or from the path.
 
-    Examples:
-        "My Project" -> "my_project"
-        "my-app" -> "my_app"
-        "MyApp 2.0" -> "myapp_2_0"
+    Args:
+        path: Resolved project directory.
+        name: Explicit name from CLI flag, or None.
+
+    Returns:
+        Human-readable project name.
     """
-    # Convert to lowercase and replace spaces/hyphens with underscores
-    slug = name.lower().replace(" ", "_").replace("-", "_")
-    # Remove any characters that aren't alphanumeric or underscore
-    slug = re.sub(r"[^a-z0-9_]", "", slug)
-    # Remove leading/trailing underscores and collapse multiple underscores
-    slug = re.sub(r"_+", "_", slug).strip("_")
-    # Ensure it doesn't start with a number
-    if slug and slug[0].isdigit():
-        slug = "project_" + slug
-    return slug or "aegra_project"
+    if name is not None:
+        return name
+    return path.name
 
 
-def get_aegra_config(project_name: str, slug: str) -> dict:
-    """Generate aegra.json config content."""
-    return {
-        "name": project_name,
-        "graphs": {slug: f"./graphs/{slug}/graph.py:graph"},
-    }
+def _prompt_path(default: str) -> str:
+    """Interactively ask the user where to create the project.
+
+    Args:
+        default: Default path shown in the prompt.
+
+    Returns:
+        User-chosen path string.
+    """
+    value = click.prompt(
+        click.style("\U0001f4c2 Where should I create the project?", bold=True),
+        default=default,
+    )
+    return value
 
 
-def get_env_example(slug: str) -> str:
-    """Generate .env.example content from bundled template."""
-    template = resources.files("aegra_cli.templates").joinpath("env.example.template").read_text()
-    return template.format(slug=slug)
+def _prompt_template(templates: list[dict[str, str]]) -> int:
+    """Interactively ask the user to pick a template.
 
+    Args:
+        templates: List of template dicts with name and description.
 
-def get_example_graph(project_name: str) -> str:
-    """Generate example graph content."""
-    return f'''\
-"""{project_name} - Example graph."""
-
-from typing import TypedDict
-
-from langgraph.graph import END, START, StateGraph
-
-
-class State(TypedDict):
-    """Graph state."""
-
-    messages: list[str]
-
-
-def greeting_node(state: State) -> State:
-    """A simple greeting node."""
-    messages = state.get("messages", [])
-    messages.append("Hello from {project_name}!")
-    return {{"messages": messages}}
-
-
-# Build the graph
-builder = StateGraph(State)
-builder.add_node("greeting", greeting_node)
-builder.add_edge(START, "greeting")
-builder.add_edge("greeting", END)
-
-# Compile the graph
-graph = builder.compile()
-'''
-
-
-def get_docker_compose_dev(slug: str) -> str:
-    """Generate docker-compose.yml for development (postgres only)."""
-    return f"""\
-# Development docker-compose - PostgreSQL only
-# Use with: aegra dev (starts postgres + local uvicorn)
-
-services:
-  postgres:
-    image: pgvector/pgvector:pg18
-    container_name: {slug}-postgres
-    environment:
-      POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}
-      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
-      POSTGRES_DB: ${{POSTGRES_DB:-{slug}}}
-    ports:
-      - "${{POSTGRES_PORT:-5432}}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-{slug}}}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  postgres_data:
-"""
-
-
-def get_docker_compose_prod(slug: str) -> str:
-    """Generate docker-compose.prod.yml for production (full stack)."""
-    return f"""\
-# Production docker-compose - Full stack
-# Use with: aegra up (builds and starts all services)
-
-services:
-  postgres:
-    image: pgvector/pgvector:pg18
-    container_name: {slug}-postgres
-    environment:
-      POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}
-      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
-      POSTGRES_DB: ${{POSTGRES_DB:-{slug}}}
-    ports:
-      - "${{POSTGRES_PORT:-5432}}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-{slug}}}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  {slug}:
-    build: .
-    container_name: {slug}-api
-    ports:
-      - "${{PORT:-8000}}:8000"
-    environment:
-      - POSTGRES_USER=${{POSTGRES_USER:-{slug}}}
-      - POSTGRES_PASSWORD=${{POSTGRES_PASSWORD:-{slug}_secret}}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DB=${{POSTGRES_DB:-{slug}}}
-      - AEGRA_CONFIG=aegra.json
-      - AUTH_TYPE=${{AUTH_TYPE:-noop}}
-      - PORT=${{PORT:-8000}}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./graphs:/app/graphs:ro
-      - ./aegra.json:/app/aegra.json:ro
-
-volumes:
-  postgres_data:
-"""
-
-
-def get_dockerfile() -> str:
-    """Generate Dockerfile for production builds."""
-    return """\
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \\
-    gcc \\
-    libpq-dev \\
-    && rm -rf /var/lib/apt/lists/*
-
-# Install aegra
-RUN pip install --no-cache-dir aegra-cli
-
-# Copy project files
-COPY aegra.json .
-COPY graphs/ ./graphs/
-
-# Expose port
-EXPOSE 8000
-
-# Run the server
-CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
-"""
+    Returns:
+        1-based template index.
+    """
+    click.echo()
+    click.echo(click.style("\U0001f31f Choose a template:", bold=True))
+    for i, t in enumerate(templates, 1):
+        click.echo(f"  {i}. {t['name']} \u2014 {t['description']}")
+    click.echo()
+    choice = click.prompt("Enter your choice", default=1, type=int)
+    return choice
 
 
 def write_file(path: Path, content: str, force: bool) -> bool:
     """Write content to a file, respecting the force flag.
 
     Args:
-        path: Path to write to
-        content: Content to write
-        force: Whether to overwrite existing files
+        path: Path to write to.
+        content: Content to write.
+        force: Whether to overwrite existing files.
 
     Returns:
-        True if file was written, False if skipped
+        True if file was written, False if skipped.
     """
     if path.exists() and not force:
-        console.print(f"  [yellow]SKIP[/yellow] {path} (already exists)")
+        console.print(f"  [yellow]SKIP[/yellow]    {path}")
         return False
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-    console.print(f"  [green]CREATE[/green] {path}")
+    path.write_text(content, encoding="utf-8")
+    console.print(f"  [green]CREATE[/green]  {path}")
     return True
 
 
 @click.command()
-@click.option(
-    "--name",
-    "-n",
-    default=None,
-    help="Project name (defaults to directory name).",
-)
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--path", type=click.Path(), default=".", help="Project directory")
-def init(name: str | None, force: bool, path: str) -> None:
+@click.argument("path", default=".", required=False)
+@click.option("--template", "-t", type=int, default=None, help="Template number (1 or 2).")
+@click.option("--name", "-n", default=None, help="Project name (defaults to directory name).")
+@click.option("--force", is_flag=True, help="Overwrite existing files.")
+def init(path: str, template: int | None, name: str | None, force: bool) -> None:
     """Initialize a new Aegra project.
 
-    Creates the necessary configuration files and directory structure
-    for a new Aegra project, including:
+    Creates a complete project structure from a template, including:
 
     \b
-    - aegra.json: Graph configuration with project name
+    - aegra.json: Graph configuration
+    - pyproject.toml: Project dependencies
     - .env.example: Environment variable template
-    - graphs/<name>/graph.py: Example graph implementation
+    - .gitignore: Standard Python gitignore
+    - README.md: Project readme
+    - src/<slug>/graph.py: Template-specific graph
     - docker-compose.yml: Docker Compose for PostgreSQL (dev)
     - docker-compose.prod.yml: Docker Compose for full stack (prod)
     - Dockerfile: Production container build
 
     Examples:
 
-        aegra init                          # Use directory name as project name
-
-        aegra init --name "My AI Agent"     # Specify project name
-
-        aegra init -n myproject --force     # Overwrite existing files
+    \b
+        aegra init                           # Interactive mode
+        aegra init ./my-agent                # Create at path
+        aegra init ./my-agent -t 1           # Simple chatbot
+        aegra init ./my-agent -t 2           # ReAct agent
+        aegra init ./my-agent -t 1 -n "My Agent"
     """
+    templates = get_template_choices()
+
+    # --- Resolve path (interactive if default ".") ---
+    if path == ".":
+        # Only prompt interactively when the user didn't provide a path argument
+        # and we're running in a TTY (not piped)
+        if not template and not name:
+            path = _prompt_path(".")
     project_path = Path(path).resolve()
 
-    # Determine project name - use provided name, or directory name
-    if name is None:
-        name = project_path.name
-    slug = slugify(name)
+    # --- Resolve template ---
+    if template is None:
+        choice = _prompt_template(templates)
+    else:
+        choice = template
 
-    console.print(
-        Panel.fit(
-            f"[bold blue]Initializing Aegra project[/bold blue]\n\n"
-            f"[cyan]Name:[/cyan] {name}\n"
-            f"[cyan]Path:[/cyan] {project_path}",
-            border_style="blue",
-        )
-    )
-    console.print()
+    if choice < 1 or choice > len(templates):
+        console.print(f"[bold red]Error:[/bold red] Invalid template number: {choice}")
+        raise SystemExit(1)
+
+    selected = templates[choice - 1]
+    click.echo(f"You selected: {selected['name']} \u2014 {selected['description']}")
+
+    # --- Resolve project name ---
+    project_name = _resolve_name(project_path, name)
+    slug = slugify(project_name)
+
+    # Template variables
+    variables = {
+        "project_name": project_name,
+        "slug": slug,
+        "aegra_version": __version__,
+    }
+
+    click.echo()
+    click.echo(click.style("\U0001f4e5 Creating project...", bold=True))
 
     files_created = 0
     files_skipped = 0
 
-    # Create aegra.json
-    aegra_config_path = project_path / "aegra.json"
-    aegra_config_content = json.dumps(get_aegra_config(name, slug), indent=2) + "\n"
-    if write_file(aegra_config_path, aegra_config_content, force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    def _write(rel_path: str, content: str) -> None:
+        nonlocal files_created, files_skipped
+        full = project_path / rel_path
+        if write_file(full, content, force):
+            files_created += 1
+        else:
+            files_skipped += 1
 
-    # Create .env.example
-    env_example_path = project_path / ".env.example"
-    if write_file(env_example_path, get_env_example(slug), force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    # --- aegra.json ---
+    aegra_config = {
+        "name": project_name,
+        "dependencies": ["./src"],
+        "graphs": {slug: f"./src/{slug}/graph.py:graph"},
+    }
+    _write("aegra.json", json.dumps(aegra_config, indent=2) + "\n")
 
-    # Create example graph (using slugified name for directory)
-    example_graph_path = project_path / "graphs" / slug / "graph.py"
-    if write_file(example_graph_path, get_example_graph(name), force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    # --- Template files (from manifest) ---
+    manifest = load_template_manifest(selected["id"])
+    for template_filename, dest_pattern in manifest["files"].items():
+        dest = Template(dest_pattern).safe_substitute(variables)
+        content = render_template_file(selected["id"], template_filename, variables)
+        _write(dest, content)
 
-    # Create __init__.py files for the graphs package
-    graphs_init_path = project_path / "graphs" / "__init__.py"
-    if write_file(graphs_init_path, f'"""{name} graphs package."""\n', force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    # --- .env.example ---
+    _write(".env.example", render_env_example(variables))
 
-    example_init_path = project_path / "graphs" / slug / "__init__.py"
-    if write_file(example_init_path, f'"""{name} graph."""\n', force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    # --- .gitignore ---
+    _write(".gitignore", load_shared_file("gitignore"))
 
-    # Create Docker files (always included — PostgreSQL is required)
-    # Development docker-compose (postgres only)
-    docker_compose_dev_path = project_path / "docker-compose.yml"
-    if write_file(docker_compose_dev_path, get_docker_compose_dev(slug), force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    # --- Docker files ---
+    _write("docker-compose.yml", get_docker_compose_dev(slug))
+    _write("docker-compose.prod.yml", get_docker_compose_prod(slug))
+    _write("Dockerfile", get_dockerfile())
 
-    # Production docker-compose (full stack)
-    docker_compose_prod_path = project_path / "docker-compose.prod.yml"
-    if write_file(docker_compose_prod_path, get_docker_compose_prod(slug), force):
-        files_created += 1
-    else:
-        files_skipped += 1
+    # --- Summary ---
+    click.echo()
+    click.echo(f"\U0001f389 New project created at {project_path}")
+    click.echo()
 
-    # Dockerfile for production builds
-    dockerfile_path = project_path / "Dockerfile"
-    if write_file(dockerfile_path, get_dockerfile(), force):
-        files_created += 1
-    else:
-        files_skipped += 1
-
-    # Print summary
-    console.print()
-    console.print(
-        Panel.fit(
-            f"[bold green]Project '{name}' initialized![/bold green]\n\n"
-            f"[green]{files_created}[/green] files created"
-            + (f", [yellow]{files_skipped}[/yellow] files skipped" if files_skipped else ""),
-            border_style="green",
+    if files_skipped:
+        console.print(
+            f"[green]{files_created}[/green] files created, "
+            f"[yellow]{files_skipped}[/yellow] files skipped"
         )
-    )
+        click.echo()
 
-    # Print next steps
-    console.print()
-    console.print("[bold]Next steps:[/bold]")
-    console.print("  1. Copy [cyan].env.example[/cyan] to [cyan].env[/cyan] and configure")
-    console.print("  2. Edit [cyan]aegra.json[/cyan] to add your graphs")
-    console.print("  3. Run [cyan]aegra dev[/cyan] to start the server")
-    console.print()
-    console.print("[bold]Docker:[/bold]")
-    console.print("  [cyan]aegra dev[/cyan]  - Start postgres + local dev server")
-    console.print("  [cyan]aegra up[/cyan]   - Start all services in Docker")
-    console.print("  [cyan]aegra down[/cyan] - Stop all services")
+    click.echo(click.style("Next steps:", bold=True))
+    click.echo(f"  cd {project_path.name}")
+    click.echo("  cp .env.example .env     # Configure your environment")
+    click.echo("  pip install -e .          # Install dependencies")
+    click.echo("  aegra dev                 # Start developing!")

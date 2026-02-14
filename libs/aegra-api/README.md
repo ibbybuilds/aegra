@@ -28,15 +28,14 @@ The easiest way to get started is with the [aegra-cli](../aegra-cli/README.md):
 pip install aegra-cli
 
 # Initialize a new project
-aegra init
+aegra init ./my-agent
+cd my-agent
 
-# Start services
-aegra up
+# Configure environment
+cp .env.example .env
+# Add your OPENAI_API_KEY to .env
 
-# Apply migrations
-aegra db upgrade
-
-# Start development server
+# Start developing (auto-starts PostgreSQL)
 aegra dev
 ```
 
@@ -198,4 +197,4 @@ libs/aegra-api/
 
 ## Documentation
 
-For full documentation, see the [CLAUDE.md](../../CLAUDE.md) file in the repository root.
+For full documentation, see the [docs/](../../docs/) directory.

@@ -38,6 +38,17 @@ def get_template_choices() -> list[dict[str, str]]:
 
 _TEMPLATES_PKG = "aegra_cli.templates"
 
+_VALID_TEMPLATE_IDS = frozenset(t["id"] for t in TEMPLATES)
+
+
+def _validate_template_id(template_id: str) -> None:
+    """Raise ValueError if template_id is not a known template."""
+    if template_id not in _VALID_TEMPLATE_IDS:
+        raise ValueError(
+            f"Unknown template '{template_id}'. "
+            f"Valid templates: {', '.join(sorted(_VALID_TEMPLATE_IDS))}"
+        )
+
 
 def load_template_manifest(template_id: str) -> dict:
     """Read and return manifest.json for a template.
@@ -47,7 +58,11 @@ def load_template_manifest(template_id: str) -> dict:
 
     Returns:
         Parsed manifest dict.
+
+    Raises:
+        ValueError: If template_id is not a known template.
     """
+    _validate_template_id(template_id)
     text = (
         resources.files(_TEMPLATES_PKG)
         .joinpath(template_id, "manifest.json")
@@ -66,7 +81,11 @@ def render_template_file(template_id: str, filename: str, variables: dict[str, s
 
     Returns:
         Rendered string.
+
+    Raises:
+        ValueError: If template_id is not a known template.
     """
+    _validate_template_id(template_id)
     raw = (
         resources.files(_TEMPLATES_PKG).joinpath(template_id, filename).read_text(encoding="utf-8")
     )
@@ -125,7 +144,7 @@ def slugify(name: str) -> str:
     Examples:
         "My Project" -> "my_project"
         "my-app" -> "my_app"
-        "MyApp 2.0" -> "myapp_2_0"
+        "MyApp 2.0" -> "myapp_20"
     """
     slug = name.lower().replace(" ", "_").replace("-", "_")
     slug = re.sub(r"[^a-z0-9_]", "", slug)
@@ -189,7 +208,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ok')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       start_period: 10s
     volumes:

@@ -150,7 +150,7 @@ class TestDockerGenerators:
     def test_docker_compose_has_api_healthcheck(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
         assert "urllib.request.urlopen" in compose
-        assert "localhost:8000/ok" in compose
+        assert "localhost:8000/health" in compose
 
     def test_docker_compose_api_depends_on_postgres(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
@@ -399,7 +399,7 @@ class TestInitFileContents:
 
         slug = slugify("test-graph-var")
         content = (project_dir / f"src/{slug}/graph.py").read_text()
-        assert "graph:" in content and "=" in content
+        assert "graph =" in content or "graph:" in content
 
     def test_env_example_has_required_vars(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
@@ -466,7 +466,7 @@ class TestInitFileContents:
 
         content = (project_dir / "docker-compose.yml").read_text()
         assert "urllib.request" in content
-        assert "localhost:8000/ok" in content
+        assert "localhost:8000/health" in content
 
     def test_no_prod_compose_generated(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path

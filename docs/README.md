@@ -21,7 +21,7 @@ Welcome to the Aegra documentation! Here you'll find everything you need to get 
 
 ## Observability
 
-- [Langfuse Integration](./langfuse-usage.md) - How to set up and use Langfuse for tracing.
+- [Observability & Tracing](./observability.md) - How to set up and use observability and tracing.
 
 ## 🚀 Quick Start
 

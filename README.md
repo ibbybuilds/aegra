@@ -44,7 +44,7 @@ cd my-agent
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env
 
-pip install -e .          # Install graph dependencies
+uv sync                  # Install graph dependencies
 aegra dev                 # Start PostgreSQL + dev server
 ```
 
@@ -111,13 +111,17 @@ aegra init              # Initialize a new project (interactive)
 aegra init ./my-agent -t 1  # Simple chatbot template
 aegra init ./my-agent -t 2  # ReAct agent template
 
-aegra dev               # Start development server (hot reload)
-aegra up                # Start all services with Docker
-aegra down              # Stop all services
+aegra dev               # Start development server (hot reload + auto PostgreSQL)
+aegra serve             # Start production server (no reload)
+aegra up                # Build and start all Docker services
+aegra down              # Stop Docker services
 
 aegra db upgrade        # Apply database migrations
+aegra db downgrade      # Rollback one migration
 aegra db current        # Show current migration version
 aegra db history        # Show migration history
+
+aegra version           # Show version info
 ```
 
 ## 📚 Documentation

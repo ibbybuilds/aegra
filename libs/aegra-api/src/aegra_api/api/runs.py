@@ -979,6 +979,8 @@ async def execute_run_async(
         await streaming_service.signal_run_cancelled(run_id)
         raise
     except Exception as e:
+        # Log with full traceback so bugs are visible in logs
+        logger.exception(f"[execute_run_async] run failed run_id={run_id}")
         # Store empty output to avoid JSON serialization issues - use standard status
         await update_run_status(run_id, "error", output={}, error=str(e), session=session)
         if not session:
@@ -991,7 +993,9 @@ async def execute_run_async(
         if broker and not broker.is_finished():
             error_type = type(e).__name__
             await streaming_service.signal_run_error(run_id, str(e), error_type)
-        raise
+        # Don't re-raise: this runs as a background task (asyncio.create_task),
+        # so re-raising causes "Task exception was never retrieved" warnings.
+        # The error is already fully handled (run status, thread status, broker).
     finally:
         # Clean up broker
         await streaming_service.cleanup_run(run_id)

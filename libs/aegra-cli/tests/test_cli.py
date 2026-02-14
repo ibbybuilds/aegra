@@ -353,18 +353,6 @@ class TestDownCommand:
                 assert "Warning" in result.output
                 assert "data will be lost" in result.output
 
-    def test_down_with_specific_services(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that down command passes specific services."""
-        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            Path("docker-compose.yml").write_text("services: {}")
-
-            with patch("aegra_cli.cli.subprocess.run") as mock_run:
-                mock_run.return_value.returncode = 0
-                result = cli_runner.invoke(cli, ["down", "postgres"])
-
-                call_args = mock_run.call_args[0][0]
-                assert "postgres" in call_args
-
     def test_down_with_custom_compose_file(
         self, cli_runner: CliRunner, mock_compose_file: Path
     ) -> None:

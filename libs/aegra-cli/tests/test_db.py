@@ -182,7 +182,7 @@ class TestDbCurrentCommand:
         ):
             result = cli_runner.invoke(cli, ["db", "current"])
 
-            assert "Current revision displayed above" in result.output
+            assert "Current revision check complete" in result.output
 
     def test_shows_error_on_exception(self, cli_runner: CliRunner) -> None:
         """Test that db current shows error on alembic failure."""
@@ -255,7 +255,7 @@ class TestDbHistoryCommand:
         ):
             result = cli_runner.invoke(cli, ["db", "history"])
 
-            assert "Migration history displayed above" in result.output
+            assert "Migration history check complete" in result.output
 
     def test_shows_error_on_exception(self, cli_runner: CliRunner) -> None:
         """Test that db history shows error on alembic failure."""

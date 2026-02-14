@@ -1,5 +1,8 @@
 """Aegra CLI - Command-line interface for managing self-hosted agent deployments."""
 
+import json
+import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -83,8 +86,6 @@ def get_project_slug(config_path: Path | None) -> str:
     Returns:
         Slugified project name
     """
-    import json
-
     if config_path and config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
@@ -185,8 +186,8 @@ def dev(
     Starts uvicorn with --reload flag for development.
     The server will automatically restart when code changes are detected.
 
-    Aegra auto-discovers aegra.json by walking up the directory tree, so you
-    can run 'aegra dev' from any subdirectory of your project.
+    Aegra auto-discovers aegra.json in the current directory, so you
+    should run 'aegra dev' from your project root.
 
     By default, Aegra will check if Docker is running and start PostgreSQL
     automatically if needed. Use --no-db-check to skip this behavior.
@@ -201,14 +202,12 @@ def dev(
 
         aegra dev --no-db-check          # Start without database check
     """
-    import os
-
     # Discover or validate config file
     if config_file is not None:
         # User specified a config file explicitly
         resolved_config = config_file.resolve()
     else:
-        # Auto-discover config file by walking up directory tree
+        # Auto-discover config file in current directory
         resolved_config = find_config_file()
 
     if resolved_config is None:
@@ -237,8 +236,6 @@ def dev(
         dot_env = resolved_config.parent / ".env"
         dot_env_example = resolved_config.parent / ".env.example"
         if not dot_env.exists() and dot_env_example.exists():
-            import shutil
-
             shutil.copy2(dot_env_example, dot_env)
             console.print(f"[cyan]Created[/cyan] {dot_env} [dim](copied from .env.example)[/dim]")
 
@@ -257,7 +254,9 @@ def dev(
         if compose_file is None:
             project_path = resolved_config.parent
             default_compose = project_path / "docker-compose.yml"
-            if not default_compose.exists():
+            if default_compose.exists():
+                compose_file = default_compose
+            else:
                 slug = get_project_slug(resolved_config)
                 compose_file = ensure_docker_files(project_path, slug)
 
@@ -394,8 +393,6 @@ def serve(host: str, port: int, app: str, config_file: Path | None, workers: int
 
         aegra serve -w 4                    # Use 4 workers
     """
-    import os
-
     # Discover or validate config file
     if config_file is not None:
         resolved_config = config_file.resolve()
@@ -473,19 +470,12 @@ def serve(host: str, port: int, app: str, config_file: Path | None, workers: int
     help="Path to docker-compose file.",
 )
 @click.option(
-    "--build",
-    is_flag=True,
+    "--build/--no-build",
     default=True,
-    help="Build images before starting containers (default: true).",
-)
-@click.option(
-    "--no-build",
-    is_flag=True,
-    default=False,
-    help="Skip building images.",
+    help="Build images before starting containers.",
 )
 @click.argument("services", nargs=-1)
-def up(compose_file: Path | None, build: bool, no_build: bool, services: tuple[str, ...]):
+def up(compose_file: Path | None, build: bool, services: tuple[str, ...]):
     """Start services with Docker Compose.
 
     Uses docker-compose.yml which contains both postgres and the API service.
@@ -527,7 +517,7 @@ def up(compose_file: Path | None, build: bool, no_build: bool, services: tuple[s
     cmd.append("-d")
 
     # Build unless --no-build is specified
-    if not no_build:
+    if build:
         cmd.append("--build")
 
     if services:
@@ -576,8 +566,7 @@ def up(compose_file: Path | None, build: bool, no_build: bool, services: tuple[s
     default=False,
     help="Remove named volumes declared in the compose file.",
 )
-@click.argument("services", nargs=-1)
-def down(compose_file: Path | None, volumes: bool, services: tuple[str, ...]):
+def down(compose_file: Path | None, volumes: bool):
     """Stop services with Docker Compose.
 
     Runs 'docker compose down' to stop and remove containers.
@@ -620,9 +609,6 @@ def down(compose_file: Path | None, volumes: bool, services: tuple[str, ...]):
 
     if volumes:
         cmd.append("-v")
-
-    if services:
-        cmd.extend(services)
 
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
 

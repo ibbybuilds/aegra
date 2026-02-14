@@ -72,18 +72,17 @@ class TestStreamingErrorHandling:
             mock_session = AsyncMock()
             mock_session_maker.return_value = lambda: mock_session
 
-            # Execute run - should catch error and send to broker
-            with pytest.raises(ValueError, match="Graph execution failed"):
-                await execute_run_async(
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    graph_id=graph_id,
-                    input_data={},
-                    user=mock_user,
-                    config={},
-                    context={},
-                    stream_mode=["values"],
-                )
+            # Execute run - error is handled internally (no re-raise from background tasks)
+            await execute_run_async(
+                run_id=run_id,
+                thread_id=thread_id,
+                graph_id=graph_id,
+                input_data={},
+                user=mock_user,
+                config={},
+                context={},
+                stream_mode=["values"],
+            )
 
             # Verify error event was sent to broker
             events_received = []
@@ -155,18 +154,17 @@ class TestStreamingErrorHandling:
             mock_session = AsyncMock()
             mock_session_maker.return_value = lambda: mock_session
 
-            # Execute run
-            with pytest.raises(RuntimeError):
-                await execute_run_async(
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    graph_id=graph_id,
-                    input_data={},
-                    user=mock_user,
-                    config={},
-                    context={},
-                    stream_mode=["values"],
-                )
+            # Execute run - error is handled internally (no re-raise from background tasks)
+            await execute_run_async(
+                run_id=run_id,
+                thread_id=thread_id,
+                graph_id=graph_id,
+                input_data={},
+                user=mock_user,
+                config={},
+                context={},
+                stream_mode=["values"],
+            )
 
             # Wait a bit for async operations to complete
             await asyncio.sleep(0.2)
@@ -214,17 +212,17 @@ class TestStreamingErrorHandling:
             mock_session = AsyncMock()
             mock_session_maker.return_value = lambda: mock_session
 
-            with pytest.raises(ValueError):
-                await execute_run_async(
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    graph_id=graph_id,
-                    input_data={},
-                    user=mock_user,
-                    config={},
-                    context={},
-                    stream_mode=["values"],
-                )
+            # Error is handled internally (no re-raise from background tasks)
+            await execute_run_async(
+                run_id=run_id,
+                thread_id=thread_id,
+                graph_id=graph_id,
+                input_data={},
+                user=mock_user,
+                config={},
+                context={},
+                stream_mode=["values"],
+            )
 
             # Check error event has correct type
             events_received = []
@@ -276,17 +274,17 @@ class TestStreamingErrorHandling:
             mock_session = AsyncMock()
             mock_session_maker.return_value = lambda: mock_session
 
-            with pytest.raises(KeyError):
-                await execute_run_async(
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    graph_id=graph_id,
-                    input_data={},
-                    user=mock_user,
-                    config={},
-                    context={},
-                    stream_mode=["values"],
-                )
+            # Error is handled internally (no re-raise from background tasks)
+            await execute_run_async(
+                run_id=run_id,
+                thread_id=thread_id,
+                graph_id=graph_id,
+                input_data={},
+                user=mock_user,
+                config={},
+                context={},
+                stream_mode=["values"],
+            )
 
             # Count error events - should only be one
             events_received = []

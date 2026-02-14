@@ -185,18 +185,17 @@ class TestRunsStreamingEndpoints:
 
             mock_session_maker.return_value = lambda: mock_session
 
-            # Execute should raise the error
-            with pytest.raises(ValueError, match="Test error during streaming"):
-                await execute_run_async(
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    graph_id=graph_id,
-                    input_data={},
-                    user=mock_user,
-                    config={},
-                    context={},
-                    stream_mode=["values"],
-                )
+            # Error is handled internally (no re-raise from background tasks)
+            await execute_run_async(
+                run_id=run_id,
+                thread_id=thread_id,
+                graph_id=graph_id,
+                input_data={},
+                user=mock_user,
+                config={},
+                context={},
+                stream_mode=["values"],
+            )
 
             # Verify error event was sent to broker
             events = []

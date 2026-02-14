@@ -89,7 +89,7 @@ def _prompt_template(templates: Sequence[Mapping[str, str]]) -> int:
     return choice
 
 
-def write_file(path: Path, content: str, force: bool) -> bool:
+def _write_file(path: Path, content: str, force: bool) -> bool:
     """Write content to a file, respecting the force flag.
 
     Args:
@@ -112,7 +112,13 @@ def write_file(path: Path, content: str, force: bool) -> bool:
 
 @click.command()
 @click.argument("path", default=".", required=False)
-@click.option("--template", "-t", type=int, default=None, help="Template number (1 or 2).")
+@click.option(
+    "--template",
+    "-t",
+    type=int,
+    default=None,
+    help=f"Template number (1-{len(get_template_choices())}).",
+)
 @click.option("--name", "-n", default=None, help="Project name (defaults to directory name).")
 @click.option("--force", is_flag=True, help="Overwrite existing files.")
 def init(path: str, template: int | None, name: str | None, force: bool) -> None:
@@ -126,8 +132,10 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     - .env.example: Environment variable template
     - .gitignore: Standard Python gitignore
     - README.md: Project readme
+    - src/<slug>/__init__.py: Package init
     - src/<slug>/graph.py: Template-specific graph
     - src/<slug>/state.py, prompts.py, context.py, utils.py: Shared modules
+    - src/<slug>/tools.py: Tool definitions (ReAct agent only)
     - docker-compose.yml: Docker Compose (PostgreSQL + API)
     - Dockerfile: Production container build
 
@@ -144,9 +152,10 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     interactive = _is_interactive()
 
     # --- Resolve path (interactive if default ".") ---
-    if path == ".":
-        if not template and not name and interactive:
-            path = _prompt_path(".")
+    # Prompt for path when using default "." in interactive mode,
+    # unless both --template and --name are given (full automation).
+    if path == "." and interactive and not (template and name):
+        path = _prompt_path(".")
     project_path = Path(path).resolve()
 
     # --- Resolve template ---
@@ -186,7 +195,7 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     def _write(rel_path: str, content: str) -> None:
         nonlocal files_created, files_skipped
         full = project_path / rel_path
-        if write_file(full, content, force):
+        if _write_file(full, content, force):
             files_created += 1
         else:
             files_skipped += 1

@@ -33,6 +33,7 @@ Options:
 - `--config` / `-c` — Path to aegra.json (auto-detected by default)
 - `--env-file` / `-e` — Path to .env file (default: `.env` in current directory)
 - `--file` / `-f` — Path to docker-compose.yml
+- `--no-db-check` — Skip database readiness check
 
 ### `aegra up` — Docker Production Deployment
 
@@ -43,16 +44,14 @@ aegra up
 ```
 
 What it does:
-1. Finds or generates `docker-compose.prod.yml` with PostgreSQL + app service
+1. Finds or generates `docker-compose.yml` with PostgreSQL + app service
 2. Builds the Docker image from your `Dockerfile`
 3. Starts all containers
 4. The app container runs `aegra serve` internally
 5. Migrations apply automatically on startup
 
 Options:
-- `--build` — Build images before starting (default: true)
-- `--no-build` — Skip building images
-- `--dev` — Use development compose file instead
+- `--build/--no-build` — Build images before starting (default: build is ON)
 - `--file` / `-f` — Path to a custom compose file
 - `SERVICE...` — Specific services to start
 
@@ -77,7 +76,7 @@ What it does:
 4. Connects to whatever database is configured in `DATABASE_URL` or `POSTGRES_*` vars
 
 Options:
-- `--host` — Host to bind to (default: from env or `0.0.0.0`)
+- `--host` — Host to bind to (default: `0.0.0.0`)
 - `--port` — Port to bind to (default: from env or `8000`)
 - `--workers` / `-w` — Number of uvicorn workers (default: `1`)
 - `--config` / `-c` — Path to aegra.json
@@ -143,13 +142,13 @@ cp .env.example .env
 aegra up
 ```
 
-The generated `docker-compose.prod.yml` includes:
+The generated `docker-compose.yml` includes:
 - PostgreSQL with pgvector for vector search
 - Your app container built from `Dockerfile`
 - Health checks on PostgreSQL
 - Volume mounts for your graphs and config
 
-To customize the deployment, edit `docker-compose.prod.yml`:
+To customize the deployment, edit `docker-compose.yml`:
 - Add resource limits (`deploy.resources`)
 - Add restart policies (`restart: unless-stopped`)
 - Configure multiple workers (`CMD ["aegra", "serve", "--workers", "4"]`)
@@ -175,7 +174,7 @@ CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 **Key differences from self-hosted:**
-- No need for `docker-compose.prod.yml` — the platform manages postgres
+- No need for `docker-compose.yml` — the platform manages postgres
 - Use `DATABASE_URL` instead of individual `POSTGRES_*` vars
 - The platform handles scaling, TLS, and load balancing
 
@@ -200,11 +199,11 @@ containers:
       - containerPort: 8000
     readinessProbe:
       httpGet:
-        path: /ok
+        path: /health
         port: 8000
     livenessProbe:
       httpGet:
-        path: /ok
+        path: /health
         port: 8000
 ```
 
@@ -269,8 +268,10 @@ aegra db history          # View history
 
 Aegra provides health check endpoints:
 
-- `GET /ok` — Simple liveness check (returns `200 OK`)
-- `GET /health` — Detailed health status
+- `GET /health` — Health status
+- `GET /ready` — Readiness check
+- `GET /live` — Liveness check
+- `GET /info` — Server info
 
 Use these in Docker health checks, Kubernetes probes, or load balancer configurations.
 

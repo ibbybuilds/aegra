@@ -1,0 +1,45 @@
+# $project_name
+
+Built with [Aegra](https://github.com/ibbybuilds/aegra) -- a self-hosted LangGraph Platform alternative.
+
+## Setup
+
+```bash
+cp .env.example .env       # Configure your environment
+uv sync                    # Install dependencies
+uv run aegra dev           # Start developing!
+```
+
+## Project Structure
+
+```
+$slug/
+|-- aegra.json            # Graph configuration
+|-- pyproject.toml        # Project dependencies
+|-- .env.example          # Environment variable template
+|-- src/$slug/
+|   |-- __init__.py
+|   |-- graph.py          # ReAct agent graph
+|   |-- tools.py          # Tool definitions
+|   |-- state.py          # Input and internal state
+|   |-- prompts.py        # System prompt templates
+|   |-- context.py        # Runtime configuration
+|   +-- utils.py          # Utility functions
+|-- docker-compose.yml    # Docker Compose (PostgreSQL + API)
++-- Dockerfile
+```
+
+## Adding Tools
+
+Edit `src/$slug/tools.py` to add your own tools:
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def my_tool(query: str) -> str:
+    """Description of what this tool does."""
+    return "result"
+```
+
+Then add it to the `TOOLS` list at the bottom of the file.

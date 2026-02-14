@@ -3,7 +3,9 @@
 These tests focus on the schema extraction helper functions.
 """
 
+import sys
 import warnings
+from types import ModuleType
 from unittest.mock import Mock
 
 import pytest
@@ -13,6 +15,8 @@ from aegra_api.services.assistant_service import (
     _get_configurable_jsonschema,
     _state_jsonschema,
 )
+
+_assistant_service_mod: ModuleType = sys.modules["aegra_api.services.assistant_service"]
 
 
 # Fixture to suppress Pydantic warnings about Mock types in an entire module
@@ -58,7 +62,7 @@ class TestStateJsonSchema:
             def mock_create_model(*args, **kwargs):
                 raise Exception("Schema error")
 
-            mp.setattr("langchain_core.runnables.utils.create_model", mock_create_model)
+            mp.setattr(_assistant_service_mod, "create_model", mock_create_model)
 
             # The function doesn't have try-catch, so it will raise the exception
             with pytest.raises(Exception) as exc_info:
@@ -101,7 +105,7 @@ class TestConfigurableJsonSchema:
                 "properties": {"key": {"type": "string"}},
                 "title": "TestConfig",
             }
-            mp.setattr("pydantic.TypeAdapter", lambda x: mock_adapter)
+            mp.setattr(_assistant_service_mod, "TypeAdapter", lambda x: mock_adapter)
 
             result = _get_configurable_jsonschema(mock_graph)
 
@@ -153,7 +157,7 @@ class TestConfigurableJsonSchema:
                     "valid_key": {"type": "string"},
                 }
             }
-            mp.setattr("pydantic.TypeAdapter", lambda x: mock_adapter)
+            mp.setattr(_assistant_service_mod, "TypeAdapter", lambda x: mock_adapter)
 
             result = _get_configurable_jsonschema(mock_graph)
 
@@ -296,7 +300,7 @@ class TestExtractGraphSchemas:
                 "properties": {"key": {"type": "string"}},
                 "title": "ComplexConfig",
             }
-            mp.setattr("pydantic.TypeAdapter", lambda x: mock_adapter)
+            mp.setattr(_assistant_service_mod, "TypeAdapter", lambda x: mock_adapter)
 
             result = _extract_graph_schemas(mock_graph)
 

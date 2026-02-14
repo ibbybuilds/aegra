@@ -1,0 +1,17 @@
+{
+  "name": "ReAct Agent",
+  "description": "An agent with tools that reasons and acts step by step.",
+  "files": {
+    "graph.py.template": "src/$slug/graph.py",
+    "tools.py.template": "src/$slug/tools.py",
+    "__init__.py.template": "src/$slug/__init__.py",
+    "pyproject.toml.template": "pyproject.toml",
+    "README.md.template": "README.md"
+  },
+  "shared_files": {
+    "state.py.template": "src/$slug/state.py",
+    "prompts.py.template": "src/$slug/prompts.py",
+    "context.py.template": "src/$slug/context.py",
+    "utils.py.template": "src/$slug/utils.py"
+  }
+}

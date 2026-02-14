@@ -19,7 +19,7 @@ This file provides context for AI coding agents working with this repository.
 uv sync --all-packages
 
 # Start dev server (postgres + auto-migrations + hot reload)
-aegra dev
+uv run aegra dev
 
 # Run tests
 uv run --package aegra-api pytest libs/aegra-api/tests/
@@ -51,10 +51,13 @@ aegra/
 │   │   ├── src/aegra_api/            # Main application code
 │   │   │   ├── api/                  # Agent Protocol endpoints
 │   │   │   ├── services/             # Business logic layer
-│   │   │   ├── core/                 # Infrastructure (database, auth, orm, migrations)
+│   │   │   ├── core/                 # Infrastructure (database, auth, orm, health, migrations)
 │   │   │   ├── models/               # Pydantic request/response schemas
 │   │   │   ├── middleware/           # ASGI middleware
+│   │   │   ├── observability/        # OpenTelemetry tracing (Langfuse, Phoenix, OTLP)
+│   │   │   ├── utils/               # Helper functions
 │   │   │   ├── main.py               # FastAPI app entry point
+│   │   │   ├── config.py             # aegra.json config loading
 │   │   │   └── settings.py           # Environment settings
 │   │   ├── tests/                    # Test suite
 │   │   └── alembic/                  # Database migrations
@@ -62,11 +65,14 @@ aegra/
 │   └── aegra-cli/                    # CLI package
 │       └── src/aegra_cli/
 │           ├── cli.py                # Main CLI entry point
-│           └── commands/             # Command implementations
+│           ├── env.py                # .env file loading
+│           ├── commands/             # Command implementations (init, db)
+│           ├── utils/                # Docker utilities
+│           └── templates/            # Project templates for `aegra init`
 │
 ├── examples/                         # Example agents and configs
 ├── docs/                             # Documentation
-├── aegra.json                        # Agent graph definitions
+├── aegra.json                        # Project configuration (graphs, auth, http, store)
 └── docker-compose.yml                # Local development setup
 ```
 
@@ -234,9 +240,9 @@ graph = builder.compile()  # Must export as 'graph'
 ### Environment Variable Files (STRICT)
 - There are **two `.env.example` files** that MUST be kept in sync:
   1. **`/.env.example`** — Root file used for development and documentation reference
-  2. **`libs/aegra-cli/src/aegra_cli/templates/env.example.template`** — Template used by `aegra init` to generate `.env.example` for new projects (uses `{slug}` placeholders for project-specific values)
+  2. **`libs/aegra-cli/src/aegra_cli/templates/env.example.template`** — Template used by `aegra init` to generate `.env.example` for new projects (uses `$slug` placeholders for project-specific values)
 - When adding, removing, or modifying any environment variable: **update BOTH files**.
-- The template uses `{slug}` in place of project-specific values (`PROJECT_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL` comment). All other values should be identical between the two files.
+- The template uses `$slug` in place of project-specific values (`PROJECT_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL` comment). All other values should be identical between the two files.
 
 ### Versioning (STRICT)
 - **`aegra-api` and `aegra-cli` MUST always have the same version.** Both versions live in their respective `pyproject.toml` files (`libs/aegra-api/pyproject.toml` and `libs/aegra-cli/pyproject.toml`).

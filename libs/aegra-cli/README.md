@@ -16,30 +16,24 @@ pip install aegra-cli
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/aegra.git
-cd aegra/libs/aegra-cli
+git clone https://github.com/ibbybuilds/aegra.git
+cd aegra
 
-# Install with pip
-pip install -e .
-
-# Or with uv
-uv pip install -e .
+# Install all workspace packages
+uv sync --all-packages
 ```
 
 ## Quick Start
 
 ```bash
-# Initialize a new Aegra project
+# Initialize a new Aegra project (prompts for location, template, and name)
 aegra init
 
-# Start PostgreSQL with Docker
-aegra up postgres
-
-# Apply database migrations
-aegra db upgrade
-
-# Start the development server
-aegra dev
+# Follow the printed next steps
+cd <your-project>
+cp .env.example .env     # Add your OPENAI_API_KEY
+uv sync                  # Install dependencies
+uv run aegra dev         # Start PostgreSQL + dev server
 ```
 
 ## Commands
@@ -61,15 +55,29 @@ Output displays a table with versions for both packages.
 Initialize a new Aegra project with configuration files and directory structure.
 
 ```bash
-aegra init [OPTIONS]
+aegra init [PATH] [OPTIONS]
 ```
+
+**Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `PATH` | `.` | Project directory to initialize |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
+| `-t, --template INT` | Template number (1 = "New Aegra Project", 2 = "ReAct Agent") |
+| `-n, --name STR` | Project name |
 | `--force` | Overwrite existing files if they exist |
-| `--path PATH` | Project directory (default: current directory) |
+
+**Templates:**
+
+| # | Name | Description |
+|---|------|-------------|
+| 1 | New Aegra Project | Simple chatbot with basic graph structure |
+| 2 | ReAct Agent | Tool-calling agent with a tools module |
 
 **Examples:**
 
@@ -77,20 +85,32 @@ aegra init [OPTIONS]
 # Initialize in current directory
 aegra init
 
-# Initialize in a specific directory, overwriting existing files
-aegra init --path ./my-project --force
+# Initialize in a specific directory
+aegra init my-project
+
+# Initialize with a specific template and name
+aegra init my-project --template 2 --name "My ReAct Agent"
+
+# Initialize in current directory, overwriting existing files
+aegra init --force
 ```
 
 **Created Files:**
 
 - `aegra.json` - Graph configuration
+- `pyproject.toml` - Python project configuration
 - `.env.example` - Environment variable template
-- `graphs/example/graph.py` - Example graph implementation
-- `graphs/__init__.py` - Package init file
-- `graphs/example/__init__.py` - Example package init file
-- `docker-compose.yml` - Docker Compose for PostgreSQL (dev)
-- `docker-compose.prod.yml` - Docker Compose for full stack (prod)
-- `Dockerfile` - Production container build
+- `.gitignore` - Git ignore rules
+- `README.md` - Project readme
+- `src/<slug>/__init__.py` - Package init file
+- `src/<slug>/graph.py` - Graph implementation
+- `src/<slug>/state.py` - State schema definition
+- `src/<slug>/prompts.py` - Prompt templates
+- `src/<slug>/context.py` - Context configuration
+- `src/<slug>/utils.py` - Utility functions
+- `src/<slug>/tools.py` - Tool definitions (ReAct template only)
+- `docker-compose.yml` - Docker Compose for PostgreSQL and API services
+- `Dockerfile` - Container build
 
 ---
 
@@ -109,6 +129,10 @@ aegra dev [OPTIONS]
 | `--host HOST` | `127.0.0.1` | Host to bind the server to |
 | `--port PORT` | `8000` | Port to bind the server to |
 | `--app APP` | `aegra_api.main:app` | Application import path |
+| `-c, --config PATH` | | Path to aegra.json config file |
+| `-e, --env-file PATH` | | Path to .env file |
+| `-f, --file PATH` | | Path to docker-compose.yml file |
+| `--no-db-check` | | Skip the automatic database check |
 
 **Examples:**
 
@@ -121,9 +145,48 @@ aegra dev --host 0.0.0.0 --port 3000
 
 # Start with a custom app
 aegra dev --app myapp.main:app
+
+# Start with a specific config and env file
+aegra dev --config ./aegra.json --env-file ./.env
+
+# Start without automatic database check
+aegra dev --no-db-check
 ```
 
 The server automatically restarts when code changes are detected.
+
+---
+
+### `aegra serve`
+
+Run the production server (no hot reload).
+
+```bash
+aegra serve [OPTIONS]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host HOST` | `0.0.0.0` | Host to bind the server to |
+| `--port PORT` | `8000` | Port to bind the server to |
+| `--app APP` | `aegra_api.main:app` | Application import path |
+| `-c, --config PATH` | | Path to aegra.json config file |
+| `-w, --workers INT` | `1` | Number of worker processes |
+
+**Examples:**
+
+```bash
+# Start with defaults (0.0.0.0:8000)
+aegra serve
+
+# Start with multiple workers
+aegra serve --workers 4
+
+# Start with a custom config
+aegra serve --config ./aegra.json --workers 2
+```
 
 ---
 
@@ -132,15 +195,8 @@ The server automatically restarts when code changes are detected.
 Start services with Docker Compose.
 
 ```bash
-aegra up [OPTIONS] [SERVICES...]
+aegra up [SERVICES...] [OPTIONS]
 ```
-
-**Options:**
-
-| Option | Description |
-|--------|-------------|
-| `-f, --file FILE` | Path to docker-compose.yml file |
-| `--build` | Build images before starting containers |
 
 **Arguments:**
 
@@ -148,23 +204,27 @@ aegra up [OPTIONS] [SERVICES...]
 |----------|-------------|
 | `SERVICES` | Optional list of specific services to start |
 
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-f, --file FILE` | | Path to docker-compose.yml file |
+| `--build / --no-build` | `--build` | Build images before starting containers (on by default) |
+
 **Examples:**
 
 ```bash
-# Start all services
+# Start all services (builds by default)
 aegra up
 
 # Start only postgres
 aegra up postgres
 
-# Build and start all services
-aegra up --build
+# Start without building
+aegra up --no-build
 
 # Start with a custom compose file
-aegra up -f ./docker-compose.prod.yml
-
-# Start specific services with build
-aegra up --build aegra postgres
+aegra up -f ./docker-compose.yml
 ```
 
 ---
@@ -174,7 +234,7 @@ aegra up --build aegra postgres
 Stop services with Docker Compose.
 
 ```bash
-aegra down [OPTIONS] [SERVICES...]
+aegra down [OPTIONS]
 ```
 
 **Options:**
@@ -184,31 +244,30 @@ aegra down [OPTIONS] [SERVICES...]
 | `-f, --file FILE` | Path to docker-compose.yml file |
 | `-v, --volumes` | Remove named volumes declared in the compose file |
 
-**Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `SERVICES` | Optional list of specific services to stop |
-
 **Examples:**
 
 ```bash
 # Stop all services
 aegra down
 
-# Stop only postgres
-aegra down postgres
-
 # Stop and remove volumes (WARNING: data will be lost)
 aegra down -v
 
 # Stop with a custom compose file
-aegra down -f ./docker-compose.prod.yml
+aegra down -f ./docker-compose.yml
 ```
 
 ---
 
-### `aegra db upgrade`
+### `aegra db`
+
+Database migration commands. All subcommands inherit the group-level option:
+
+| Option | Description |
+|--------|-------------|
+| `-e, --env-file PATH` | Path to .env file for database connection |
+
+#### `aegra db upgrade`
 
 Apply all pending database migrations.
 
@@ -218,23 +277,13 @@ aegra db upgrade
 
 Runs `alembic upgrade head` to apply all pending migrations and bring the database schema up to date.
 
-**Example:**
-
-```bash
-aegra db upgrade
-```
-
----
-
-### `aegra db downgrade`
+#### `aegra db downgrade`
 
 Downgrade database to a previous revision.
 
 ```bash
 aegra db downgrade [REVISION]
 ```
-
-**Arguments:**
 
 | Argument | Default | Description |
 |----------|---------|-------------|
@@ -256,9 +305,7 @@ aegra db downgrade base
 aegra db downgrade abc123
 ```
 
----
-
-### `aegra db current`
+#### `aegra db current`
 
 Show the current migration version.
 
@@ -268,23 +315,13 @@ aegra db current
 
 Displays the current revision that the database is at. Useful for checking which migrations have been applied.
 
-**Example:**
-
-```bash
-aegra db current
-```
-
----
-
-### `aegra db history`
+#### `aegra db history`
 
 Show migration history.
 
 ```bash
 aegra db history [OPTIONS]
 ```
-
-**Options:**
 
 | Option | Description |
 |--------|-------------|
@@ -315,7 +352,7 @@ POSTGRES_HOST=localhost
 POSTGRES_DB=aegra
 
 # Authentication
-AUTH_TYPE=noop  # Options: noop, api_key, jwt
+AUTH_TYPE=noop  # Options: noop, custom
 
 # Server (for aegra dev)
 HOST=0.0.0.0

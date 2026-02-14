@@ -37,7 +37,7 @@ cd aegra
 uv sync --all-packages
 
 # 2. Start the development server (starts PostgreSQL + auto-migrates + hot reload)
-aegra dev
+uv run aegra dev
 ```
 
 You're ready to develop! Visit http://localhost:8000/docs to see the API.
@@ -48,13 +48,15 @@ You're ready to develop! Visit http://localhost:8000/docs to see the API.
 
 ```bash
 # Install the CLI
-pip install aegra-cli
+pip install aegra-cli  # or: uv pip install aegra-cli
 
-# Initialize a new project
+# Initialize a new project — prompts for location, template, and name
 aegra init
+cd <your-project>
 
-# Start development server
-aegra dev
+# Install dependencies and start development server
+uv sync
+uv run aegra dev
 ```
 
 ## Code Quality & Standards
@@ -707,5 +709,5 @@ aegra db upgrade
 uv sync --all-packages
 
 # Start development server
-aegra dev
+uv run aegra dev
 ```

@@ -20,6 +20,8 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import Depends, HTTPException
+from langchain_core.runnables.utils import create_model
+from pydantic import TypeAdapter
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,10 +54,6 @@ def to_pydantic(row: AssistantORM) -> Assistant:
 
 def _state_jsonschema(graph) -> dict | None:
     """Extract state schema from graph channels"""
-    from typing import Any
-
-    from langchain_core.runnables.utils import create_model
-
     fields: dict = {}
     for k in graph.stream_channels_list:
         v = graph.channels[k]
@@ -69,8 +67,6 @@ def _state_jsonschema(graph) -> dict | None:
 
 def _get_configurable_jsonschema(graph) -> dict:
     """Get the JSON schema for the configurable part of the graph"""
-    from pydantic import TypeAdapter
-
     EXCLUDED_CONFIG_SCHEMA = {"__pregel_resuming", "__pregel_checkpoint_id"}
 
     config_schema = graph.config_schema()

@@ -185,7 +185,7 @@ def current() -> None:
     _run_alembic(
         "current",
         run,
-        success_msg="Current revision displayed above.",
+        success_msg="Current revision check complete.",
         error_prefix="Alembic current",
     )
     if output.getvalue():
@@ -230,7 +230,7 @@ def history(verbose: bool) -> None:
     _run_alembic(
         "history",
         run,
-        success_msg="Migration history displayed above.",
+        success_msg="Migration history check complete.",
         error_prefix="Alembic history",
     )
     if output.getvalue():

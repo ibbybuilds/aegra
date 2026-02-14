@@ -37,13 +37,14 @@ Aegra is a drop-in replacement for LangGraph Platform. Use the same LangGraph SD
 ```bash
 pip install aegra-cli
 
-# Initialize a new project
+# Initialize a new project — prompts for location, template, and name
 aegra init
-cp .env.example .env
-# Add your OPENAI_API_KEY to .env
 
-# Start PostgreSQL and run the development server
-aegra dev
+# Follow the printed next steps:
+cd <your-project>
+cp .env.example .env     # Add your OPENAI_API_KEY to .env
+uv sync                  # Install dependencies
+uv run aegra dev         # Start PostgreSQL + dev server
 ```
 
 > **Note:** Always install `aegra-cli` directly — not the `aegra` meta-package. The `aegra` package on PyPI is a convenience wrapper that does not support version pinning.
@@ -105,15 +106,20 @@ async for chunk in client.runs.stream(
 ## 🛠️ CLI Commands
 
 ```bash
-aegra init              # Initialize a new project
+aegra init              # Interactive — asks for location, template, and name
+aegra init ./my-agent   # Create at path (still prompts for template)
 
-aegra dev               # Start development server (hot reload)
-aegra up                # Start all services with Docker
-aegra down              # Stop all services
+aegra dev               # Start development server (hot reload + auto PostgreSQL)
+aegra serve             # Start production server (no reload)
+aegra up                # Build and start all Docker services
+aegra down              # Stop Docker services
 
 aegra db upgrade        # Apply database migrations
+aegra db downgrade      # Rollback one migration
 aegra db current        # Show current migration version
 aegra db history        # Show migration history
+
+aegra version           # Show version info
 ```
 
 ## 📚 Documentation

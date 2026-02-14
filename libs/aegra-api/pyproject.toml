@@ -1,6 +1,6 @@
 [project]
 name = "aegra-api"
-version = "0.4.2"
+version = "0.5.0"
 description = "Aegra core API - Self-hosted Agent Protocol server"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,15 +27,12 @@ dependencies = [
     # LangGraph
     "langgraph>=1.0.3",
     "langgraph-checkpoint-postgres>=2.0.23",
-    "langchain>=1.0.8",
-    "langchain-openai>=1.0.3",
 
     # Database
     "sqlalchemy>=2.0.0",
     "asyncpg>=0.30.0",
     "psycopg[binary]>=3.2.9",
     "alembic>=1.16.4",
-    "greenlet>=3.2.3",
 
     # Observability (OpenTelemetry)
     "opentelemetry-api>=1.39.1",
@@ -46,7 +43,6 @@ dependencies = [
     # Utils
     "structlog>=25.4.0",
     "asgi-correlation-id>=4.3.4",
-    "pyjwt>=2.10.1",
 ]
 
 [project.urls]
@@ -109,4 +105,5 @@ dev = [
     "mypy>=1.14.0",
     "bandit>=1.8.0",
     "pre-commit>=4.0.1",
+    "langchain-openai>=1.0.3",
 ]

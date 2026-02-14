@@ -1,0 +1,37 @@
+"""Configurable runtime context for $project_name."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from typing import Annotated
+
+from $slug import prompts
+
+
+@dataclass(kw_only=True)
+class Context:
+    """Runtime configuration injected into the graph.
+
+    Defaults can be overridden per-request via the LangGraph SDK
+    or globally via environment variables.
+    """
+
+    system_prompt: str = field(
+        default=prompts.SYSTEM_PROMPT,
+        metadata={
+            "description": "The system prompt for the agent.",
+        },
+    )
+    model: Annotated[str, {"description": "LLM model as 'provider/model'."}] = field(
+        default="openai/gpt-4o-mini",
+    )
+
+    def __post_init__(self) -> None:
+        """Override defaults with environment variables when set."""
+        env_model = os.environ.get("MODEL")
+        if env_model:
+            self.model = env_model
+        env_prompt = os.environ.get("SYSTEM_PROMPT")
+        if env_prompt:
+            self.system_prompt = env_prompt

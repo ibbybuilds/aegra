@@ -3,6 +3,7 @@ import logging.config
 from typing import Any
 
 import structlog
+import structlog.typing
 
 from aegra_api.settings import settings
 
@@ -38,8 +39,16 @@ def get_logging_config() -> dict[str, Any]:
 
     # Determine the final renderer based on the environment
     # Use a colorful console renderer for local development, and JSON for production.
+    final_renderer: structlog.typing.Processor
     if env_mode in ("LOCAL", "DEVELOPMENT"):
-        final_renderer = structlog.dev.ConsoleRenderer(colors=True, pad_level=True)
+        final_renderer = structlog.dev.ConsoleRenderer(
+            colors=True,
+            pad_level=True,
+            exception_formatter=structlog.dev.RichTracebackFormatter(
+                show_locals=False,
+                max_frames=10,
+            ),
+        )
     else:
         final_renderer = structlog.processors.JSONRenderer()
 
@@ -87,7 +96,7 @@ def get_logging_config() -> dict[str, Any]:
     }
 
 
-def setup_logging():
+def setup_logging() -> None:
     """
     Configures both standard logging and structlog based on the
     dictionary from get_logging_config(). This should be called

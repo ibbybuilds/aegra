@@ -94,7 +94,7 @@ Semantic store requires PostgreSQL with the pgvector extension. The recommended 
 
 ```yaml
 postgres:
-  image: pgvector/pgvector:pg16
+  image: pgvector/pgvector:pg18
 ```
 
 Aegra automatically creates the necessary tables and indexes during startup via `AsyncPostgresStore.setup()`.
@@ -145,7 +145,7 @@ If no `store.index` configuration is provided, Aegra operates in basic key-value
 ## Troubleshooting
 
 ### "pgvector extension not found"
-Ensure you're using a PostgreSQL image with pgvector installed (`pgvector/pgvector:pg16`).
+Ensure you're using a PostgreSQL image with pgvector installed (`pgvector/pgvector:pg18`).
 
 ### "Invalid embedding model"
 Verify the `embed` format is correct (`provider:model-id`) and the corresponding API key is set.

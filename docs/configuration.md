@@ -46,8 +46,9 @@ aegra dev
   },
   "store": {
     "index": {
-      "embedding_model": "text-embedding-3-small",
-      "embedding_dimension": 1536
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
     }
   }
 }
@@ -122,7 +123,7 @@ Configure custom routes and CORS:
 
 - **`cors`** (optional): CORS configuration
   - **`allow_origins`**: List of allowed origins (default: `["*"]`)
-  - **`allow_credentials`**: Allow credentials in CORS requests (default: `false`)
+  - **`allow_credentials`**: Allow credentials in CORS requests (default: `true`)
 
 See [Custom Routes](custom-routes.md) for more details.
 
@@ -134,8 +135,9 @@ Configure semantic store (vector embeddings):
 {
   "store": {
     "index": {
-      "embedding_model": "text-embedding-3-small",
-      "embedding_dimension": 1536
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
     }
   }
 }
@@ -144,8 +146,9 @@ Configure semantic store (vector embeddings):
 ### Options
 
 - **`index`** (optional): Vector index configuration
-  - **`embedding_model`**: Model name for embeddings (default: `"text-embedding-3-small"`)
-  - **`embedding_dimension`**: Dimension of embeddings (default: `1536`)
+  - **`dims`** (integer): Embedding vector dimensions (must match your model)
+  - **`embed`** (string): Embedding model in format `<provider>:<model-id>`
+  - **`fields`** (list[str], optional): JSON fields to embed (default: `["$"]` for entire document)
 
 See [Semantic Store](semantic-store.md) for more details.
 

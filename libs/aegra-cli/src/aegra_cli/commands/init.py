@@ -144,8 +144,8 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     \b
         aegra init                           # Interactive mode
         aegra init ./my-agent                # Create at path
-        aegra init ./my-agent -t 1           # Simple chatbot
-        aegra init ./my-agent -t 2           # ReAct agent
+        aegra init ./my-agent -t 1           # New Aegra Project
+        aegra init ./my-agent -t 2           # ReAct Agent
         aegra init ./my-agent -t 1 -n "My Agent"
     """
     templates = get_template_choices()

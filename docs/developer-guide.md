@@ -48,7 +48,7 @@ You're ready to develop! Visit http://localhost:8000/docs to see the API.
 
 ```bash
 # Install the CLI
-pip install aegra-cli
+pip install aegra-cli  # or: uv pip install aegra-cli
 
 # Initialize a new project (interactive template selection)
 aegra init ./my-agent

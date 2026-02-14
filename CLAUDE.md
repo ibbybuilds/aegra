@@ -19,7 +19,7 @@ This file provides context for AI coding agents working with this repository.
 uv sync --all-packages
 
 # Start dev server (postgres + auto-migrations + hot reload)
-aegra dev
+uv run aegra dev
 
 # Run tests
 uv run --package aegra-api pytest libs/aegra-api/tests/

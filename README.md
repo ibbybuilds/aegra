@@ -43,8 +43,8 @@ aegra init
 # Follow the printed next steps:
 cd <your-project>
 cp .env.example .env     # Add your OPENAI_API_KEY to .env
-uv sync                  # Install graph dependencies
-aegra dev                # Start PostgreSQL + dev server
+uv sync                  # Install dependencies
+uv run aegra dev         # Start PostgreSQL + dev server
 ```
 
 > **Note:** Always install `aegra-cli` directly — not the `aegra` meta-package. The `aegra` package on PyPI is a convenience wrapper that does not support version pinning.

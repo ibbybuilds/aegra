@@ -29,11 +29,11 @@ uv sync --all-packages
 # Initialize a new Aegra project (prompts for location, template, and name)
 aegra init
 
-# Navigate into the project
+# Follow the printed next steps
 cd <your-project>
-
-# Start the development server (automatically starts PostgreSQL and applies migrations)
-aegra dev
+cp .env.example .env     # Add your OPENAI_API_KEY
+uv sync                  # Install dependencies
+uv run aegra dev         # Start PostgreSQL + dev server
 ```
 
 ## Commands

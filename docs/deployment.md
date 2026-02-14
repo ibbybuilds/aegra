@@ -119,7 +119,7 @@ cp .env.example .env
 
 # Install dependencies and start developing
 uv sync
-aegra dev
+uv run aegra dev
 ```
 
 ### 2. Self-Hosted with Docker (Recommended for Production)

@@ -37,7 +37,7 @@ cd aegra
 uv sync --all-packages
 
 # 2. Start the development server (starts PostgreSQL + auto-migrates + hot reload)
-aegra dev
+uv run aegra dev
 ```
 
 You're ready to develop! Visit http://localhost:8000/docs to see the API.
@@ -709,5 +709,5 @@ aegra db upgrade
 uv sync --all-packages
 
 # Start development server
-aegra dev
+uv run aegra dev
 ```

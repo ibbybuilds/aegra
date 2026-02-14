@@ -35,8 +35,9 @@ cd <your-project>
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env
 
-# Start developing (auto-starts PostgreSQL)
-aegra dev
+# Install dependencies and start developing
+uv sync
+uv run aegra dev
 ```
 
 ### Manual Setup

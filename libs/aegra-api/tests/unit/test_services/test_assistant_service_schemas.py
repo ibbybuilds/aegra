@@ -5,6 +5,7 @@ These tests focus on the schema extraction helper functions.
 
 import sys
 import warnings
+from types import ModuleType
 from unittest.mock import Mock
 
 import pytest
@@ -15,7 +16,7 @@ from aegra_api.services.assistant_service import (
     _state_jsonschema,
 )
 
-_assistant_service_mod = sys.modules["aegra_api.services.assistant_service"]
+_assistant_service_mod: ModuleType = sys.modules["aegra_api.services.assistant_service"]
 
 
 # Fixture to suppress Pydantic warnings about Mock types in an entire module

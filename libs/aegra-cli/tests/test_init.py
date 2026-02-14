@@ -173,10 +173,8 @@ class TestDockerGenerators:
         # Pinned uv version (not :latest)
         assert "uv:0." in dockerfile
         assert "uv:latest" not in dockerfile
-        # Frozen lockfile
-        assert "--frozen" in dockerfile
-        # uv.lock copied alongside pyproject.toml
-        assert "uv.lock" in dockerfile
+        # uv.lock optionally copied (glob pattern for optional file)
+        assert "uv.loc[k]" in dockerfile
         # Runtime essentials
         assert "PYTHONUNBUFFERED=1" in dockerfile
         assert "ca-certificates" in dockerfile

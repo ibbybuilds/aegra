@@ -250,12 +250,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (cached layer)
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project --compile-bytecode
+COPY pyproject.toml ./
+COPY uv.loc[k] ./
+RUN uv sync --no-dev --no-install-project --compile-bytecode
 
 # Copy source and install project
 COPY src/ ./src/
-RUN uv sync --frozen --no-dev --compile-bytecode
+RUN uv sync --no-dev --compile-bytecode
 
 # -----------------------------
 # Runtime stage

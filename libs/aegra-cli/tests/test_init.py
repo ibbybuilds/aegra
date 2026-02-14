@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import patch
 
 from click.testing import CliRunner
 
+import aegra_cli.commands.init  # noqa: F401 — ensure module is loaded
 from aegra_cli.cli import cli
 from aegra_cli.templates import (
     get_docker_compose_dev,
@@ -23,7 +24,7 @@ from aegra_cli.templates import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from pytest import MonkeyPatch
 
 
 # ---------------------------------------------------------------------------
@@ -148,34 +149,43 @@ class TestInitInteractive:
     """Tests for interactive init prompts."""
 
     def test_interactive_default_path_template_1(
-        self: TestInitInteractive, cli_runner: CliRunner, tmp_path: Path
+        self: TestInitInteractive,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
     ) -> None:
         """Interactive flow: default path, pick template 1."""
+        monkeypatch.setattr(sys.modules["aegra_cli.commands.init"], "_is_interactive", lambda: True)
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            with patch("aegra_cli.commands.init._is_interactive", return_value=True):
-                result = cli_runner.invoke(cli, ["init"], input=".\n1\n")
+            result = cli_runner.invoke(cli, ["init"], input=".\n1\n")
             assert result.exit_code == 0
             assert Path("aegra.json").exists()
             assert Path("pyproject.toml").exists()
 
     def test_interactive_custom_path(
-        self: TestInitInteractive, cli_runner: CliRunner, tmp_path: Path
+        self: TestInitInteractive,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
     ) -> None:
         """Interactive flow: enter a custom directory."""
+        monkeypatch.setattr(sys.modules["aegra_cli.commands.init"], "_is_interactive", lambda: True)
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            with patch("aegra_cli.commands.init._is_interactive", return_value=True):
-                result = cli_runner.invoke(cli, ["init"], input="./my-agent\n1\n")
+            result = cli_runner.invoke(cli, ["init"], input="./my-agent\n1\n")
             assert result.exit_code == 0
             assert Path("my-agent/aegra.json").exists()
             assert Path("my-agent/pyproject.toml").exists()
 
     def test_interactive_template_2(
-        self: TestInitInteractive, cli_runner: CliRunner, tmp_path: Path
+        self: TestInitInteractive,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
     ) -> None:
         """Interactive flow: pick template 2 (ReAct agent)."""
+        monkeypatch.setattr(sys.modules["aegra_cli.commands.init"], "_is_interactive", lambda: True)
         with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            with patch("aegra_cli.commands.init._is_interactive", return_value=True):
-                result = cli_runner.invoke(cli, ["init"], input=".\n2\n")
+            result = cli_runner.invoke(cli, ["init"], input=".\n2\n")
             assert result.exit_code == 0
             # ReAct agent should have tools.py
             slug = slugify(Path.cwd().name)

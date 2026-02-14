@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from string import Template
 
@@ -70,7 +71,7 @@ def _prompt_path(default: str) -> str:
     return value
 
 
-def _prompt_template(templates: list[dict[str, str]]) -> int:
+def _prompt_template(templates: Sequence[Mapping[str, str]]) -> int:
     """Interactively ask the user to pick a template.
 
     Args:

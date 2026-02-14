@@ -111,7 +111,7 @@ Options on the `db` group:
 # Initialize project — prompts for location, template, and name
 aegra init
 
-cd my-agent
+cd <your-project>
 
 # Copy and configure environment
 cp .env.example .env

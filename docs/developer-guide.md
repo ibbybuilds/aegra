@@ -52,7 +52,7 @@ pip install aegra-cli  # or: uv pip install aegra-cli
 
 # Initialize a new project — prompts for location, template, and name
 aegra init
-cd my-agent
+cd <your-project>
 
 # Install dependencies and start development server
 uv sync

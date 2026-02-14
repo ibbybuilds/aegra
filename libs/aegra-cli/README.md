@@ -30,7 +30,7 @@ uv sync --all-packages
 aegra init
 
 # Navigate into the project
-cd my-project
+cd <your-project>
 
 # Start the development server (automatically starts PostgreSQL and applies migrations)
 aegra dev

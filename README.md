@@ -40,7 +40,8 @@ pip install aegra-cli
 # Initialize a new project — prompts for location, template, and name
 aegra init
 
-cd my-agent
+# Follow the printed next steps:
+cd <your-project>
 cp .env.example .env     # Add your OPENAI_API_KEY to .env
 uv sync                  # Install graph dependencies
 aegra dev                # Start PostgreSQL + dev server

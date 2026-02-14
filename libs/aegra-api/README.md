@@ -29,7 +29,7 @@ pip install aegra-cli
 
 # Initialize a new project (interactive)
 aegra init
-cd my-agent
+cd <your-project>
 
 # Configure environment
 cp .env.example .env

@@ -1,6 +1,7 @@
 """Initialize a new Aegra project with interactive template selection."""
 
 import json
+import sys
 from pathlib import Path
 from string import Template
 
@@ -21,6 +22,18 @@ from aegra_cli.templates import (
 )
 
 console = Console()
+
+
+def _is_interactive() -> bool:
+    """Check if running in an interactive terminal.
+
+    Returns:
+        True if stdin is a TTY, False otherwise (CI, piped input, etc.).
+    """
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
 
 
 def _resolve_name(path: Path, name: str | None) -> str:
@@ -124,18 +137,21 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
         aegra init ./my-agent -t 1 -n "My Agent"
     """
     templates = get_template_choices()
+    interactive = _is_interactive()
 
     # --- Resolve path (interactive if default ".") ---
     if path == ".":
-        # Only prompt interactively when the user didn't provide a path argument
-        # and we're running in a TTY (not piped)
-        if not template and not name:
+        if not template and not name and interactive:
             path = _prompt_path(".")
     project_path = Path(path).resolve()
 
     # --- Resolve template ---
     if template is None:
-        choice = _prompt_template(templates)
+        if interactive:
+            choice = _prompt_template(templates)
+        else:
+            # Non-interactive: default to template 1
+            choice = 1
     else:
         choice = template
 

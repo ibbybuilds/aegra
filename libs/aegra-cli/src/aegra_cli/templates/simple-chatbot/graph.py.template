@@ -16,5 +16,6 @@ graph = (
     StateGraph(MessagesState)
     .add_node("chatbot", chatbot)
     .add_edge("__start__", "chatbot")
+    .add_edge("chatbot", "__end__")
     .compile()
 )

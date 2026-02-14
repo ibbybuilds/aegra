@@ -50,10 +50,15 @@ You're ready to develop! Visit http://localhost:8000/docs to see the API.
 # Install the CLI
 pip install aegra-cli
 
-# Initialize a new project
-aegra init
+# Initialize a new project (interactive template selection)
+aegra init ./my-agent
+cd my-agent
 
-# Start development server
+# Or non-interactive
+# aegra init ./my-agent -t 1 -n "My Agent"
+
+# Install dependencies and start development server
+pip install -e .
 aegra dev
 ```
 

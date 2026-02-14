@@ -50,12 +50,9 @@ You're ready to develop! Visit http://localhost:8000/docs to see the API.
 # Install the CLI
 pip install aegra-cli  # or: uv pip install aegra-cli
 
-# Initialize a new project (interactive template selection)
-aegra init ./my-agent
+# Initialize a new project — prompts for location, template, and name
+aegra init
 cd my-agent
-
-# Or non-interactive
-# aegra init ./my-agent -t 1 -n "My Agent"
 
 # Install dependencies and start development server
 uv sync

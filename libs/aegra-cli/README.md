@@ -26,8 +26,8 @@ uv sync --all-packages
 ## Quick Start
 
 ```bash
-# Initialize a new Aegra project
-aegra init my-project
+# Initialize a new Aegra project (prompts for location, template, and name)
+aegra init
 
 # Navigate into the project
 cd my-project

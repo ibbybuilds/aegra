@@ -27,8 +27,8 @@ The easiest way to get started is with the [aegra-cli](../aegra-cli/README.md):
 # Install the CLI
 pip install aegra-cli
 
-# Initialize a new project
-aegra init ./my-agent
+# Initialize a new project (interactive)
+aegra init
 cd my-agent
 
 # Configure environment

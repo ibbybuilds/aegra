@@ -58,8 +58,8 @@ cd my-agent
 # aegra init ./my-agent -t 1 -n "My Agent"
 
 # Install dependencies and start development server
-pip install -e .
-aegra dev
+uv sync
+uv run aegra dev
 ```
 
 ## Code Quality & Standards

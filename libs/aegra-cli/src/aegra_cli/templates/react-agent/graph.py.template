@@ -1,26 +1,47 @@
 """$project_name — ReAct agent with tool calling."""
 
-from langchain_openai import ChatOpenAI
-from langgraph.graph import MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from datetime import datetime, timezone
 
+from langchain_core.messages import AIMessage, SystemMessage
+from langgraph.graph import StateGraph
+from langgraph.prebuilt import ToolNode
+
+from $slug.context import Context
+from $slug.state import InputState, State
 from $slug.tools import TOOLS
+from $slug.utils import load_chat_model
 
-model = ChatOpenAI(model="gpt-4o-mini").bind_tools(TOOLS)
 
-
-async def call_model(state: MessagesState) -> dict:
-    """Invoke the model with the current messages."""
-    response = await model.ainvoke(state["messages"])
+async def call_model(state: State, context: Context) -> dict:
+    """Invoke the model with the current messages and bound tools."""
+    model = load_chat_model(context.model).bind_tools(TOOLS)
+    system_message = SystemMessage(
+        content=context.system_prompt.format(
+            system_time=datetime.now(tz=timezone.utc).isoformat(),
+        )
+    )
+    response = await model.ainvoke([system_message, *state.messages])
     return {"messages": [response]}
 
 
+def route_model_output(state: State) -> str:
+    """Route based on the last message: call tools or finish."""
+    last_message = state.messages[-1]
+    if not isinstance(last_message, AIMessage):
+        raise ValueError(f"Expected AIMessage, got {type(last_message).__name__}")
+    if last_message.tool_calls:
+        if state.is_last_step:
+            return "__end__"
+        return "tools"
+    return "__end__"
+
+
 graph = (
-    StateGraph(MessagesState)
+    StateGraph(State, input=InputState, config_schema=Context)
     .add_node("agent", call_model)
     .add_node("tools", ToolNode(TOOLS))
     .add_edge("__start__", "agent")
-    .add_conditional_edges("agent", tools_condition)
+    .add_conditional_edges("agent", route_model_output, ["tools", "__end__"])
     .add_edge("tools", "agent")
-    .compile()
+    .compile(name="$project_name")
 )

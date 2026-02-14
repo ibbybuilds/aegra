@@ -12,13 +12,13 @@ from click.testing import CliRunner
 import aegra_cli.commands.init  # noqa: F401 — ensure module is loaded
 from aegra_cli.cli import cli
 from aegra_cli.templates import (
-    get_docker_compose_dev,
-    get_docker_compose_prod,
+    get_docker_compose,
     get_dockerfile,
     get_template_choices,
     load_shared_file,
     load_template_manifest,
     render_env_example,
+    render_shared_template_file,
     render_template_file,
     slugify,
 )
@@ -86,10 +86,28 @@ class TestTemplateRegistry:
         assert "files" in manifest
         assert "tools.py.template" in manifest["files"]
 
+    def test_manifest_has_shared_files(self: TestTemplateRegistry) -> None:
+        for template_id in ("simple-chatbot", "react-agent"):
+            manifest = load_template_manifest(template_id)
+            assert "shared_files" in manifest
+            shared = manifest["shared_files"]
+            assert "state.py.template" in shared
+            assert "prompts.py.template" in shared
+            assert "context.py.template" in shared
+            assert "utils.py.template" in shared
+
     def test_render_template_file_substitutes_variables(self: TestTemplateRegistry) -> None:
         content = render_template_file(
             "simple-chatbot",
             "graph.py.template",
+            {"project_name": "My Bot", "slug": "my_bot"},
+        )
+        assert "My Bot" in content
+        assert "$project_name" not in content
+
+    def test_render_shared_template_file_substitutes_variables(self: TestTemplateRegistry) -> None:
+        content = render_shared_template_file(
+            "state.py.template",
             {"project_name": "My Bot", "slug": "my_bot"},
         )
         assert "My Bot" in content
@@ -114,30 +132,55 @@ class TestTemplateRegistry:
 class TestDockerGenerators:
     """Tests for Docker file generators."""
 
-    def test_docker_compose_dev_postgres_only(self: TestDockerGenerators) -> None:
-        compose = get_docker_compose_dev("myapp")
+    def test_docker_compose_has_postgres(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
         assert "postgres:" in compose
         assert "myapp-postgres" in compose
-        assert "build:" not in compose
 
-    def test_docker_compose_prod_has_all_services(self: TestDockerGenerators) -> None:
-        compose = get_docker_compose_prod("myapp")
-        assert "postgres:" in compose
+    def test_docker_compose_has_api_service(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
         assert "myapp:" in compose
         assert "myapp-api" in compose
         assert "build:" in compose
 
-    def test_docker_compose_prod_mounts_src(self: TestDockerGenerators) -> None:
-        compose = get_docker_compose_prod("myapp")
+    def test_docker_compose_mounts_src(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
         assert "./src:/app/src:ro" in compose
+
+    def test_docker_compose_has_api_healthcheck(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
+        assert "urllib.request.urlopen" in compose
+        assert "localhost:8000/ok" in compose
+
+    def test_docker_compose_api_depends_on_postgres(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
+        assert "depends_on:" in compose
+        assert "service_healthy" in compose
 
     def test_dockerfile_installs_project(self: TestDockerGenerators) -> None:
         dockerfile = get_dockerfile()
         assert "FROM python" in dockerfile
-        assert "pip install" in dockerfile
+        assert "uv sync" in dockerfile
         assert "COPY pyproject.toml" in dockerfile
         assert "COPY src/" in dockerfile
         assert "EXPOSE 8000" in dockerfile
+
+    def test_dockerfile_security_and_best_practices(self: TestDockerGenerators) -> None:
+        dockerfile = get_dockerfile()
+        # Non-root user
+        assert "addgroup --system app" in dockerfile
+        assert "USER app" in dockerfile
+        # Pinned uv version (not :latest)
+        assert "uv:0." in dockerfile
+        assert "uv:latest" not in dockerfile
+        # Frozen lockfile
+        assert "--frozen" in dockerfile
+        # uv.lock copied alongside pyproject.toml
+        assert "uv.lock" in dockerfile
+        # Runtime essentials
+        assert "PYTHONUNBUFFERED=1" in dockerfile
+        assert "ca-certificates" in dockerfile
+        assert "libpq5" in dockerfile
 
 
 # ---------------------------------------------------------------------------
@@ -213,8 +256,23 @@ class TestInitCLIFlags:
         assert (project_dir / ".gitignore").exists()
         assert (project_dir / "README.md").exists()
         assert (project_dir / "docker-compose.yml").exists()
-        assert (project_dir / "docker-compose.prod.yml").exists()
         assert (project_dir / "Dockerfile").exists()
+        # No docker-compose.prod.yml
+        assert not (project_dir / "docker-compose.prod.yml").exists()
+
+    def test_shared_files_created(
+        self: TestInitCLIFlags, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """aegra init creates shared template files (state, prompts, context, utils)."""
+        project_dir = tmp_path / "shared-test"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("shared-test")
+        assert (project_dir / f"src/{slug}/state.py").exists()
+        assert (project_dir / f"src/{slug}/prompts.py").exists()
+        assert (project_dir / f"src/{slug}/context.py").exists()
+        assert (project_dir / f"src/{slug}/utils.py").exists()
 
     def test_path_with_name_flag(
         self: TestInitCLIFlags, cli_runner: CliRunner, tmp_path: Path
@@ -304,6 +362,8 @@ class TestInitFileContents:
         assert "aegra-cli" in content
         assert "langgraph" in content
         assert "langchain-openai" in content
+        assert "langchain-anthropic" in content
+        assert "langchain>=" in content
 
     def test_graph_has_langgraph_imports(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
@@ -316,7 +376,19 @@ class TestInitFileContents:
         content = (project_dir / f"src/{slug}/graph.py").read_text()
         assert "from langgraph.graph import" in content
         assert "StateGraph" in content
-        assert "ChatOpenAI" in content
+
+    def test_graph_uses_state_and_context(
+        self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "test-state-ctx"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("test-state-ctx")
+        content = (project_dir / f"src/{slug}/graph.py").read_text()
+        assert f"from {slug}.context import Context" in content
+        assert f"from {slug}.state import InputState, State" in content
+        assert f"from {slug}.utils import load_chat_model" in content
 
     def test_graph_exports_graph_variable(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
@@ -372,7 +444,7 @@ class TestInitFileContents:
         content = (project_dir / "README.md").read_text()
         assert "Cool Agent" in content
 
-    def test_docker_compose_dev_has_postgres(
+    def test_docker_compose_has_both_services(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
         project_dir = tmp_path / "test-compose"
@@ -381,18 +453,28 @@ class TestInitFileContents:
 
         content = (project_dir / "docker-compose.yml").read_text()
         assert "postgres:" in content
-        assert "build:" not in content
+        assert "build:" in content
+        slug = slugify("test-compose")
+        assert f"{slug}:" in content
 
-    def test_docker_compose_prod_mounts_src(
+    def test_docker_compose_has_api_healthcheck(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        project_dir = tmp_path / "test-prod"
+        project_dir = tmp_path / "test-healthcheck"
         result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
         assert result.exit_code == 0
 
-        content = (project_dir / "docker-compose.prod.yml").read_text()
-        assert "./src:/app/src:ro" in content
-        assert "build:" in content
+        content = (project_dir / "docker-compose.yml").read_text()
+        assert "urllib.request" in content
+        assert "localhost:8000/ok" in content
+
+    def test_no_prod_compose_generated(
+        self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "test-no-prod"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+        assert not (project_dir / "docker-compose.prod.yml").exists()
 
     def test_dockerfile_installs_from_pyproject(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
@@ -404,7 +486,58 @@ class TestInitFileContents:
         content = (project_dir / "Dockerfile").read_text()
         assert "COPY pyproject.toml" in content
         assert "COPY src/" in content
-        assert "pip install" in content
+        assert "uv sync" in content
+
+    def test_state_py_has_input_and_state_classes(
+        self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "test-state"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("test-state")
+        content = (project_dir / f"src/{slug}/state.py").read_text()
+        assert "class InputState" in content
+        assert "class State(InputState)" in content
+        assert "is_last_step" in content
+
+    def test_context_py_has_context_class(
+        self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "test-context"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("test-context")
+        content = (project_dir / f"src/{slug}/context.py").read_text()
+        assert "class Context" in content
+        assert "system_prompt" in content
+        assert "model" in content
+        assert "openai/gpt-4o-mini" in content
+
+    def test_utils_py_has_load_chat_model(
+        self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "test-utils"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("test-utils")
+        content = (project_dir / f"src/{slug}/utils.py").read_text()
+        assert "def load_chat_model" in content
+        assert "init_chat_model" in content
+
+    def test_prompts_py_has_system_prompt(
+        self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "test-prompts"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("test-prompts")
+        content = (project_dir / f"src/{slug}/prompts.py").read_text()
+        assert "SYSTEM_PROMPT" in content
+        assert "system_time" in content
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +622,7 @@ class TestInitEdgeCases:
         assert result.exit_code == 0
         assert "Next steps" in result.output
         assert "aegra dev" in result.output
-        assert "pip install" in result.output
+        assert "uv run aegra dev" in result.output
 
     def test_help_shows_options(self: TestInitEdgeCases, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(cli, ["init", "--help"])
@@ -531,3 +664,44 @@ class TestInitEdgeCases:
         slug = slugify("Super Bot")
         content = (project_dir / f"src/{slug}/graph.py").read_text()
         assert "Super Bot" in content
+
+    def test_react_shared_files_created(
+        self: TestInitEdgeCases, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """ReAct template also creates shared files."""
+        project_dir = tmp_path / "react-shared"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "2"])
+        assert result.exit_code == 0
+
+        slug = slugify("react-shared")
+        assert (project_dir / f"src/{slug}/state.py").exists()
+        assert (project_dir / f"src/{slug}/prompts.py").exists()
+        assert (project_dir / f"src/{slug}/context.py").exists()
+        assert (project_dir / f"src/{slug}/utils.py").exists()
+        assert (project_dir / f"src/{slug}/tools.py").exists()
+        assert (project_dir / f"src/{slug}/graph.py").exists()
+
+    def test_react_graph_has_route_model_output(
+        self: TestInitEdgeCases, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """ReAct graph should use custom route_model_output instead of tools_condition."""
+        project_dir = tmp_path / "react-route"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "2"])
+        assert result.exit_code == 0
+
+        slug = slugify("react-route")
+        content = (project_dir / f"src/{slug}/graph.py").read_text()
+        assert "route_model_output" in content
+        assert "is_last_step" in content
+
+    def test_context_py_imports_from_slug(
+        self: TestInitEdgeCases, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """context.py should import prompts from the correct package."""
+        project_dir = tmp_path / "ctx-import"
+        result = cli_runner.invoke(cli, ["init", str(project_dir), "-t", "1"])
+        assert result.exit_code == 0
+
+        slug = slugify("ctx-import")
+        content = (project_dir / f"src/{slug}/context.py").read_text()
+        assert f"from {slug} import prompts" in content

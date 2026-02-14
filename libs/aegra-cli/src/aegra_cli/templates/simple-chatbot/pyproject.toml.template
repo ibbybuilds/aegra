@@ -6,8 +6,10 @@ requires-python = ">=3.11"
 
 dependencies = [
     "aegra-cli>=$aegra_version",
-    "langgraph>=1.0.3",
-    "langchain-openai>=1.0.3",
+    "langgraph>=1.0.8",
+    "langchain>=0.3.14",
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=0.3.12",
 ]
 
 [build-system]

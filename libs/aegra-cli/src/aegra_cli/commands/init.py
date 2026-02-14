@@ -12,13 +12,13 @@ from rich.console import Console
 
 from aegra_cli import __version__
 from aegra_cli.templates import (
-    get_docker_compose_dev,
-    get_docker_compose_prod,
+    get_docker_compose,
     get_dockerfile,
     get_template_choices,
     load_shared_file,
     load_template_manifest,
     render_env_example,
+    render_shared_template_file,
     render_template_file,
     slugify,
 )
@@ -127,8 +127,8 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     - .gitignore: Standard Python gitignore
     - README.md: Project readme
     - src/<slug>/graph.py: Template-specific graph
-    - docker-compose.yml: Docker Compose for PostgreSQL (dev)
-    - docker-compose.prod.yml: Docker Compose for full stack (prod)
+    - src/<slug>/state.py, prompts.py, context.py, utils.py: Shared modules
+    - docker-compose.yml: Docker Compose (PostgreSQL + API)
     - Dockerfile: Production container build
 
     Examples:
@@ -206,6 +206,12 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
         content = render_template_file(selected["id"], template_filename, variables)
         _write(dest, content)
 
+    # --- Shared template files (from manifest) ---
+    for shared_filename, dest_pattern in manifest.get("shared_files", {}).items():
+        dest = Template(dest_pattern).safe_substitute(variables)
+        content = render_shared_template_file(shared_filename, variables)
+        _write(dest, content)
+
     # --- .env.example ---
     _write(".env.example", render_env_example(variables))
 
@@ -213,8 +219,7 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     _write(".gitignore", load_shared_file("gitignore"))
 
     # --- Docker files ---
-    _write("docker-compose.yml", get_docker_compose_dev(slug))
-    _write("docker-compose.prod.yml", get_docker_compose_prod(slug))
+    _write("docker-compose.yml", get_docker_compose(slug))
     _write("Dockerfile", get_dockerfile())
 
     # --- Summary ---
@@ -231,6 +236,6 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
 
     click.echo(click.style("Next steps:", bold=True))
     click.echo(f"  cd {project_path.name}")
-    click.echo("  cp .env.example .env     # Configure your environment")
-    click.echo("  pip install -e .          # Install dependencies")
-    click.echo("  aegra dev                 # Start developing!")
+    click.echo("  cp .env.example .env       # Configure your environment")
+    click.echo("  uv sync                    # Install dependencies")
+    click.echo("  uv run aegra dev           # Start developing!")

@@ -5,9 +5,9 @@ Built with [Aegra](https://github.com/ibbybuilds/aegra) -- a self-hosted LangGra
 ## Setup
 
 ```bash
-cp .env.example .env     # Configure your environment
-pip install -e .          # Install dependencies
-aegra dev                 # Start developing!
+cp .env.example .env       # Configure your environment
+uv sync                    # Install dependencies
+uv run aegra dev           # Start developing!
 ```
 
 ## Project Structure
@@ -20,9 +20,12 @@ $slug/
 |-- src/$slug/
 |   |-- __init__.py
 |   |-- graph.py          # ReAct agent graph
-|   +-- tools.py          # Tool definitions
-|-- docker-compose.yml    # Development (PostgreSQL)
-|-- docker-compose.prod.yml  # Production (full stack)
+|   |-- tools.py          # Tool definitions
+|   |-- state.py          # Input and internal state
+|   |-- prompts.py        # System prompt templates
+|   |-- context.py        # Runtime configuration
+|   +-- utils.py          # Utility functions
+|-- docker-compose.yml    # Docker Compose (PostgreSQL + API)
 +-- Dockerfile
 ```
 

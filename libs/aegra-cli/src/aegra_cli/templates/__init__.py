@@ -62,7 +62,7 @@ def render_template_file(template_id: str, filename: str, variables: dict[str, s
     Args:
         template_id: Template directory name.
         filename: File inside the template directory.
-        variables: Substitution mapping ($slug, $project_name, …).
+        variables: Substitution mapping ($slug, $project_name, ...).
 
     Returns:
         Rendered string.
@@ -70,6 +70,20 @@ def render_template_file(template_id: str, filename: str, variables: dict[str, s
     raw = (
         resources.files(_TEMPLATES_PKG).joinpath(template_id, filename).read_text(encoding="utf-8")
     )
+    return Template(raw).safe_substitute(variables)
+
+
+def render_shared_template_file(filename: str, variables: dict[str, str]) -> str:
+    """Load a template file from shared/ and perform safe_substitute.
+
+    Args:
+        filename: File inside the shared/ directory (e.g. "state.py.template").
+        variables: Substitution mapping ($slug, $project_name, ...).
+
+    Returns:
+        Rendered string.
+    """
+    raw = resources.files(_TEMPLATES_PKG).joinpath("shared", filename).read_text(encoding="utf-8")
     return Template(raw).safe_substitute(variables)
 
 
@@ -126,8 +140,8 @@ def slugify(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_docker_compose_dev(slug: str) -> str:
-    """Generate docker-compose.yml for development (postgres only).
+def get_docker_compose(slug: str) -> str:
+    """Generate docker-compose.yml with both postgres and API services.
 
     Args:
         slug: Project slug used for container/database naming.
@@ -136,44 +150,9 @@ def get_docker_compose_dev(slug: str) -> str:
         docker-compose.yml content string.
     """
     return f"""\
-# Development docker-compose - PostgreSQL only
-# Use with: aegra dev (starts postgres + local uvicorn)
-
-services:
-  postgres:
-    image: pgvector/pgvector:pg18
-    container_name: {slug}-postgres
-    environment:
-      POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}
-      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
-      POSTGRES_DB: ${{POSTGRES_DB:-{slug}}}
-    ports:
-      - "${{POSTGRES_PORT:-5432}}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-{slug}}}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  postgres_data:
-"""
-
-
-def get_docker_compose_prod(slug: str) -> str:
-    """Generate docker-compose.prod.yml for production (full stack).
-
-    Args:
-        slug: Project slug used for service/container naming.
-
-    Returns:
-        docker-compose.prod.yml content string.
-    """
-    return f"""\
-# Production docker-compose - Full stack
-# Use with: aegra up (builds and starts all services)
+# Docker Compose - PostgreSQL + API
+# aegra dev  -> docker compose up postgres -d  (database only)
+# aegra up   -> docker compose up --build      (full stack)
 
 services:
   postgres:
@@ -209,6 +188,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ok')"]
+      interval: 30s
+      start_period: 10s
     volumes:
       - ./src:/app/src:ro
       - ./aegra.json:/app/aegra.json:ro
@@ -225,27 +208,54 @@ def get_dockerfile() -> str:
         Dockerfile content string.
     """
     return """\
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm AS base
+
+ENV PYTHONUNBUFFERED=1 \\
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# Install system dependencies
+# Create non-root user for runtime
+RUN addgroup --system app && adduser --system --ingroup app app
+
+# -----------------------------
+# Builder stage
+# -----------------------------
+FROM base AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+
 RUN apt-get update && apt-get install -y --no-install-recommends \\
-    gcc \\
+    build-essential \\
     libpq-dev \\
     && rm -rf /var/lib/apt/lists/*
 
-# Install project (includes aegra-cli + graph dependencies)
-COPY pyproject.toml .
-COPY src/ ./src/
-RUN pip install --no-cache-dir .
+# Install dependencies first (cached layer)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project --compile-bytecode
 
-# Copy config
+# Copy source and install project
+COPY src/ ./src/
+RUN uv sync --frozen --no-dev --compile-bytecode
+
+# -----------------------------
+# Runtime stage
+# -----------------------------
+FROM base AS final
+
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    ca-certificates \\
+    libpq5 \\
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/.venv /app/.venv
 COPY aegra.json .
 
-# Expose port
+ENV PATH="/app/.venv/bin:$PATH"
+
 EXPOSE 8000
 
-# Run the server
+USER app
+
 CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
 """

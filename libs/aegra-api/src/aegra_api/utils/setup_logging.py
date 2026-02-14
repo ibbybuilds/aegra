@@ -39,7 +39,14 @@ def get_logging_config() -> dict[str, Any]:
     # Determine the final renderer based on the environment
     # Use a colorful console renderer for local development, and JSON for production.
     if env_mode in ("LOCAL", "DEVELOPMENT"):
-        final_renderer = structlog.dev.ConsoleRenderer(colors=True, pad_level=True)
+        final_renderer = structlog.dev.ConsoleRenderer(
+            colors=True,
+            pad_level=True,
+            exception_formatter=structlog.dev.RichTracebackFormatter(
+                show_locals=False,
+                max_frames=10,
+            ),
+        )
     else:
         final_renderer = structlog.processors.JSONRenderer()
 

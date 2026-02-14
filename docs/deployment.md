@@ -121,7 +121,7 @@ cp .env.example .env
 # Edit .env with your API keys
 
 # Install dependencies and start developing
-pip install -e .
+uv sync
 aegra dev
 ```
 

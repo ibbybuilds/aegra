@@ -17,13 +17,10 @@ pip install aegra-cli
 ```bash
 # Clone the repository
 git clone https://github.com/ibbybuilds/aegra.git
-cd aegra/libs/aegra-cli
+cd aegra
 
-# Install with pip
-pip install -e .
-
-# Or with uv
-uv pip install -e .
+# Install all workspace packages
+uv sync --all-packages
 ```
 
 ## Quick Start

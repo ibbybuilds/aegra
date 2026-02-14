@@ -196,6 +196,8 @@ services:
     container_name: {slug}-api
     ports:
       - "${{PORT:-8000}}:8000"
+    env_file:
+      - .env
     environment:
       - POSTGRES_USER=${{POSTGRES_USER:-{slug}}}
       - POSTGRES_PASSWORD=${{POSTGRES_PASSWORD:-{slug}_secret}}

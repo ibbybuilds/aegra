@@ -2,6 +2,7 @@
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 model = ChatOpenAI(model="gpt-4o-mini")
 
@@ -12,7 +13,7 @@ async def chatbot(state: MessagesState) -> dict:
     return {"messages": [response]}
 
 
-graph = (
+graph: CompiledStateGraph = (
     StateGraph(MessagesState)
     .add_node("chatbot", chatbot)
     .add_edge("__start__", "chatbot")

@@ -317,7 +317,7 @@ class TestInitFileContents:
 
         slug = slugify("test-graph-var")
         content = (project_dir / f"src/{slug}/graph.py").read_text()
-        assert "graph =" in content
+        assert "graph:" in content and "=" in content
 
     def test_env_example_has_required_vars(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path

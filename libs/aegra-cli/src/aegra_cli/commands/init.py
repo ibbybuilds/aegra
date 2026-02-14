@@ -1,6 +1,7 @@
 """Initialize a new Aegra project with interactive template selection."""
 
 import json
+import logging
 import sys
 from pathlib import Path
 from string import Template
@@ -22,6 +23,7 @@ from aegra_cli.templates import (
 )
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 def _is_interactive() -> bool:
@@ -33,6 +35,7 @@ def _is_interactive() -> bool:
     try:
         return sys.stdin.isatty()
     except (AttributeError, ValueError):
+        logger.debug("Failed to determine TTY status for stdin", exc_info=True)
         return False
 
 

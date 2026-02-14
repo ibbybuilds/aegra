@@ -242,7 +242,7 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # -----------------------------
 FROM base AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     build-essential \\

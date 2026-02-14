@@ -5,6 +5,7 @@ from typing import Literal, cast
 
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 
@@ -43,6 +44,8 @@ async def call_model(state: State, runtime: Runtime[Context]) -> dict:
 
 def route_model_output(state: State) -> Literal["__end__", "tools"]:
     """Route based on the last message: call tools or finish."""
+    if not state.messages:
+        raise ValueError("Expected at least one message in State.messages, got empty list")
     last_message = state.messages[-1]
     if not isinstance(last_message, AIMessage):
         raise ValueError(f"Expected AIMessage, got {type(last_message).__name__}")
@@ -51,7 +54,7 @@ def route_model_output(state: State) -> Literal["__end__", "tools"]:
     return "tools"
 
 
-graph = (
+graph: CompiledStateGraph = (
     StateGraph(State, input_schema=InputState, context_schema=Context)
     .add_node("agent", call_model)
     .add_node("tools", ToolNode(TOOLS))

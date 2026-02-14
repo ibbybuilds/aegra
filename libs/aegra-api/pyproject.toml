@@ -94,6 +94,10 @@ known-first-party = ["aegra_api", "aegra_cli"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "unit: unit tests",
+    "e2e: end-to-end tests requiring a running server",
+]
 
 [dependency-groups]
 dev = [
@@ -105,5 +109,6 @@ dev = [
     "mypy>=1.14.0",
     "bandit>=1.8.0",
     "pre-commit>=4.0.1",
+    "langchain>=1.0.0",
     "langchain-openai>=1.0.3",
 ]

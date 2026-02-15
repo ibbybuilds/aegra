@@ -77,7 +77,7 @@ pytest -m "not slow"       # Skip slow tests
 
 ### Run specific test file
 ```bash
-pytest tests/unit/test_middleware/test_double_encoded_json.py
+pytest tests/unit/test_middleware/test_content_type_fix.py
 ```
 
 ### Run with verbose output

@@ -25,16 +25,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy aegra-api package files
-COPY libs/aegra-api/pyproject.toml libs/aegra-api/uv.lock libs/aegra-api/README.md ./
+# Copy aegra-api package files and workspace lockfile
+COPY libs/aegra-api/pyproject.toml libs/aegra-api/README.md ./
+COPY uv.lock ./
 
-# Install dependencies strictly from uv.lock.
-RUN uv export --frozen --no-dev --no-emit-project --format=requirements-txt > requirements.txt && \
+# Install dependencies from lockfile (includes dev deps for example agents).
+RUN uv export --frozen --no-emit-project --format=requirements-txt > requirements.txt && \
     uv pip install --system --compile-bytecode -r requirements.txt && \
     rm requirements.txt
 
-# Copy the actual project source code.
+# Copy the actual project source code and forced includes (alembic).
 COPY libs/aegra-api/src/ ./src/
+COPY libs/aegra-api/alembic.ini ./alembic.ini
+COPY libs/aegra-api/alembic/ ./alembic/
 
 # Install the project package itself.
 RUN uv pip install --system --compile-bytecode --no-deps .

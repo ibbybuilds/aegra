@@ -25,7 +25,7 @@ from aegra_api.core.route_merger import (
     merge_exception_handlers,
     merge_lifespans,
 )
-from aegra_api.middleware import DoubleEncodedJSONMiddleware, StructLogMiddleware
+from aegra_api.middleware import ContentTypeFixMiddleware, StructLogMiddleware
 from aegra_api.models.errors import AgentProtocolError, get_error_type
 from aegra_api.observability.setup import setup_observability
 from aegra_api.services.event_store import event_store
@@ -208,7 +208,7 @@ def _add_common_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> 
     """Add common middleware stack in correct order.
 
     Middleware runs in reverse registration order, so we register:
-    1. DoubleEncodedJSONMiddleware (outermost - runs first)
+    1. ContentTypeFixMiddleware (outermost - fixes text/plain → application/json)
     2. CORSMiddleware (handles preflight early)
     3. CorrelationIdMiddleware (adds request ID)
     4. StructLogMiddleware (innermost - logs with correlation ID)
@@ -220,7 +220,7 @@ def _add_common_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> 
     app.add_middleware(StructLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
     _add_cors_middleware(app, cors_config)
-    app.add_middleware(DoubleEncodedJSONMiddleware)
+    app.add_middleware(ContentTypeFixMiddleware)
 
 
 def _include_core_routers(app: FastAPI) -> None:

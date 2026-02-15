@@ -15,6 +15,8 @@ from aegra_api.models.store import (
     StoreDeleteRequest,
     StoreGetResponse,
     StoreItem,
+    StoreListNamespacesRequest,
+    StoreListNamespacesResponse,
     StorePutRequest,
     StoreSearchRequest,
     StoreSearchResponse,
@@ -65,6 +67,8 @@ __all__ = [
     "StoreSearchResponse",
     "StoreItem",
     "StoreDeleteRequest",
+    "StoreListNamespacesRequest",
+    "StoreListNamespacesResponse",
     # Errors
     "AgentProtocolError",
     "get_error_type",

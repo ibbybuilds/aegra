@@ -1,3 +1,7 @@
+# NOTE: This module is intentionally retained but not registered on the CLI.
+# The db commands were removed in v0.5.x because migrations run automatically
+# on server startup. This file may be re-added when manual migration control
+# is needed (e.g., for rolling deployments with Redis-based worker architecture).
 """Database migration commands for Aegra.
 
 Uses alembic's Python API directly (instead of subprocess) so that

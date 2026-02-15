@@ -35,7 +35,6 @@ The current `docker-compose.yml` is optimized for **development** with:
 
 1. **Remove Development Features**
    - Remove `--reload` flag
-   - Use multiple workers: `--workers 4` (or based on CPU cores)
    - Remove debug logging (`DEBUG=false`)
 
 2. **Resource Management**
@@ -74,10 +73,10 @@ version: "3.8"
 
 services:
   aegra:
-    # Override command: remove --reload, add workers
+    # Override command: remove --reload for production
     # Migrations run automatically on startup (v0.3.0+)
     command: >
-      uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-8000} --workers 4
+      uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-8000}
 
     # Remove development volume mounts (code baked in)
     volumes:

@@ -115,10 +115,6 @@ aegra up                # Build and start all Docker services
 aegra down              # Stop Docker services
 
 aegra version           # Show version info
-
-# Database migrations run automatically on server startup.
-# To create a new migration:
-uv run --package aegra-api alembic revision --autogenerate -m "Description"
 ```
 
 ## 📚 Documentation

@@ -371,7 +371,7 @@ def dev(
     type=click.Path(exists=True, path_type=Path),
     help="Path to aegra.json config file (auto-discovered if not specified).",
 )
-def serve(host: str, port: int, app: str, config_file: Path | None):
+def serve(host: str, port: int, app: str, config_file: Path | None) -> None:
     """Run the production server.
 
     Starts uvicorn without --reload for production use.

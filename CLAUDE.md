@@ -246,13 +246,16 @@ graph = builder.compile()  # Must export as 'graph'
 
 ### Versioning (STRICT)
 - **`aegra-api` and `aegra-cli` MUST always have the same version.** Both versions live in their respective `pyproject.toml` files (`libs/aegra-api/pyproject.toml` and `libs/aegra-cli/pyproject.toml`).
-- **`aegra-cli` depends on `aegra-api~=X.Y.Z`** (compatible release). This allows patch updates (X.Y.Z+1) without changing the constraint, but a **minor or major bump requires updating the constraint** in `aegra-cli/pyproject.toml`.
-- **When to bump versions:**
-  - **Patch** (0.3.3 → 0.3.4): Bug fixes, small improvements, no breaking changes. Update `version` in BOTH `pyproject.toml` files.
-  - **Minor** (0.3.x → 0.4.0): New features, non-breaking additions. Update `version` in BOTH `pyproject.toml` files AND update the `aegra-api~=` constraint in `aegra-cli/pyproject.toml`.
-  - **Major** (0.x → 1.0): Breaking changes. Update `version` in BOTH `pyproject.toml` files AND update the `aegra-api~=` constraint in `aegra-cli/pyproject.toml`.
+- **`aegra-cli` depends on `aegra-api~=X.Y.Z`** (compatible release). This allows patch updates (X.Y.Z+1) without changing the constraint, but a **minor bump requires updating the constraint** in `aegra-cli/pyproject.toml`.
+- **Pre-1.0.0 versioning (current):** While in beta (`0.x.y`), the version scheme is `0.MAJOR.PATCH`:
+  - **Patch** (0.5.1 → 0.5.2): Bug fixes, small improvements, new features, non-breaking additions. Update `version` in BOTH `pyproject.toml` files.
+  - **Minor** (0.5.x → 0.6.0): Breaking changes (removed/renamed endpoints, changed behavior, schema migrations). Update `version` in BOTH `pyproject.toml` files AND update the `aegra-api~=` constraint in `aegra-cli/pyproject.toml`.
+  - **1.0.0**: Reserved for when the public API is considered stable and we commit to full SemVer guarantees. This is a deliberate decision, not triggered by a single change.
+- **Post-1.0.0 versioning (future):** Standard SemVer applies:
+  - **Patch** (1.0.0 → 1.0.1): Bug fixes only.
+  - **Minor** (1.0.x → 1.1.0): New features, non-breaking additions.
+  - **Major** (1.x.y → 2.0.0): Breaking changes.
 - **Always bump the version before creating a PR.** Determine the bump type from the changes:
-  - Bug fix / small improvement → patch bump
-  - New feature / non-breaking addition → minor bump
-  - Breaking change → major bump
+  - Bug fix, small improvement, or new non-breaking feature → patch bump
+  - Breaking change (removed/renamed API, changed defaults, schema migration) → minor bump
 - **`aegra` meta-package** (on PyPI, not in this repo) is a name reservation that points to `aegra-cli`. It does not need to be updated on every release.

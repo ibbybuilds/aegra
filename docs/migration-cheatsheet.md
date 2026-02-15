@@ -2,25 +2,25 @@
 
 > **For complete documentation, see [Developer Guide](developer-guide.md)**
 
-> **Note:** As of v0.3.0, migrations run automatically on server startup. You only need these commands for creating new migrations or troubleshooting.
+> **Note:** As of v0.3.0, migrations run automatically on server startup. You only need Alembic commands for creating new migrations or troubleshooting.
 
 ## Essential Commands
 
 ```bash
-# Apply all pending migrations
-aegra db upgrade
-
-# Create new migration
+# Create new migration (from repo root)
 uv run --package aegra-api alembic revision --autogenerate -m "Description"
 
+# Apply all pending migrations manually (if needed)
+uv run --package aegra-api alembic upgrade head
+
 # Rollback last migration
-aegra db downgrade
+uv run --package aegra-api alembic downgrade -1
 
 # Show migration history
-aegra db history
+uv run --package aegra-api alembic history
 
 # Show current version
-aegra db current
+uv run --package aegra-api alembic current
 ```
 
 ## Daily Workflow
@@ -37,12 +37,8 @@ aegra dev
 ```bash
 # Start development
 docker compose up postgres -d
-aegra db upgrade
+uv run --package aegra-api alembic upgrade head
 uv run --package aegra-api uvicorn aegra_api.main:app --reload
-
-# Make database changes
-uv run --package aegra-api alembic revision --autogenerate -m "Add new feature"
-aegra db upgrade
 ```
 
 ## Quick Troubleshooting
@@ -50,8 +46,8 @@ aegra db upgrade
 | Problem                   | Solution                              |
 | ------------------------- | ------------------------------------- |
 | Can't connect to database | `docker compose up postgres -d`       |
-| Migration fails           | `aegra db current`                    |
-| Database broken           | `aegra db downgrade base` then `aegra db upgrade` |
+| Migration fails           | `uv run --package aegra-api alembic current` |
+| Database broken           | `uv run --package aegra-api alembic downgrade base` then `alembic upgrade head` |
 
 ## Need More Help?
 

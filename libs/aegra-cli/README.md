@@ -2,7 +2,7 @@
 
 Aegra CLI - Command-line interface for managing self-hosted agent deployments.
 
-Aegra is an open-source, self-hosted alternative to LangGraph Platform. Use this CLI to initialize projects, run development servers, manage Docker services, and handle database migrations.
+Aegra is an open-source, self-hosted alternative to LangGraph Platform. Use this CLI to initialize projects, run development servers, and manage Docker services.
 
 ## Installation
 
@@ -173,7 +173,6 @@ aegra serve [OPTIONS]
 | `--port PORT` | `8000` | Port to bind the server to |
 | `--app APP` | `aegra_api.main:app` | Application import path |
 | `-c, --config PATH` | | Path to aegra.json config file |
-| `-w, --workers INT` | `1` | Number of worker processes |
 
 **Examples:**
 
@@ -181,11 +180,8 @@ aegra serve [OPTIONS]
 # Start with defaults (0.0.0.0:8000)
 aegra serve
 
-# Start with multiple workers
-aegra serve --workers 4
-
 # Start with a custom config
-aegra serve --config ./aegra.json --workers 2
+aegra serve --config ./aegra.json
 ```
 
 ---
@@ -255,87 +251,6 @@ aegra down -v
 
 # Stop with a custom compose file
 aegra down -f ./docker-compose.yml
-```
-
----
-
-### `aegra db`
-
-Database migration commands. All subcommands inherit the group-level option:
-
-| Option | Description |
-|--------|-------------|
-| `-e, --env-file PATH` | Path to .env file for database connection |
-
-#### `aegra db upgrade`
-
-Apply all pending database migrations.
-
-```bash
-aegra db upgrade
-```
-
-Runs `alembic upgrade head` to apply all pending migrations and bring the database schema up to date.
-
-#### `aegra db downgrade`
-
-Downgrade database to a previous revision.
-
-```bash
-aegra db downgrade [REVISION]
-```
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `REVISION` | `-1` | Target revision (use `-1` for one step back) |
-
-**Examples:**
-
-```bash
-# Downgrade by one revision
-aegra db downgrade
-
-# Downgrade by two revisions
-aegra db downgrade -2
-
-# Downgrade to initial state (removes all migrations)
-aegra db downgrade base
-
-# Downgrade to a specific revision
-aegra db downgrade abc123
-```
-
-#### `aegra db current`
-
-Show the current migration version.
-
-```bash
-aegra db current
-```
-
-Displays the current revision that the database is at. Useful for checking which migrations have been applied.
-
-#### `aegra db history`
-
-Show migration history.
-
-```bash
-aegra db history [OPTIONS]
-```
-
-| Option | Description |
-|--------|-------------|
-| `-v, --verbose` | Show detailed migration information |
-
-**Examples:**
-
-```bash
-# Show migration history
-aegra db history
-
-# Show detailed history
-aegra db history --verbose
-aegra db history -v
 ```
 
 ---

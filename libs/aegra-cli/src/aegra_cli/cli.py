@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from aegra_cli import __version__
-from aegra_cli.commands import db, init
+from aegra_cli.commands import init
 from aegra_cli.env import load_env_file
 from aegra_cli.templates import (
     get_docker_compose,
@@ -371,15 +371,7 @@ def dev(
     type=click.Path(exists=True, path_type=Path),
     help="Path to aegra.json config file (auto-discovered if not specified).",
 )
-@click.option(
-    "--workers",
-    "-w",
-    default=1,
-    type=int,
-    help="Number of worker processes.",
-    show_default=True,
-)
-def serve(host: str, port: int, app: str, config_file: Path | None, workers: int):
+def serve(host: str, port: int, app: str, config_file: Path | None) -> None:
     """Run the production server.
 
     Starts uvicorn without --reload for production use.
@@ -391,7 +383,6 @@ def serve(host: str, port: int, app: str, config_file: Path | None, workers: int
 
         aegra serve --host 0.0.0.0 --port 8080
 
-        aegra serve -w 4                    # Use 4 workers
     """
     # Discover or validate config file
     if config_file is not None:
@@ -418,7 +409,6 @@ def serve(host: str, port: int, app: str, config_file: Path | None, workers: int
         "[bold green]Starting Aegra production server[/bold green]\n",
         f"[cyan]Host:[/cyan] {host}",
         f"[cyan]Port:[/cyan] {port}",
-        f"[cyan]Workers:[/cyan] {workers}",
         f"[cyan]Config:[/cyan] {resolved_config}",
     ]
     if loaded_env:
@@ -442,9 +432,6 @@ def serve(host: str, port: int, app: str, config_file: Path | None, workers: int
         "--port",
         str(port),
     ]
-
-    if workers > 1:
-        cmd.extend(["--workers", str(workers)])
 
     try:
         result = subprocess.run(cmd, check=False)
@@ -629,7 +616,6 @@ def down(compose_file: Path | None, volumes: bool):
 
 
 # Register command groups and commands from the commands package
-cli.add_command(db)
 cli.add_command(init)
 
 

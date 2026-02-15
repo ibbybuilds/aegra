@@ -164,41 +164,23 @@ This means:
 
 ## Database Migration Commands
 
-### Using the CLI (Recommended)
+Migrations run automatically on server startup (`aegra dev`, `aegra serve`, `aegra up`). You only need these commands when creating new migrations or troubleshooting.
 
 ```bash
-# Apply all pending migrations
-aegra db upgrade
-
 # Create a new migration (from repo root)
 uv run --package aegra-api alembic revision --autogenerate -m "Add user preferences"
 
-# Rollback last migration
-aegra db downgrade
-
-# Show migration history
-aegra db history
-
-# Show current version
-aegra db current
-```
-
-### Direct Alembic Commands
-
-If you prefer using Alembic directly (from repo root):
-
-```bash
-# Apply migrations
+# Apply migrations manually (if needed)
 uv run --package aegra-api alembic upgrade head
 
-# Create new migration
-uv run --package aegra-api alembic revision --autogenerate -m "Description"
-
-# Rollback
+# Rollback last migration
 uv run --package aegra-api alembic downgrade -1
 
-# Show history
+# Show migration history
 uv run --package aegra-api alembic history
+
+# Show current version
+uv run --package aegra-api alembic current
 ```
 
 ## Development Workflow
@@ -236,10 +218,10 @@ docker compose up aegra
 # 1. Start database
 docker compose up postgres -d
 
-# 2. Apply any new migrations
-aegra db upgrade
+# 2. Apply any new migrations (if not relying on auto-migration at startup)
+uv run --package aegra-api alembic upgrade head
 
-# 3. Start development server
+# 3. Start development server (migrations also run automatically on startup)
 uv run --package aegra-api uvicorn aegra_api.main:app --reload
 ```
 
@@ -262,10 +244,7 @@ uv run --package aegra-api alembic revision --autogenerate -m "Add new feature"
 # 3. Review the generated migration file
 # Check: libs/aegra-api/alembic/versions/XXXX_add_new_feature.py
 
-# 4. Apply the migration
-aegra db upgrade
-
-# 5. Restart the server to pick up changes
+# 4. Restart the server (migrations apply automatically on startup)
 aegra dev
 ```
 
@@ -273,12 +252,12 @@ aegra dev
 
 ```bash
 # Test upgrade path
-aegra db downgrade base   # Rollback all
-aegra db upgrade          # Apply all
+uv run --package aegra-api alembic downgrade base   # Rollback all
+uv run --package aegra-api alembic upgrade head      # Apply all
 
 # Test downgrade path
-aegra db downgrade        # Rollback one
-aegra db upgrade          # Apply again
+uv run --package aegra-api alembic downgrade -1      # Rollback one
+uv run --package aegra-api alembic upgrade head      # Apply again
 ```
 
 ## Project Structure
@@ -310,7 +289,6 @@ aegra/
 │       └── src/aegra_cli/
 │           ├── cli.py                # Main CLI entry point
 │           └── commands/             # Command implementations
-│               ├── db.py             # Database migration commands
 │               └── init.py           # Project initialization
 │
 ├── examples/                         # Example agents and configs
@@ -422,7 +400,7 @@ docker compose logs aegra
 
 # Solution: Run migrations manually for debugging
 docker compose up postgres -d
-aegra db upgrade
+uv run --package aegra-api alembic upgrade head
 ```
 
 **Problem**: Database connection issues in Docker
@@ -460,22 +438,22 @@ docker compose up postgres -d
 
 ```bash
 # Solution: Check current state
-aegra db current
+uv run --package aegra-api alembic current
 
 # If needed, downgrade to base and reapply
-aegra db downgrade base
-aegra db upgrade
+uv run --package aegra-api alembic downgrade base
+uv run --package aegra-api alembic upgrade head
 ```
 
 **Problem**: Migration conflicts
 
 ```bash
 # Solution: Check migration history
-aegra db history
+uv run --package aegra-api alembic history
 
 # Downgrade to base and reapply if needed (loses all data)
-aegra db downgrade base
-aegra db upgrade
+uv run --package aegra-api alembic downgrade base
+uv run --package aegra-api alembic upgrade head
 ```
 
 ## Testing Your Changes
@@ -500,36 +478,26 @@ uv run --package aegra-api pytest libs/aegra-api/tests/ --cov=libs/aegra-api/src
 # 1. Create a test migration
 uv run --package aegra-api alembic revision --autogenerate -m "Test feature"
 
-# 2. Apply it
-aegra db upgrade
-
-# 3. Test your application
+# 2. Test your application (migrations apply automatically on startup)
 aegra dev
 
-# 4. If something breaks, rollback
-aegra db downgrade
+# 3. If something breaks, rollback
+uv run --package aegra-api alembic downgrade -1
 ```
 
 ## Production Deployment
 
 ### Before Deploying
 
-1. **Test migrations on staging**:
+1. **Backup production database**:
 
    ```bash
-   aegra db upgrade
-   ```
-
-2. **Backup production database**:
-
-   ```bash
-   # Always backup before migrations
+   # Always backup before deploying new migrations
    pg_dump your_database > backup.sql
    ```
 
-3. **Deploy**:
+2. **Deploy** (migrations run automatically on server startup):
    ```bash
-   # Migrations run automatically on server startup
    docker compose up aegra
    ```
 
@@ -537,10 +505,10 @@ aegra db downgrade
 
 ```bash
 # Check migration status
-aegra db current
+uv run --package aegra-api alembic current
 
 # View migration history
-aegra db history
+uv run --package aegra-api alembic history
 ```
 
 ## Best Practices
@@ -596,8 +564,8 @@ aegra db history
 2. **Verify database state**:
 
    ```bash
-   aegra db current
-   aegra db history
+   uv run --package aegra-api alembic current
+   uv run --package aegra-api alembic history
    ```
 
 3. **Ask for help**:
@@ -611,10 +579,10 @@ aegra db history
 A: No. As of v0.3.0, migrations run automatically when the server starts via `aegra dev` or Docker.
 
 **Q: What if I accidentally break the database?**
-A: Use `aegra db downgrade base` to rollback all migrations, then `aegra db upgrade` to reapply (this loses all data).
+A: Use `uv run --package aegra-api alembic downgrade base` to rollback all migrations, then restart the server to reapply (this loses all data).
 
 **Q: How do I know what migrations are pending?**
-A: Use `aegra db history` to see all migrations and their status.
+A: Use `uv run --package aegra-api alembic history` to see all migrations and their status.
 
 **Q: Can I modify an existing migration?**
 A: Generally no - create a new migration instead. Modifying existing migrations can cause issues.
@@ -632,20 +600,20 @@ Start with small changes, test your migrations, and don't hesitate to ask for he
 ### Essential Commands
 
 ```bash
-# Apply all pending migrations
-aegra db upgrade
-
 # Create new migration
 uv run --package aegra-api alembic revision --autogenerate -m "Description"
 
+# Apply all pending migrations (runs automatically on server startup)
+uv run --package aegra-api alembic upgrade head
+
 # Rollback last migration
-aegra db downgrade
+uv run --package aegra-api alembic downgrade -1
 
 # Show migration history
-aegra db history
+uv run --package aegra-api alembic history
 
 # Show current version
-aegra db current
+uv run --package aegra-api alembic current
 ```
 
 ### Daily Development Workflow
@@ -663,10 +631,7 @@ aegra dev
 # Start database
 docker compose up postgres -d
 
-# Apply migrations
-aegra db upgrade
-
-# Start server
+# Start server (migrations apply automatically on startup)
 uv run --package aegra-api uvicorn aegra_api.main:app --reload
 ```
 
@@ -676,21 +641,23 @@ uv run --package aegra-api uvicorn aegra_api.main:app --reload
 
 ```bash
 uv run --package aegra-api alembic revision --autogenerate -m "Add users table"
-aegra db upgrade
+# Restart server to apply, or run manually:
+uv run --package aegra-api alembic upgrade head
 ```
 
 **Adding a Column:**
 
 ```bash
 uv run --package aegra-api alembic revision --autogenerate -m "Add email to users"
-aegra db upgrade
+# Restart server to apply, or run manually:
+uv run --package aegra-api alembic upgrade head
 ```
 
 **Testing Migrations:**
 
 ```bash
-aegra db downgrade base
-aegra db upgrade
+uv run --package aegra-api alembic downgrade base
+uv run --package aegra-api alembic upgrade head
 ```
 
 ### Troubleshooting Quick Reference
@@ -699,8 +666,8 @@ aegra db upgrade
 | ------------------------- | ------------------------------------------------------------------------------- |
 | **Incompatible DB version** | **See [PostgreSQL 18 Migration Guide](postgres-18-migration.md)** |
 | Can't connect to database | `docker compose up postgres -d`       |
-| Migration fails           | `aegra db current`                    |
-| Database broken           | `aegra db downgrade base` then `aegra db upgrade` |
+| Migration fails           | `uv run --package aegra-api alembic current` |
+| Database broken           | `uv run --package aegra-api alembic downgrade base` then `alembic upgrade head` |
 
 ### Environment Setup
 

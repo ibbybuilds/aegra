@@ -35,11 +35,9 @@ uv run mypy libs/aegra-api/src/ libs/aegra-cli/src/
 # All CI checks at once
 make ci-check
 
-# Database migrations
-aegra db upgrade                    # Apply pending migrations
-aegra db current                    # Check current version
-aegra db history                    # Show history
-uv run --package aegra-api alembic revision --autogenerate -m "description"  # Create migration
+# Database migrations (run automatically on server startup)
+# To create a new migration:
+uv run --package aegra-api alembic revision --autogenerate -m "description"
 ```
 
 ## Project Structure
@@ -66,7 +64,7 @@ aegra/
 │       └── src/aegra_cli/
 │           ├── cli.py                # Main CLI entry point
 │           ├── env.py                # .env file loading
-│           ├── commands/             # Command implementations (init, db)
+│           ├── commands/             # Command implementations (init)
 │           ├── utils/                # Docker utilities
 │           └── templates/            # Project templates for `aegra init`
 │
@@ -217,7 +215,7 @@ graph = builder.compile()  # Must export as 'graph'
 1. Modify SQLAlchemy models in `libs/aegra-api/src/aegra_api/core/orm.py`
 2. Generate migration: `uv run --package aegra-api alembic revision --autogenerate -m "description"`
 3. Review generated migration in `libs/aegra-api/alembic/versions/`
-4. Apply: `aegra db upgrade`
+4. Apply: migrations run automatically on next server startup
 
 ## PR Guidelines
 

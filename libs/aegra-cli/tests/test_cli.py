@@ -756,8 +756,6 @@ class TestServeCommand:
         assert result.exit_code == 0
         assert "--host" in result.output
         assert "--port" in result.output
-        assert "--workers" in result.output
-        assert "-w" in result.output
         assert "--config" in result.output
 
     def test_serve_fails_without_config(self, cli_runner: CliRunner, tmp_path: Path) -> None:
@@ -786,20 +784,6 @@ class TestServeCommand:
                 assert "8000" in cmd
                 # No --reload flag (production mode)
                 assert "--reload" not in cmd
-
-    def test_serve_with_workers(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Test that serve passes workers flag when > 1."""
-        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
-            Path("aegra.json").write_text('{"graphs": {}}')
-
-            with patch("aegra_cli.cli.subprocess.run") as mock_run:
-                mock_run.return_value.returncode = 0
-                result = cli_runner.invoke(cli, ["serve", "-w", "4"])
-
-                assert result.exit_code == 0
-                cmd = mock_run.call_args[0][0]
-                assert "--workers" in cmd
-                assert "4" in cmd
 
     def test_serve_uvicorn_not_installed(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test error handling when uvicorn is not installed."""

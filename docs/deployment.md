@@ -71,14 +71,13 @@ aegra serve
 
 What it does:
 1. Loads your `.env` file
-2. Runs `uvicorn` in production mode (no reload, configurable workers)
+2. Runs `uvicorn` in production mode (no reload)
 3. Migrations apply automatically on startup
 4. Connects to whatever database is configured in `DATABASE_URL` or `POSTGRES_*` vars
 
 Options:
 - `--host` — Host to bind to (default: `0.0.0.0`)
 - `--port` — Port to bind to (default: from env or `8000`)
-- `--workers` / `-w` — Number of uvicorn workers (default: `1`)
 - `--config` / `-c` — Path to aegra.json
 
 When to use:
@@ -86,22 +85,6 @@ When to use:
 - **PaaS platforms** (Railway, Render, Fly.io) — they run the process directly, database is a managed addon
 - **Bare metal / VM** — when PostgreSQL runs elsewhere (RDS, Supabase, Neon, etc.)
 - **Kubernetes** — define the command in your pod spec
-
-### `aegra db` — Database Migration Commands
-
-Run Alembic migration commands against your database. Loads `.env` automatically.
-
-```bash
-aegra db upgrade              # Apply all pending migrations
-aegra db downgrade            # Rollback one migration
-aegra db downgrade base       # Rollback all migrations
-aegra db current              # Show current migration version
-aegra db history              # Show migration history
-aegra db history --verbose    # Show detailed history
-```
-
-Options on the `db` group:
-- `--env-file` / `-e` — Path to .env file (default: `.env` in current directory)
 
 ## Deployment Scenarios
 
@@ -148,7 +131,6 @@ The generated `docker-compose.yml` includes:
 To customize the deployment, edit `docker-compose.yml`:
 - Add resource limits (`deploy.resources`)
 - Add restart policies (`restart: unless-stopped`)
-- Configure multiple workers (`CMD ["aegra", "serve", "--workers", "4"]`)
 - Add a reverse proxy (nginx, traefik)
 
 ### 3. PaaS Deployment (Railway, Render, Fly.io)
@@ -185,7 +167,7 @@ Use `aegra serve` as the container command:
 containers:
   - name: aegra
     image: your-registry/your-agent:latest
-    command: ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    command: ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
     env:
       - name: DATABASE_URL
         valueFrom:
@@ -252,14 +234,7 @@ See `.env.example` for the full list of available variables.
 
 ## Migrations
 
-Migrations run **automatically on startup** for all deployment methods (`aegra dev`, `aegra serve`, `aegra up`). You do not need to run migrations manually unless troubleshooting.
-
-For manual control:
-```bash
-aegra db upgrade          # Apply pending migrations
-aegra db current          # Check current version
-aegra db history          # View history
-```
+Migrations run **automatically on startup** for all deployment methods (`aegra dev`, `aegra serve`, `aegra up`). You do not need to run migrations manually.
 
 ## Health Checks
 
@@ -295,4 +270,4 @@ Migrations haven't been applied. This usually means the server couldn't connect 
 If you see "Running database migrations..." but nothing happens:
 - Check if another process holds a lock on the database
 - Check if the database is reachable but very slow
-- Try running `aegra db upgrade` separately to see the error
+- Check the server logs for specific migration errors

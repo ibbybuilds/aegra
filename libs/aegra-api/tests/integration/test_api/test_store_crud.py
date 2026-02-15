@@ -425,6 +425,144 @@ class TestSearchStoreItems:
         assert merged_filter["auth_field"] == "auth_value"
 
 
+class TestListNamespaces:
+    """Test POST /store/namespaces"""
+
+    def test_list_namespaces_success(self, client, mock_store) -> None:
+        """Test listing namespaces returns expected results"""
+        mock_store.alist_namespaces.return_value = [
+            ("users", "test-user", "notes"),
+            ("users", "test-user", "settings"),
+        ]
+
+        resp = client.post(
+            "/store/namespaces",
+            json={"prefix": ["users", "test-user"]},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["namespaces"]) == 2
+        assert ["users", "test-user", "notes"] in data["namespaces"]
+        assert ["users", "test-user", "settings"] in data["namespaces"]
+        mock_store.alist_namespaces.assert_called_once()
+
+    def test_list_namespaces_empty_result(self, client, mock_store) -> None:
+        """Test listing namespaces with no results"""
+        mock_store.alist_namespaces.return_value = []
+
+        resp = client.post(
+            "/store/namespaces",
+            json={},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["namespaces"] == []
+
+    def test_list_namespaces_with_suffix(self, client, mock_store) -> None:
+        """Test listing namespaces with suffix filter"""
+        mock_store.alist_namespaces.return_value = [
+            ("users", "test-user", "notes"),
+        ]
+
+        resp = client.post(
+            "/store/namespaces",
+            json={"prefix": ["users"], "suffix": ["notes"]},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["namespaces"]) == 1
+
+        call_args = mock_store.alist_namespaces.call_args
+        assert call_args.kwargs["suffix"] == ("notes",)
+
+    def test_list_namespaces_with_max_depth(self, client, mock_store) -> None:
+        """Test listing namespaces with max_depth"""
+        mock_store.alist_namespaces.return_value = [
+            ("users",),
+            ("data",),
+        ]
+
+        resp = client.post(
+            "/store/namespaces",
+            json={"max_depth": 1},
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_store.alist_namespaces.call_args
+        assert call_args.kwargs["max_depth"] == 1
+
+    def test_list_namespaces_with_pagination(self, client, mock_store) -> None:
+        """Test listing namespaces with limit and offset"""
+        mock_store.alist_namespaces.return_value = [
+            ("users", "test-user", "batch"),
+        ]
+
+        resp = client.post(
+            "/store/namespaces",
+            json={"limit": 5, "offset": 10},
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_store.alist_namespaces.call_args
+        assert call_args.kwargs["limit"] == 5
+        assert call_args.kwargs["offset"] == 10
+
+    def test_list_namespaces_applies_user_scoping(self, client, mock_store) -> None:
+        """Test that user namespace scoping is applied to prefix"""
+        mock_store.alist_namespaces.return_value = []
+
+        resp = client.post(
+            "/store/namespaces",
+            json={},
+        )
+
+        assert resp.status_code == 200
+        # With no prefix, should default to user's namespace
+        call_args = mock_store.alist_namespaces.call_args
+        prefix = call_args.kwargs["prefix"]
+        assert "users" in prefix
+        assert "test-user" in prefix
+
+    def test_list_namespaces_max_depth_validation(self, client, mock_store) -> None:
+        """Test that max_depth validation rejects out-of-range values"""
+        resp = client.post(
+            "/store/namespaces",
+            json={"max_depth": 0},
+        )
+        assert resp.status_code == 422
+
+        resp = client.post(
+            "/store/namespaces",
+            json={"max_depth": 101},
+        )
+        assert resp.status_code == 422
+
+    def test_list_namespaces_with_auth_handler_filters(self, client, mock_store) -> None:
+        """Test that auth handler filters override prefix and suffix"""
+        from unittest.mock import AsyncMock, patch
+
+        mock_store.alist_namespaces.return_value = []
+
+        async def mock_handle_event(ctx, value):
+            return {"prefix": ["override-prefix"], "suffix": ["override-suffix"]}
+
+        with patch(
+            "aegra_api.api.store.handle_event",
+            new=AsyncMock(side_effect=mock_handle_event),
+        ):
+            resp = client.post(
+                "/store/namespaces",
+                json={"prefix": ["original"]},
+            )
+
+        assert resp.status_code == 200
+        call_args = mock_store.alist_namespaces.call_args
+        assert call_args.kwargs["suffix"] == ("override-suffix",)
+
+
 class TestNamespaceScoping:
     """Test user namespace scoping"""
 

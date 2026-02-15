@@ -65,3 +65,19 @@ class StoreDeleteRequest(BaseModel):
 
     namespace: list[str]
     key: str
+
+
+class StoreListNamespacesRequest(BaseModel):
+    """Request model for listing store namespaces"""
+
+    prefix: list[str] | None = Field(None, description="Filter by namespace prefix")
+    suffix: list[str] | None = Field(None, description="Filter by namespace suffix")
+    max_depth: int | None = Field(None, le=100, ge=1, description="Maximum namespace depth to return")
+    limit: int = Field(100, le=1000, ge=1, description="Maximum results")
+    offset: int = Field(0, ge=0, description="Results offset")
+
+
+class StoreListNamespacesResponse(BaseModel):
+    """Response model for listing store namespaces"""
+
+    namespaces: list[list[str]]

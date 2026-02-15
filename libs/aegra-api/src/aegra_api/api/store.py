@@ -4,10 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
+from aegra_api.core.database import db_manager
 from aegra_api.models import (
     StoreDeleteRequest,
     StoreGetResponse,
     StoreItem,
+    StoreListNamespacesRequest,
+    StoreListNamespacesResponse,
     StorePutRequest,
     StoreSearchRequest,
     StoreSearchResponse,
@@ -18,7 +21,7 @@ router = APIRouter(tags=["Store"], dependencies=auth_dependency)
 
 
 @router.put("/store/items")
-async def put_store_item(request: StorePutRequest, user: User = Depends(get_current_user)):
+async def put_store_item(request: StorePutRequest, user: User = Depends(get_current_user)) -> dict[str, str]:
     """Store an item in the LangGraph store"""
     # Authorization check
     ctx = build_auth_context(user, "store", "put")
@@ -37,9 +40,6 @@ async def put_store_item(request: StorePutRequest, user: User = Depends(get_curr
     # Apply user namespace scoping
     scoped_namespace = apply_user_namespace_scoping(user.identity, request.namespace)
 
-    # Get LangGraph store from database manager
-    from aegra_api.core.database import db_manager
-
     store = db_manager.get_store()
 
     await store.aput(namespace=tuple(scoped_namespace), key=request.key, value=request.value)
@@ -52,7 +52,7 @@ async def get_store_item(
     key: str,
     namespace: str | list[str] | None = Query(None),
     user: User = Depends(get_current_user),
-):
+) -> StoreGetResponse:
     """Get an item from the LangGraph store"""
     # Authorization check
     ctx = build_auth_context(user, "store", "get")
@@ -78,9 +78,6 @@ async def get_store_item(
     # Apply user namespace scoping
     scoped_namespace = apply_user_namespace_scoping(user.identity, ns_list)
 
-    # Get LangGraph store from database manager
-    from aegra_api.core.database import db_manager
-
     store = db_manager.get_store()
 
     item = await store.aget(tuple(scoped_namespace), key)
@@ -97,7 +94,7 @@ async def delete_store_item(
     key: str | None = Query(None),
     namespace: list[str] | None = Query(None),
     user: User = Depends(get_current_user),
-):
+) -> dict[str, str]:
     """Delete an item from the LangGraph store.
 
     Compatible with SDK which sends JSON body {namespace, key}.
@@ -130,9 +127,6 @@ async def delete_store_item(
     # Apply user namespace scoping
     scoped_namespace = apply_user_namespace_scoping(user.identity, ns)
 
-    # Get LangGraph store from database manager
-    from aegra_api.core.database import db_manager
-
     store = db_manager.get_store()
 
     await store.adelete(tuple(scoped_namespace), k)
@@ -141,7 +135,9 @@ async def delete_store_item(
 
 
 @router.post("/store/items/search", response_model=StoreSearchResponse)
-async def search_store_items(request: StoreSearchRequest, user: User = Depends(get_current_user)):
+async def search_store_items(
+    request: StoreSearchRequest, user: User = Depends(get_current_user)
+) -> StoreSearchResponse:
     """Search items in the LangGraph store"""
     # Authorization check
     ctx = build_auth_context(user, "store", "search")
@@ -159,9 +155,6 @@ async def search_store_items(request: StoreSearchRequest, user: User = Depends(g
 
     # Apply user namespace scoping
     scoped_prefix = apply_user_namespace_scoping(user.identity, request.namespace_prefix)
-
-    # Get LangGraph store from database manager
-    from aegra_api.core.database import db_manager
 
     store = db_manager.get_store()
 
@@ -183,6 +176,42 @@ async def search_store_items(request: StoreSearchRequest, user: User = Depends(g
         limit=request.limit or 20,
         offset=request.offset or 0,
     )
+
+
+@router.post("/store/namespaces", response_model=StoreListNamespacesResponse)
+async def list_namespaces(
+    request: StoreListNamespacesRequest,
+    user: User = Depends(get_current_user),
+) -> StoreListNamespacesResponse:
+    """List namespaces in the LangGraph store"""
+    # Authorization check
+    ctx = build_auth_context(user, "store", "search")
+    value = request.model_dump()
+    filters = await handle_event(ctx, value)
+
+    # Apply authorization filters if handler provided any
+    if filters:
+        if "prefix" in filters:
+            request.prefix = filters["prefix"]
+        if "suffix" in filters:
+            request.suffix = filters["suffix"]
+
+    # Apply user namespace scoping to prefix
+    scoped_prefix = apply_user_namespace_scoping(user.identity, request.prefix or [])
+    prefix: tuple[str, ...] = tuple(scoped_prefix)
+    suffix: tuple[str, ...] | None = tuple(request.suffix) if request.suffix else None
+
+    store = db_manager.get_store()
+
+    result = await store.alist_namespaces(
+        prefix=prefix,
+        suffix=suffix,
+        max_depth=request.max_depth,
+        limit=request.limit,
+        offset=request.offset,
+    )
+
+    return StoreListNamespacesResponse(namespaces=[list(ns) for ns in result])
 
 
 def apply_user_namespace_scoping(user_id: str, namespace: list[str]) -> list[str]:

@@ -96,7 +96,7 @@ def extract_context_schema(factory: Callable[..., Any]) -> type | None:
     """
     try:
         hints = get_type_hints(factory)
-    except Exception:
+    except (NameError, AttributeError):
         return None
 
     runtime_hint = hints.get("runtime")
@@ -123,8 +123,8 @@ def has_runnable_config_param(factory: Callable[..., Any]) -> bool:
     # Verify the type hint is actually RunnableConfig (not some other 'config')
     try:
         hints = get_type_hints(factory)
-    except Exception:
-        # If we can't resolve hints, fall back to param name alone
+    except (NameError, AttributeError):
+        # Forward reference can't be resolved — accept based on param name
         return True
 
     config_hint = hints.get("config")
@@ -139,7 +139,7 @@ def has_runnable_config_param(factory: Callable[..., Any]) -> bool:
     return config_hint is RunnableConfig
 
 
-def detect_factory(graph_id: str, graph: Callable[..., Any]) -> GraphFactory | None:
+def detect_factory(graph: Callable[..., Any]) -> GraphFactory | None:
     """Inspect a callable graph export and return a GraphFactory if it needs per-request args.
 
     Returns ``None`` if the callable is a simple factory (no ``runtime`` or ``config`` param)

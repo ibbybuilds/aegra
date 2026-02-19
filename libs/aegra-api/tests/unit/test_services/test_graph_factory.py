@@ -86,12 +86,22 @@ class TestExtractContextSchema:
         result = extract_context_schema(factory)
         assert result is None
 
-    def test_extract_no_type_hints(self) -> None:
-        """Returns None when type hints can't be resolved."""
+    def test_extract_unannotated_runtime_returns_none(self) -> None:
+        """Returns None when the runtime parameter has no type annotation."""
 
         def factory(runtime): ...
 
         result = extract_context_schema(factory)
+        assert result is None
+
+    def test_extract_unresolvable_hints_returns_none(self) -> None:
+        """Returns None when get_type_hints raises (e.g., broken forward ref)."""
+        from unittest.mock import patch
+
+        def factory(runtime: Runtime) -> None: ...
+
+        with patch("aegra_api.services.graph_factory.get_type_hints", side_effect=NameError("unresolvable")):
+            result = extract_context_schema(factory)
         assert result is None
 
     def test_extract_from_parameterised_runtime(self) -> None:

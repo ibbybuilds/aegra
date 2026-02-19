@@ -100,8 +100,10 @@ class LangGraphService:
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
 
-    def _load_graph_registry(self):
+    def _load_graph_registry(self) -> None:
         """Load graph definitions from aegra.json"""
+        if self.config is None:
+            return
         graphs_config = self.config.get("graphs", {})
 
         for graph_id, graph_path in graphs_config.items():
@@ -328,7 +330,7 @@ class LangGraphService:
         """
         return await self._get_base_graph(graph_id)
 
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]):
+    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> GraphFactory | Any:
         """Load graph from filesystem.
 
         Paths are resolved relative to the config file's directory.
@@ -368,7 +370,7 @@ class LangGraphService:
         # Skip factory detection for already-compiled graphs (Pregel, StateGraph).
         # These are callable (Runnable.__call__) but are NOT factories.
         if callable(graph) and not isinstance(graph, (Pregel, StateGraph)):
-            factory = detect_factory(graph_id, graph)
+            factory = detect_factory(graph)
             if factory is not None:
                 logger.info(
                     f"Detected {factory.kind} factory for '{graph_id}' (context_schema={factory.context_schema})"

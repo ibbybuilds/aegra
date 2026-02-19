@@ -310,7 +310,7 @@ The `LangGraphService` is the core component that manages graph loading, caching
 ### Design Principles
 
 1. **Cache base graphs, not execution instances**: We cache the compiled graph structure (without checkpointer/store) for fast loading
-2. **Fresh copies per-request**: Each execution gets a fresh graph copy with checkpointer/store injected
+2. **Fresh copies per-request**: Each execution gets a fresh graph copy with checkpointer/store injected (or a fresh factory call for factory-based graphs)
 3. **Thread-safe by design**: No locks needed because cached state is immutable
 
 ### Usage Patterns
@@ -321,6 +321,14 @@ The `LangGraphService` is the core component that manages graph loading, caching
 async with langgraph_service.get_graph(graph_id) as graph:
     async for event in graph.astream(input, config):
         ...
+
+# With per-request context (Runtime factory graphs)
+async with langgraph_service.get_graph(graph_id, context=context_dict) as graph:
+    ...
+
+# With run config (RunnableConfig factory graphs)
+async with langgraph_service.get_graph(graph_id, run_config=run_config_dict) as graph:
+    ...
 ```
 
 **For validation/schema extraction** (no execution needed):
@@ -340,6 +348,35 @@ schemas = extract_schemas(graph)
 | More complex error handling | Simple, predictable behavior |
 
 Each request gets its own graph copy, ensuring isolation and thread-safety.
+
+### Per-Request Factory Graphs
+
+For graphs that need to be customised per request (e.g. different model, system
+prompt, or user settings), the graph module can export an async factory function
+instead of a compiled graph. `LangGraphService` detects the factory at load time
+by inspecting the function signature.
+
+```python
+# Runtime factory — context dict is coerced to the declared schema
+from aegra_api.services.graph_factory import Runtime
+
+async def graph(runtime: Runtime[MyContext]):
+    ctx = runtime.context  # MyContext instance
+    ...
+
+# RunnableConfig factory — receives the full run config dict
+async def graph(config: RunnableConfig):
+    model = config.get("configurable", {}).get("model", "gpt-4o-mini")
+    ...
+```
+
+At startup a default base graph is produced by calling the factory once (with
+default context / empty config) so that schema extraction and state operations
+work normally. On each run request the factory is called again with the actual
+per-request arguments.
+
+See [Graph Export Formats](configuration.md#graph-export-formats) in the
+configuration docs for complete examples.
 
 ## Understanding Migration Files
 

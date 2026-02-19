@@ -70,6 +70,52 @@ Configure your LangGraph graphs:
 - **Key**: Graph ID (used in API calls)
 - **Value**: Import path in format `'./path/to/file.py:variable'`
 
+### Graph Export Formats
+
+The exported variable can be one of three things:
+
+**1. Compiled graph** (most common)
+```python
+builder = StateGraph(State)
+# ... define nodes and edges
+graph = builder.compile()
+```
+
+**2. Runtime factory** — called per-request with user context
+```python
+from aegra_api.services.graph_factory import Runtime
+from pydantic import BaseModel
+
+class UserContext(BaseModel):
+    system_prompt: str = "You are a helpful assistant."
+    model: str = "gpt-4o-mini"
+
+async def graph(runtime: Runtime[UserContext]):
+    ctx = runtime.context  # already coerced to UserContext
+    llm = ChatOpenAI(model=ctx.model)
+    # build and return compiled graph using ctx
+    ...
+```
+
+The `context` dict from the run request is automatically coerced to the
+declared schema (Pydantic `BaseModel` or `dataclass`). A default graph is
+produced at startup by calling the factory with default field values for
+schema extraction.
+
+**3. RunnableConfig factory** — called per-request with the full run config
+```python
+from langchain_core.runnables import RunnableConfig
+
+async def graph(config: RunnableConfig):
+    model = config.get("configurable", {}).get("model", "gpt-4o-mini")
+    # build and return compiled graph using config
+    ...
+```
+
+Factory detection is automatic — Aegra inspects the function signature at
+load time. The `runtime` parameter takes precedence over `config` if both
+are present.
+
 ## Authentication Configuration
 
 Configure authentication and authorization:

@@ -24,6 +24,13 @@ from aegra_api.observability.base import (
     get_tracing_callbacks,
     get_tracing_metadata,
 )
+from aegra_api.services.graph_factory import (
+    GraphFactory,
+    Runtime,
+    build_default_context,
+    coerce_context,
+    detect_factory,
+)
 
 State = TypeVar("State")
 logger = structlog.get_logger(__name__)
@@ -45,6 +52,8 @@ class LangGraphService:
         self._graph_registry: dict[str, Any] = {}
         # Cache for base graph definitions (without checkpointer/store)
         self._base_graph_cache: dict[str, Pregel] = {}
+        # Registry for runtime-aware graph factories (called per-request)
+        self._graph_factories: dict[str, GraphFactory] = {}
 
     async def initialize(self):
         """Load configuration file and setup graph registry.
@@ -183,6 +192,9 @@ class LangGraphService:
         the base graph is immutable - we create copies with checkpointer/store
         injected per-request.
 
+        For runtime-aware factories, calls the factory with an empty Runtime
+        to produce a default base graph for schema extraction and state ops.
+
         @param graph_id: The graph identifier from aegra.json
         @returns: Compiled Pregel graph (without checkpointer/store)
         @raises ValueError: If graph_id not found or loading fails
@@ -196,8 +208,24 @@ class LangGraphService:
 
         graph_info = self._graph_registry[graph_id]
 
-        # Load graph from file
+        # Load graph from file (may return a GraphFactory or a raw graph)
         raw_graph = await self._load_graph_from_file(graph_id, graph_info)
+
+        # If a factory was returned, register it and call with defaults
+        # to produce the base graph for schema extraction / state ops.
+        if isinstance(raw_graph, GraphFactory):
+            self._graph_factories[graph_id] = raw_graph
+
+            if raw_graph.kind == "runtime":
+                default_context = build_default_context(raw_graph.context_schema)
+                logger.info(f"Calling runtime factory for '{graph_id}' with default Runtime to get base graph")
+                default_graph = await raw_graph.factory(Runtime(context=default_context))
+            else:
+                # "config" factory — call with empty config
+                logger.info(f"Calling config factory for '{graph_id}' with empty config to get base graph")
+                default_graph = await raw_graph.factory({})
+
+            raw_graph = default_graph
 
         # Compile if it's a StateGraph
         if isinstance(raw_graph, StateGraph):
@@ -211,11 +239,22 @@ class LangGraphService:
         return compiled_graph
 
     @asynccontextmanager
-    async def get_graph(self, graph_id: str) -> AsyncIterator[Pregel]:
+    async def get_graph(
+        self,
+        graph_id: str,
+        *,
+        context: dict[str, Any] | None = None,
+        run_config: dict[str, Any] | None = None,
+    ) -> AsyncIterator[Pregel]:
         """Get a graph instance for execution with checkpointer/store injected.
 
         This is a context manager that yields a fresh graph copy per-request.
         Thread-safe without locks since each request gets its own instance.
+
+        When the graph was registered as a per-request factory, the factory is
+        called on each request instead of reusing the cached base graph:
+        - ``runtime`` factories receive ``Runtime(context=...)``
+        - ``config`` factories receive the ``RunnableConfig`` dict
 
         Usage:
             async with langgraph_service.get_graph("react_agent") as graph:
@@ -223,11 +262,39 @@ class LangGraphService:
                     ...
 
         @param graph_id: The graph identifier from aegra.json
+        @param context: Optional per-request context dict for runtime-aware factories
+        @param run_config: Optional RunnableConfig dict for config-aware factories
         @yields: Compiled Pregel graph with Postgres checkpointer/store attached
         @raises ValueError: If graph_id not found or loading fails
         """
-        # Get the cached base graph
-        base_graph = await self._get_base_graph(graph_id)
+        base_graph: Pregel
+        factory = self._graph_factories.get(graph_id)
+
+        if factory is not None and factory.kind == "runtime" and context is not None:
+            # Runtime factory: call per-request with coerced context
+            coerced = coerce_context(factory.context_schema, context)
+            runtime = Runtime(context=coerced)
+            logger.info(f"Calling runtime factory for '{graph_id}' with request context")
+            raw_graph = await factory.factory(runtime)
+
+            if isinstance(raw_graph, StateGraph):
+                base_graph = raw_graph.compile()
+            else:
+                base_graph = raw_graph
+
+        elif factory is not None and factory.kind == "config" and run_config is not None:
+            # RunnableConfig factory: call per-request with the run config
+            logger.info(f"Calling config factory for '{graph_id}' with request config")
+            raw_graph = await factory.factory(run_config)
+
+            if isinstance(raw_graph, StateGraph):
+                base_graph = raw_graph.compile()
+            else:
+                base_graph = raw_graph
+
+        else:
+            # Use the cached base graph (existing behavior)
+            base_graph = await self._get_base_graph(graph_id)
 
         # Get checkpointer and store for this request
         from aegra_api.core.database import db_manager
@@ -301,7 +368,17 @@ class LangGraphService:
         graph = getattr(module, export_name)
 
         # https://github.com/langchain-ai/langchain-mcp-adapters?tab=readme-ov-file#using-with-langgraph-api-server
-        if callable(graph):
+        # Skip factory detection for already-compiled graphs (Pregel, StateGraph).
+        # These are callable (Runnable.__call__) but are NOT factories.
+        if callable(graph) and not isinstance(graph, (Pregel, StateGraph)):
+            factory = detect_factory(graph_id, graph)
+            if factory is not None:
+                logger.info(
+                    f"Detected {factory.kind} factory for '{graph_id}' (context_schema={factory.context_schema})"
+                )
+                return factory
+
+            # Simple async factory (e.g., MCP adapters): call immediately
             graph = await graph()
 
         # The graph should already be compiled in the module
@@ -312,15 +389,17 @@ class LangGraphService:
         """List all available graphs"""
         return {graph_id: info["file_path"] for graph_id, info in self._graph_registry.items()}
 
-    def invalidate_cache(self, graph_id: str | None = None):
+    def invalidate_cache(self, graph_id: str | None = None) -> None:
         """Invalidate graph cache for hot-reload.
 
         @param graph_id: Specific graph to invalidate, or None to clear all
         """
         if graph_id:
             self._base_graph_cache.pop(graph_id, None)
+            self._graph_factories.pop(graph_id, None)
         else:
             self._base_graph_cache.clear()
+            self._graph_factories.clear()
 
     def get_config(self) -> dict[str, Any] | None:
         """Get loaded configuration"""

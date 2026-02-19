@@ -190,12 +190,28 @@ The system uses two connection pools:
 **aegra.json** defines graphs, auth, HTTP config, and store settings. See `docs/configuration.md` for full reference.
 
 ### Graph Loading
-Agents are Python modules exporting a compiled `graph` variable:
+Agents are Python modules exporting a `graph` variable. Three export formats are supported:
+
 ```python
+# 1. Compiled graph (most common)
 builder = StateGraph(State)
 # ... define nodes and edges
 graph = builder.compile()  # Must export as 'graph'
+
+# 2. Runtime factory — called per-request with coerced user context
+from aegra_api.services.graph_factory import Runtime
+
+async def graph(runtime: Runtime[MyContext]):
+    ctx = runtime.context  # MyContext instance, coerced from request context dict
+    ...
+
+# 3. RunnableConfig factory — called per-request with the run config dict
+async def graph(config: RunnableConfig):
+    model = config.get("configurable", {}).get("model", "gpt-4o-mini")
+    ...
 ```
+
+Factory detection is automatic via function signature inspection. See `services/graph_factory.py` for implementation details.
 
 ## Common Tasks
 

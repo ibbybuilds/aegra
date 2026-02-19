@@ -13,6 +13,7 @@ from aegra_api.services.graph_factory import (
     build_default_context,
     coerce_context,
     extract_context_schema,
+    has_runnable_config_param,
 )
 from aegra_api.services.langgraph_service import LangGraphService
 
@@ -92,6 +93,17 @@ class TestExtractContextSchema:
 
         result = extract_context_schema(factory)
         assert result is None
+
+    def test_extract_from_parameterised_runtime(self) -> None:
+        """Parameterised Runtime[T] returns the inner type argument."""
+
+        class MyCtx(BaseModel):
+            name: str = "default"
+
+        def factory(runtime: Runtime[MyCtx]) -> None: ...  # type: ignore[type-arg]
+
+        result = extract_context_schema(factory)
+        assert result is MyCtx
 
 
 class TestBuildDefaultContext:
@@ -502,3 +514,28 @@ class TestRunnableConfigFactory:
 
             assert isinstance(result, GraphFactory)
             assert result.kind == "runtime"
+
+
+class TestHasRunnableConfigParam:
+    """Tests for has_runnable_config_param helper."""
+
+    def test_untyped_config_param_rejected(self) -> None:
+        """A 'config' parameter with no type annotation is not accepted."""
+
+        def factory(config) -> None: ...
+
+        assert has_runnable_config_param(factory) is False
+
+    def test_typed_dict_config_param_accepted(self) -> None:
+        """A 'config: dict' parameter is accepted."""
+
+        def factory(config: dict) -> None: ...
+
+        assert has_runnable_config_param(factory) is True
+
+    def test_no_config_param_rejected(self) -> None:
+        """A callable without 'config' parameter is not accepted."""
+
+        def factory(x: int) -> None: ...
+
+        assert has_runnable_config_param(factory) is False

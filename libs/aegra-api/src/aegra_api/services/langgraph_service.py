@@ -45,6 +45,13 @@ class LangGraphService:
     - Thread-safe without locks via immutable cached state
     """
 
+    @staticmethod
+    def _ensure_compiled(raw_graph: StateGraph | Pregel) -> Pregel:
+        """Compile a StateGraph if needed; return a Pregel as-is."""
+        if isinstance(raw_graph, StateGraph):
+            return raw_graph.compile()
+        return raw_graph
+
     def __init__(self, config_path: str | None = None):
         self.config_path = Path(config_path) if config_path else Path("aegra.json")
         self._explicit_config = config_path is not None
@@ -230,9 +237,7 @@ class LangGraphService:
         # Compile if it's a StateGraph
         if isinstance(raw_graph, StateGraph):
             logger.info(f"🔧 Compiling graph '{graph_id}'")
-            compiled_graph = raw_graph.compile()
-        else:
-            compiled_graph = raw_graph
+        compiled_graph = self._ensure_compiled(raw_graph)
 
         # Cache the base compiled graph (without checkpointer/store)
         self._base_graph_cache[graph_id] = compiled_graph
@@ -276,21 +281,13 @@ class LangGraphService:
             runtime = Runtime(context=coerced)
             logger.info(f"Calling runtime factory for '{graph_id}' with request context")
             raw_graph = await factory.factory(runtime)
-
-            if isinstance(raw_graph, StateGraph):
-                base_graph = raw_graph.compile()
-            else:
-                base_graph = raw_graph
+            base_graph = self._ensure_compiled(raw_graph)
 
         elif factory is not None and factory.kind == "config" and run_config is not None:
             # RunnableConfig factory: call per-request with the run config
             logger.info(f"Calling config factory for '{graph_id}' with request config")
             raw_graph = await factory.factory(run_config)
-
-            if isinstance(raw_graph, StateGraph):
-                base_graph = raw_graph.compile()
-            else:
-                base_graph = raw_graph
+            base_graph = self._ensure_compiled(raw_graph)
 
         else:
             # Use the cached base graph (existing behavior)

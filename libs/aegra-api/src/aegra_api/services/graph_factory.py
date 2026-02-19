@@ -16,21 +16,26 @@ Two factory patterns are supported:
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, is_dataclass
-from typing import Any, Literal, get_args, get_type_hints
+from typing import Any, Generic, Literal, TypeVar, get_args, get_type_hints
 
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 
+Ctx = TypeVar("Ctx")
+
 
 @dataclass
-class Runtime:
+class Runtime(Generic[Ctx]):  # noqa: UP046
     """Lightweight Runtime object passed to graph factories.
 
     Mirrors the LangGraph Runtime pattern where factories receive per-request
     context to dynamically configure graphs.
+
+    The generic parameter ``Ctx`` is for type-hint purposes only; at runtime
+    ``context`` holds the coerced value (or a plain dict if no schema is set).
     """
 
-    context: Any = None
+    context: Ctx | None = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -124,8 +129,8 @@ def has_runnable_config_param(factory: Callable[..., Any]) -> bool:
 
     config_hint = hints.get("config")
     if config_hint is None:
-        # No type hint but parameter is named 'config' — accept it
-        return True
+        # No type annotation — require an explicit type to avoid false positives
+        return False
 
     # Accept dict, RunnableConfig, or any dict-like type hint
     if config_hint is dict or (hasattr(config_hint, "__origin__") and config_hint.__origin__ is dict):

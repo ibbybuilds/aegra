@@ -96,7 +96,6 @@ class TestExtractContextSchema:
 
     def test_extract_unresolvable_hints_returns_none(self) -> None:
         """Returns None when get_type_hints raises (e.g., broken forward ref)."""
-        from unittest.mock import patch
 
         def factory(runtime: Runtime) -> None: ...
 
@@ -549,3 +548,27 @@ class TestHasRunnableConfigParam:
         def factory(x: int) -> None: ...
 
         assert has_runnable_config_param(factory) is False
+
+    def test_signature_inspection_failure_rejected(self) -> None:
+        """Returns False when inspect.signature raises."""
+
+        def factory(config: dict) -> None: ...
+
+        with patch("aegra_api.services.graph_factory.inspect.signature", side_effect=ValueError("no sig")):
+            assert has_runnable_config_param(factory) is False
+
+    def test_unresolvable_type_hint_with_config_param_accepted(self) -> None:
+        """Returns True when get_type_hints raises but 'config' param is present."""
+
+        def factory(config: "NonExistent") -> None: ...  # type: ignore[name-defined]  # noqa: F821
+
+        with patch("aegra_api.services.graph_factory.get_type_hints", side_effect=NameError("x")):
+            assert has_runnable_config_param(factory) is True
+
+    def test_runnable_config_type_hint_accepted(self) -> None:
+        """A 'config: RunnableConfig' parameter is accepted."""
+        from langchain_core.runnables import RunnableConfig
+
+        def factory(config: RunnableConfig) -> None: ...
+
+        assert has_runnable_config_param(factory) is True

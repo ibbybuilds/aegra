@@ -330,7 +330,7 @@ class LangGraphService:
         """
         return await self._get_base_graph(graph_id)
 
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> GraphFactory | Any:
+    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> GraphFactory | Pregel:
         """Load graph from filesystem.
 
         Paths are resolved relative to the config file's directory.

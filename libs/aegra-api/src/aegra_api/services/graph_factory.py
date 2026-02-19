@@ -64,7 +64,11 @@ def coerce_context(context_schema: type | None, context: dict[str, Any] | None) 
     if context is None or context_schema is None:
         return context
 
-    if isinstance(context, dict) and (issubclass(context_schema, BaseModel) or is_dataclass(context_schema)):
+    if (
+        isinstance(context, dict)
+        and isinstance(context_schema, type)
+        and (issubclass(context_schema, BaseModel) or is_dataclass(context_schema))
+    ):
         return context_schema(**context)
     return context
 
@@ -79,13 +83,13 @@ def build_default_context(context_schema: type | None) -> Any:
     instead of None.
     """
     if context_schema is None:
-        return None
+        return
 
     try:
         return context_schema()
     except (TypeError, ValueError):
         # Schema has required fields without defaults — can't build a default
-        return None
+        return
 
 
 def extract_context_schema(factory: Callable[..., Any]) -> type | None:
@@ -97,17 +101,17 @@ def extract_context_schema(factory: Callable[..., Any]) -> type | None:
     try:
         hints = get_type_hints(factory)
     except (NameError, AttributeError):
-        return None
+        return
 
     runtime_hint = hints.get("runtime")
     if runtime_hint is None:
-        return None
+        return
 
     args = get_args(runtime_hint)
     if args:
         schema: type = args[0]
         return schema
-    return None
+    return
 
 
 def has_runnable_config_param(factory: Callable[..., Any]) -> bool:
@@ -160,4 +164,4 @@ def detect_factory(graph: Callable[..., Any]) -> GraphFactory | None:
     if has_runnable_config_param(graph):
         return GraphFactory(factory=graph, kind="config")
 
-    return None
+    return

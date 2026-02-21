@@ -1,0 +1,231 @@
+---
+title: "Configuration"
+description: "Complete reference for the aegra.json configuration file."
+---
+
+Aegra uses a JSON configuration file (`aegra.json`) to define graphs, authentication, HTTP settings, and the semantic store.
+
+## Config file resolution
+
+Aegra resolves configuration files in this order:
+
+1. **`AEGRA_CONFIG` environment variable** — absolute or relative path
+2. **`aegra.json`** in the current working directory
+3. **`langgraph.json`** in the current working directory (compatibility fallback)
+
+```bash
+# Use a custom config file
+AEGRA_CONFIG=production.json aegra dev
+
+# Use default aegra.json
+aegra dev
+```
+
+## Complete example
+
+```json
+{
+  "dependencies": ["./shared"],
+  "graphs": {
+    "agent": "./graphs/react_agent/graph.py:graph",
+    "agent_hitl": "./graphs/react_agent_hitl/graph.py:graph"
+  },
+  "auth": {
+    "path": "./my_auth.py:auth",
+    "disable_studio_auth": false
+  },
+  "http": {
+    "app": "./custom_routes.py:app",
+    "enable_custom_route_auth": false,
+    "cors": {
+      "allow_origins": ["https://example.com"],
+      "allow_credentials": true
+    }
+  },
+  "store": {
+    "index": {
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
+    }
+  }
+}
+```
+
+## `dependencies`
+
+Add shared utility module paths to `sys.path` before graphs are loaded.
+
+```json
+{
+  "dependencies": ["./shared", "./libs/common"]
+}
+```
+
+| Type | Description |
+|------|-------------|
+| `list[str]` | List of directory paths to add to `sys.path` |
+
+- Relative paths are resolved from the config file's directory
+- Paths are added in order (first has highest import priority)
+- Non-existent paths generate a warning but don't prevent startup
+
+See [dependencies guide](/guides/dependencies) for details.
+
+## `graphs`
+
+Define your LangGraph agents.
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/react_agent/graph.py:graph",
+    "custom_agent": "./my_graphs/custom.py:my_graph"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| Key | `string` | Graph ID (used in API calls to identify the graph) |
+| Value | `string` | Import path in format `./path/to/file.py:variable` |
+
+The variable must be a compiled LangGraph graph (result of `builder.compile()`).
+
+## `auth`
+
+Configure authentication and authorization.
+
+```json
+{
+  "auth": {
+    "path": "./my_auth.py:auth",
+    "disable_studio_auth": false
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | `string` | — | Import path to your auth handler (`./file.py:variable`) |
+| `disable_studio_auth` | `bool` | `false` | Disable auth for LangGraph Studio connections |
+
+The `path` supports multiple formats:
+- `./auth.py:auth` — Load from a file relative to the config
+- `./src/auth/jwt.py:auth` — Nested path
+- `mypackage.auth:auth` — Load from an installed package
+
+If `auth` is not configured, Aegra runs in no-auth mode where all requests are allowed.
+
+See [authentication guide](/guides/authentication) for details.
+
+## `http`
+
+Configure custom routes and CORS.
+
+```json
+{
+  "http": {
+    "app": "./custom_routes.py:app",
+    "enable_custom_route_auth": false,
+    "cors": {
+      "allow_origins": ["https://example.com"],
+      "allow_credentials": true
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `app` | `string` | `None` | Import path to custom FastAPI app |
+| `enable_custom_route_auth` | `bool` | `false` | Apply Aegra auth to all custom routes |
+| `cors.allow_origins` | `list[str]` | `["*"]` | Allowed CORS origins |
+| `cors.allow_credentials` | `bool` | `true` | Allow credentials in CORS requests |
+
+See [custom routes guide](/guides/custom-routes) for details.
+
+## `store`
+
+Configure semantic store with vector embeddings.
+
+```json
+{
+  "store": {
+    "index": {
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
+    }
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `index.dims` | `integer` | Yes | Embedding vector dimensions (must match your model) |
+| `index.embed` | `string` | Yes | Embedding model in format `provider:model-id` |
+| `index.fields` | `list[str]` | No | JSON fields to embed (default: `["$"]` for entire document) |
+
+If `store` is not configured, Aegra operates in basic key-value mode.
+
+See [semantic store guide](/guides/semantic-store) for details.
+
+## Common configurations
+
+### Minimal
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/agent/graph.py:graph"
+  }
+}
+```
+
+### With authentication
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/agent/graph.py:graph"
+  },
+  "auth": {
+    "path": "./my_auth.py:auth"
+  }
+}
+```
+
+### With custom routes
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/agent/graph.py:graph"
+  },
+  "http": {
+    "app": "./custom_routes.py:app"
+  }
+}
+```
+
+### Production
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/agent/graph.py:graph"
+  },
+  "auth": {
+    "path": "./auth/production_auth.py:auth"
+  },
+  "http": {
+    "app": "./custom_routes.py:app",
+    "enable_custom_route_auth": true,
+    "cors": {
+      "allow_origins": ["https://myapp.com"],
+      "allow_credentials": true
+    }
+  }
+}
+```

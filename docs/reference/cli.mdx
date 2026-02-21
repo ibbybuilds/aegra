@@ -1,0 +1,133 @@
+---
+title: "CLI reference"
+description: "Complete reference for all Aegra CLI commands."
+---
+
+The Aegra CLI manages project creation, development servers, and Docker deployments.
+
+## Install
+
+```bash
+pip install aegra-cli
+```
+
+<Warning>
+  Install `aegra-cli` directly — not the `aegra` meta-package on PyPI.
+</Warning>
+
+## Commands
+
+### `aegra init`
+
+Create a new Aegra project interactively.
+
+```bash
+aegra init              # Prompts for location, template, and name
+aegra init ./my-agent   # Create at path (still prompts for template)
+```
+
+Generates the project structure including `aegra.json`, `Dockerfile`, `docker-compose.yml`, `.env.example`, and a starter graph based on the selected template.
+
+**Templates:**
+- **simple-chatbot** — Basic conversational agent
+- **react-agent** — ReAct agent with tool use
+
+---
+
+### `aegra dev`
+
+Start the development server with hot reload and automatic PostgreSQL.
+
+```bash
+aegra dev
+```
+
+What it does:
+1. Starts a PostgreSQL container via Docker Compose
+2. Loads your `.env` file
+3. Applies database migrations automatically
+4. Runs uvicorn with `--reload`
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | `127.0.0.1` | Host to bind to |
+| `--port` | `8000` | Port to bind to |
+| `--config` / `-c` | Auto-detected | Path to `aegra.json` |
+| `--env-file` / `-e` | `.env` | Path to `.env` file |
+| `--file` / `-f` | Auto-detected | Path to `docker-compose.yml` |
+| `--no-db-check` | — | Skip database readiness check |
+
+---
+
+### `aegra serve`
+
+Start the production server without Docker. You must provide a running database.
+
+```bash
+aegra serve
+```
+
+What it does:
+1. Loads your `.env` file
+2. Runs uvicorn in production mode (no reload)
+3. Applies database migrations automatically
+4. Connects to the database configured via `DATABASE_URL` or `POSTGRES_*` variables
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | `0.0.0.0` | Host to bind to |
+| `--port` | From env or `8000` | Port to bind to |
+| `--config` / `-c` | Auto-detected | Path to `aegra.json` |
+
+Use `aegra serve` for:
+- PaaS platforms (Railway, Render, Fly.io)
+- Inside Docker containers (generated `Dockerfile` uses this as CMD)
+- Bare metal / VM with external PostgreSQL
+- Kubernetes pod specs
+
+---
+
+### `aegra up`
+
+Build and start all Docker services (PostgreSQL + app).
+
+```bash
+aegra up
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--build` / `--no-build` | Build on | Build images before starting |
+| `--file` / `-f` | Auto-detected | Path to compose file |
+| `SERVICE...` | All | Specific services to start |
+
+---
+
+### `aegra down`
+
+Stop Docker services.
+
+```bash
+aegra down              # Stop containers
+aegra down --volumes    # Stop and remove data volumes
+```
+
+---
+
+### `aegra version`
+
+Show version information.
+
+```bash
+aegra version
+```
+
+## When to use each command
+
+| Scenario | Command |
+|----------|---------|
+| Local development | `aegra dev` |
+| Self-hosted Docker production | `aegra up` |
+| PaaS deployment (Railway, Render) | `aegra serve` |
+| Kubernetes | `aegra serve` (in pod spec) |
+| Inside a Docker container | `aegra serve` (as CMD) |

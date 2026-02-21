@@ -1,0 +1,141 @@
+---
+title: "Semantic store"
+description: "Store and retrieve data by meaning using vector embeddings with pgvector."
+---
+
+Aegra supports semantic similarity search through the LangGraph Store API using PostgreSQL with pgvector. This lets agents store and retrieve information based on meaning rather than exact keyword matches.
+
+## Use cases
+
+- **Conversational memory** — Agents recall past interactions semantically
+- **RAG applications** — Store and retrieve knowledge documents by similarity
+- **Personalization** — Remember user preferences and retrieve them contextually
+- **Multi-tenant search** — Namespaced semantic search per user or tenant
+
+## Configuration
+
+Add the `store` section to your `aegra.json`:
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/agent/graph.py:graph"
+  },
+  "store": {
+    "index": {
+      "dims": 1536,
+      "embed": "openai:text-embedding-3-small",
+      "fields": ["$"]
+    }
+  }
+}
+```
+
+### Options
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `dims` | `integer` | Yes | Embedding vector dimensions (must match your model) |
+| `embed` | `string` | Yes | Embedding model in format `provider:model-id` |
+| `fields` | `list[str]` | No | JSON fields to embed (default: `["$"]` for entire document) |
+
+### Fields configuration
+
+The `fields` option controls which parts of your documents get embedded:
+
+| Value | Behavior |
+|-------|----------|
+| `["$"]` (default) | Embed the entire document as one unit |
+| `["text", "summary"]` | Embed only these top-level fields |
+| `["metadata.title", "content.text"]` | JSON path notation for nested fields |
+
+Documents missing specified fields are still stored but won't have embeddings for those fields. You can also override which fields to embed at put time using the `index` parameter.
+
+### Supported embedding providers
+
+| Provider | Model | Dimensions | Config value |
+|----------|-------|------------|--------------|
+| OpenAI | text-embedding-3-small | 1536 | `openai:text-embedding-3-small` |
+| OpenAI | text-embedding-3-large | 3072 | `openai:text-embedding-3-large` |
+| AWS Bedrock | amazon.titan-embed-text-v2:0 | 1024 | `bedrock:amazon.titan-embed-text-v2:0` |
+| Cohere | embed-english-v3.0 | 1024 | `cohere:embed-english-v3.0` |
+
+Set the appropriate API key in your `.env`:
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# AWS Bedrock
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+
+# Cohere
+COHERE_API_KEY=...
+```
+
+## Usage
+
+### Storing items
+
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="http://localhost:8000")
+
+await client.store.put(
+    namespace=["user", "123", "preferences"],
+    key="coding_style",
+    value={
+        "text": "I prefer clean code with descriptive variable names and minimal comments"
+    },
+)
+```
+
+### Semantic search
+
+```python
+results = await client.store.search(
+    namespace_prefix=["user", "123"],
+    query="How does this user like to write code?",
+    limit=5,
+)
+# Returns the coding_style preference based on semantic similarity
+```
+
+## Database requirements
+
+Semantic store requires PostgreSQL with the pgvector extension. Use the recommended Docker image:
+
+```yaml
+postgres:
+  image: pgvector/pgvector:pg18
+```
+
+Aegra automatically creates the necessary tables and indexes during startup.
+
+## Verification
+
+After starting with semantic store configured, you should see this log:
+
+```
+INFO: Semantic store enabled with embeddings: openai:text-embedding-3-small
+```
+
+## Backward compatibility
+
+If no `store.index` configuration is provided, Aegra operates in basic key-value mode. Existing deployments continue to work without changes.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="pgvector extension not found">
+    Make sure you're using a PostgreSQL image with pgvector installed: `pgvector/pgvector:pg18`.
+  </Accordion>
+  <Accordion title="Invalid embedding model">
+    Verify the `embed` format is correct (`provider:model-id`) and the corresponding API key is set in your `.env`.
+  </Accordion>
+  <Accordion title="Dimension mismatch">
+    The `dims` value must match your embedding model's output dimensions exactly. For example, `text-embedding-3-small` outputs 1536-dimensional vectors.
+  </Accordion>
+</AccordionGroup>

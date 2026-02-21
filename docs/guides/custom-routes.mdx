@@ -1,0 +1,132 @@
+---
+title: "Custom routes"
+description: "Add your own FastAPI endpoints alongside the Agent Protocol API."
+---
+
+Aegra lets you mount a custom FastAPI app alongside the core Agent Protocol endpoints. Use this for webhooks, admin panels, health dashboards, or any other HTTP endpoints your application needs.
+
+## Setup
+
+<Steps>
+  <Step title="Create a FastAPI app">
+    ```python
+    # custom_routes.py
+    from fastapi import FastAPI
+
+    app = FastAPI()
+
+    @app.get("/custom/hello")
+    async def hello():
+        return {"message": "Hello from custom route!"}
+
+    @app.post("/custom/webhook")
+    async def webhook(data: dict):
+        return {"received": data, "status": "processed"}
+    ```
+  </Step>
+  <Step title="Register it in aegra.json">
+    ```json
+    {
+      "graphs": {
+        "agent": "./graphs/agent/graph.py:graph"
+      },
+      "http": {
+        "app": "./custom_routes.py:app"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Start the server">
+    ```bash
+    aegra dev
+    ```
+
+    Your custom routes are now available alongside the Agent Protocol API.
+  </Step>
+</Steps>
+
+## Route priority
+
+Custom routes follow this priority order:
+
+| Priority | Routes | Behavior |
+|----------|--------|----------|
+| 1 | `/health`, `/ready`, `/live`, `/docs`, `/openapi.json` | Always accessible, cannot be overridden |
+| 2 | Your custom routes | Take precedence over shadowable routes |
+| 3 | `/`, `/info` | Can be overridden by custom routes |
+| 4 | `/assistants`, `/threads`, `/runs`, `/store` | Core Agent Protocol routes, cannot be overridden |
+
+You can override the root route `/` and `/info`, but you cannot override the Agent Protocol endpoints or health checks.
+
+```python
+# This works — overrides the default root
+@app.get("/")
+async def custom_root():
+    return {"message": "Custom Aegra Server", "custom": True}
+```
+
+## Authentication on custom routes
+
+By default, custom routes do **not** have Aegra's authentication applied. You have two options:
+
+### Option 1: Apply auth to all custom routes
+
+Set `enable_custom_route_auth` in your config:
+
+```json
+{
+  "http": {
+    "app": "./custom_routes.py:app",
+    "enable_custom_route_auth": true
+  }
+}
+```
+
+### Option 2: Apply auth to specific routes
+
+Use the `require_auth` dependency on individual routes:
+
+```python
+from fastapi import Depends
+from aegra_api.core.auth_deps import require_auth
+from aegra_api.models.auth import User
+
+@app.get("/custom/whoami")
+async def whoami(user: User = Depends(require_auth)):
+    return {
+        "identity": user.identity,
+        "display_name": user.display_name,
+    }
+
+@app.get("/custom/public")
+async def public():
+    # No auth required
+    return {"message": "Public endpoint"}
+```
+
+## CORS configuration
+
+Configure CORS for your custom routes in `aegra.json`:
+
+```json
+{
+  "http": {
+    "app": "./custom_routes.py:app",
+    "cors": {
+      "allow_origins": ["https://myapp.com"],
+      "allow_credentials": true
+    }
+  }
+}
+```
+
+The default is `allow_origins: ["*"]` with `allow_credentials: true`.
+
+## Configuration reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `http.app` | `string` | `None` | Import path to custom FastAPI app (`./file.py:variable`) |
+| `http.enable_custom_route_auth` | `bool` | `false` | Apply Aegra auth to all custom routes |
+| `http.cors.allow_origins` | `list[str]` | `["*"]` | Allowed CORS origins |
+| `http.cors.allow_credentials` | `bool` | `true` | Allow credentials in CORS requests |

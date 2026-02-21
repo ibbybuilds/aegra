@@ -1,0 +1,103 @@
+---
+title: "Installation"
+description: "All the ways to install and run Aegra."
+---
+
+## Using the CLI
+
+The CLI is the recommended way to create and manage Aegra projects.
+
+```bash
+pip install aegra-cli
+```
+
+Then initialize a new project:
+
+```bash
+aegra init
+```
+
+The CLI prompts you for a location, a template (simple-chatbot or react-agent), and a project name. It generates the project structure, `aegra.json`, `Dockerfile`, `docker-compose.yml`, and `.env.example`.
+
+<Warning>
+  Install `aegra-cli` directly — not the `aegra` meta-package on PyPI. The `aegra` package is a convenience wrapper that does not support version pinning.
+</Warning>
+
+## From source
+
+Clone the repository and run directly:
+
+```bash
+git clone https://github.com/ibbybuilds/aegra.git
+cd aegra
+cp .env.example .env
+# Add your OPENAI_API_KEY to .env
+```
+
+Install dependencies and start the development server:
+
+```bash
+uv sync --all-packages
+uv run aegra dev
+```
+
+Or start with Docker Compose:
+
+```bash
+docker compose up
+```
+
+## Requirements
+
+### Python
+
+Aegra requires Python 3.12+ for the API server. The CLI supports Python 3.11+.
+
+### PostgreSQL
+
+Aegra uses PostgreSQL with the pgvector extension for persistence and vector search. The recommended image is `pgvector/pgvector:pg18`.
+
+When you use `aegra dev` or `aegra up`, PostgreSQL is started automatically via Docker. For `aegra serve`, you provide your own database via `DATABASE_URL` or `POSTGRES_*` environment variables.
+
+### Docker
+
+Docker is required for local development (`aegra dev` starts a PostgreSQL container). For production, you can either run everything in Docker (`aegra up`) or provide an external database and run with `aegra serve`.
+
+## Project structure
+
+After `aegra init`, your project looks like this:
+
+```
+my-project/
+├── aegra.json           # Graph and server configuration
+├── graphs/
+│   └── agent/
+│       └── graph.py     # Your LangGraph agent
+├── .env.example         # Environment variable template
+├── Dockerfile           # Container build config
+├── docker-compose.yml   # Local development stack
+├── pyproject.toml       # Python dependencies
+└── README.md
+```
+
+## Verify the installation
+
+Start the server and check the health endpoint:
+
+```bash
+uv run aegra dev
+```
+
+In another terminal:
+
+```bash
+curl http://localhost:8000/health
+```
+
+You should see:
+
+```json
+{"status": "healthy"}
+```
+
+Visit [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive API documentation.

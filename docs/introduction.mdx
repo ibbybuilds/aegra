@@ -1,0 +1,58 @@
+---
+title: "Introduction"
+description: "Self-hosted Agent Protocol server. Your infrastructure, your rules."
+---
+
+Aegra is an open-source, self-hosted Agent Protocol server that lets you run AI agents on your own infrastructure. It's a drop-in replacement for LangGraph Platform — same SDK, same APIs, no vendor lock-in.
+
+## What Aegra does
+
+Aegra gives you a production-ready server for running LangGraph agents with full persistence, streaming, and authentication. You bring your own PostgreSQL database and keep complete control over your data.
+
+<CardGroup cols={2}>
+  <Card title="Agent Protocol" icon="robot">
+    Works with Agent Chat UI, LangGraph Studio, and CopilotKit out of the box.
+  </Card>
+  <Card title="Self-hosted" icon="server">
+    Run on your own infrastructure with your own PostgreSQL database. No external dependencies.
+  </Card>
+  <Card title="Same SDK" icon="plug">
+    Use the LangGraph SDK you already know. Switch from LangGraph Platform with zero code changes.
+  </Card>
+  <Card title="Open source" icon="code">
+    Apache 2.0 licensed. Inspect, modify, and contribute to the codebase.
+  </Card>
+</CardGroup>
+
+## How it compares
+
+| Feature | LangGraph Platform | Aegra |
+|:--|:--|:--|
+| **Cost** | Paid per month | Free (self-hosted) |
+| **Data control** | Third-party hosted | Your infrastructure |
+| **Vendor lock-in** | High dependency | Zero lock-in |
+| **Authentication** | Limited options | Custom (JWT/OAuth/Firebase) |
+| **Database** | Managed, no BYO | Bring your own Postgres |
+| **Tracing** | LangSmith only | Your choice (Langfuse, Phoenix, any OTLP) |
+| **SDK** | LangGraph SDK | Same LangGraph SDK |
+
+## Key features
+
+- **Human-in-the-loop** — Approval gates and user intervention points
+- **Streaming** — Real-time responses with network resilience
+- **Persistent state** — PostgreSQL checkpoints via LangGraph
+- **Configurable auth** — JWT, OAuth, Firebase, or none
+- **Observability** — Fan-out tracing via OpenTelemetry to multiple backends
+- **Semantic store** — Vector embeddings with pgvector
+- **Custom routes** — Add your own FastAPI endpoints alongside the Agent Protocol API
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get a running server in under 5 minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    All the ways to install and run Aegra.
+  </Card>
+</CardGroup>

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "quill",
+  "name": "Aegra",
+  "logo": {
+    "light": "/images/logo-light.svg",
+    "dark": "/images/logo-dark.svg"
+  },
+  "favicon": "/images/favicon.svg",
+  "colors": {
+    "primary": "#6366f1",
+    "light": "#818cf8",
+    "dark": "#4f46e5",
+    "anchors": {
+      "from": "#6366f1",
+      "to": "#8b5cf6"
+    }
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "topbarLinks": [
+    {
+      "name": "Discord",
+      "url": "https://discord.com/invite/D5M3ZPS25e"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "GitHub",
+    "url": "https://github.com/ibbybuilds/aegra"
+  },
+  "tabs": [
+    {
+      "name": "Guides",
+      "url": "guides"
+    },
+    {
+      "name": "Reference",
+      "url": "reference"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting started",
+      "pages": [
+        "introduction",
+        "quickstart",
+        "installation"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/authentication",
+        "guides/custom-routes",
+        "guides/observability",
+        "guides/semantic-store",
+        "guides/dependencies",
+        "guides/deployment"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "reference/configuration",
+        "reference/cli",
+        "reference/environment-variables"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/ibbybuilds/aegra",
+    "discord": "https://discord.com/invite/D5M3ZPS25e"
+  },
+  "feedback": {
+    "thumbsRating": true,
+    "suggestEdit": true
+  },
+  "search": {
+    "prompt": "Search Aegra docs..."
+  }
+}

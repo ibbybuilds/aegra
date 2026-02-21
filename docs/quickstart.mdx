@@ -1,0 +1,101 @@
+---
+title: "Quickstart"
+description: "Get a running Aegra server in under 5 minutes."
+---
+
+## Prerequisites
+
+- Python 3.11+
+- Docker (for PostgreSQL)
+
+## Create a project
+
+<Steps>
+  <Step title="Install the CLI">
+    ```bash
+    pip install aegra-cli
+    ```
+  </Step>
+  <Step title="Initialize a new project">
+    ```bash
+    aegra init
+    ```
+
+    The CLI will prompt you for a location, template, and project name. Choose the **simple-chatbot** template to get started quickly.
+  </Step>
+  <Step title="Configure your environment">
+    ```bash
+    cd <your-project>
+    cp .env.example .env
+    ```
+
+    Open `.env` and add your `OPENAI_API_KEY`.
+  </Step>
+  <Step title="Install dependencies and start the server">
+    ```bash
+    uv sync
+    uv run aegra dev
+    ```
+
+    This starts a PostgreSQL container, applies database migrations, and launches the server with hot reload.
+  </Step>
+</Steps>
+
+Your server is running at [http://localhost:8000](http://localhost:8000). Visit [http://localhost:8000/docs](http://localhost:8000/docs) to explore the API.
+
+<Note>
+  Always install `aegra-cli` directly — not the `aegra` meta-package. The `aegra` package on PyPI is a convenience wrapper that does not support version pinning.
+</Note>
+
+## Talk to your agent
+
+Your LangGraph code works without changes:
+
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="http://localhost:8000")
+
+assistant = await client.assistants.create(graph_id="agent")
+thread = await client.threads.create()
+
+async for chunk in client.runs.stream(
+    thread_id=thread["thread_id"],
+    assistant_id=assistant["assistant_id"],
+    input={"messages": [{"type": "human", "content": "Hello!"}]},
+):
+    print(chunk)
+```
+
+## Connect a frontend
+
+Aegra implements the [Agent Protocol](https://github.com/langchain-ai/agent-protocol), so it works with any compatible frontend:
+
+<CardGroup cols={3}>
+  <Card title="Agent Chat UI" icon="comments" href="https://github.com/langchain-ai/agent-chat-ui">
+    Open-source chat interface for agent interactions.
+  </Card>
+  <Card title="LangGraph Studio" icon="desktop" href="https://github.com/langchain-ai/langgraph-studio">
+    Visual graph debugger and testing tool.
+  </Card>
+  <Card title="CopilotKit" icon="wand-magic-sparkles" href="https://github.com/CopilotKit/CopilotKit">
+    In-app AI copilot framework via AG-UI protocol.
+  </Card>
+</CardGroup>
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Add JWT, OAuth, or Firebase auth to your server.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/reference/configuration">
+    Full reference for aegra.json settings.
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/guides/deployment">
+    Deploy to Docker, PaaS, or Kubernetes.
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/guides/observability">
+    Set up tracing with Langfuse, Phoenix, or any OTLP backend.
+  </Card>
+</CardGroup>

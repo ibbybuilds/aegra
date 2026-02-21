@@ -1,0 +1,205 @@
+---
+title: "Deployment"
+description: "Deploy Aegra to Docker, PaaS platforms, or Kubernetes."
+---
+
+Aegra provides three CLI commands for different deployment scenarios:
+
+| Command | Starts PostgreSQL? | Starts app? | Best for |
+|---------|-------------------|-------------|----------|
+| `aegra dev` | Yes (Docker) | Yes (host, hot reload) | Local development |
+| `aegra up` | Yes (Docker) | Yes (Docker) | Self-hosted production |
+| `aegra serve` | No | Yes (host) | PaaS, containers, bare metal |
+
+## Local development
+
+```bash
+aegra dev
+```
+
+This starts a PostgreSQL container via Docker Compose and runs the app on your host with hot reload.
+
+What it does:
+1. Finds or generates `docker-compose.yml` with PostgreSQL
+2. Starts the PostgreSQL container
+3. Loads your `.env` file
+4. Runs uvicorn with `--reload` for hot reloading
+5. Applies database migrations automatically on startup
+
+<Accordion title="aegra dev options">
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | `127.0.0.1` | Host to bind to |
+| `--port` | `8000` | Port to bind to |
+| `--config` / `-c` | Auto-detected | Path to `aegra.json` |
+| `--env-file` / `-e` | `.env` | Path to `.env` file |
+| `--file` / `-f` | Auto-detected | Path to `docker-compose.yml` |
+| `--no-db-check` | — | Skip database readiness check |
+</Accordion>
+
+## Self-hosted with Docker
+
+```bash
+aegra up
+```
+
+Starts the entire stack (PostgreSQL + app) in Docker containers. This is the recommended production deployment for your own infrastructure.
+
+What it does:
+1. Finds or generates `docker-compose.yml` with PostgreSQL + app service
+2. Builds the Docker image from your `Dockerfile`
+3. Starts all containers
+4. The app container runs `aegra serve` internally
+5. Migrations apply automatically on startup
+
+The generated `docker-compose.yml` includes:
+- PostgreSQL with pgvector
+- Your app container built from `Dockerfile`
+- Health checks on PostgreSQL
+- Volume mounts for your graphs and config
+
+To stop:
+
+```bash
+aegra down            # Stop containers
+aegra down --volumes  # Stop and remove data volumes
+```
+
+<Accordion title="aegra up options">
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--build` / `--no-build` | Build on | Build images before starting |
+| `--file` / `-f` | Auto-detected | Path to compose file |
+| `SERVICE...` | All | Specific services to start |
+</Accordion>
+
+## PaaS deployment
+
+For platforms like Railway, Render, or Fly.io — use `aegra serve`:
+
+```bash
+aegra serve
+```
+
+This runs uvicorn directly without starting PostgreSQL. You provide a running database via environment variables.
+
+<Steps>
+  <Step title="Create a PostgreSQL addon on your platform">
+    Most PaaS platforms offer managed PostgreSQL. Create one and get the connection URL.
+  </Step>
+  <Step title="Set environment variables">
+    ```bash
+    DATABASE_URL=postgresql://user:password@host:5432/mydb
+    OPENAI_API_KEY=sk-...
+    AUTH_TYPE=noop  # or custom
+    ```
+  </Step>
+  <Step title="Set the start command">
+    ```text
+    aegra serve --host 0.0.0.0 --port $PORT
+    ```
+
+    Or in your `Dockerfile`:
+    ```dockerfile
+    CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ```
+  </Step>
+</Steps>
+
+<Accordion title="aegra serve options">
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | `0.0.0.0` | Host to bind to |
+| `--port` | From env or `8000` | Port to bind to |
+| `--config` / `-c` | Auto-detected | Path to `aegra.json` |
+</Accordion>
+
+## Kubernetes
+
+Use `aegra serve` as the container command in your pod spec:
+
+```yaml
+containers:
+  - name: aegra
+    image: your-registry/your-agent:latest
+    command: ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    env:
+      - name: DATABASE_URL
+        valueFrom:
+          secretKeyRef:
+            name: aegra-secrets
+            key: database-url
+    ports:
+      - containerPort: 8000
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+```
+
+PostgreSQL should be a managed service (CloudSQL, RDS, etc.) or a StatefulSet with persistent volumes.
+
+## Database configuration
+
+Two ways to configure the database connection:
+
+<Tabs>
+  <Tab title="Connection string (recommended for production)">
+    ```bash
+    DATABASE_URL=postgresql://user:password@host:5432/mydb?sslmode=require
+    ```
+
+    The URL is used directly by both SQLAlchemy and LangGraph with the appropriate driver prefix applied automatically. Query parameters (like `?sslmode=require`) are preserved.
+  </Tab>
+  <Tab title="Individual fields">
+    Used when `DATABASE_URL` is not set:
+
+    ```bash
+    POSTGRES_DB=mydb
+    POSTGRES_HOST=localhost
+    POSTGRES_PASSWORD=secret
+    POSTGRES_PORT=5432
+    POSTGRES_USER=myuser
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  `DATABASE_URL` takes precedence. When set, individual `POSTGRES_*` variables are ignored.
+</Note>
+
+## Migrations
+
+Migrations run automatically on startup for all deployment methods. You do not need to run them manually.
+
+## Health checks
+
+Aegra provides health check endpoints for load balancers, Docker, and Kubernetes probes:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Overall health status |
+| `GET /ready` | Readiness check |
+| `GET /live` | Liveness check |
+| `GET /info` | Server info |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection refused on startup">
+    PostgreSQL is not reachable. If using `aegra dev` or `aegra up`, make sure Docker is running. If using `aegra serve`, verify your `DATABASE_URL` or `POSTGRES_*` variables in `.env`.
+  </Accordion>
+  <Accordion title="Password authentication failed">
+    Wrong database credentials. Check that `POSTGRES_USER` and `POSTGRES_PASSWORD` in your `.env` match what PostgreSQL was initialized with.
+  </Accordion>
+  <Accordion title="Relation does not exist">
+    Migrations haven't been applied. This usually means the server couldn't connect to PostgreSQL during startup. Check the logs for connection errors, fix the connection, and restart.
+  </Accordion>
+  <Accordion title="Migrations hang on startup">
+    Check if another process holds a lock on the database, if the database is reachable but slow, or check server logs for specific migration errors.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,130 @@
+---
+title: "Environment variables"
+description: "Complete reference for all Aegra environment variables."
+---
+
+Aegra is configured through environment variables in your `.env` file. Copy `.env.example` as a starting point:
+
+```bash
+cp .env.example .env
+```
+
+## Application
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROJECT_NAME` | `Aegra` | Application name |
+| `VERSION` | `0.1.0` | Application version |
+| `DEBUG` | `true` | Enable debug mode |
+| `AEGRA_CONFIG` | `aegra.json` | Path to the configuration file |
+
+## Database
+
+Two ways to configure the database connection:
+
+### Option 1: Connection string
+
+```bash
+DATABASE_URL=postgresql://user:password@host:5432/aegra?sslmode=require
+```
+
+The URL is used by both SQLAlchemy (async) and LangGraph (sync) with the appropriate driver prefix applied automatically. Query parameters are preserved.
+
+### Option 2: Individual fields
+
+Used when `DATABASE_URL` is not set:
+
+```bash
+POSTGRES_DB=aegra
+POSTGRES_HOST=localhost
+POSTGRES_PASSWORD=password
+POSTGRES_PORT=5432
+POSTGRES_USER=user
+```
+
+<Note>
+  `DATABASE_URL` takes precedence. When set, individual `POSTGRES_*` variables are ignored.
+</Note>
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | — | Full PostgreSQL connection string |
+| `POSTGRES_DB` | `aegra` | Database name |
+| `POSTGRES_HOST` | `localhost` | Database host |
+| `POSTGRES_PASSWORD` | `password` | Database password |
+| `POSTGRES_PORT` | `5432` | Database port |
+| `POSTGRES_USER` | `user` | Database user |
+| `DB_ECHO_LOG` | `false` | Log all SQL statements |
+
+## Connection pools
+
+Aegra uses two connection pools: one for SQLAlchemy (metadata) and one for LangGraph (agent runtime).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SQLALCHEMY_POOL_SIZE` | `2` | SQLAlchemy connection pool size |
+| `SQLALCHEMY_MAX_OVERFLOW` | `0` | Max overflow connections for SQLAlchemy |
+| `LANGGRAPH_MIN_POOL_SIZE` | `1` | Minimum connections for LangGraph pool |
+| `LANGGRAPH_MAX_POOL_SIZE` | `6` | Maximum connections for LangGraph pool |
+
+## Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `0.0.0.0` | Server host |
+| `PORT` | `8000` | Server port |
+| `SERVER_URL` | `http://localhost:8000` | Public-facing server URL |
+
+## Authentication
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTH_TYPE` | `noop` | Authentication mode: `noop` (no auth) or `custom` |
+
+## Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `ENV_MODE` | `LOCAL` | Environment mode: `LOCAL`, `DEVELOPMENT`, `PRODUCTION` (PRODUCTION outputs JSON logs) |
+| `LOG_VERBOSITY` | `standard` | `standard` or `verbose` (verbose includes request-id) |
+
+## LLM providers
+
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `TOGETHER_API_KEY` | Together AI API key |
+
+## Observability (OpenTelemetry)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_SERVICE_NAME` | `aegra-backend` | Service name for traces |
+| `OTEL_TARGETS` | `""` | Comma-separated list: `LANGFUSE`, `PHOENIX`, `GENERIC` |
+| `OTEL_CONSOLE_EXPORT` | `false` | Log traces to console |
+
+### Langfuse
+
+| Variable | Description |
+|----------|-------------|
+| `LANGFUSE_BASE_URL` | Langfuse API endpoint (e.g., `https://cloud.langfuse.com`) |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key |
+
+### Arize Phoenix
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PHOENIX_COLLECTOR_ENDPOINT` | `http://127.0.0.1:6006/v1/traces` | Phoenix OTLP endpoint |
+| `PHOENIX_API_KEY` | — | Phoenix API key (optional) |
+
+### Generic OTLP
+
+| Variable | Description |
+|----------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers as comma-separated `key=value` pairs |
+
+See [observability guide](/guides/observability) for configuration examples.

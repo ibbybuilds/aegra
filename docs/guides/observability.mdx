@@ -1,0 +1,112 @@
+---
+title: "Observability"
+description: "Set up tracing with Langfuse, Arize Phoenix, or any OTLP-compatible backend."
+---
+
+Aegra uses OpenTelemetry for all observability. This means you can send traces to multiple backends simultaneously without changing your code — no vendor lock-in.
+
+## Supported backends
+
+Out of the box, Aegra supports:
+
+- **Langfuse** — Production-grade LLM observability
+- **Arize Phoenix** — Local debugging and evaluation
+- **Generic OTLP** — Any compatible backend (Jaeger, Honeycomb, Datadog, etc.)
+
+You can enable one, multiple, or all of these at the same time.
+
+## Configuration
+
+Tracing is configured entirely through environment variables in your `.env` file.
+
+### Enable tracing
+
+Set the `OTEL_TARGETS` variable to a comma-separated list of backends:
+
+```bash
+# Enable Langfuse and Phoenix simultaneously
+OTEL_TARGETS="LANGFUSE,PHOENIX"
+
+# Enable only generic OTLP
+OTEL_TARGETS="GENERIC"
+
+# Disable all tracing (default)
+OTEL_TARGETS=""
+```
+
+For debugging, you can also log traces to the console:
+
+```bash
+OTEL_CONSOLE_EXPORT=true
+```
+
+### Provider configuration
+
+<Tabs>
+  <Tab title="Langfuse">
+    ```bash
+    OTEL_TARGETS="LANGFUSE"
+    LANGFUSE_BASE_URL=https://cloud.langfuse.com
+    LANGFUSE_PUBLIC_KEY=pk-lf-...
+    LANGFUSE_SECRET_KEY=sk-lf-...
+    ```
+  </Tab>
+  <Tab title="Arize Phoenix">
+    Phoenix is great for local trace visualization during development.
+
+    ```bash
+    OTEL_TARGETS="PHOENIX"
+    PHOENIX_COLLECTOR_ENDPOINT=http://127.0.0.1:6006/v1/traces
+    PHOENIX_API_KEY=  # Optional
+    ```
+  </Tab>
+  <Tab title="Generic OTLP">
+    Connect to Jaeger, Honeycomb, or any OTLP collector.
+
+    ```bash
+    OTEL_TARGETS="GENERIC"
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+    # Optional headers (comma-separated key=value pairs)
+    OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>,X-Custom=Value"
+    ```
+  </Tab>
+</Tabs>
+
+### Fan-out to multiple backends
+
+Send traces to multiple backends at once by listing them in `OTEL_TARGETS`:
+
+```bash
+OTEL_TARGETS="LANGFUSE,PHOENIX"
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+PHOENIX_COLLECTOR_ENDPOINT=http://127.0.0.1:6006/v1/traces
+```
+
+Each backend receives the same trace data through separate `BatchSpanProcessor` instances.
+
+## How it works
+
+Aegra uses a pure OpenTelemetry approach:
+
+1. **Auto-instrumentation** captures LangGraph steps automatically using `openinference-instrumentation-langchain`
+2. **Singleton provider** is initialized once during application startup
+3. **Fan-out** sends the same trace data to all configured exporters via `BatchSpanProcessor`
+
+This keeps overhead low and maintains compatibility with the entire OpenTelemetry ecosystem.
+
+## Environment variables reference
+
+| Variable | Description |
+|----------|-------------|
+| `OTEL_SERVICE_NAME` | Service name for traces (default: `aegra-backend`) |
+| `OTEL_TARGETS` | Comma-separated list of backends: `LANGFUSE`, `PHOENIX`, `GENERIC` |
+| `OTEL_CONSOLE_EXPORT` | Log traces to console (`true`/`false`) |
+| `LANGFUSE_BASE_URL` | Langfuse API endpoint |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key |
+| `PHOENIX_COLLECTOR_ENDPOINT` | Phoenix OTLP endpoint |
+| `PHOENIX_API_KEY` | Phoenix API key (optional) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Generic OTLP collector endpoint |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers for generic OTLP (comma-separated `key=value`) |

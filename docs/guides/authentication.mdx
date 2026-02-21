@@ -1,0 +1,295 @@
+---
+title: "Authentication"
+description: "Configure JWT, OAuth, Firebase, or custom authentication for your Aegra server."
+---
+
+Aegra supports flexible authentication through configurable auth handlers. You write a Python function that verifies credentials and returns user data — Aegra handles the rest.
+
+## Quick setup
+
+<Steps>
+  <Step title="Create an auth file">
+    Create a file (e.g., `my_auth.py`) in your project root:
+
+    ```python
+    from langgraph_sdk import Auth
+
+    auth = Auth()
+
+    @auth.authenticate
+    async def authenticate(headers: dict) -> dict:
+        token = headers.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            raise Exception("Authentication required")
+
+        # Your verification logic here (JWT decode, OAuth check, etc.)
+        return {
+            "identity": "user123",
+            "display_name": "Jane Doe",
+            "permissions": ["read", "write"],
+            "is_authenticated": True,
+        }
+    ```
+  </Step>
+  <Step title="Add auth to aegra.json">
+    ```json
+    {
+      "graphs": {
+        "agent": "./graphs/agent/graph.py:graph"
+      },
+      "auth": {
+        "path": "./my_auth.py:auth"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Start the server">
+    ```bash
+    aegra dev
+    ```
+
+    All API endpoints now require authentication.
+  </Step>
+</Steps>
+
+## The authenticate handler
+
+The `@auth.authenticate` decorator registers your authentication function. It receives the request headers and must return a dictionary with user data.
+
+### Required fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `identity` | `string` | Unique user identifier |
+
+### Optional fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `display_name` | `string` | Same as `identity` | Display name |
+| `permissions` | `list[str]` | `[]` | Permission strings |
+| `is_authenticated` | `bool` | `True` | Authentication status |
+
+Any additional fields you return are preserved and accessible in your routes via the `User` model.
+
+### Denying access
+
+Raise any exception to deny authentication:
+
+```python
+@auth.authenticate
+async def authenticate(headers: dict) -> dict:
+    token = headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        raise Exception("Authentication required")
+    if not is_valid_token(token):
+        raise Exception("Invalid token")
+    return user_data
+```
+
+## Authorization handlers
+
+Authorization handlers give you fine-grained access control for specific resources and actions.
+
+### Handler types
+
+Handlers can:
+
+1. **Allow** — Return `None` or `True` (default behavior)
+2. **Deny** — Return `False` (returns 403 Forbidden)
+3. **Filter** — Return a dictionary with filters to apply to queries
+4. **Modify** — Modify the `value` dict (e.g., inject metadata)
+
+### Resolution priority
+
+Handlers are matched from most specific to least specific:
+
+1. `@auth.on.threads.create` — Resource + action
+2. `@auth.on.threads` — Resource only
+3. `@auth.on.*.create` — Action only
+4. `@auth.on` — Global fallback
+
+### Examples
+
+**Restrict deletion to admins:**
+
+```python
+@auth.on.assistants.delete
+async def restrict_deletion(ctx, value):
+    if ctx.user.role != "admin":
+        return False
+    return None
+```
+
+**Inject metadata on thread creation:**
+
+```python
+@auth.on.threads.create
+async def inject_team_id(ctx, value):
+    if "metadata" not in value:
+        value["metadata"] = {}
+    value["metadata"]["team_id"] = ctx.user.team_id
+    return value
+```
+
+**Filter threads by team:**
+
+```python
+@auth.on.threads.search
+async def filter_by_team(ctx, value):
+    return {"metadata": {"team_id": ctx.user.team_id}}
+```
+
+### Handler context
+
+The `ctx` parameter provides:
+
+- `ctx.user` — Authenticated user object (with all fields you returned from `authenticate`)
+- `ctx.resource` — Resource name (`"threads"`, `"assistants"`, etc.)
+- `ctx.action` — Action name (`"create"`, `"read"`, `"update"`, `"delete"`, `"search"`)
+- `ctx.permissions` — User permissions list
+
+### Return values
+
+| Return | Behavior |
+|--------|----------|
+| `None` or `True` | Allow the request |
+| `False` | Deny with 403 Forbidden |
+| `dict` | Allow with filters (e.g., `{"metadata": {"team_id": "123"}}`) |
+| Modified `value` | Allow with modified request data |
+
+## Provider examples
+
+<Tabs>
+  <Tab title="JWT">
+    ```python
+    from langgraph_sdk import Auth
+    import jwt
+
+    auth = Auth()
+
+    @auth.authenticate
+    async def authenticate(headers: dict) -> dict:
+        token = headers.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            raise Exception("Missing Authorization header")
+
+        payload = jwt.decode(token, "your-secret-key", algorithms=["HS256"])
+        return {
+            "identity": payload["sub"],
+            "display_name": payload.get("name", ""),
+            "permissions": payload.get("permissions", []),
+            "role": payload.get("role", "user"),
+        }
+    ```
+  </Tab>
+  <Tab title="OAuth">
+    ```python
+    from langgraph_sdk import Auth
+    import httpx
+
+    auth = Auth()
+
+    @auth.authenticate
+    async def authenticate(headers: dict) -> dict:
+        token = headers.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            raise Exception("Missing Authorization header")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://oauth-provider.com/userinfo",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            response.raise_for_status()
+            user_info = response.json()
+
+        return {
+            "identity": user_info["sub"],
+            "display_name": user_info["name"],
+            "permissions": user_info.get("permissions", []),
+            "email": user_info["email"],
+        }
+    ```
+  </Tab>
+  <Tab title="Firebase">
+    ```python
+    from langgraph_sdk import Auth
+    from firebase_admin import auth as firebase_auth
+
+    auth = Auth()
+
+    @auth.authenticate
+    async def authenticate(headers: dict) -> dict:
+        token = headers.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            raise Exception("Missing Authorization header")
+
+        decoded_token = firebase_auth.verify_id_token(token)
+        return {
+            "identity": decoded_token["uid"],
+            "display_name": decoded_token.get("name", ""),
+            "permissions": decoded_token.get("permissions", []),
+            "email": decoded_token.get("email", ""),
+        }
+    ```
+  </Tab>
+</Tabs>
+
+## Auth on custom routes
+
+Custom routes can use authentication via the `require_auth` dependency:
+
+```python
+from fastapi import Depends
+from aegra_api.core.auth_deps import require_auth
+from aegra_api.models.auth import User
+
+@app.get("/custom/whoami")
+async def whoami(user: User = Depends(require_auth)):
+    return {
+        "identity": user.identity,
+        "display_name": user.display_name,
+        "permissions": user.permissions,
+    }
+```
+
+To require auth on **all** custom routes by default, set `enable_custom_route_auth` in your config:
+
+```json
+{
+  "http": {
+    "app": "./custom_routes.py:app",
+    "enable_custom_route_auth": true
+  }
+}
+```
+
+See the [custom routes guide](/guides/custom-routes) for more.
+
+## No-auth mode
+
+If no auth is configured, Aegra runs in no-auth mode:
+
+- All requests are allowed
+- User is set to `anonymous`
+- Authorization handlers are not called
+
+This is the default for local development and testing.
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `auth.path` | `string` | — | Import path to your auth handler (`./file.py:variable`) |
+| `auth.disable_studio_auth` | `bool` | `false` | Disable auth for LangGraph Studio connections |
+
+## Non-interruptive design
+
+Authorization handlers are additive by default:
+
+- If no auth is configured, requests are allowed
+- If no handlers are defined, requests are allowed
+- Handlers only restrict access when they explicitly deny
+
+This ensures Aegra works out of the box without requiring any auth setup.

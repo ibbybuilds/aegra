@@ -1,0 +1,86 @@
+---
+title: "Dependencies"
+description: "Add shared utility modules to the Python path for your graphs."
+---
+
+When your graphs need to import from shared utility modules that aren't installed as packages, use the `dependencies` config to add those paths to `sys.path` before graphs are loaded.
+
+## Configuration
+
+Add the `dependencies` array to your `aegra.json`:
+
+```json
+{
+  "graphs": {
+    "agent": "./graphs/agent/graph.py:graph"
+  },
+  "dependencies": [
+    "./shared",
+    "./libs/common"
+  ]
+}
+```
+
+### Path resolution
+
+- Relative paths are resolved from the config file's directory
+- Absolute paths are used as-is
+- Paths are added to `sys.path` in order (first has highest priority)
+- Non-existent paths generate a warning but don't prevent startup
+
+## Example
+
+Given this project structure:
+
+```
+my-project/
+├── aegra.json
+├── graphs/
+│   └── my_agent/
+│       └── graph.py
+├── shared/
+│   ├── __init__.py
+│   ├── utils.py
+│   └── prompts.py
+└── libs/
+    └── custom_tools/
+        └── __init__.py
+```
+
+Configure dependencies:
+
+```json
+{
+  "graphs": {
+    "my_agent": "./graphs/my_agent/graph.py:graph"
+  },
+  "dependencies": [
+    "./shared",
+    "./libs/custom_tools"
+  ]
+}
+```
+
+Then import directly in your graph:
+
+```python
+# graphs/my_agent/graph.py
+from utils import format_response
+from prompts import SYSTEM_PROMPT
+from custom_tools import MyCustomTool
+```
+
+## Logging
+
+When dependencies are configured, you'll see:
+
+```
+INFO: Added dependency path to sys.path: /app/shared
+INFO: Added dependency path to sys.path: /app/libs/custom_tools
+```
+
+If a path doesn't exist:
+
+```
+WARNING: Dependency path does not exist: /app/missing_path
+```

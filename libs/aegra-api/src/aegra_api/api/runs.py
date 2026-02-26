@@ -174,13 +174,13 @@ async def create_run(
 
     # If handler modified config/context, update request
     if filters:
-        if "config" in filters:
+        if "config" in filters and isinstance(filters["config"], dict):
             request.config = {**(request.config or {}), **filters["config"]}
-        if "context" in filters:
+        if "context" in filters and isinstance(filters["context"], dict):
             request.context = {**(request.context or {}), **filters["context"]}
-    elif value.get("config"):
+    elif isinstance(value.get("config"), dict):
         request.config = {**(request.config or {}), **value["config"]}
-    elif value.get("context"):
+    elif isinstance(value.get("context"), dict):
         request.context = {**(request.context or {}), **value["context"]}
 
     # Validate resume command requirements early

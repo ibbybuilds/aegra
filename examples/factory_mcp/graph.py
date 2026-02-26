@@ -68,6 +68,9 @@ async def graph(runtime: ServerRuntime) -> AsyncIterator[Any]:
     """
     model = load_chat_model("openai/gpt-4o-mini")
 
+    # Use runtime.store for persistence if available
+    store = runtime.store
+
     async with MultiServerMCPClient(MCP_SERVERS) as mcp_client:
         tools = mcp_client.get_tools()
 
@@ -75,6 +78,7 @@ async def graph(runtime: ServerRuntime) -> AsyncIterator[Any]:
             model,
             tools,
             name="MCP Factory Agent",
+            store=store,
         )
 
         yield agent

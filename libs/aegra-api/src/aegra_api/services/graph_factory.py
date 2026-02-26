@@ -118,15 +118,15 @@ def _is_runtime_annotation(annotation: Any) -> bool:
             return issubclass(annotation, _RUNTIME_CLASSES)
         except TypeError:
             return False
-    # Handle parameterized types (ServerRuntime[MyContext], Annotated[...])
+    # Handle parameterized types (ServerRuntime[MyContext], Annotated[...], Union)
     origin = get_origin(annotation)
     if origin is not None:
         if origin is ServerRuntime:
             return True
-        # For Annotated[ServerRuntime, ...], recurse on the base type
+        # For Union (e.g. None | ServerRuntime) or Annotated, check all operands
         args = get_args(annotation)
         if args:
-            return _is_runtime_annotation(args[0])
+            return any(_is_runtime_annotation(a) for a in args)
     return False
 
 
@@ -331,7 +331,7 @@ def clear_factory_registry(graph_id: str | None = None) -> None:
     Args:
         graph_id: Specific graph to clear, or ``None`` to clear all.
     """
-    if graph_id:
+    if graph_id is not None:
         _FACTORY_KWARGS.pop(graph_id, None)
     else:
         _FACTORY_KWARGS.clear()

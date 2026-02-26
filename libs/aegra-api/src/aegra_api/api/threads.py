@@ -704,10 +704,10 @@ async def get_thread_history_post(
                 async for snapshot in agent.aget_state_history(config, **kwargs):
                     state_snapshots.append(snapshot)
 
-            # Convert snapshots to ThreadState using service
-            thread_states = thread_state_service.convert_snapshots_to_thread_states(state_snapshots, thread_id)
+        # Convert outside the async with so the graph context is closed first
+        thread_states = thread_state_service.convert_snapshots_to_thread_states(state_snapshots, thread_id)
 
-            return thread_states
+        return thread_states
 
     except HTTPException:
         raise

@@ -80,7 +80,12 @@ def graph(runtime: ServerRuntime) -> Any:
         model = load_chat_model("openai/gpt-4o-mini")
         bound = model.bind_tools(tools)
 
-        messages = [SystemMessage(content=system_msg), *state.get("messages", [])]
+        existing = state.get("messages", [])
+        # Only prepend system message if not already present (avoids duplicates on tool loops)
+        if existing and isinstance(existing[0], SystemMessage) and existing[0].content == system_msg:
+            messages = existing
+        else:
+            messages = [SystemMessage(content=system_msg), *existing]
         response = cast(
             "AIMessage",
             await bound.ainvoke(messages),

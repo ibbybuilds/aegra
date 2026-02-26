@@ -16,6 +16,7 @@ Usage in aegra.json::
 from typing import Any, Literal, cast
 
 from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
@@ -42,32 +43,6 @@ def delete_user(user_id: str) -> str:
 
 ALL_TOOLS = [search_web, delete_user]
 PUBLIC_TOOLS = [search_web]
-
-
-# ---------------------------------------------------------------------------
-# Nodes
-# ---------------------------------------------------------------------------
-
-
-async def call_model(state: dict[str, Any], config: dict[str, Any]) -> dict[str, list]:
-    """Call the LLM with tools available to the current user."""
-    model = load_chat_model("openai/gpt-4o-mini")
-    tools = state.get("_tools", PUBLIC_TOOLS)
-    bound = model.bind_tools(tools)
-
-    response = cast(
-        "AIMessage",
-        await bound.ainvoke(state["messages"]),
-    )
-    return {"messages": [response]}
-
-
-def route_output(state: dict[str, Any]) -> Literal["__end__", "tools"]:
-    """Route to tools or end."""
-    last = state["messages"][-1]
-    if isinstance(last, AIMessage) and last.tool_calls:
-        return "tools"
-    return "__end__"
 
 
 # ---------------------------------------------------------------------------
@@ -99,20 +74,30 @@ def graph(runtime: ServerRuntime) -> Any:
     if is_admin:
         system_msg += " You have admin privileges."
 
+    # Close over tools and system message in node functions
+    async def call_model(state: dict[str, Any], config: RunnableConfig) -> dict[str, list]:
+        """Call the LLM with tools available to the current user."""
+        model = load_chat_model("openai/gpt-4o-mini")
+        bound = model.bind_tools(tools)
+
+        messages = [SystemMessage(content=system_msg), *state.get("messages", [])]
+        response = cast(
+            "AIMessage",
+            await bound.ainvoke(messages),
+        )
+        return {"messages": [response]}
+
+    def route_output(state: dict[str, Any]) -> Literal["__end__", "tools"]:
+        """Route to tools or end."""
+        last = state["messages"][-1]
+        if isinstance(last, AIMessage) and last.tool_calls:
+            return "tools"
+        return "__end__"
+
     builder = StateGraph(dict)
-
-    # Inject tools into state so call_model can use them
-    def inject_context(state: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "_tools": tools,
-            "messages": [SystemMessage(content=system_msg), *state.get("messages", [])],
-        }
-
-    builder.add_node("inject", inject_context)
     builder.add_node("call_model", call_model)
     builder.add_node("tools", ToolNode(tools))
-    builder.add_edge("__start__", "inject")
-    builder.add_edge("inject", "call_model")
+    builder.add_edge("__start__", "call_model")
     builder.add_conditional_edges("call_model", route_output)
     builder.add_edge("tools", "call_model")
 

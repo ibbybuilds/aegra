@@ -15,30 +15,25 @@ Usage in aegra.json::
 
 from typing import Any, Literal, cast
 
-from langchain_core.messages import AIMessage, AnyMessage
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
 
 from factory_config.utils import load_chat_model
 
 # ---------------------------------------------------------------------------
-# State
+# Default model
 # ---------------------------------------------------------------------------
 
-
-class State:
-    """Minimal chat state."""
-
-    messages: list[AnyMessage]
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 
 # ---------------------------------------------------------------------------
 # Nodes
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "openai/gpt-4o-mini"
 
-
-async def call_model(state: dict[str, Any], config: dict[str, Any]) -> dict[str, list[AIMessage]]:
+async def call_model(state: dict[str, Any], config: RunnableConfig) -> dict[str, list[AIMessage]]:
     """Call the LLM with the model specified in config."""
     model_name = config.get("configurable", {}).get("model", DEFAULT_MODEL)
     model = load_chat_model(model_name)

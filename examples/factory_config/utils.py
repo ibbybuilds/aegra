@@ -14,4 +14,5 @@ def load_chat_model(model_name: str) -> BaseChatModel:
     Returns:
         An initialised chat model instance.
     """
-    return init_chat_model(model_name)
+    provider, model = model_name.split("/", maxsplit=1)
+    return init_chat_model(model, model_provider=provider)

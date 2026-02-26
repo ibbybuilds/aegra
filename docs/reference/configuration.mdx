@@ -90,7 +90,44 @@ Define your LangGraph agents.
 | Key | `string` | Graph ID (used in API calls to identify the graph) |
 | Value | `string` | Import path in format `./path/to/file.py:variable` |
 
-The variable must be a compiled LangGraph graph (result of `builder.compile()`).
+The variable can be:
+
+- **A compiled graph** — result of `builder.compile()` (static, cached once at startup)
+- **A 0-arg callable** — called once at startup to produce the graph (e.g., for MCP adapter setup)
+- **A factory function** — called per-request with `config` and/or `ServerRuntime` to produce a graph customized for the current user or request context
+
+### Static graphs
+
+```python
+builder = StateGraph(State)
+# ... define nodes and edges
+graph = builder.compile()  # Export as 'graph'
+```
+
+### Factory graphs
+
+Export a callable that accepts `config` (a `RunnableConfig` dict), `runtime` (a `ServerRuntime`), or both:
+
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+def graph(runtime: ServerRuntime):
+    """Per-request factory — called with user context."""
+    user = runtime.user
+    store = runtime.store
+    # Customize graph based on user/context
+    builder = StateGraph(State)
+    # ...
+    return builder.compile()
+```
+
+Supported factory signatures:
+- `def graph()` — 0-arg, called once at startup
+- `def graph(config: dict)` — receives the `RunnableConfig` per-request
+- `def graph(runtime: ServerRuntime)` — receives runtime with user, store, and access context
+- `def graph(config: dict, runtime: ServerRuntime)` — receives both (any parameter order)
+
+Async factories and factories returning async context managers are also supported.
 
 ## `auth`
 

@@ -146,8 +146,13 @@ class MockLangGraphService:
         self._graph = graph
 
     @asynccontextmanager
-    async def get_graph(self, _graph_id: str):
-        """Context manager that yields the fake agent/graph"""
+    async def get_graph(self, _graph_id: str, **_kwargs: Any):
+        """Context manager that yields the fake agent/graph.
+
+        Accepts (and ignores) extra keyword arguments like ``config``,
+        ``access_context``, and ``user`` so callers that pass factory-related
+        kwargs don't break.
+        """
         if self._agent is not None:
             yield self._agent
         elif self._graph is not None:
@@ -155,8 +160,11 @@ class MockLangGraphService:
         else:
             raise RuntimeError("No fake agent/graph configured")
 
-    async def get_graph_for_validation(self, _graph_id: str):
-        """Return fake agent/graph for validation (non-context manager)"""
+    async def get_graph_for_validation(self, _graph_id: str, **_kwargs: Any):
+        """Return fake agent/graph for validation (non-context manager).
+
+        Accepts (and ignores) extra keyword arguments for factory support.
+        """
         if self._agent is not None:
             return self._agent
         if self._graph is not None:

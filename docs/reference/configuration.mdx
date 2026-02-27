@@ -129,6 +129,31 @@ Supported factory signatures:
 
 Async factories and factories returning async context managers are also supported.
 
+#### Typed factory context with `ServerRuntime[T]`
+
+When a run is created with a `context` dict, Aegra passes it to the factory via `runtime.context`. You can declare a type parameter on `ServerRuntime` to have the raw dict automatically coerced to your context type:
+
+```python
+from dataclasses import dataclass
+from langgraph_sdk.runtime import ServerRuntime
+
+@dataclass
+class MyContext:
+    model_name: str
+    temperature: float
+
+def graph(runtime: ServerRuntime[MyContext]):
+    """Factory receives typed context from the run request."""
+    ctx = runtime.context  # MyContext instance (or raw dict on validation failure)
+    builder = StateGraph(State)
+    # ... customize based on ctx.model_name, ctx.temperature
+    return builder.compile()
+```
+
+Pydantic `BaseModel` and `dataclass` types are both supported. If the request context fails validation against `T`, the factory receives the raw dict as a graceful fallback.
+
+The `context` field is only available on `_ExecutionRuntime` (i.e., during `threads.create_run`). For read/introspection access contexts, `runtime` is a `_ReadRuntime` which has no `context` field — use `runtime.execution_runtime` to narrow.
+
 ## `auth`
 
 Configure authentication and authorization.

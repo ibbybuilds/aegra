@@ -962,6 +962,7 @@ async def execute_run_async(
                 config=run_config,
                 access_context="threads.create_run",
                 user=user,
+                context=context,
             ) as graph,
             with_auth_ctx(user, []),
         ):

@@ -33,6 +33,7 @@ from aegra_api.services.graph_factory import (
     build_server_runtime,
     classify_factory,
     clear_factory_registry,
+    coerce_context,
     generate_graph,
     invoke_factory,
     is_factory,
@@ -235,6 +236,7 @@ class LangGraphService:
         config: dict[str, Any] | None = None,
         access_context: AccessContext = "threads.create_run",
         user: User | BaseUser | None = None,
+        context: dict[str, Any] | None = None,
     ) -> AsyncIterator[Pregel]:
         """Get a graph instance for execution with checkpointer/store injected.
 
@@ -252,6 +254,7 @@ class LangGraphService:
                 config=run_config,
                 access_context="threads.create_run",
                 user=user,
+                context=context,
             ) as graph:
                 async for event in graph.astream(input, config):
                     ...
@@ -261,6 +264,9 @@ class LangGraphService:
             config: The ``RunnableConfig`` dict for this request.
             access_context: Why the graph is being accessed.
             user: The authenticated user (or ``None`` for anonymous access).
+            context: The raw request context dict. For factories with
+                ``ServerRuntime[T]``, this is coerced to ``T`` and passed
+                to ``_ExecutionRuntime.context``.
 
         Yields:
             Compiled ``Pregel`` graph with Postgres checkpointer/store attached.
@@ -277,10 +283,12 @@ class LangGraphService:
             # Factory path — invoke per-request with ServerRuntime
             factory = self._graph_factories[graph_id]
             run_config = config or {"configurable": {}}
+            coerced_context = coerce_context(context, graph_id)
             server_runtime = build_server_runtime(
                 access_context=access_context,
                 store=store,
                 user=user,
+                context=coerced_context,
             )
 
             result = invoke_factory(factory, graph_id, run_config, server_runtime)

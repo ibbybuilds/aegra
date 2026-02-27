@@ -231,7 +231,7 @@ def graph(runtime: ServerRuntime):
     return builder.compile()
 ```
 
-Supported factory signatures: 0-arg (called once at startup), config-only (`dict`), runtime-only (`ServerRuntime`), or both (any order). See `docs/reference/configuration.mdx` for full details.
+Supported factory signatures: 0-arg (called once at startup), config-only (`dict`), runtime-only (`ServerRuntime`), or both (any order). Factories can use `ServerRuntime[T]` to receive typed request context on `runtime.context` (Pydantic `BaseModel` or `dataclass`). See `docs/reference/configuration.mdx` for full details.
 
 ## Common Tasks
 

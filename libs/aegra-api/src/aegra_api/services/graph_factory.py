@@ -14,6 +14,7 @@ Per-request invocation is handled by ``invoke_factory()`` with the appropriate
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import typing
 from collections.abc import AsyncIterator, Callable
@@ -60,6 +61,11 @@ _HookType = Callable[["_RunnableConfig", "ServerRuntime"], dict[str, Any]]
 # Populated by ``classify_factory()`` at graph load time.
 _FACTORY_KWARGS: dict[str, _HookType] = {}
 
+# Maps graph_id → the ``T`` from ``ServerRuntime[T]`` (or ``None`` if
+# the factory uses plain ``ServerRuntime`` without parameterization).
+# Populated by ``classify_factory()`` alongside ``_FACTORY_KWARGS``.
+_FACTORY_CONTEXT_TYPES: dict[str, type | None] = {}
+
 # Concrete runtime classes used for ``issubclass`` checks during classification.
 _RUNTIME_CLASSES: tuple[type, ...] = (_ExecutionRuntime, _ReadRuntime)
 
@@ -86,15 +92,20 @@ def classify_factory(fn: Callable, graph_id: str) -> None:
 
     Idempotent — calling twice with the same *graph_id* is a no-op.
 
+    Also extracts the ``T`` from ``ServerRuntime[T]`` annotations and stores
+    it in ``_FACTORY_CONTEXT_TYPES`` so that ``coerce_context()`` can coerce
+    the raw request context dict to ``T`` at invocation time.
+
     Args:
         fn: The callable graph export (factory function).
         graph_id: The graph identifier from the configuration file.
     """
     if graph_id in _FACTORY_KWARGS:
         return
-    hook = _classify_factory(fn)
+    hook, context_type = _classify_factory(fn)
     if hook is not None:
         _FACTORY_KWARGS[graph_id] = hook
+        _FACTORY_CONTEXT_TYPES[graph_id] = context_type
 
 
 def _is_runtime_annotation(annotation: Any) -> bool:
@@ -130,6 +141,36 @@ def _is_runtime_annotation(annotation: Any) -> bool:
     return False
 
 
+def _extract_context_type(annotation: Any) -> type | None:
+    """Extract ``T`` from a ``ServerRuntime[T]`` annotation.
+
+    Returns:
+        The context type ``T`` if the annotation is ``ServerRuntime[T]``
+        (including ``None | ServerRuntime[T]``), or ``None`` if the
+        annotation is plain ``ServerRuntime`` or not a runtime annotation.
+    """
+    if annotation is inspect.Parameter.empty or annotation is ServerRuntime:
+        return None
+
+    origin = get_origin(annotation)
+    if origin is ServerRuntime:
+        args = get_args(annotation)
+        if args:
+            return args[0]
+        return None
+
+    # Handle Union types (e.g. None | ServerRuntime[T])
+    if origin is not None:
+        args = get_args(annotation)
+        if args:
+            for arg in args:
+                result = _extract_context_type(arg)
+                if result is not None:
+                    return result
+
+    return None
+
+
 def _resolve_hints(fn: Callable) -> dict[str, Any]:
     """Resolve string annotations using the function's module globals + runtime types."""
     try:
@@ -139,12 +180,13 @@ def _resolve_hints(fn: Callable) -> dict[str, Any]:
         return {}
 
 
-def _classify_factory(fn: Callable) -> _HookType | None:
+def _classify_factory(fn: Callable) -> tuple[_HookType | None, type | None]:
     """Classify a graph factory by its parameter signature.
 
-    Returns a callable that, given ``(config, server_runtime)``, produces
-    the ``**kwargs`` dict to pass to the factory. Returns ``None`` for
-    0-arg factories (no dispatch hook needed).
+    Returns a tuple of:
+    - A callable that, given ``(config, server_runtime)``, produces the
+      ``**kwargs`` dict to pass to the factory. ``None`` for 0-arg factories.
+    - The context type ``T`` from ``ServerRuntime[T]`` (or ``None``).
 
     Raises:
         ValueError: If the factory has 3+ parameters or ambiguous runtime params.
@@ -158,11 +200,13 @@ def _classify_factory(fn: Callable) -> _HookType | None:
 
     if len(params) == 0:
         # 0-arg factory — no hook needed
-        return None
+        return None, None
     elif len(params) == 1:
-        if _is_runtime_annotation(_annotation(params[0])):
-            return lambda config, runtime: {params[0].name: runtime}
-        return lambda config, runtime: {params[0].name: config}
+        ann = _annotation(params[0])
+        if _is_runtime_annotation(ann):
+            ctx_type = _extract_context_type(ann)
+            return lambda config, runtime: {params[0].name: runtime}, ctx_type
+        return lambda config, runtime: {params[0].name: config}, None
     elif len(params) == 2:
         # Detect which param is runtime by annotation; the other is config.
         rt_indices = [i for i, p in enumerate(params) if _is_runtime_annotation(_annotation(p))]
@@ -180,10 +224,11 @@ def _classify_factory(fn: Callable) -> _HookType | None:
                 f"Graph factory {fn} has 2 parameters both annotated as ServerRuntime. "
                 f"Expected one ServerRuntime and one RunnableConfig."
             )
+        ctx_type = _extract_context_type(_annotation(params[rt_idx]))
         return lambda config, runtime: {
             params[rt_idx].name: runtime,
             params[cfg_idx].name: config,
-        }
+        }, ctx_type
     else:
         raise ValueError(
             f"Graph factory {fn} must take 0, 1, or 2 arguments. "
@@ -207,6 +252,61 @@ def is_for_execution(access_context: AccessContext) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Context coercion
+# ---------------------------------------------------------------------------
+
+
+def coerce_context(context: dict[str, Any] | None, graph_id: str) -> Any:
+    """Coerce a raw context dict to the factory's declared context type ``T``.
+
+    If the factory declared ``ServerRuntime[T]``, the raw dict is converted
+    to an instance of ``T``:
+    - Pydantic ``BaseModel`` → ``T.model_validate(context)``
+    - ``dataclass`` → ``T(**context)``
+
+    On failure (e.g., validation error or missing fields), logs a warning
+    and returns the raw dict for graceful degradation.
+
+    Args:
+        context: The raw context dict from the request, or ``None``.
+        graph_id: The graph identifier (used to look up the context type).
+
+    Returns:
+        A coerced ``T`` instance, the raw dict, or ``None``.
+    """
+    if context is None:
+        return None
+
+    ctx_type = _FACTORY_CONTEXT_TYPES.get(graph_id)
+    if ctx_type is None:
+        return context
+
+    try:
+        if _is_pydantic_model(ctx_type):
+            return ctx_type.model_validate(context)
+        if dataclasses.is_dataclass(ctx_type):
+            return ctx_type(**context)
+    except Exception as exc:
+        logger.warning(
+            "context_coercion_failed",
+            graph_id=graph_id,
+            context_type=ctx_type.__name__,
+            exc=str(exc),
+            msg="Falling back to raw dict",
+        )
+    return context
+
+
+def _is_pydantic_model(cls: type) -> bool:
+    """Return ``True`` if *cls* is a Pydantic ``BaseModel`` subclass.
+
+    Uses duck-typing (``model_validate``) to avoid importing pydantic
+    directly, which is an optional dependency at the service layer.
+    """
+    return hasattr(cls, "model_validate") and callable(getattr(cls, "model_validate", None))
+
+
+# ---------------------------------------------------------------------------
 # Runtime construction
 # ---------------------------------------------------------------------------
 
@@ -216,11 +316,13 @@ def build_server_runtime(
     access_context: AccessContext,
     store: BaseStore | None,
     user: BaseUser | None = None,
+    context: Any = None,
 ) -> ServerRuntime:
     """Construct the appropriate ``ServerRuntime`` variant for the access context.
 
     For ``threads.create_run``, returns an ``_ExecutionRuntime`` (which has
-    a ``context`` field). For all other contexts, returns a ``_ReadRuntime``.
+    a ``context`` field populated with the coerced request context).
+    For all other contexts, returns a ``_ReadRuntime`` (no ``context`` field).
 
     If *user* is ``None``, falls back to the current request's auth context.
 
@@ -228,6 +330,8 @@ def build_server_runtime(
         access_context: Why the graph factory is being called.
         store: The persistence store for the graph run.
         user: The authenticated user, or ``None`` to auto-detect from auth context.
+        context: The (optionally coerced) request context for the factory.
+            Only used for ``_ExecutionRuntime``.
 
     Returns:
         A ``ServerRuntime`` instance (either ``_ExecutionRuntime`` or ``_ReadRuntime``).
@@ -241,6 +345,7 @@ def build_server_runtime(
             access_context=access_context,
             user=user,
             store=store,
+            context=context,
         )
     return _ReadRuntime(
         access_context=access_context,
@@ -326,12 +431,14 @@ async def generate_graph(value: Any, graph_id: str) -> AsyncIterator[Pregel | St
 
 
 def clear_factory_registry(graph_id: str | None = None) -> None:
-    """Remove factory dispatch hooks.
+    """Remove factory dispatch hooks and context type registrations.
 
     Args:
         graph_id: Specific graph to clear, or ``None`` to clear all.
     """
     if graph_id is not None:
         _FACTORY_KWARGS.pop(graph_id, None)
+        _FACTORY_CONTEXT_TYPES.pop(graph_id, None)
     else:
         _FACTORY_KWARGS.clear()
+        _FACTORY_CONTEXT_TYPES.clear()

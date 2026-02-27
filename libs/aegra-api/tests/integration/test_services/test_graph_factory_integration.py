@@ -20,9 +20,33 @@ from langgraph_sdk.runtime import (
     _ExecutionRuntime,
     _ReadRuntime,
 )
+from pydantic import BaseModel
 
-from aegra_api.services.graph_factory import _FACTORY_KWARGS, classify_factory
+from aegra_api.services.graph_factory import (
+    _FACTORY_CONTEXT_TYPES,
+    _FACTORY_KWARGS,
+    classify_factory,
+)
 from aegra_api.services.langgraph_service import LangGraphService
+
+# Module-level context models for integration tests.
+# Defined here (not inside test methods) so that ``typing.get_type_hints()``
+# can resolve ``ServerRuntime[_TestMyConfig]`` when ``from __future__ import
+# annotations`` turns all annotations into strings.
+
+
+class _TestMyConfig(BaseModel):
+    """Pydantic config model for typed context tests."""
+
+    model_name: str
+    temperature: float
+
+
+class _TestRequiredConfig(BaseModel):
+    """Pydantic config model for validation fallback tests."""
+
+    required_field: str
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -33,10 +57,12 @@ from aegra_api.services.langgraph_service import LangGraphService
 def _clean_factory_state() -> Iterator[None]:
     """Ensure factory registry is clean for each test."""
     _FACTORY_KWARGS.clear()
+    _FACTORY_CONTEXT_TYPES.clear()
     try:
         yield
     finally:
         _FACTORY_KWARGS.clear()
+        _FACTORY_CONTEXT_TYPES.clear()
 
 
 @pytest.fixture()
@@ -488,3 +514,110 @@ class TestNonFactoryGetGraphPreserved:
                 assert graph is mock_copy
 
             mock_base.copy.assert_called_once_with(update={"checkpointer": "cp", "store": "st"})
+
+
+# ---------------------------------------------------------------------------
+# Context passthrough via get_graph()
+# ---------------------------------------------------------------------------
+
+
+class TestGetGraphWithContext:
+    """Test that get_graph() passes context through to factory runtime."""
+
+    @pytest.mark.asyncio
+    async def test_typed_context_coerced_to_pydantic(self) -> None:
+        """Factory with ServerRuntime[_TestMyConfig] → runtime.context is coerced."""
+        received_runtime = None
+
+        def factory(runtime: ServerRuntime[_TestMyConfig]) -> Mock:
+            nonlocal received_runtime
+            received_runtime = runtime
+            g = Mock(spec=Pregel)
+            g.copy = Mock(return_value=g)
+            return g
+
+        service = LangGraphService()
+        service._graph_registry = {"typed": {"file_path": "f.py", "export_name": "graph"}}
+        service._graph_factories = {"typed": factory}
+        classify_factory(factory, "typed")
+
+        with patch("aegra_api.core.database.db_manager") as mock_db:
+            mock_db.get_checkpointer = Mock(return_value=Mock())
+            mock_db.get_store = Mock(return_value=Mock())
+
+            async with service.get_graph(
+                "typed",
+                access_context="threads.create_run",
+                context={"model_name": "gpt-4", "temperature": 0.7},
+            ) as _graph:
+                pass
+
+        assert isinstance(received_runtime, _ExecutionRuntime)
+        assert isinstance(received_runtime.context, _TestMyConfig)
+        assert received_runtime.context.model_name == "gpt-4"
+        assert received_runtime.context.temperature == 0.7
+
+    @pytest.mark.asyncio
+    async def test_plain_runtime_passes_raw_dict(self) -> None:
+        """Factory with plain ServerRuntime → runtime.context is the raw dict."""
+        received_runtime = None
+
+        def factory(runtime: ServerRuntime) -> Mock:
+            nonlocal received_runtime
+            received_runtime = runtime
+            g = Mock(spec=Pregel)
+            g.copy = Mock(return_value=g)
+            return g
+
+        service = LangGraphService()
+        service._graph_registry = {"plain": {"file_path": "f.py", "export_name": "graph"}}
+        service._graph_factories = {"plain": factory}
+        classify_factory(factory, "plain")
+
+        ctx = {"key": "value", "number": 42}
+        with patch("aegra_api.core.database.db_manager") as mock_db:
+            mock_db.get_checkpointer = Mock(return_value=Mock())
+            mock_db.get_store = Mock(return_value=Mock())
+
+            async with service.get_graph(
+                "plain",
+                access_context="threads.create_run",
+                context=ctx,
+            ) as _graph:
+                pass
+
+        assert isinstance(received_runtime, _ExecutionRuntime)
+        assert received_runtime.context is ctx
+
+    @pytest.mark.asyncio
+    async def test_invalid_context_falls_back_to_raw_dict(self) -> None:
+        """Factory with ServerRuntime[_TestRequiredConfig] + invalid context → fallback."""
+        received_runtime = None
+
+        def factory(runtime: ServerRuntime[_TestRequiredConfig]) -> Mock:
+            nonlocal received_runtime
+            received_runtime = runtime
+            g = Mock(spec=Pregel)
+            g.copy = Mock(return_value=g)
+            return g
+
+        service = LangGraphService()
+        service._graph_registry = {"fallback": {"file_path": "f.py", "export_name": "graph"}}
+        service._graph_factories = {"fallback": factory}
+        classify_factory(factory, "fallback")
+
+        invalid_ctx = {"wrong_field": "oops"}
+        with patch("aegra_api.core.database.db_manager") as mock_db:
+            mock_db.get_checkpointer = Mock(return_value=Mock())
+            mock_db.get_store = Mock(return_value=Mock())
+
+            async with service.get_graph(
+                "fallback",
+                access_context="threads.create_run",
+                context=invalid_ctx,
+            ) as _graph:
+                pass
+
+        assert isinstance(received_runtime, _ExecutionRuntime)
+        # Should fall back to raw dict, not crash
+        assert received_runtime.context is invalid_ctx

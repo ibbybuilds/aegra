@@ -51,15 +51,22 @@ async def test_config_factory_runs_with_default_model() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_config_factory_accepts_model_override() -> None:
-    """Config factory should accept a model override via configurable."""
+async def test_config_factory_applies_model_override() -> None:
+    """Config factory should use an overridden model instead of the default.
+
+    The default model is ``openai/gpt-4o-mini``. This test overrides it with
+    ``openai/gpt-4o`` and verifies the response metadata reflects the
+    overridden model.
+    """
     client = get_e2e_client()
+
+    override_model = "openai/gpt-4o"
 
     assistant = await client.assistants.create(
         graph_id="config_factory",
         config={
             "tags": ["e2e", "config-factory-override"],
-            "configurable": {"model": "openai/gpt-4o-mini"},
+            "configurable": {"model": override_model},
         },
         if_exists="do_nothing",
     )
@@ -83,6 +90,15 @@ async def test_config_factory_accepts_model_override() -> None:
 
     assert check_run["status"] == "success"
     assert len(final_state.get("messages", [])) >= 1
+
+    # Verify the override was applied by checking response metadata
+    messages = final_state.get("messages", [])
+    ai_message = messages[-1]
+    response_metadata = ai_message.get("response_metadata", {})
+    model_name = response_metadata.get("model_name", "")
+    elog("Response model_name", model_name)
+    assert "gpt-4o" in model_name, f"Expected gpt-4o model, got: {model_name}"
+    assert "gpt-4o-mini" not in model_name, f"Expected overridden model (gpt-4o), got default: {model_name}"
 
 
 # ---------------------------------------------------------------------------

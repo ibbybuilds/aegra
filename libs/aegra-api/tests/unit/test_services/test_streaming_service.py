@@ -186,6 +186,110 @@ class TestStreamingService:
                 {"type": "execution_values", "chunk": {"val": 1}},
             )
 
+    async def test_store_event_from_raw_updates(self) -> None:
+        """Test that updates events are stored with 'updates' type, not 'values'."""
+        service = StreamingService()
+        run_id = "run-123"
+        event_id = "evt-1"
+
+        with patch(
+            "aegra_api.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
+        ) as mock_store:
+            raw_event = ("updates", {"my_node": {"key": "val"}})
+            await service.store_event_from_raw(run_id, event_id, raw_event)
+
+            mock_store.assert_awaited_with(
+                run_id,
+                event_id,
+                "updates",
+                {"type": "execution_updates", "chunk": {"my_node": {"key": "val"}}},
+            )
+
+    async def test_store_event_from_raw_updates_not_stored_as_values(self) -> None:
+        """Regression: updates must never be stored under 'values' event type."""
+        service = StreamingService()
+        run_id = "run-123"
+        event_id = "evt-1"
+
+        with patch(
+            "aegra_api.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
+        ) as mock_store:
+            raw_event = ("updates", {"node": {"delta": "change"}})
+            await service.store_event_from_raw(run_id, event_id, raw_event)
+
+            # Verify the stored event type is "updates", not "values"
+            call_args = mock_store.call_args
+            stored_event_type = call_args[0][2]
+            assert stored_event_type == "updates", (
+                f"Expected stored event type 'updates', got '{stored_event_type}'. "
+                "stream_mode='updates' must not be stored as 'values'."
+            )
+
+    async def test_store_event_from_raw_debug(self) -> None:
+        """Test that debug events are stored for replay."""
+        service = StreamingService()
+        run_id = "run-123"
+        event_id = "evt-1"
+
+        with patch(
+            "aegra_api.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
+        ) as mock_store:
+            debug_payload = {"type": "checkpoint", "payload": {"tasks": []}}
+            raw_event = ("debug", debug_payload)
+            await service.store_event_from_raw(run_id, event_id, raw_event)
+
+            mock_store.assert_awaited_with(
+                run_id,
+                event_id,
+                "debug",
+                {"debug": debug_payload},
+            )
+
+    async def test_store_event_from_raw_custom(self) -> None:
+        """Test that custom events are stored for replay."""
+        service = StreamingService()
+        run_id = "run-123"
+        event_id = "evt-1"
+
+        with patch(
+            "aegra_api.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
+        ) as mock_store:
+            custom_payload = {"my_key": "my_value"}
+            raw_event = ("custom", custom_payload)
+            await service.store_event_from_raw(run_id, event_id, raw_event)
+
+            mock_store.assert_awaited_with(
+                run_id,
+                event_id,
+                "custom",
+                {"chunk": custom_payload},
+            )
+
+    async def test_store_event_from_raw_run_metadata(self) -> None:
+        """Test that run-level metadata events (run_id, attempt) are stored for replay."""
+        service = StreamingService()
+        run_id = "run-123"
+        event_id = "evt-1"
+
+        with patch(
+            "aegra_api.services.streaming_service.store_sse_event",
+            new_callable=AsyncMock,
+        ) as mock_store:
+            metadata_payload = {"run_id": run_id, "attempt": 1}
+            raw_event = ("metadata", metadata_payload)
+            await service.store_event_from_raw(run_id, event_id, raw_event)
+
+            mock_store.assert_awaited_with(
+                run_id,
+                event_id,
+                "metadata",
+                metadata_payload,
+            )
+
     async def test_store_event_from_raw_end(self) -> None:
         """Test storing end events"""
         service = StreamingService()

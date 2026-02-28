@@ -135,12 +135,40 @@ class StreamingService:
                     "event": event_payload,
                 },
             )
-        elif stream_mode_label == "values" or stream_mode_label == "updates":
+        elif stream_mode_label == "values":
             await store_sse_event(
                 run_id,
                 event_id,
                 "values",
                 {"type": "execution_values", "chunk": event_payload},
+            )
+        elif stream_mode_label == "updates":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "updates",
+                {"type": "execution_updates", "chunk": event_payload},
+            )
+        elif stream_mode_label == "debug":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "debug",
+                {"debug": event_payload},
+            )
+        elif stream_mode_label == "custom":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "custom",
+                {"chunk": event_payload},
+            )
+        elif stream_mode_label == "metadata":
+            await store_sse_event(
+                run_id,
+                event_id,
+                "metadata",
+                event_payload if isinstance(event_payload, dict) else {},
             )
         elif stream_mode_label == "end":
             await store_sse_event(

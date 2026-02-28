@@ -88,13 +88,17 @@ class TestEventConverter:
         assert "event: updates\n" in result
 
     def test_create_sse_event_updates_with_interrupt(self):
-        """Test that interrupt updates are converted to values"""
-        # Use a list for __interrupt__ to match the actual condition check
+        """Test that interrupt updates in explicit updates mode remain as updates.
+
+        When the user explicitly requested stream_mode=["updates"], interrupt events
+        arrive here as "updates" and must NOT be remapped to "values". The remapping
+        only happens in graph_streaming for non-explicitly-requested updates, so by
+        the time an event reaches the converter it is already correctly labelled.
+        """
         payload = {"__interrupt__": [{"node": "test"}], "data": "test"}
         result = self.converter._create_sse_event("updates", payload, "evt-1", None)
 
-        # Should be converted to values event
-        assert "event: values\n" in result
+        assert "event: updates\n" in result
 
     def test_create_sse_event_state(self):
         """Test creating state SSE event"""
@@ -335,6 +339,61 @@ class TestEventConverter:
         assert result is not None
         assert "event: error\n" in result
         assert "Something went wrong" in result
+
+    def test_convert_stored_to_sse_messages_partial(self):
+        """Test converting stored messages/partial event extracts messages list directly."""
+        stored_event = Mock()
+        stored_event.event = "messages/partial"
+        stored_event.data = {"type": "messages_partial", "messages": [{"content": "hello"}], "node_path": None}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: messages/partial\n" in result
+        # Payload should be the messages list, not the whole stored dict
+        assert "messages_partial" not in result
+
+    def test_convert_stored_to_sse_messages_complete(self):
+        """Test converting stored messages/complete event extracts messages list directly."""
+        stored_event = Mock()
+        stored_event.event = "messages/complete"
+        stored_event.data = {"type": "messages_complete", "messages": [{"content": "hello"}], "node_path": None}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: messages/complete\n" in result
+        assert "messages_complete" not in result
+
+    def test_convert_stored_to_sse_messages_metadata(self):
+        """Test converting stored messages/metadata event extracts metadata directly."""
+        stored_event = Mock()
+        stored_event.event = "messages/metadata"
+        stored_event.data = {"type": "messages_metadata", "metadata": {"msg-1": {"model": "gpt-4"}}, "node_path": None}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: messages/metadata\n" in result
+        assert "messages_metadata" not in result
+        assert "gpt-4" in result
+
+    def test_convert_stored_to_sse_updates(self):
+        """Test converting stored updates event produces updates SSE type."""
+        stored_event = Mock()
+        stored_event.event = "updates"
+        stored_event.data = {"type": "execution_updates", "chunk": {"my_node": {"key": "val"}}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        # Must be "updates", not "values"
+        assert "event: updates\n" in result
+        assert "my_node" in result
 
     def test_convert_stored_to_sse_unknown_event(self):
         """Test converting stored event with unknown type uses generic handler"""

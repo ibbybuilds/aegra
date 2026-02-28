@@ -46,6 +46,14 @@ class EventConverter:
             return create_metadata_event(run_id, event_id)
         elif event_type == "debug":
             return create_debug_event(data.get("debug"), event_id)
+        elif event_type in ("messages/partial", "messages/complete"):
+            # Extract the messages list stored under the "messages" key
+            messages = data.get("messages")
+            return format_sse_message(event_type, messages, event_id)
+        elif event_type == "messages/metadata":
+            # Extract the metadata stored under the "metadata" key
+            metadata = data.get("metadata")
+            return format_sse_message("messages/metadata", metadata, event_id)
         elif event_type == "end":
             return create_end_event(event_id)
         elif event_type == "error":
@@ -119,18 +127,13 @@ class EventConverter:
         else:
             event_type = stream_mode
 
-        # Handle updates events (rarely reached - updates are filtered in graph_streaming)
+        # Handle updates events — pass through as-is.
+        # Interrupt filtering/remapping is already done upstream in graph_streaming:
+        # when "updates" is NOT explicitly requested, interrupt updates are remapped
+        # to "values" before reaching the converter. When "updates" IS explicitly
+        # requested, all update events (including interrupts) should be "updates".
         if stream_mode == "updates":
-            if isinstance(payload, dict) and "__interrupt__" in payload:
-                # Convert interrupt updates to values events
-                if self.subgraphs and namespace:
-                    event_type = f"values|{'|'.join(namespace)}"
-                else:
-                    event_type = "values"
-                return format_sse_message(event_type, payload, event_id)
-            else:
-                # Non-interrupt updates (pass through as-is)
-                return format_sse_message(event_type, payload, event_id)
+            return format_sse_message(event_type, payload, event_id)
 
         # Handle specific message event types (Studio compatibility and standard messages)
         if stream_mode in (

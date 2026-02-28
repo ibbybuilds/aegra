@@ -25,6 +25,7 @@ from aegra_api.core.serializers import GeneralSerializer
 from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
+from aegra_api.observability.span_enrichment import set_trace_context
 from aegra_api.services.broker import broker_manager
 from aegra_api.services.graph_streaming import stream_graph_events
 from aegra_api.services.langgraph_service import create_run_config, get_langgraph_service
@@ -910,6 +911,19 @@ async def execute_run_async(
     subgraphs: bool | None = False,
 ) -> None:
     """Execute run asynchronously in background using streaming to capture all events."""
+    # Enrich OTEL spans with per-request trace context for this background task.
+    # Must be set before graph execution so SpanEnrichmentProcessor picks it up.
+    set_trace_context(
+        user_id=user.identity,
+        session_id=thread_id,
+        trace_name=graph_id,
+        metadata={
+            "run_id": run_id,
+            "thread_id": thread_id,
+            "graph_id": graph_id,
+        },
+    )
+
     owns_session = session is None
     if session is None:
         maker = _get_session_maker()

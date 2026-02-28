@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aegra_api.core.auth_ctx import with_auth_ctx
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
+from aegra_api.core.hooks import RejectRun, RunContext, get_hooks, get_hooks_timeout
 from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import Thread as ThreadORM
@@ -263,6 +264,7 @@ async def create_run(
         execute_run_async(
             run_id,
             thread_id,
+            resolved_assistant_id,
             assistant.graph_id,
             request.input or {},
             user,
@@ -301,6 +303,21 @@ async def create_and_stream_run(
     after the client disconnects (default is `"cancel"`). Use `stream_mode`
     to control which event types are emitted.
     """
+    # Authorization check (create_run action on threads resource)
+    ctx = build_auth_context(user, "threads", "create_run")
+    value = {**request.model_dump(), "thread_id": thread_id}
+    filters = await handle_event(ctx, value)
+
+    # If handler modified config/context, update request
+    if filters:
+        if "config" in filters:
+            request.config = {**(request.config or {}), **filters["config"]}
+        if "context" in filters:
+            request.context = {**(request.context or {}), **filters["context"]}
+    elif value.get("config"):
+        request.config = {**(request.config or {}), **value["config"]}
+    elif value.get("context"):
+        request.context = {**(request.context or {}), **value["context"]}
 
     # Validate resume command requirements early
     await _validate_resume_command(session, thread_id, request.command)
@@ -384,6 +401,7 @@ async def create_and_stream_run(
         execute_run_async(
             run_id,
             thread_id,
+            resolved_assistant_id,
             assistant.graph_id,
             request.input or {},
             user,
@@ -624,6 +642,22 @@ async def wait_for_run(
     Sessions are managed manually (not via Depends) to avoid holding a pool
     connection during the long wait, which would starve background tasks.
     """
+    # Authorization check (create_run action on threads resource)
+    auth_ctx = build_auth_context(user, "threads", "create_run")
+    value = {**request.model_dump(), "thread_id": thread_id}
+    filters = await handle_event(auth_ctx, value)
+
+    # If handler modified config/context, update request
+    if filters:
+        if "config" in filters:
+            request.config = {**(request.config or {}), **filters["config"]}
+        if "context" in filters:
+            request.context = {**(request.context or {}), **filters["context"]}
+    elif value.get("config"):
+        request.config = {**(request.config or {}), **value["config"]}
+    elif value.get("context"):
+        request.context = {**(request.context or {}), **value["context"]}
+
     maker = _get_session_maker()
 
     # Session block 1: all pre-execution DB work (validate, create run, commit)
@@ -707,6 +741,7 @@ async def wait_for_run(
         execute_run_async(
             run_id,
             thread_id,
+            resolved_assistant_id,
             graph_id,
             request.input or {},
             user,
@@ -895,6 +930,7 @@ async def cancel_run_endpoint(
 async def execute_run_async(
     run_id: str,
     thread_id: str,
+    assistant_id: str,
     graph_id: str,
     input_data: dict,
     user: User,
@@ -914,6 +950,10 @@ async def execute_run_async(
     if session is None:
         maker = _get_session_maker()
         session = maker()
+
+    hooks = get_hooks()
+    hooks_timeout = get_hooks_timeout()
+    run_config: dict = {}
 
     try:
         # Update status
@@ -942,6 +982,27 @@ async def execute_run_async(
         else:
             # No command, use regular input
             execution_input = input_data
+
+        # === HOOK POINT 1: before_run ===
+        if hooks:
+            before_ctx = RunContext(
+                run_id=run_id,
+                thread_id=thread_id,
+                assistant_id=assistant_id,
+                graph_id=graph_id,
+                user=user,
+                config=run_config,
+                input=input_data,
+            )
+            try:
+                await hooks.fire_before_run(before_ctx, timeout=hooks_timeout)
+            except RejectRun as e:
+                await update_run_status(run_id, "error", output={}, error=e.message, session=session)
+                # Thread goes back to "idle", not "error" — the run was denied
+                # before execution started.  The thread itself is fine.
+                await set_thread_status(session, thread_id, "idle")
+                await streaming_service.signal_run_error(run_id, e.message, "RejectRun")
+                return
 
         # Execute using streaming to capture events for later replay
         event_counter = 0
@@ -1015,11 +1076,29 @@ async def execute_run_async(
                 await streaming_service.signal_run_error(run_id, str(stream_error), error_type)
                 raise
 
+        # Build extras dict with any server-collected data
+        run_extras: dict[str, Any] = {}
+
         if has_interrupt:
             await update_run_status(run_id, "interrupted", output=final_output or {}, session=session)
             if not session:
                 raise RuntimeError(f"No database session available to update thread {thread_id} status")
             await set_thread_status(session, thread_id, "interrupted")
+
+            # === HOOK POINT 2a: after_run (interrupted) ===
+            if hooks:
+                after_ctx = RunContext(
+                    run_id=run_id,
+                    thread_id=thread_id,
+                    assistant_id=assistant_id,
+                    graph_id=graph_id,
+                    user=user,
+                    config=run_config,
+                    output=final_output or {},
+                    status="interrupted",
+                    extras=run_extras,
+                )
+                await hooks.fire_after_run(after_ctx, timeout=hooks_timeout)
 
         else:
             # Update with results - use standard status
@@ -1029,6 +1108,21 @@ async def execute_run_async(
                 raise RuntimeError(f"No database session available to update thread {thread_id} status")
             await set_thread_status(session, thread_id, "idle")
 
+            # === HOOK POINT 2b: after_run (success) ===
+            if hooks:
+                after_ctx = RunContext(
+                    run_id=run_id,
+                    thread_id=thread_id,
+                    assistant_id=assistant_id,
+                    graph_id=graph_id,
+                    user=user,
+                    config=run_config,
+                    output=final_output or {},
+                    status="success",
+                    extras=run_extras,
+                )
+                await hooks.fire_after_run(after_ctx, timeout=hooks_timeout)
+
     except asyncio.CancelledError:
         # Store empty output to avoid JSON serialization issues - use standard status
         await update_run_status(run_id, "interrupted", output={}, session=session)
@@ -1037,7 +1131,31 @@ async def execute_run_async(
         await set_thread_status(session, thread_id, "idle")
         # Signal cancellation to broker
         await streaming_service.signal_run_cancelled(run_id)
+
+        # === HOOK POINT 3a: on_run_error (cancellation) ===
+        if hooks:
+            error_extras: dict[str, Any] = {}
+            error_ctx = RunContext(
+                run_id=run_id,
+                thread_id=thread_id,
+                assistant_id=assistant_id,
+                graph_id=graph_id,
+                user=user,
+                config=run_config or {},
+                error="Run was cancelled",
+                error_type="CancelledError",
+                extras=error_extras,
+            )
+            # Shield the hook call from the ongoing cancellation.
+            try:
+                await asyncio.shield(hooks.fire_on_run_error(error_ctx, timeout=hooks_timeout))
+            except asyncio.CancelledError:
+                logger.warning(f"on_run_error hooks cancelled during shutdown for run {run_id}")
         raise
+
+    except RejectRun:
+        pass  # Already handled above in before_run
+
     except Exception as e:
         # Log with full traceback so bugs are visible in logs
         logger.exception(f"[execute_run_async] run failed run_id={run_id}")
@@ -1053,6 +1171,23 @@ async def execute_run_async(
         if broker and not broker.is_finished():
             error_type = type(e).__name__
             await streaming_service.signal_run_error(run_id, str(e), error_type)
+
+        # === HOOK POINT 3b: on_run_error (exception) ===
+        if hooks:
+            error_extras_exc: dict[str, Any] = {}
+            error_ctx = RunContext(
+                run_id=run_id,
+                thread_id=thread_id,
+                assistant_id=assistant_id,
+                graph_id=graph_id,
+                user=user,
+                config=run_config or {},
+                error=str(e),
+                error_type=type(e).__name__,
+                extras=error_extras_exc,
+            )
+            await hooks.fire_on_run_error(error_ctx, timeout=hooks_timeout)
+
         # Don't re-raise: this runs as a background task (asyncio.create_task),
         # so re-raising causes "Task exception was never retrieved" warnings.
         # The error is already fully handled (run status, thread status, broker).

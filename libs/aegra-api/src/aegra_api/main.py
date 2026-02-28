@@ -17,11 +17,12 @@ from aegra_api.api.runs import router as runs_router
 from aegra_api.api.stateless_runs import router as stateless_runs_router
 from aegra_api.api.store import router as store_router
 from aegra_api.api.threads import router as threads_router
-from aegra_api.config import HttpConfig, get_config_dir, load_http_config
+from aegra_api.config import HttpConfig, get_config_dir, load_hooks_config, load_http_config
 from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
 from aegra_api.core.health import router as health_router
+from aegra_api.core.hooks import load_hooks, set_hooks
 from aegra_api.core.migrations import run_migrations_async
 from aegra_api.core.route_merger import (
     merge_exception_handlers,
@@ -93,6 +94,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Initialize LangGraph service
     langgraph_service = get_langgraph_service()
     await langgraph_service.initialize()
+
+    # Load run hooks if configured
+    hooks_config = load_hooks_config()
+    if hooks_config and hooks_config.get("path"):
+        config_dir = get_config_dir()
+        timeout = hooks_config.get("timeout", 10.0)
+        user_hooks = load_hooks(hooks_config["path"], base_dir=config_dir)
+        set_hooks(user_hooks, timeout=timeout)
+        logger.info("Run hooks loaded successfully")
 
     # Initialize event store cleanup task
     await event_store.start_cleanup_task()

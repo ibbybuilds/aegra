@@ -189,6 +189,7 @@ class TestRunsStreamingEndpoints:
             await execute_run_async(
                 run_id=run_id,
                 thread_id=thread_id,
+                assistant_id="test-assistant-id",
                 graph_id=graph_id,
                 input_data={},
                 user=mock_user,

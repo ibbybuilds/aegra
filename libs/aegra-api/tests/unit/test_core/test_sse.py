@@ -65,6 +65,28 @@ class TestFormatSSEMessage:
         parsed_data = json.loads(data_line.replace("data: ", ""))
         assert parsed_data == data
 
+    def test_format_message_decodes_literal_unicode_escapes(self):
+        """Regression: literal \\uXXXX sequences from LLM streaming are decoded in SSE output.
+
+        Some LLMs stream tool_call_chunks.args as raw JSON text where non-ASCII
+        characters are literal \\uXXXX sequences instead of the actual characters.
+        Verify these are decoded so the client sees Cyrillic, not escape sequences.
+        """
+        data = {"tool_call_chunks": [{"args": '{"thought": "\\u041f\\u0440\\u0438\\u0432\\u0435\\u0442"}'}]}
+        result = format_sse_message("messages", data)
+        data_line = next(line for line in result.split("\n") if line.startswith("data: "))
+        assert "Привет" in data_line
+        assert "\\u041f" not in data_line
+
+    def test_format_message_preserves_ascii_control_escapes(self):
+        """ASCII control-character escapes (\\u0000–\\u007f) are not decoded to keep JSON valid."""
+        # \u0022 is a double-quote — decoding it inside a JSON string would break structure
+        data = {"key": "value"}
+        result = format_sse_message("test_event", data)
+        # Structural JSON escapes (\", \n, etc.) must survive intact
+        parsed_data = json.loads(result.split("data: ")[1].split("\n")[0])
+        assert parsed_data == data
+
     def test_format_message_with_custom_serializer(self):
         """Test SSE message with custom serializer"""
 

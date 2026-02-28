@@ -1,12 +1,12 @@
 """Server-Sent Events utilities and formatting"""
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-# Import our serializer for handling complex objects
 from aegra_api.core.serializers import GeneralSerializer
 
 # Global serializer instance
@@ -49,6 +49,16 @@ def format_sse_message(
         # Use our general serializer by default to handle complex objects
         default_serializer = serializer or _serializer.serialize
         data_str = json.dumps(data, default=default_serializer, separators=(",", ":"), ensure_ascii=False)
+        # Some LLMs stream tool_call_chunks.args with literal \uXXXX escape
+        # sequences. json.dumps double-escapes the backslash (\\uXXXX), so we
+        # decode non-ASCII code points (>= 0x80) back to characters. ASCII
+        # control characters are left intact to preserve JSON validity.
+        if "\\u" in data_str:
+            data_str = re.sub(
+                r"\\\\u([0-9a-fA-F]{4})",
+                lambda m: chr(cp) if (cp := int(m.group(1), 16)) >= 0x80 else m.group(0),
+                data_str,
+            )
 
     lines.append(f"data: {data_str}")
 

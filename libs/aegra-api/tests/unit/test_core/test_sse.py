@@ -80,11 +80,15 @@ class TestFormatSSEMessage:
 
     def test_format_message_preserves_ascii_control_escapes(self):
         """ASCII control-character escapes (\\u0000–\\u007f) are not decoded to keep JSON valid."""
-        # \u0022 is a double-quote — decoding it inside a JSON string would break structure
-        data = {"key": "value"}
+        # \u0022 is a double-quote — if decoded inside a nested JSON string it would break structure.
+        # Simulate an LLM streaming a nested JSON with a literal ASCII escape sequence.
+        data = {"tool_call_chunks": [{"args": '{"key": "hello\\u0022world"}'}]}
         result = format_sse_message("test_event", data)
-        # Structural JSON escapes (\", \n, etc.) must survive intact
-        parsed_data = json.loads(result.split("data: ")[1].split("\n")[0])
+        data_line = next(line for line in result.split("\n") if line.startswith("data: "))
+        # The \u0022 escape must NOT be decoded to a literal quote
+        assert "\\u0022" in data_line
+        # Overall JSON structure must remain valid
+        parsed_data = json.loads(data_line.replace("data: ", ""))
         assert parsed_data == data
 
     def test_format_message_with_custom_serializer(self):

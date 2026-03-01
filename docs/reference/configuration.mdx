@@ -152,7 +152,7 @@ def graph(runtime: ServerRuntime[MyContext]):
 
 Pydantic `BaseModel` and `dataclass` types are both supported. If the request context fails validation against `T`, the factory receives the raw dict as a graceful fallback.
 
-The `context` field is only available on `_ExecutionRuntime` (i.e., during `threads.create_run`). For read/introspection access contexts, `runtime` is a `_ReadRuntime` which has no `context` field — use `runtime.execution_runtime` to narrow.
+The `context` field is only available during execution (i.e., `threads.create_run`). Use `runtime.execution_runtime` to check — it returns the execution runtime (with `.context`) when the factory is called for a run, or `None` for read/introspection contexts (schema extraction, graph visualisation, state reads).
 
 For a complete example combining typed context, user-aware tool filtering, graph structure changes, and MCP lifecycle management in a single factory, see [`examples/factory/`](https://github.com/ibbybuilds/aegra/tree/main/examples/factory).
 

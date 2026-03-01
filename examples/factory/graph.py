@@ -149,7 +149,13 @@ async def graph(config: dict[str, Any], runtime: ServerRuntime[FactoryContext]) 
     """
     ert = runtime.execution_runtime
     if ert:
-        ctx = ert.context or FactoryContext()
+        raw = ert.context
+        if isinstance(raw, FactoryContext):
+            ctx = raw
+        elif isinstance(raw, dict):
+            ctx = FactoryContext(**raw)
+        else:
+            ctx = FactoryContext()
     else:
         ctx = FactoryContext()
 
@@ -158,7 +164,12 @@ async def graph(config: dict[str, Any], runtime: ServerRuntime[FactoryContext]) 
 
     # Optionally add MCP tools (only in execution context)
     mcp_client = None
-    if ctx.enable_mcp and ert and _HAS_MCP:
+    if ctx.enable_mcp and ert:
+        if not _HAS_MCP:
+            raise RuntimeError(
+                "enable_mcp=True but langchain-mcp-adapters is not installed. "
+                "Install it with: pip install langchain-mcp-adapters"
+            )
         client = MultiServerMCPClient(MCP_SERVERS)
         await client.__aenter__()
         mcp_client = client  # only set after successful entry

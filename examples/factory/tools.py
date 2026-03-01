@@ -45,7 +45,7 @@ def get_tools(ctx: FactoryContext, user: BaseUser | None) -> list[BaseTool]:
     # Admin-only tools
     is_admin = False
     if user is not None:
-        permissions = getattr(user, "permissions", [])
+        permissions = getattr(user, "permissions", []) or []
         is_admin = "admin" in permissions
 
     if is_admin:

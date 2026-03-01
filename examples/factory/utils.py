@@ -14,5 +14,10 @@ def load_chat_model(model_name: str) -> BaseChatModel:
     Returns:
         An initialised chat model instance.
     """
-    provider, model = model_name.split("/", maxsplit=1)
+    parts = model_name.split("/", maxsplit=1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(
+            f"Invalid model_name {model_name!r}: expected 'provider/model' format (e.g. 'openai/gpt-4o-mini')"
+        )
+    provider, model = parts
     return init_chat_model(model, model_provider=provider)

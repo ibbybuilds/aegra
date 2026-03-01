@@ -7,9 +7,16 @@ from dataclasses import dataclass
 class FactoryContext:
     """Request context for the unified factory example.
 
-    Callers pass this as ``context={...}`` when creating a run. The factory
-    reads it from ``runtime.execution_runtime.context`` (coerced automatically
-    via ``ServerRuntime[FactoryContext]``).
+    Callers pass this as ``context={...}`` when creating a run. Fields are
+    used at two different levels:
+
+    **Factory level** (``ServerRuntime[FactoryContext]``):
+        ``enable_search`` and ``enable_mcp`` control graph structure and
+        resource lifecycle — decisions that must happen before execution.
+
+    **Node level** (``Runtime[FactoryContext]``):
+        ``model`` and ``system_prompt`` are read inside node functions
+        during execution via LangGraph's standard runtime injection.
 
     Attributes:
         model: LLM identifier in ``provider/model-name`` format.

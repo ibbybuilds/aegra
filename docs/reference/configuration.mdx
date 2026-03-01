@@ -129,32 +129,67 @@ Supported factory signatures:
 
 Async factories and factories returning async context managers are also supported.
 
-#### Typed factory context with `ServerRuntime[T]`
+#### Typed context with `Runtime[T]` (node-level)
 
-When a run is created with a `context` dict, Aegra passes it to the factory via `runtime.context`. You can declare a type parameter on `ServerRuntime` to have the raw dict automatically coerced to your context type:
+When a run is created with a `context` dict, Aegra passes it to `graph.astream(context=...)`. LangGraph core coerces it to a typed object and injects it into nodes via `Runtime[T]`. This works for **both static and factory graphs**:
 
 ```python
 from dataclasses import dataclass
-from langgraph_sdk.runtime import ServerRuntime
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
 
 @dataclass
 class MyContext:
-    model_name: str
-    temperature: float
+    model_name: str = "openai/gpt-4o-mini"
+    temperature: float = 0.7
 
-def graph(runtime: ServerRuntime[MyContext]):
-    """Factory receives typed context from the run request."""
-    ctx = runtime.context  # MyContext instance (or raw dict on validation failure)
-    builder = StateGraph(State)
-    # ... customize based on ctx.model_name, ctx.temperature
-    return builder.compile()
+class State(TypedDict):
+    messages: list
+
+async def call_model(state: State, runtime: Runtime[MyContext]):
+    """Node receives typed context via Runtime injection."""
+    model = runtime.context.model_name      # str, typed
+    temp = runtime.context.temperature      # float, typed
+    ...
+
+builder = StateGraph(State, context_schema=MyContext)
+builder.add_node("call_model", call_model)
+...
+graph = builder.compile()
 ```
 
-Pydantic `BaseModel` and `dataclass` types are both supported. If the request context fails validation against `T`, the factory receives the raw dict as a graceful fallback.
+Pydantic `BaseModel` and `dataclass` types are both supported. Declare `context_schema=` on `StateGraph` and add a `runtime: Runtime[T]` parameter to any node that needs it.
 
-The `context` field is only available during execution (i.e., `threads.create_run`). Use `runtime.execution_runtime` to check — it returns the execution runtime (with `.context`) when the factory is called for a run, or `None` for read/introspection contexts (schema extraction, graph visualisation, state reads).
+#### Factory-level context with `ServerRuntime[T]`
 
-For a complete example combining typed context, user-aware tool filtering, graph structure changes, and MCP lifecycle management in a single factory, see [`examples/factory/`](https://github.com/ibbybuilds/aegra/tree/main/examples/factory).
+For factory graphs, `ServerRuntime[T]` provides typed context at **graph-build time** — before execution starts. Use this for structural decisions that change the graph topology (adding/removing nodes, selecting tools, managing resource lifecycle):
+
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+@asynccontextmanager
+async def graph(runtime: ServerRuntime[MyContext]):
+    ert = runtime.execution_runtime
+    ctx = ert.context if ert else MyContext()
+
+    # Structural decision — changes graph topology
+    tools = [search_tool] if ctx.enable_search else []
+    compiled = build_graph(tools)
+    yield compiled
+```
+
+Use `runtime.execution_runtime` to check whether the factory is being called for actual execution (returns the execution runtime with `.context`) or for introspection like schema extraction (returns `None`).
+
+**When to use which:**
+
+| Need | Use | Works with |
+|------|-----|------------|
+| Read context in node functions | `Runtime[T]` on node parameter | Static + factory graphs |
+| Change graph structure per request | `ServerRuntime[T]` in factory | Factory graphs only |
+| Manage resource lifecycle (MCP, DB) | `ServerRuntime[T]` + async context manager | Factory graphs only |
+| Filter tools by user permissions | `ServerRuntime` (`.user`) in factory | Factory graphs only |
+
+For a complete example combining both layers, see [`examples/factory/`](https://github.com/ibbybuilds/aegra/tree/main/examples/factory).
 
 ## `auth`
 

@@ -2,14 +2,17 @@
 
 Demonstrates all factory capabilities in a single graph:
 
-- **Model selection** via ``FactoryContext.model``
-- **System prompt** via ``FactoryContext.system_prompt``
-- **Graph structure changes** via ``FactoryContext.enable_search`` (conditionally
-  includes/excludes the ``search_web`` tool and the ``tools`` node)
-- **User-aware tool filtering** via ``runtime.user`` (admin users get
-  ``delete_user``)
-- **MCP lifecycle** via ``FactoryContext.enable_mcp`` (async context manager
-  spins up MCP tool servers when enabled)
+- **Graph structure changes** via ``FactoryContext.enable_search`` — the factory
+  conditionally includes/excludes the ``search_web`` tool and the ``tools`` node
+  (read from ``ServerRuntime[FactoryContext]`` at factory time)
+- **User-aware tool filtering** via ``runtime.user`` — admin users get
+  ``delete_user`` (read from ``ServerRuntime`` at factory time)
+- **MCP lifecycle** via ``FactoryContext.enable_mcp`` — the async context manager
+  spins up MCP tool servers when enabled (factory time)
+- **Model selection** via ``FactoryContext.model`` — read inside the node via
+  ``Runtime[FactoryContext]`` at execution time
+- **System prompt** via ``FactoryContext.system_prompt`` — read inside the node
+  via ``Runtime[FactoryContext]`` at execution time
 
 Usage in aegra.json::
 
@@ -25,10 +28,10 @@ from contextlib import asynccontextmanager
 from typing import Any, Literal, cast
 
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
-from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.runtime import Runtime
 from langgraph_sdk.runtime import ServerRuntime
 from typing_extensions import TypedDict
 
@@ -72,24 +75,30 @@ class State(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def _build_graph(ctx: FactoryContext, tools: list[BaseTool]) -> Any:
+def _build_graph(tools: list[BaseTool]) -> Any:
     """Build and compile the graph, adapting structure to the tool list.
 
     When *tools* is non-empty the graph includes a ``tools`` node and a
     conditional edge from ``call_model`` that routes tool-call responses
     to it. When *tools* is empty, the graph is a simple
     ``__start__ -> call_model -> __end__`` chain.
-    """
-    system_msg = ctx.system_prompt
 
-    async def call_model(state: State, config: RunnableConfig) -> dict[str, list[AIMessage]]:
-        """Call the LLM, optionally binding tools."""
+    Uses ``context_schema=FactoryContext`` so that nodes receive typed
+    context via ``Runtime[FactoryContext]`` injection at execution time.
+    """
+
+    # The node closes over `tools` (a structural decision from the factory)
+    # but reads model/prompt from Runtime[FactoryContext] (execution-time context).
+    async def call_model(state: State, runtime: Runtime[FactoryContext]) -> dict[str, list[AIMessage]]:
+        """Call the LLM using execution-time context for model and prompt."""
+        ctx = runtime.context
         model = load_chat_model(ctx.model)
 
         if tools:
             model = model.bind_tools(tools)
 
         existing = list(state.get("messages", []))
+        system_msg = ctx.system_prompt
         if existing and isinstance(existing[0], SystemMessage) and existing[0].content == system_msg:
             messages = existing
         else:
@@ -98,18 +107,18 @@ def _build_graph(ctx: FactoryContext, tools: list[BaseTool]) -> Any:
         response = cast("AIMessage", await model.ainvoke(messages))
         return {"messages": [response]}
 
-    builder = StateGraph(State)
+    def route_output(state: State) -> Literal["__end__", "tools"]:
+        """Route to tools or end."""
+        last = state["messages"][-1]
+        if isinstance(last, AIMessage) and last.tool_calls:
+            return "tools"
+        return "__end__"
+
+    builder = StateGraph(State, context_schema=FactoryContext)
     builder.add_node("call_model", call_model)
     builder.add_edge("__start__", "call_model")
 
     if tools:
-
-        def route_output(state: State) -> Literal["__end__", "tools"]:
-            last = state["messages"][-1]
-            if isinstance(last, AIMessage) and last.tool_calls:
-                return "tools"
-            return "__end__"
-
         builder.add_node("tools", ToolNode(tools))
         builder.add_conditional_edges("call_model", route_output)
         builder.add_edge("tools", "call_model")
@@ -128,14 +137,15 @@ def _build_graph(ctx: FactoryContext, tools: list[BaseTool]) -> Any:
 async def graph(config: dict[str, Any], runtime: ServerRuntime[FactoryContext]) -> AsyncIterator[Any]:
     """Unified factory — 2-param async context manager.
 
-    Accepts both ``config`` (RunnableConfig dict) and ``runtime``
-    (``ServerRuntime[FactoryContext]``). The ``FactoryContext`` is read from
-    ``runtime.execution_runtime.context`` during run execution; for
-    non-execution contexts (schema extraction, graph visualisation) defaults
-    are used.
+    Uses ``ServerRuntime[FactoryContext]`` for **structural** decisions only:
 
-    The async context manager form allows MCP server connections to be
-    established on entry and torn down on exit.
+    - ``enable_search`` → include or exclude the tools node
+    - ``enable_mcp`` → spin up MCP server connections
+    - ``runtime.user`` → grant admin-only tools
+
+    Execution-time values (``model``, ``system_prompt``) are read inside
+    nodes via ``Runtime[FactoryContext]`` — LangGraph's standard context
+    injection — not from factory closures.
     """
     ert = runtime.execution_runtime
     if ert:
@@ -143,7 +153,7 @@ async def graph(config: dict[str, Any], runtime: ServerRuntime[FactoryContext]) 
     else:
         ctx = FactoryContext()
 
-    # Assemble tools based on context + user permissions
+    # Assemble tools based on context + user permissions (structural decision)
     tools = list(get_tools(ctx, runtime.user))
 
     # Optionally add MCP tools (only in execution context)
@@ -155,7 +165,7 @@ async def graph(config: dict[str, Any], runtime: ServerRuntime[FactoryContext]) 
         mcp_tools: list[BaseTool] = mcp_client.get_tools()
         tools.extend(mcp_tools)
 
-    compiled = _build_graph(ctx, tools)
+    compiled = _build_graph(tools)
 
     try:
         yield compiled

@@ -154,6 +154,8 @@ Pydantic `BaseModel` and `dataclass` types are both supported. If the request co
 
 The `context` field is only available on `_ExecutionRuntime` (i.e., during `threads.create_run`). For read/introspection access contexts, `runtime` is a `_ReadRuntime` which has no `context` field — use `runtime.execution_runtime` to narrow.
 
+For a complete example combining typed context, user-aware tool filtering, graph structure changes, and MCP lifecycle management in a single factory, see [`examples/factory/`](https://github.com/ibbybuilds/aegra/tree/main/examples/factory).
+
 ## `auth`
 
 Configure authentication and authorization.

@@ -112,4 +112,5 @@ dev = [
     "pre-commit>=4.0.1",
     "langchain-openai>=1.0.3",
     "langchain>=1.0.0",
+    "langchain-mcp-adapters>=0.1.0",
 ]

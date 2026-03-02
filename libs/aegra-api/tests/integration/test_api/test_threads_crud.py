@@ -86,6 +86,7 @@ class TestCreateThread:
         assert data["metadata"]["owner"] == "test-user"
         assert data["metadata"]["assistant_id"] is None
         assert data["metadata"]["graph_id"] is None
+        assert data["metadata"]["thread_name"] == ""
 
     def test_create_thread_with_name(self, client):
         """Test creating a thread with thread name in metadata"""

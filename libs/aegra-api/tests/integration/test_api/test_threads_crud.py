@@ -87,6 +87,18 @@ class TestCreateThread:
         assert data["metadata"]["assistant_id"] is None
         assert data["metadata"]["graph_id"] is None
 
+    def test_create_thread_with_name(self, client):
+        """Test creating a thread with thread name in metadata"""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"thread_name": "Test Thread"}, "initial_state": None},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "thread_id" in data
+        assert data["status"] == "idle"
+        assert data["metadata"]["thread_name"] == "Test Thread"
+
     def test_create_thread_empty_request(self, client):
         """Test creating a thread with empty request body"""
         resp = client.post("/threads", json={})

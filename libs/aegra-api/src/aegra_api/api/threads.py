@@ -162,7 +162,7 @@ async def create_thread(
             "owner": user.identity,
             "assistant_id": None,
             "graph_id": None,
-            "thread_name": "",
+            "thread_name": metadata.get("thread_name", ""),
         }
     )
 

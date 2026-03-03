@@ -3,6 +3,7 @@
 from typing import Any
 
 from aegra_api.core.sse import (
+    SSEEvent,
     create_debug_event,
     create_end_event,
     create_error_event,
@@ -27,7 +28,7 @@ class EventConverter:
         stream_mode, payload, namespace = self._parse_raw_event(raw_event)
         return self._create_sse_event(stream_mode, payload, event_id, namespace)
 
-    def convert_stored_to_sse(self, stored_event, run_id: str = None) -> str | None:
+    def convert_stored_to_sse(self, stored_event: SSEEvent, run_id: str | None = None) -> str | None:
         """Convert stored event to SSE format"""
         event_type = stored_event.event
         data = stored_event.data

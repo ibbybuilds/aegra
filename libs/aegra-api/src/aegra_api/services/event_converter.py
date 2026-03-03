@@ -7,7 +7,6 @@ from aegra_api.core.sse import (
     create_end_event,
     create_error_event,
     create_messages_event,
-    create_metadata_event,
     format_sse_message,
 )
 
@@ -43,17 +42,24 @@ class EventConverter:
             message_data = (message_chunk, metadata) if metadata is not None else message_chunk
             return create_messages_event(message_data, event_id=event_id)
         elif event_type == "metadata":
-            return create_metadata_event(run_id, event_id)
+            # Use the stored payload directly so the replayed event is faithful
+            # to what LangGraph originally emitted (run_id, attempt, etc.)
+            return format_sse_message(event_type, data, event_id)
         elif event_type == "debug":
             return create_debug_event(data.get("debug"), event_id)
         elif event_type in ("messages/partial", "messages/complete"):
-            # Extract the messages list stored under the "messages" key
             messages = data.get("messages")
+            if messages is None:
+                return
             return format_sse_message(event_type, messages, event_id)
         elif event_type == "messages/metadata":
-            # Extract the metadata stored under the "metadata" key
             metadata = data.get("metadata")
-            return format_sse_message("messages/metadata", metadata, event_id)
+            if metadata is None:
+                return
+            return format_sse_message(event_type, metadata, event_id)
+        elif event_type == "updates" or event_type == "custom":
+            payload = data.get("chunk") or data
+            return format_sse_message(event_type, payload, event_id)
         elif event_type == "end":
             return create_end_event(event_id)
         elif event_type == "error":

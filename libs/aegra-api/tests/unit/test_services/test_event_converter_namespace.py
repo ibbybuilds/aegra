@@ -110,11 +110,16 @@ class TestEventConverterNamespace:
         assert "event: values|subagent\n" in result
         assert "state" in result
 
-    def test_create_sse_event_updates_converted_to_values_with_namespace(self):
-        """Test that interrupt updates converted to values preserve namespace"""
+    def test_create_sse_event_updates_with_interrupt_and_namespace(self):
+        """Test that explicit updates with interrupt data keep updates|namespace prefix.
+
+        Interrupt remapping to values happens upstream in graph_streaming, not here.
+        When stream_mode='updates' was explicitly requested, all update events
+        (including interrupt ones) must arrive as 'updates|namespace'.
+        """
         self.converter.set_subgraphs(True)
         payload = {"__interrupt__": [{"node": "test"}]}
         result = self.converter._create_sse_event("updates", payload, "evt-1", ["subagent"])
 
-        assert "event: values|subagent\n" in result
+        assert "event: updates|subagent\n" in result
         assert "__interrupt__" in result

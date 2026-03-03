@@ -88,13 +88,17 @@ class TestEventConverter:
         assert "event: updates\n" in result
 
     def test_create_sse_event_updates_with_interrupt(self):
-        """Test that interrupt updates are converted to values"""
-        # Use a list for __interrupt__ to match the actual condition check
+        """Test that interrupt updates in explicit updates mode remain as updates.
+
+        When the user explicitly requested stream_mode=["updates"], interrupt events
+        arrive here as "updates" and must NOT be remapped to "values". The remapping
+        only happens in graph_streaming for non-explicitly-requested updates, so by
+        the time an event reaches the converter it is already correctly labelled.
+        """
         payload = {"__interrupt__": [{"node": "test"}], "data": "test"}
         result = self.converter._create_sse_event("updates", payload, "evt-1", None)
 
-        # Should be converted to values event
-        assert "event: values\n" in result
+        assert "event: updates\n" in result
 
     def test_create_sse_event_state(self):
         """Test creating state SSE event"""
@@ -227,13 +231,13 @@ class TestEventConverter:
         assert "event: values\n" in result
 
     def test_convert_stored_to_sse_metadata(self):
-        """Test converting stored metadata event"""
+        """Test converting stored metadata event uses the stored payload directly."""
         stored_event = Mock()
         stored_event.event = "metadata"
-        stored_event.data = {}
+        stored_event.data = {"run_id": "run-123", "attempt": 1}
         stored_event.id = "evt-1"
 
-        result = self.converter.convert_stored_to_sse(stored_event, run_id="run-123")
+        result = self.converter.convert_stored_to_sse(stored_event)
 
         assert result is not None
         assert "event: metadata\n" in result
@@ -335,6 +339,154 @@ class TestEventConverter:
         assert result is not None
         assert "event: error\n" in result
         assert "Something went wrong" in result
+
+    def test_convert_stored_to_sse_messages_partial(self):
+        """Test converting stored messages/partial event extracts messages list directly."""
+        stored_event = Mock()
+        stored_event.event = "messages/partial"
+        stored_event.data = {"type": "messages_partial", "messages": [{"content": "hello"}], "node_path": None}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: messages/partial\n" in result
+        # Payload should be the messages list, not the whole stored dict
+        assert "messages_partial" not in result
+
+    def test_convert_stored_to_sse_messages_partial_missing_key_returns_none(self):
+        """Test that a malformed messages/partial event without 'messages' key returns None."""
+        stored_event = Mock()
+        stored_event.event = "messages/partial"
+        stored_event.data = {"type": "messages_partial"}  # no "messages" key
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is None
+
+    def test_convert_stored_to_sse_messages_complete(self):
+        """Test converting stored messages/complete event extracts messages list directly."""
+        stored_event = Mock()
+        stored_event.event = "messages/complete"
+        stored_event.data = {"type": "messages_complete", "messages": [{"content": "hello"}], "node_path": None}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: messages/complete\n" in result
+        assert "messages_complete" not in result
+
+    def test_convert_stored_to_sse_messages_complete_missing_key_returns_none(self):
+        """Test that a malformed messages/complete event without 'messages' key returns None."""
+        stored_event = Mock()
+        stored_event.event = "messages/complete"
+        stored_event.data = {}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is None
+
+    def test_convert_stored_to_sse_messages_metadata(self):
+        """Test converting stored messages/metadata event extracts metadata directly."""
+        stored_event = Mock()
+        stored_event.event = "messages/metadata"
+        stored_event.data = {"type": "messages_metadata", "metadata": {"msg-1": {"model": "gpt-4"}}, "node_path": None}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: messages/metadata\n" in result
+        assert "messages_metadata" not in result
+        assert "gpt-4" in result
+
+    def test_convert_stored_to_sse_messages_metadata_missing_key_returns_none(self):
+        """Test that a malformed messages/metadata event without 'metadata' key returns None."""
+        stored_event = Mock()
+        stored_event.event = "messages/metadata"
+        stored_event.data = {"type": "messages_metadata"}  # no "metadata" key
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is None
+
+    def test_convert_stored_to_sse_updates(self):
+        """Test converting stored updates event produces updates SSE type via explicit branch."""
+        stored_event = Mock()
+        stored_event.event = "updates"
+        stored_event.data = {"type": "execution_updates", "chunk": {"my_node": {"key": "val"}}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        # Must be "updates", not "values"
+        assert "event: updates\n" in result
+        assert "my_node" in result
+
+    def test_convert_stored_to_sse_custom(self):
+        """Test converting stored custom event via explicit branch (not generic fallback)."""
+        stored_event = Mock()
+        stored_event.event = "custom"
+        stored_event.data = {"chunk": {"my_key": "my_value"}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: custom\n" in result
+        assert "my_value" in result
+
+    def test_convert_stored_to_sse_custom_empty_chunk_not_replaced_by_envelope(self):
+        """Regression: falsy chunk ({}) must be used as-is, not replaced by the envelope dict."""
+        stored_event = Mock()
+        stored_event.event = "custom"
+        stored_event.data = {"chunk": {}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: custom\n" in result
+        # The payload must be the empty dict, not the envelope {"chunk": {}}
+        assert "chunk" not in result
+
+    def test_convert_stored_to_sse_updates_empty_chunk_not_replaced_by_envelope(self):
+        """Regression: falsy chunk ({}) in updates must be used as-is, not replaced by the envelope dict."""
+        stored_event = Mock()
+        stored_event.event = "updates"
+        stored_event.data = {"type": "execution_updates", "chunk": {}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: updates\n" in result
+        # The payload must be the empty dict, not the envelope {"type": ..., "chunk": {}}
+        assert "execution_updates" not in result
+
+    def test_convert_stored_to_sse_metadata_uses_stored_payload(self):
+        """Test that metadata replay uses the stored payload, not a reconstructed one.
+
+        create_metadata_event always hardcodes attempt=1 and only uses run_id.
+        The stored data may have a different attempt value or additional fields,
+        so faithful replay must use the stored dict directly.
+        """
+        stored_event = Mock()
+        stored_event.event = "metadata"
+        stored_event.data = {"run_id": "run-abc", "attempt": 3}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: metadata\n" in result
+        assert "attempt" in result
+        assert "3" in result
 
     def test_convert_stored_to_sse_unknown_event(self):
         """Test converting stored event with unknown type uses generic handler"""

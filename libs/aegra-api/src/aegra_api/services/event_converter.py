@@ -3,11 +3,11 @@
 from typing import Any
 
 from aegra_api.core.sse import (
+    SSEEvent,
     create_debug_event,
     create_end_event,
     create_error_event,
     create_messages_event,
-    create_metadata_event,
     format_sse_message,
 )
 
@@ -28,7 +28,7 @@ class EventConverter:
         stream_mode, payload, namespace = self._parse_raw_event(raw_event)
         return self._create_sse_event(stream_mode, payload, event_id, namespace)
 
-    def convert_stored_to_sse(self, stored_event, run_id: str = None) -> str | None:
+    def convert_stored_to_sse(self, stored_event: SSEEvent, _run_id: str | None = None) -> str | None:
         """Convert stored event to SSE format"""
         event_type = stored_event.event
         data = stored_event.data
@@ -43,9 +43,27 @@ class EventConverter:
             message_data = (message_chunk, metadata) if metadata is not None else message_chunk
             return create_messages_event(message_data, event_id=event_id)
         elif event_type == "metadata":
-            return create_metadata_event(run_id, event_id)
+            # Use the stored payload directly so the replayed event is faithful
+            # to what LangGraph originally emitted (run_id, attempt, etc.)
+            return format_sse_message(event_type, data, event_id)
         elif event_type == "debug":
-            return create_debug_event(data.get("debug"), event_id)
+            debug_payload = data.get("debug")
+            if debug_payload is None:
+                return
+            return create_debug_event(debug_payload, event_id)
+        elif event_type in ("messages/partial", "messages/complete"):
+            messages = data.get("messages")
+            if messages is None:
+                return
+            return format_sse_message(event_type, messages, event_id)
+        elif event_type == "messages/metadata":
+            metadata = data.get("metadata")
+            if metadata is None:
+                return
+            return format_sse_message(event_type, metadata, event_id)
+        elif event_type in ("updates", "custom"):
+            payload = data["chunk"] if isinstance(data, dict) and "chunk" in data else data
+            return format_sse_message(event_type, payload, event_id)
         elif event_type == "end":
             return create_end_event(event_id)
         elif event_type == "error":
@@ -119,18 +137,13 @@ class EventConverter:
         else:
             event_type = stream_mode
 
-        # Handle updates events (rarely reached - updates are filtered in graph_streaming)
+        # Handle updates events — pass through as-is.
+        # Interrupt filtering/remapping is already done upstream in graph_streaming:
+        # when "updates" is NOT explicitly requested, interrupt updates are remapped
+        # to "values" before reaching the converter. When "updates" IS explicitly
+        # requested, all update events (including interrupts) should be "updates".
         if stream_mode == "updates":
-            if isinstance(payload, dict) and "__interrupt__" in payload:
-                # Convert interrupt updates to values events
-                if self.subgraphs and namespace:
-                    event_type = f"values|{'|'.join(namespace)}"
-                else:
-                    event_type = "values"
-                return format_sse_message(event_type, payload, event_id)
-            else:
-                # Non-interrupt updates (pass through as-is)
-                return format_sse_message(event_type, payload, event_id)
+            return format_sse_message(event_type, payload, event_id)
 
         # Handle specific message event types (Studio compatibility and standard messages)
         if stream_mode in (

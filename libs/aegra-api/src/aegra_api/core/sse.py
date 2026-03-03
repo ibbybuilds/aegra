@@ -1,16 +1,43 @@
 """Server-Sent Events utilities and formatting"""
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-# Import our serializer for handling complex objects
 from aegra_api.core.serializers import GeneralSerializer
 
 # Global serializer instance
 _serializer = GeneralSerializer()
+
+# Some LLMs stream tool_call_chunks.args with literal \uXXXX sequences
+# instead of actual Unicode characters. After json.dumps these become \\uXXXX (double-escaped).
+# We decode them back in two passes: surrogate pairs first to avoid lone surrogates that
+# cannot be encoded to UTF-8, then remaining non-ASCII, non-surrogate code points.
+# ASCII control characters (< 0x80) are left intact to preserve JSON validity.
+_SURROGATE_PAIR_RE = re.compile(
+    r"\\\\u(D[89AB][0-9a-fA-F]{2})\\\\u(D[C-F][0-9a-fA-F]{2})",
+    re.IGNORECASE,
+)
+_NONASCII_ESCAPE_RE = re.compile(r"\\\\u([0-9a-fA-F]{4})")
+
+
+def _decode_literal_unicode_escapes(data_str: str) -> str:
+    """Decode double-escaped \\uXXXX sequences in an already-JSON-encoded string."""
+    if "\\u" not in data_str:
+        return data_str
+    # First pass: combine surrogate pairs (e.g. \\uD83D\\uDE00 → 😀)
+    data_str = _SURROGATE_PAIR_RE.sub(
+        lambda m: chr(((int(m.group(1), 16) - 0xD800) << 10) + (int(m.group(2), 16) - 0xDC00) + 0x10000),
+        data_str,
+    )
+    # Second pass: decode remaining non-ASCII, non-surrogate escapes
+    return _NONASCII_ESCAPE_RE.sub(
+        lambda m: chr(cp) if (cp := int(m.group(1), 16)) >= 0x80 and not (0xD800 <= cp <= 0xDFFF) else m.group(0),
+        data_str,
+    )
 
 
 def get_sse_headers() -> dict[str, str]:
@@ -49,6 +76,7 @@ def format_sse_message(
         # Use our general serializer by default to handle complex objects
         default_serializer = serializer or _serializer.serialize
         data_str = json.dumps(data, default=default_serializer, separators=(",", ":"), ensure_ascii=False)
+        data_str = _decode_literal_unicode_escapes(data_str)
 
     lines.append(f"data: {data_str}")
 

@@ -57,7 +57,7 @@ class EventConverter:
             if metadata is None:
                 return
             return format_sse_message(event_type, metadata, event_id)
-        elif event_type == "updates" or event_type == "custom":
+        elif event_type in ("updates", "custom"):
             payload = data.get("chunk") or data
             return format_sse_message(event_type, payload, event_id)
         elif event_type == "end":

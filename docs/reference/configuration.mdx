@@ -90,7 +90,106 @@ Define your LangGraph agents.
 | Key | `string` | Graph ID (used in API calls to identify the graph) |
 | Value | `string` | Import path in format `./path/to/file.py:variable` |
 
-The variable must be a compiled LangGraph graph (result of `builder.compile()`).
+The variable can be:
+
+- **A compiled graph** — result of `builder.compile()` (static, cached once at startup)
+- **A 0-arg callable** — called once at startup to produce the graph (e.g., for MCP adapter setup)
+- **A factory function** — called per-request with `config` and/or `ServerRuntime` to produce a graph customized for the current user or request context
+
+### Static graphs
+
+```python
+builder = StateGraph(State)
+# ... define nodes and edges
+graph = builder.compile()  # Export as 'graph'
+```
+
+### Factory graphs
+
+Export a callable that accepts `config` (a `RunnableConfig` dict), `runtime` (a `ServerRuntime`), or both:
+
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+def graph(runtime: ServerRuntime):
+    """Per-request factory — called with user context."""
+    user = runtime.user
+    store = runtime.store
+    # Customize graph based on user/context
+    builder = StateGraph(State)
+    # ...
+    return builder.compile()
+```
+
+Supported factory signatures:
+- `def graph()` — 0-arg, called once at startup
+- `def graph(config: dict)` — receives the `RunnableConfig` per-request
+- `def graph(runtime: ServerRuntime)` — receives runtime with user, store, and access context
+- `def graph(config: dict, runtime: ServerRuntime)` — receives both (any parameter order)
+
+Async factories and factories returning async context managers are also supported.
+
+#### Typed context with `Runtime[T]` (node-level)
+
+When a run is created with a `context` dict, Aegra passes it to `graph.astream(context=...)`. LangGraph core coerces it to a typed object and injects it into nodes via `Runtime[T]`. This works for **both static and factory graphs**:
+
+```python
+from dataclasses import dataclass
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
+
+@dataclass
+class MyContext:
+    model_name: str = "openai/gpt-4o-mini"
+    temperature: float = 0.7
+
+class State(TypedDict):
+    messages: list
+
+async def call_model(state: State, runtime: Runtime[MyContext]):
+    """Node receives typed context via Runtime injection."""
+    model = runtime.context.model_name      # str, typed
+    temp = runtime.context.temperature      # float, typed
+    ...
+
+builder = StateGraph(State, context_schema=MyContext)
+builder.add_node("call_model", call_model)
+...
+graph = builder.compile()
+```
+
+Pydantic `BaseModel` and `dataclass` types are both supported. Declare `context_schema=` on `StateGraph` and add a `runtime: Runtime[T]` parameter to any node that needs it.
+
+#### Factory-level context with `ServerRuntime[T]`
+
+For factory graphs, `ServerRuntime[T]` provides typed context at **graph-build time** — before execution starts. Use this for structural decisions that change the graph topology (adding/removing nodes, selecting tools, managing resource lifecycle):
+
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+@asynccontextmanager
+async def graph(runtime: ServerRuntime[MyContext]):
+    ert = runtime.execution_runtime
+    ctx = ert.context if ert else MyContext()
+
+    # Structural decision — changes graph topology
+    tools = [search_tool] if ctx.enable_search else []
+    compiled = build_graph(tools)
+    yield compiled
+```
+
+Use `runtime.execution_runtime` to check whether the factory is being called for actual execution (returns the execution runtime with `.context`) or for introspection like schema extraction (returns `None`).
+
+**When to use which:**
+
+| Need | Use | Works with |
+|------|-----|------------|
+| Read context in node functions | `Runtime[T]` on node parameter | Static + factory graphs |
+| Change graph structure per request | `ServerRuntime[T]` in factory | Factory graphs only |
+| Manage resource lifecycle (MCP, DB) | `ServerRuntime[T]` + async context manager | Factory graphs only |
+| Filter tools by user permissions | `ServerRuntime` (`.user`) in factory | Factory graphs only |
+
+For a complete example combining both layers, see [`examples/factory/`](https://github.com/ibbybuilds/aegra/tree/main/examples/factory).
 
 ## `auth`
 

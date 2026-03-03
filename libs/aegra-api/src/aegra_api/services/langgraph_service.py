@@ -3,13 +3,15 @@
 Architecture:
 - Base graph definitions are cached (safe, immutable)
 - Each request gets a fresh graph copy with checkpointer/store injected
+- Factory graphs are rebuilt per-request with the appropriate ServerRuntime
 - Thread-safe by design without locks
 """
 
+import asyncio
 import importlib.util
 import json
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, TypeVar
@@ -18,11 +20,23 @@ from uuid import uuid5
 import structlog
 from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
+from langgraph_sdk.auth.types import BaseUser
 
 from aegra_api.constants import ASSISTANT_NAMESPACE_UUID
+from aegra_api.models.auth import User
 from aegra_api.observability.base import (
     get_tracing_callbacks,
     get_tracing_metadata,
+)
+from aegra_api.services.graph_factory import (
+    AccessContext,
+    build_server_runtime,
+    classify_factory,
+    clear_factory_registry,
+    coerce_context,
+    generate_graph,
+    invoke_factory,
+    is_factory,
 )
 
 State = TypeVar("State")
@@ -38,13 +52,17 @@ class LangGraphService:
     - Thread-safe without locks via immutable cached state
     """
 
-    def __init__(self, config_path: str | None = None):
+    def __init__(self, config_path: str | None = None) -> None:
         self.config_path = Path(config_path) if config_path else Path("aegra.json")
         self._explicit_config = config_path is not None
         self.config: dict[str, Any] | None = None
         self._graph_registry: dict[str, Any] = {}
-        # Cache for base graph definitions (without checkpointer/store)
+        # Cache for base graph definitions (without checkpointer/store).
+        # For factory graphs, this holds the default-compiled graph (for schema extraction).
         self._base_graph_cache: dict[str, Pregel] = {}
+        # Factory callables — stored alongside the base cache so they can be
+        # invoked per-request with the appropriate ServerRuntime/config.
+        self._graph_factories: dict[str, Callable] = {}
 
     async def initialize(self):
         """Load configuration file and setup graph registry.
@@ -102,7 +120,7 @@ class LangGraphService:
     def _setup_dependencies(self) -> None:
         """Add dependency paths to sys.path for graph imports.
 
-        Supports paths from the 'dependencies' config key, similar to LangGraph CLI.
+        Supports paths from the 'dependencies' config key.
         Paths are resolved relative to the config file location.
         """
         dependencies = self.config.get("dependencies", [])
@@ -211,63 +229,177 @@ class LangGraphService:
         return compiled_graph
 
     @asynccontextmanager
-    async def get_graph(self, graph_id: str) -> AsyncIterator[Pregel]:
+    async def get_graph(
+        self,
+        graph_id: str,
+        *,
+        config: dict[str, Any] | None = None,
+        access_context: AccessContext = "threads.create_run",
+        user: User | BaseUser | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[Pregel]:
         """Get a graph instance for execution with checkpointer/store injected.
+
+        For factory graphs, the factory is invoked per-request with the
+        appropriate ``ServerRuntime`` and config. For static graphs, the cached
+        base graph is returned with checkpointer/store injected.
 
         This is a context manager that yields a fresh graph copy per-request.
         Thread-safe without locks since each request gets its own instance.
 
-        Usage:
-            async with langgraph_service.get_graph("react_agent") as graph:
+        Usage::
+
+            async with langgraph_service.get_graph(
+                "react_agent",
+                config=run_config,
+                access_context="threads.create_run",
+                user=user,
+                context=context,
+            ) as graph:
                 async for event in graph.astream(input, config):
                     ...
 
-        @param graph_id: The graph identifier from aegra.json
-        @yields: Compiled Pregel graph with Postgres checkpointer/store attached
-        @raises ValueError: If graph_id not found or loading fails
-        """
-        # Get the cached base graph
-        base_graph = await self._get_base_graph(graph_id)
+        Args:
+            graph_id: The graph identifier from aegra.json.
+            config: The ``RunnableConfig`` dict for this request.
+            access_context: Why the graph is being accessed.
+            user: The authenticated user (or ``None`` for anonymous access).
+            context: The raw request context dict. For factories with
+                ``ServerRuntime[T]``, this is coerced to ``T`` and passed
+                to ``_ExecutionRuntime.context``.
 
-        # Get checkpointer and store for this request
+        Yields:
+            Compiled ``Pregel`` graph with Postgres checkpointer/store attached.
+
+        Raises:
+            ValueError: If *graph_id* not found or loading fails.
+        """
         from aegra_api.core.database import db_manager
 
         checkpointer = db_manager.get_checkpointer()
         store = db_manager.get_store()
 
-        # Try to create a copy with checkpointer/store injected.
-        # NOTE: Do this BEFORE yield to avoid dual-yield when exceptions occur
-        # in the context body - @asynccontextmanager would call athrow() and
-        # catch it in except, causing "generator didn't stop after athrow()".
-        try:
-            graph_to_use = base_graph.copy(update={"checkpointer": checkpointer, "store": store})
-        except Exception:
-            # Graph doesn't support copy with these attrs (e.g., immutable property)
-            logger.warning(
-                f"⚠️  Graph '{graph_id}' does not support checkpointer injection; running without persistence"
+        if graph_id in self._graph_factories:
+            # Factory path — invoke per-request with ServerRuntime
+            factory = self._graph_factories[graph_id]
+            run_config = config or {"configurable": {}}
+            coerced_context = coerce_context(context, graph_id)
+            server_runtime = build_server_runtime(
+                access_context=access_context,
+                store=store,
+                user=user,
+                context=coerced_context,
             )
-            graph_to_use = base_graph
 
-        yield graph_to_use
+            result = invoke_factory(factory, graph_id, run_config, server_runtime)
 
-    async def get_graph_for_validation(self, graph_id: str) -> Pregel:
+            async with generate_graph(result, graph_id) as graph_obj:
+                if isinstance(graph_obj, StateGraph):
+                    graph_obj = graph_obj.compile()
+
+                # Inject checkpointer/store into the factory-produced graph
+                try:
+                    graph_to_use = graph_obj.copy(update={"checkpointer": checkpointer, "store": store})
+                except Exception as exc:
+                    logger.warning(
+                        "graph_checkpointer_injection_failed",
+                        graph_id=graph_id,
+                        exc=str(exc),
+                        msg="Graph does not support checkpointer injection; running without persistence",
+                    )
+                    graph_to_use = graph_obj
+
+                yield graph_to_use
+        else:
+            # Static path — use cached base graph
+            base_graph = await self._get_base_graph(graph_id)
+
+            # Try to create a copy with checkpointer/store injected.
+            # NOTE: Do this BEFORE yield to avoid dual-yield when exceptions
+            # occur in the context body.
+            try:
+                graph_to_use = base_graph.copy(update={"checkpointer": checkpointer, "store": store})
+            except Exception as exc:
+                logger.warning(
+                    "graph_checkpointer_injection_failed",
+                    graph_id=graph_id,
+                    exc=str(exc),
+                    msg="Graph does not support checkpointer injection; running without persistence",
+                )
+                graph_to_use = base_graph
+
+            yield graph_to_use
+
+    async def get_graph_for_validation(
+        self,
+        graph_id: str,
+        *,
+        config: dict[str, Any] | None = None,
+        access_context: AccessContext = "assistants.read",
+        user: User | BaseUser | None = None,
+    ) -> Pregel:
         """Get a graph instance for validation/schema extraction only.
 
-        Use this when you only need to validate that a graph exists and can be
-        loaded, or to extract schemas. Does NOT include checkpointer/store.
+        For factory graphs, the factory is invoked with the given access context
+        (default ``assistants.read``) to produce a fresh graph. For static graphs,
+        returns the cached base graph.
 
-        For actual execution, use the `get_graph()` context manager instead.
+        Does NOT include checkpointer/store — use ``get_graph()`` for execution.
 
-        @param graph_id: The graph identifier from aegra.json
-        @returns: Compiled Pregel graph (without checkpointer/store)
-        @raises ValueError: If graph_id not found or loading fails
+        Args:
+            graph_id: The graph identifier from aegra.json.
+            config: Optional ``RunnableConfig`` dict (passed to factory).
+            access_context: Why the graph is being accessed (default: schema read).
+            user: The authenticated user (or ``None`` for anonymous access).
+
+        Returns:
+            Compiled ``Pregel`` graph (without checkpointer/store).
+
+        Raises:
+            ValueError: If *graph_id* not found or loading fails.
         """
+        if graph_id in self._graph_factories:
+            factory = self._graph_factories[graph_id]
+            run_config = config or {"configurable": {}}
+            server_runtime = build_server_runtime(
+                access_context=access_context,
+                store=None,
+                user=user,
+            )
+
+            result = invoke_factory(factory, graph_id, run_config, server_runtime)
+            async with generate_graph(result, graph_id) as graph_obj:
+                if isinstance(graph_obj, StateGraph):
+                    graph_obj = graph_obj.compile()
+                # Capture the graph before exiting the context manager.
+                # For async-CM-backed factories, __aexit__ fires after this
+                # block. Since validation only reads schema metadata, the
+                # compiled Pregel is safe to use after CM teardown.
+                validated_graph = graph_obj
+            return validated_graph
+
         return await self._get_base_graph(graph_id)
 
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]):
+    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Pregel | StateGraph:
         """Load graph from filesystem.
 
         Paths are resolved relative to the config file's directory.
+
+        For callable exports, the function inspects the signature to detect
+        factory patterns. 0-arg factories are called once at load time.
+        Config/runtime factories are registered for per-request invocation,
+        and called once with default args to produce a base graph for schema
+        extraction.
+
+        Args:
+            graph_id: The graph identifier from aegra.json.
+            graph_info: Dict with ``file_path`` and ``export_name`` keys.
+
+        Returns:
+            A compiled ``Pregel`` or uncompiled ``StateGraph``.
+
+        Raises:
+            ValueError: If the file or export is not found.
         """
         raw_path = graph_info["file_path"]
         file_path = Path(raw_path)
@@ -300,27 +432,77 @@ class LangGraphService:
 
         graph = getattr(module, export_name)
 
-        # https://github.com/langchain-ai/langchain-mcp-adapters?tab=readme-ov-file#using-with-langgraph-api-server
         if callable(graph):
-            graph = await graph()
+            # Classify the factory signature (populates the dispatch hook registry)
+            classify_factory(graph, graph_id)
 
-        # The graph should already be compiled in the module
-        # If it needs our checkpointer/store, we'll handle that during execution
+            if not is_factory(graph_id):
+                # 0-arg factory — call once at load time
+                if asyncio.iscoroutinefunction(graph):
+                    graph = await graph()
+                else:
+                    graph = graph()
+                # Handle async context managers / coroutines returned by 0-arg factories
+                async with generate_graph(graph, graph_id) as resolved:
+                    graph = resolved
+            else:
+                # Config/runtime factory — store the callable for per-request invocation.
+                # Call once with defaults to get a base graph for schema extraction.
+                self._graph_factories[graph_id] = graph
+                graph = await self._call_factory_with_defaults(graph, graph_id)
+
+        return graph
+
+    async def _call_factory_with_defaults(self, fn: Callable, graph_id: str) -> Pregel | StateGraph:
+        """Call a factory with default/empty args to get a base graph for schema extraction.
+
+        Uses ``assistants.read`` access context to signal that the factory is
+        being called for introspection, not execution.
+
+        Args:
+            fn: The factory callable.
+            graph_id: The graph identifier.
+
+        Returns:
+            A compiled ``Pregel`` or uncompiled ``StateGraph``.
+        """
+        empty_config: dict[str, Any] = {"configurable": {}}
+        runtime = build_server_runtime(
+            access_context="assistants.read",
+            store=None,
+            user=None,
+        )
+        result = invoke_factory(fn, graph_id, empty_config, runtime)
+
+        # Resolve async context managers, coroutines, etc.
+        async with generate_graph(result, graph_id) as resolved:
+            graph = resolved
         return graph
 
     def list_graphs(self) -> dict[str, str]:
-        """List all available graphs"""
+        """List all available graphs."""
         return {graph_id: info["file_path"] for graph_id, info in self._graph_registry.items()}
 
-    def invalidate_cache(self, graph_id: str | None = None):
+    def invalidate_cache(self, graph_id: str | None = None) -> None:
         """Invalidate graph cache for hot-reload.
 
-        @param graph_id: Specific graph to invalidate, or None to clear all
+        Clears both the base graph cache and the factory callable registry,
+        as well as the factory dispatch hooks in the ``graph_factory`` module.
+
+        Args:
+            graph_id: Specific graph to invalidate, or ``None`` to clear all.
         """
         if graph_id:
             self._base_graph_cache.pop(graph_id, None)
+            self._graph_factories.pop(graph_id, None)
+            sys.modules.pop(f"graphs.{graph_id}", None)
         else:
             self._base_graph_cache.clear()
+            self._graph_factories.clear()
+            for key in list(sys.modules.keys()):
+                if key.startswith("graphs."):
+                    sys.modules.pop(key, None)
+        clear_factory_registry(graph_id)
 
     def get_config(self) -> dict[str, Any] | None:
         """Get loaded configuration"""
@@ -424,7 +606,7 @@ def create_run_config(
     cfg["configurable"].setdefault("thread_id", thread_id)
     cfg["configurable"].setdefault("run_id", run_id)
 
-    # Ensure LangChain's root run ID is set to match so that astream_events recognizes it
+    # Ensure the root run ID is set to match so that astream_events recognizes it
     cfg.setdefault("run_id", run_id)
 
     # Add observability callbacks from various potential sources

@@ -381,9 +381,9 @@ class StreamingService:
         """Clean up streaming resources for a run"""
         broker_manager.cleanup_broker(run_id)
 
-    def _stored_event_to_sse(self, run_id: str, ev) -> str | None:
+    def _stored_event_to_sse(self, _run_id: str, ev) -> str | None:
         """Convert stored event object to SSE string"""
-        return self.event_converter.convert_stored_to_sse(ev, run_id)
+        return self.event_converter.convert_stored_to_sse(ev)
 
 
 # Global streaming service instance

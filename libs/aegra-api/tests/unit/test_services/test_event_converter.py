@@ -237,7 +237,7 @@ class TestEventConverter:
         stored_event.data = {"run_id": "run-123", "attempt": 1}
         stored_event.id = "evt-1"
 
-        result = self.converter.convert_stored_to_sse(stored_event, run_id="run-123")
+        result = self.converter.convert_stored_to_sse(stored_event)
 
         assert result is not None
         assert "event: metadata\n" in result
@@ -481,7 +481,7 @@ class TestEventConverter:
         stored_event.data = {"run_id": "run-abc", "attempt": 3}
         stored_event.id = "evt-1"
 
-        result = self.converter.convert_stored_to_sse(stored_event, run_id="run-abc")
+        result = self.converter.convert_stored_to_sse(stored_event)
 
         assert result is not None
         assert "event: metadata\n" in result

@@ -28,7 +28,7 @@ class EventConverter:
         stream_mode, payload, namespace = self._parse_raw_event(raw_event)
         return self._create_sse_event(stream_mode, payload, event_id, namespace)
 
-    def convert_stored_to_sse(self, stored_event: SSEEvent, run_id: str | None = None) -> str | None:
+    def convert_stored_to_sse(self, stored_event: SSEEvent, _run_id: str | None = None) -> str | None:
         """Convert stored event to SSE format"""
         event_type = stored_event.event
         data = stored_event.data
@@ -47,7 +47,10 @@ class EventConverter:
             # to what LangGraph originally emitted (run_id, attempt, etc.)
             return format_sse_message(event_type, data, event_id)
         elif event_type == "debug":
-            return create_debug_event(data.get("debug"), event_id)
+            debug_payload = data.get("debug")
+            if debug_payload is None:
+                return
+            return create_debug_event(debug_payload, event_id)
         elif event_type in ("messages/partial", "messages/complete"):
             messages = data.get("messages")
             if messages is None:

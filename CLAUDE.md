@@ -210,12 +210,28 @@ The system uses two connection pools:
 **aegra.json** defines graphs, auth, HTTP config, and store settings. See `docs/configuration.md` for full reference.
 
 ### Graph Loading
-Agents are Python modules exporting a compiled `graph` variable:
+Agents are Python modules exporting a `graph` variable. This can be:
+
+**Static graph** (compiled once, cached):
 ```python
 builder = StateGraph(State)
 # ... define nodes and edges
 graph = builder.compile()  # Must export as 'graph'
 ```
+
+**Factory function** (called per-request with user/config context):
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+def graph(runtime: ServerRuntime):
+    """Per-request factory — receives user, store, and access context."""
+    user = runtime.user
+    builder = StateGraph(State)
+    # ... customize based on user
+    return builder.compile()
+```
+
+Supported factory signatures: 0-arg (called once at startup), config-only (`dict`), runtime-only (`ServerRuntime`), or both (any order). Factories can use `ServerRuntime[T]` to receive typed request context on `runtime.context` (Pydantic `BaseModel` or `dataclass`). See `docs/reference/configuration.mdx` for full details.
 
 ## Common Tasks
 

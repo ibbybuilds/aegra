@@ -337,7 +337,12 @@ async def get_thread_state(
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
         try:
-            async with langgraph_service.get_graph(graph_id) as agent:
+            async with langgraph_service.get_graph(
+                graph_id,
+                config=config,
+                access_context="threads.read",
+                user=user,
+            ) as agent:
                 agent = agent.with_config(config)
                 # NOTE: LangGraph only exposes subgraph checkpoints while the run is
                 # interrupted. See https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state
@@ -431,7 +436,12 @@ async def update_thread_state(
             config["configurable"]["checkpoint_ns"] = request.checkpoint_ns
 
         try:
-            async with langgraph_service.get_graph(graph_id) as agent:
+            async with langgraph_service.get_graph(
+                graph_id,
+                config=config,
+                access_context="threads.update",
+                user=user,
+            ) as agent:
                 # Update state using aupdate_state method
                 # This creates a new checkpoint with the updated values
                 agent = agent.with_config(config)
@@ -547,7 +557,12 @@ async def get_thread_state_at_checkpoint(
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
         try:
-            async with langgraph_service.get_graph(graph_id) as agent:
+            async with langgraph_service.get_graph(
+                graph_id,
+                config=config,
+                access_context="threads.read",
+                user=user,
+            ) as agent:
                 agent = agent.with_config(config)
                 state_snapshot = await agent.aget_state(config, subgraphs=subgraphs or False)
 
@@ -674,7 +689,12 @@ async def get_thread_history_post(
         if metadata is not None:
             kwargs["metadata"] = metadata
 
-        async with langgraph_service.get_graph(graph_id) as agent:
+        async with langgraph_service.get_graph(
+            graph_id,
+            config=config,
+            access_context="threads.read",
+            user=user,
+        ) as agent:
             # Some LangGraph versions support subgraphs flag; pass if available
             try:
                 async for snapshot in agent.aget_state_history(config, subgraphs=subgraphs, **kwargs):
@@ -684,10 +704,10 @@ async def get_thread_history_post(
                 async for snapshot in agent.aget_state_history(config, **kwargs):
                     state_snapshots.append(snapshot)
 
-            # Convert snapshots to ThreadState using service
-            thread_states = thread_state_service.convert_snapshots_to_thread_states(state_snapshots, thread_id)
+        # Convert outside the async with so the graph context is closed first
+        thread_states = thread_state_service.convert_snapshots_to_thread_states(state_snapshots, thread_id)
 
-            return thread_states
+        return thread_states
 
     except HTTPException:
         raise

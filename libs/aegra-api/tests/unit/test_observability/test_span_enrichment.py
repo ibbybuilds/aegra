@@ -1,6 +1,9 @@
 """Unit tests for SpanEnrichmentProcessor and set_trace_context."""
 
 import asyncio
+from unittest.mock import MagicMock
+
+import pytest
 
 from aegra_api.observability.span_enrichment import (
     SpanEnrichmentProcessor,
@@ -71,7 +74,8 @@ class TestSetTraceContext:
         attrs = _trace_attrs.get()
         assert attrs == {"langfuse.trace.name": "g"}
 
-    def test_context_var_isolation_between_tasks(self) -> None:
+    @pytest.mark.asyncio
+    async def test_context_var_isolation_between_tasks(self) -> None:
         """Context var changes in one asyncio Task are not visible in another."""
 
         async def task_a() -> dict[str, str]:
@@ -84,14 +88,11 @@ class TestSetTraceContext:
             await asyncio.sleep(0)
             return _trace_attrs.get()
 
-        async def run() -> None:
-            t_a = asyncio.create_task(task_a())
-            t_b = asyncio.create_task(task_b())
-            attrs_a, attrs_b = await asyncio.gather(t_a, t_b)
-            assert attrs_a.get("user.id") == "user-a"
-            assert attrs_b.get("user.id") == "user-b"
-
-        asyncio.run(run())
+        t_a = asyncio.create_task(task_a())
+        t_b = asyncio.create_task(task_b())
+        attrs_a, attrs_b = await asyncio.gather(t_a, t_b)
+        assert attrs_a.get("user.id") == "user-a"
+        assert attrs_b.get("user.id") == "user-b"
 
 
 class TestSpanEnrichmentProcessor:
@@ -103,8 +104,6 @@ class TestSpanEnrichmentProcessor:
 
     def test_on_start_sets_span_attributes_on_root_span(self) -> None:
         """on_start() enriches a root span (parent=None) with all context var attrs."""
-        from unittest.mock import MagicMock
-
         set_trace_context(user_id="u1", session_id="s1", trace_name="graph_x")
         processor = SpanEnrichmentProcessor()
         mock_span = MagicMock()
@@ -121,8 +120,6 @@ class TestSpanEnrichmentProcessor:
 
     def test_on_start_skips_child_spans(self) -> None:
         """on_start() does NOT enrich child spans (parent is not None)."""
-        from unittest.mock import MagicMock
-
         set_trace_context(user_id="u1", session_id="s1", trace_name="graph_x")
         processor = SpanEnrichmentProcessor()
         mock_span = MagicMock()
@@ -134,8 +131,6 @@ class TestSpanEnrichmentProcessor:
 
     def test_on_start_no_op_when_context_var_empty(self) -> None:
         """on_start() sets no attributes when the context var holds an empty dict."""
-        from unittest.mock import MagicMock
-
         processor = SpanEnrichmentProcessor()
         mock_span = MagicMock()
         mock_span.parent = None
@@ -146,8 +141,6 @@ class TestSpanEnrichmentProcessor:
 
     def test_on_start_accepts_parent_context_argument(self) -> None:
         """on_start() can be called with an explicit parent_context without error."""
-        from unittest.mock import MagicMock
-
         set_trace_context(user_id="u2")
         processor = SpanEnrichmentProcessor()
         mock_span = MagicMock()
@@ -160,8 +153,6 @@ class TestSpanEnrichmentProcessor:
 
     def test_on_end_is_no_op(self) -> None:
         """on_end() completes without raising."""
-        from unittest.mock import MagicMock
-
         processor = SpanEnrichmentProcessor()
         processor.on_end(MagicMock())  # Should not raise
 

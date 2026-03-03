@@ -179,10 +179,14 @@ async def create_run(
             request.config = {**(request.config or {}), **filters["config"]}
         if "context" in filters and isinstance(filters["context"], dict):
             request.context = {**(request.context or {}), **filters["context"]}
-    elif isinstance(value.get("config"), dict):
-        request.config = {**(request.config or {}), **value["config"]}
-    elif isinstance(value.get("context"), dict):
-        request.context = {**(request.context or {}), **value["context"]}
+    else:
+        value_config = value.get("config")
+        if isinstance(value_config, dict):
+            request.config = {**(request.config or {}), **value_config}
+
+        value_context = value.get("context")
+        if isinstance(value_context, dict):
+            request.context = {**(request.context or {}), **value_context}
 
     # Validate resume command requirements early
     await _validate_resume_command(session, thread_id, request.command)

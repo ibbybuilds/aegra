@@ -441,6 +441,34 @@ class TestEventConverter:
         assert "event: custom\n" in result
         assert "my_value" in result
 
+    def test_convert_stored_to_sse_custom_empty_chunk_not_replaced_by_envelope(self):
+        """Regression: falsy chunk ({}) must be used as-is, not replaced by the envelope dict."""
+        stored_event = Mock()
+        stored_event.event = "custom"
+        stored_event.data = {"chunk": {}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: custom\n" in result
+        # The payload must be the empty dict, not the envelope {"chunk": {}}
+        assert "chunk" not in result
+
+    def test_convert_stored_to_sse_updates_empty_chunk_not_replaced_by_envelope(self):
+        """Regression: falsy chunk ({}) in updates must be used as-is, not replaced by the envelope dict."""
+        stored_event = Mock()
+        stored_event.event = "updates"
+        stored_event.data = {"type": "execution_updates", "chunk": {}}
+        stored_event.id = "evt-1"
+
+        result = self.converter.convert_stored_to_sse(stored_event)
+
+        assert result is not None
+        assert "event: updates\n" in result
+        # The payload must be the empty dict, not the envelope {"type": ..., "chunk": {}}
+        assert "execution_updates" not in result
+
     def test_convert_stored_to_sse_metadata_uses_stored_payload(self):
         """Test that metadata replay uses the stored payload, not a reconstructed one.
 

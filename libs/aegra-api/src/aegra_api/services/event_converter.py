@@ -58,7 +58,7 @@ class EventConverter:
                 return
             return format_sse_message(event_type, metadata, event_id)
         elif event_type in ("updates", "custom"):
-            payload = data.get("chunk") or data
+            payload = data["chunk"] if isinstance(data, dict) and "chunk" in data else data
             return format_sse_message(event_type, payload, event_id)
         elif event_type == "end":
             return create_end_event(event_id)

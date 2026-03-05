@@ -707,6 +707,10 @@ async def get_thread_history_post(
         # Convert outside the async with so the graph context is closed first
         thread_states = thread_state_service.convert_snapshots_to_thread_states(state_snapshots, thread_id)
 
+        if not request.include_values:
+            for state in thread_states:
+                state.values = {}
+
         return thread_states
 
     except HTTPException:
@@ -727,6 +731,10 @@ async def get_thread_history_get(
     subgraphs: bool | None = Query(False, description="Include states from subgraphs"),
     checkpoint_ns: str | None = Query(None, description="Checkpoint namespace"),
     metadata: str | None = Query(None, description="JSON-encoded metadata filter"),
+    include_values: bool = Query(
+        True,
+        description="Include full channel values in each state. Set to false for lightweight metadata only.",
+    ),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[ThreadState]:
@@ -734,6 +742,10 @@ async def get_thread_history_get(
 
     Returns a list of past states ordered from newest to oldest. Use `limit`
     to control how many states are returned and `before` to paginate.
+
+    Set `include_values=false` to return lightweight checkpoint metadata
+    without the full channel values. This is useful for building branch trees
+    and message-to-checkpoint mappings without transferring duplicated data.
     """
     parsed_metadata: dict[str, Any] | None = None
     if metadata:
@@ -750,6 +762,7 @@ async def get_thread_history_get(
         checkpoint=None,
         subgraphs=subgraphs,
         checkpoint_ns=checkpoint_ns,
+        include_values=include_values,
     )
     return await get_thread_history_post(thread_id, req, user, session)
 

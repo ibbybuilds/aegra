@@ -150,3 +150,13 @@ class ThreadHistoryRequest(BaseModel):
     checkpoint: dict[str, Any] | None = Field(None, description="Checkpoint for subgraph filtering")
     subgraphs: bool | None = Field(False, description="Include states from subgraphs")
     checkpoint_ns: str | None = Field(None, description="Checkpoint namespace")
+    include_values: bool = Field(
+        True,
+        description=(
+            "Include full channel values in each state. Set to false to return "
+            "lightweight checkpoint metadata only (checkpoint, parent_checkpoint, "
+            "metadata, tasks, next, created_at) without the heavy values payload. "
+            "Useful for building branch trees and message-to-checkpoint mappings "
+            "on the frontend without transferring duplicated message data."
+        ),
+    )

@@ -200,3 +200,86 @@ def test_history_invalid_limit(client: TestClient, mock_langgraph):
     # GET invalid metadata JSON
     resp = client.get(f"/threads/{thread_id}/history", params={"metadata": "{not-json"})
     assert resp.status_code == 422
+
+
+def test_post_history_include_values_true_returns_values(client: TestClient, mock_langgraph):
+    """When include_values is true (default), values are present in the response."""
+    thread_id = _ensure_thread(client)
+
+    resp = client.post(f"/threads/{thread_id}/history", json={"limit": 10, "include_values": True})
+    assert resp.status_code == 200
+    states = resp.json()
+    assert len(states) == 2
+    assert states[0]["values"]["messages"] == ["hello"]
+    assert states[1]["values"]["messages"] == ["world"]
+
+
+def test_post_history_include_values_false_strips_values(client: TestClient, mock_langgraph):
+    """When include_values is false, values are empty dicts but all metadata is preserved."""
+    thread_id = _ensure_thread(client)
+
+    resp = client.post(f"/threads/{thread_id}/history", json={"limit": 10, "include_values": False})
+    assert resp.status_code == 200
+    states = resp.json()
+    assert len(states) == 2
+
+    for state in states:
+        # Values should be stripped (empty dict)
+        assert state["values"] == {}
+
+        # All checkpoint metadata must still be present
+        assert "checkpoint" in state
+        assert state["checkpoint"]["checkpoint_id"] is not None
+        assert "parent_checkpoint" in state
+        assert "metadata" in state
+        assert "next" in state
+        assert "tasks" in state
+        assert "created_at" in state
+
+
+def test_post_history_include_values_default_is_true(client: TestClient, mock_langgraph):
+    """When include_values is omitted, it defaults to true (backward compatible)."""
+    thread_id = _ensure_thread(client)
+
+    # Omit include_values entirely
+    resp = client.post(f"/threads/{thread_id}/history", json={"limit": 10})
+    assert resp.status_code == 200
+    states = resp.json()
+    assert len(states) == 2
+    # Values should be present (default behavior unchanged)
+    assert states[0]["values"]["messages"] == ["hello"]
+
+
+def test_get_history_include_values_false(client: TestClient, mock_langgraph):
+    """GET variant also supports include_values=false."""
+    thread_id = _ensure_thread(client)
+
+    resp = client.get(f"/threads/{thread_id}/history", params={"include_values": "false"})
+    assert resp.status_code == 200
+    states = resp.json()
+    assert len(states) == 2
+
+    for state in states:
+        assert state["values"] == {}
+        assert state["checkpoint"]["checkpoint_id"] is not None
+
+
+def test_post_history_include_values_false_preserves_checkpoint_structure(client: TestClient, mock_langgraph):
+    """Lightweight history preserves the full checkpoint structure needed for branching."""
+    thread_id = _ensure_thread(client)
+
+    resp = client.post(f"/threads/{thread_id}/history", json={"limit": 10, "include_values": False})
+    assert resp.status_code == 200
+    states = resp.json()
+
+    # First state should have checkpoint with ID
+    assert states[0]["checkpoint"]["checkpoint_id"] == "cp_1"
+    assert states[0]["checkpoint"]["thread_id"] == thread_id
+
+    # Second state should have checkpoint with ID
+    assert states[1]["checkpoint"]["checkpoint_id"] == "cp_2"
+    assert states[1]["checkpoint"]["thread_id"] == thread_id
+
+    # Next nodes should be preserved
+    assert states[0]["next"] == ["step_b"]
+    assert states[1]["next"] == []

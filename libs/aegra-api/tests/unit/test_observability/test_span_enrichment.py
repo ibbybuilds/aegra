@@ -8,6 +8,7 @@ import pytest
 from aegra_api.observability.span_enrichment import (
     SpanEnrichmentProcessor,
     _trace_attrs,
+    make_run_trace_context,
     set_trace_context,
 )
 
@@ -74,6 +75,17 @@ class TestSetTraceContext:
         attrs = _trace_attrs.get()
         assert attrs == {"langfuse.trace.name": "g"}
 
+    def test_metadata_supports_non_string_values(self) -> None:
+        """metadata values may be int, float, or bool — all valid OTEL attribute types."""
+        set_trace_context(
+            metadata={"retry_count": 3, "latency_ms": 1.5, "cached": True},
+        )
+
+        attrs = _trace_attrs.get()
+        assert attrs["langfuse.trace.metadata.retry_count"] == 3
+        assert attrs["langfuse.trace.metadata.latency_ms"] == 1.5
+        assert attrs["langfuse.trace.metadata.cached"] is True
+
     @pytest.mark.asyncio
     async def test_context_var_isolation_between_tasks(self) -> None:
         """Context var changes in one asyncio Task are not visible in another."""
@@ -118,16 +130,35 @@ class TestSpanEnrichmentProcessor:
         assert calls["session.id"] == "s1"
         assert calls["langfuse.trace.name"] == "graph_x"
 
-    def test_on_start_skips_child_spans(self) -> None:
-        """on_start() does NOT enrich child spans (parent is not None)."""
+    def test_on_start_skips_local_child_spans(self) -> None:
+        """on_start() does NOT enrich local child spans (valid, non-remote parent)."""
         set_trace_context(user_id="u1", session_id="s1", trace_name="graph_x")
         processor = SpanEnrichmentProcessor()
         mock_span = MagicMock()
-        mock_span.parent = MagicMock()  # child span — has a parent
+        mock_span.parent = MagicMock()
+        mock_span.parent.is_valid = True
+        mock_span.parent.is_remote = False  # local child span
 
         processor.on_start(mock_span)
 
         mock_span.set_attribute.assert_not_called()
+
+    def test_on_start_enriches_span_with_remote_parent(self) -> None:
+        """on_start() enriches spans whose parent arrived via W3C traceparent.
+
+        A span with a remote parent is the local root of a distributed trace
+        and must be enriched so that Langfuse receives user/session metadata.
+        """
+        set_trace_context(user_id="u1", trace_name="graph_x")
+        processor = SpanEnrichmentProcessor()
+        mock_span = MagicMock()
+        mock_span.parent = MagicMock()
+        mock_span.parent.is_valid = True
+        mock_span.parent.is_remote = True  # arrived via traceparent header
+
+        processor.on_start(mock_span)
+
+        mock_span.set_attribute.assert_called()
 
     def test_on_start_no_op_when_context_var_empty(self) -> None:
         """on_start() sets no attributes when the context var holds an empty dict."""
@@ -164,3 +195,38 @@ class TestSpanEnrichmentProcessor:
     def test_shutdown_is_no_op(self) -> None:
         """shutdown() completes without raising."""
         SpanEnrichmentProcessor().shutdown()  # Should not raise
+
+
+class TestMakeRunTraceContext:
+    """Tests for make_run_trace_context()."""
+
+    def setup_method(self) -> None:
+        """Reset context var before each test."""
+        _trace_attrs.set(None)
+
+    def test_returned_context_contains_expected_attributes(self) -> None:
+        """Returned context has all trace attributes pre-set."""
+        ctx = make_run_trace_context("run-1", "thread-1", "my_graph", "user-1")
+
+        attrs = ctx.run(_trace_attrs.get)
+        assert attrs["langfuse.user.id"] == "user-1"
+        assert attrs["langfuse.session.id"] == "thread-1"
+        assert attrs["langfuse.trace.name"] == "my_graph"
+        assert attrs["langfuse.trace.metadata.run_id"] == "run-1"
+        assert attrs["langfuse.trace.metadata.thread_id"] == "thread-1"
+        assert attrs["langfuse.trace.metadata.graph_id"] == "my_graph"
+
+    def test_does_not_pollute_caller_context(self) -> None:
+        """Calling make_run_trace_context() does not mutate the caller's context."""
+        make_run_trace_context("run-1", "thread-1", "my_graph", "user-1")
+
+        assert _trace_attrs.get() is None
+
+    def test_anonymous_user_omits_user_attributes(self) -> None:
+        """Passing user_identity=None omits user.id keys from the context."""
+        ctx = make_run_trace_context("run-1", "thread-1", "my_graph", None)
+
+        attrs = ctx.run(_trace_attrs.get)
+        assert "langfuse.user.id" not in attrs
+        assert "user.id" not in attrs
+        assert attrs["langfuse.trace.name"] == "my_graph"

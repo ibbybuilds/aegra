@@ -25,7 +25,7 @@ from aegra_api.core.serializers import GeneralSerializer
 from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
-from aegra_api.observability.span_enrichment import set_trace_context
+from aegra_api.observability.span_enrichment import make_run_trace_context
 from aegra_api.services.broker import broker_manager
 from aegra_api.services.graph_streaming import stream_graph_events
 from aegra_api.services.langgraph_service import create_run_config, get_langgraph_service
@@ -262,8 +262,8 @@ async def create_run(
     # Build response from ORM -> Pydantic
     run = Run.model_validate(run_orm)
 
-    # Start execution asynchronously
-    # Don't pass the session to avoid transaction conflicts
+    # Start execution asynchronously.
+    # Don't pass the session to avoid transaction conflicts.
     task = asyncio.create_task(
         execute_run_async(
             run_id,
@@ -281,7 +281,8 @@ async def create_run(
             request.interrupt_after,
             request.multitask_strategy,
             request.stream_subgraphs,
-        )
+        ),
+        context=make_run_trace_context(run_id, thread_id, assistant.graph_id, user.identity),
     )
     logger.info(f"[create_run] background task created task_id={id(task)} for run_id={run_id}")
     active_runs[run_id] = task
@@ -383,8 +384,8 @@ async def create_and_stream_run(
     # Build response model for stream context
     run = Run.model_validate(run_orm)
 
-    # Start background execution that will populate the broker
-    # Don't pass the session to avoid transaction conflicts
+    # Start background execution that will populate the broker.
+    # Don't pass the session to avoid transaction conflicts.
     task = asyncio.create_task(
         execute_run_async(
             run_id,
@@ -402,7 +403,8 @@ async def create_and_stream_run(
             request.interrupt_after,
             request.multitask_strategy,
             request.stream_subgraphs,
-        )
+        ),
+        context=make_run_trace_context(run_id, thread_id, assistant.graph_id, user.identity),
     )
     logger.info(f"[create_and_stream_run] background task created task_id={id(task)} for run_id={run_id}")
     active_runs[run_id] = task
@@ -707,7 +709,7 @@ async def wait_for_run(
 
     # No pool connection held from here — safe for long waits
 
-    # Start execution asynchronously
+    # Start execution asynchronously.
     task = asyncio.create_task(
         execute_run_async(
             run_id,
@@ -725,7 +727,8 @@ async def wait_for_run(
             request.interrupt_after,
             request.multitask_strategy,
             request.stream_subgraphs,
-        )
+        ),
+        context=make_run_trace_context(run_id, thread_id, graph_id, user.identity),
     )
     logger.info(f"[wait_for_run] background task created task_id={id(task)} for run_id={run_id}")
     active_runs[run_id] = task
@@ -915,19 +918,6 @@ async def execute_run_async(
     subgraphs: bool | None = False,
 ) -> None:
     """Execute run asynchronously in background using streaming to capture all events."""
-    # Enrich OTEL spans with per-request trace context for this background task.
-    # Must be set before graph execution so SpanEnrichmentProcessor picks it up.
-    set_trace_context(
-        user_id=user.identity,
-        session_id=thread_id,
-        trace_name=graph_id,
-        metadata={
-            "run_id": run_id,
-            "thread_id": thread_id,
-            "graph_id": graph_id,
-        },
-    )
-
     owns_session = session is None
     if session is None:
         maker = _get_session_maker()

@@ -80,6 +80,15 @@ class AuthConfig(TypedDict, total=False):
     """Disable authentication for LangGraph Studio connections"""
 
 
+class HooksConfig(TypedDict, total=False):
+    """Run lifecycle hooks configuration."""
+
+    path: str
+    """Import path for RunHooks instance in format './file.py:variable' or 'module:variable'."""
+    timeout: float
+    """Max seconds a hook can run before being killed (default: 10)."""
+
+
 def _resolve_config_path() -> Path | None:
     """Resolve config file path using standard resolution order.
 
@@ -192,6 +201,27 @@ def load_auth_config() -> AuthConfig | None:
         config_path = _resolve_config_path()
         logger.info(f"Loaded auth config from {config_path}")
         return auth_config
+
+    return None
+
+
+def load_hooks_config() -> HooksConfig | None:
+    """Load hooks config from aegra.json or langgraph.json.
+
+    Uses standard config resolution order.
+
+    Returns:
+        Hooks configuration dict or None if not configured
+    """
+    config = load_config()
+    if config is None:
+        return None
+
+    hooks_config = config.get("hooks")
+    if hooks_config:
+        config_path = _resolve_config_path()
+        logger.info(f"Loaded hooks config from {config_path}")
+        return hooks_config
 
     return None
 

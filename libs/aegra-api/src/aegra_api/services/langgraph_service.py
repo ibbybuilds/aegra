@@ -13,6 +13,7 @@ import json
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, TypeVar
 from uuid import uuid5
@@ -572,7 +573,7 @@ def inject_user_context(user: Any | None, base_config: dict[str, Any] | None = N
     return config
 
 
-def create_thread_config(thread_id: str, user, additional_config: dict = None) -> dict:
+def create_thread_config(thread_id: str, user: Any, additional_config: dict | None = None) -> dict:
     """Create LangGraph configuration for a specific thread with user context"""
     base_config = {"configurable": {"thread_id": thread_id}}
 
@@ -585,8 +586,8 @@ def create_thread_config(thread_id: str, user, additional_config: dict = None) -
 def create_run_config(
     run_id: str,
     thread_id: str,
-    user,
-    additional_config: dict = None,
+    user: Any,
+    additional_config: dict | None = None,
     checkpoint: dict | None = None,
 ) -> dict:
     """Create LangGraph configuration for a specific run with full context.
@@ -595,8 +596,6 @@ def create_run_config(
     supplied.  We simply ensure a `configurable` dict exists and then merge a
     few server-side keys so graph nodes can rely on them.
     """
-    from copy import deepcopy
-
     cfg: dict = deepcopy(additional_config) if additional_config else {}
 
     # Ensure a configurable section exists

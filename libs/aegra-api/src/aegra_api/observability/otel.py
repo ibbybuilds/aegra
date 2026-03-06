@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
 from aegra_api.observability.base import ObservabilityProvider
+from aegra_api.observability.span_enrichment import SpanEnrichmentProcessor
 from aegra_api.observability.targets import (
     BaseOtelTarget,
     GenericOtelTarget,
@@ -85,6 +86,7 @@ class OpenTelemetryProvider(ObservabilityProvider):
         )
 
         self._tracer_provider = TracerProvider(resource=resource)
+        self._tracer_provider.add_span_processor(SpanEnrichmentProcessor())
         processors_count = 0
 
         # 2. Attach Exporters

@@ -30,7 +30,7 @@ What it does:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--host` | `127.0.0.1` | Host to bind to |
-| `--port` | `8000` | Port to bind to |
+| `--port` | `2026` | Port to bind to |
 | `--config` / `-c` | Auto-detected | Path to `aegra.json` |
 | `--env-file` / `-e` | `.env` | Path to `.env` file |
 | `--file` / `-f` | Auto-detected | Path to `docker-compose.yml` |
@@ -101,7 +101,7 @@ This runs uvicorn directly without starting PostgreSQL. You provide a running da
 
     Or in your `Dockerfile`:
     ```dockerfile
-    CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "2026"]
     ```
   </Step>
 </Steps>
@@ -110,7 +110,7 @@ This runs uvicorn directly without starting PostgreSQL. You provide a running da
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--host` | `0.0.0.0` | Host to bind to |
-| `--port` | From env or `8000` | Port to bind to |
+| `--port` | From env or `2026` | Port to bind to |
 | `--config` / `-c` | Auto-detected | Path to `aegra.json` |
 </Accordion>
 
@@ -122,7 +122,7 @@ Use `aegra serve` as the container command in your pod spec:
 containers:
   - name: aegra
     image: your-registry/your-agent:latest
-    command: ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["aegra", "serve", "--host", "0.0.0.0", "--port", "2026"]
     env:
       - name: DATABASE_URL
         valueFrom:
@@ -130,15 +130,15 @@ containers:
             name: aegra-secrets
             key: database-url
     ports:
-      - containerPort: 8000
+      - containerPort: 2026
     readinessProbe:
       httpGet:
         path: /ready
-        port: 8000
+        port: 2026
     livenessProbe:
       httpGet:
         path: /live
-        port: 8000
+        port: 2026
 ```
 
 PostgreSQL should be a managed service (CloudSQL, RDS, etc.) or a StatefulSet with persistent volumes.

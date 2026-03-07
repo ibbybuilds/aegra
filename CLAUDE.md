@@ -171,11 +171,11 @@ Do NOT skip any level unless genuinely not applicable (e.g. pure utility functio
 After implementing a feature or fixing a bug, **verify the work end-to-end against a real running server**. Don't stop at unit/integration tests — prove it works for real.
 
 1. **Ensure Docker is running** — check with `docker info`. On Windows: `cmd.exe /c start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"` then poll `docker info`. On Mac: `open -a Docker` then poll. Linux: usually already running.
-2. **Start the server** — `docker compose up -d` from repo root. Source code is volume-mounted with hot reload (`--reload`), so code changes are picked up live — no rebuild needed. Only use `--build` when dependencies change (pyproject.toml, Dockerfile). Wait for health: poll `curl -s http://localhost:8000/health` until `{"status":"healthy",...}`. Check `docker compose logs --tail=50` if unhealthy.
+2. **Start the server** — `docker compose up -d` from repo root. Source code is volume-mounted with hot reload (`--reload`), so code changes are picked up live — no rebuild needed. Only use `--build` when dependencies change (pyproject.toml, Dockerfile). Wait for health: poll `curl -s http://localhost:2026/health` until `{"status":"healthy",...}`. Check `docker compose logs --tail=50` if unhealthy.
 3. **Verify** — choose the right strategy:
    - **Run E2E tests** (preferred): `uv run --package aegra-api pytest libs/aegra-api/tests/e2e/<test_file>.py -v`
-   - **Direct HTTP** (quick checks): `curl` against `http://localhost:8000/<endpoint>`
-   - **SDK script** (complex flows): write a temporary script using `from langgraph_sdk import get_client; client = get_client(url="http://localhost:8000")`, run it, then delete it
+   - **Direct HTTP** (quick checks): `curl` against `http://localhost:2026/<endpoint>`
+   - **SDK script** (complex flows): write a temporary script using `from langgraph_sdk import get_client; client = get_client(url="http://localhost:2026")`, run it, then delete it
    - **Custom verification script** (large responses or multi-step flows): write a Python script with `httpx` to call endpoints, parse responses, and assert results, then clean up
 4. **Cleanup** — `docker compose down` when done (unless user wants it kept running).
 

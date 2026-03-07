@@ -82,10 +82,10 @@ This starts PostgreSQL in Docker, runs migrations, and launches the server with 
 
 ```
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000
+INFO:     Uvicorn running on http://127.0.0.1:2026
 ```
 
-Visit [http://localhost:8000/docs](http://localhost:8000/docs) to see all available endpoints.
+Visit [http://localhost:2026/docs](http://localhost:2026/docs) to see all available endpoints.
 
 ## Step 4: Create an assistant
 
@@ -97,7 +97,7 @@ from langgraph_sdk import get_client
 
 
 async def main():
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
 
     # Create an assistant from your graph
     assistant = await client.assistants.create(
@@ -123,7 +123,7 @@ from langgraph_sdk import get_client
 
 
 async def main():
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
 
     # Create a thread
     thread = await client.threads.create()
@@ -151,7 +151,7 @@ Because state is persisted in the thread, you can send follow-up messages:
 
 ```python
 async def continue_conversation():
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
 
     thread_id = "your-thread-id-from-step-5"
 
@@ -177,7 +177,7 @@ You can inspect the full state of any thread at any point:
 
 ```python
 async def inspect_state():
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
 
     thread_id = "your-thread-id"
 
@@ -207,7 +207,7 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173), point it at `http://localhost:8000`, and you have a full chat interface.
+Open [http://localhost:5173](http://localhost:5173), point it at `http://localhost:2026`, and you have a full chat interface.
 
 ## What's next
 

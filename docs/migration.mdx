@@ -19,7 +19,7 @@ Your existing investment carries over:
 | | LangSmith Deployments | Aegra |
 |:--|:--|:--|
 | **Config file** | `langgraph.json` | `aegra.json` (falls back to `langgraph.json`) |
-| **Client URL** | `https://your-deployment.langsmith.com` | `http://localhost:8000` (or your host) |
+| **Client URL** | `https://your-deployment.langsmith.com` | `http://localhost:2026` (or your host) |
 | **Database** | Managed by platform | Your own PostgreSQL |
 | **Auth config** | Dashboard settings | Python handler in `aegra.json` |
 | **Tracing** | LangSmith (automatic) | OTLP via environment variables |
@@ -98,7 +98,7 @@ Your existing investment carries over:
     uv run aegra dev
     ```
 
-    This starts PostgreSQL in Docker, runs migrations, and launches the server with hot reload at `http://localhost:8000`.
+    This starts PostgreSQL in Docker, runs migrations, and launches the server with hot reload at `http://localhost:2026`.
   </Step>
 
   <Step title="Update your client URL">
@@ -111,7 +111,7 @@ Your existing investment carries over:
     # client = get_client(url="https://your-deployment.langsmith.com")
 
     # After
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
     ```
 
     Everything else — thread creation, runs, streaming, state inspection — works the same.

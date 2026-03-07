@@ -348,6 +348,33 @@ class TestStoreSSEEvent:
             assert parsed_back["normal"] == "string"
 
     @pytest.mark.asyncio
+    async def test_store_sse_event_strips_null_bytes(self) -> None:
+        """Regression test: data containing \\u0000 null bytes must be stripped before
+        PostgreSQL JSONB storage (PostgreSQL rejects \\u0000 in JSON fields)."""
+        with patch("aegra_api.services.event_store.event_store") as mock_event_store:
+            mock_event_store.store_event = AsyncMock()
+
+            # Simulate data from an external tool (e.g. Tavily) that contains null bytes
+            data = {
+                "content": "normal text\u0000with null byte",
+                "nested": {"key": "value\u0000\u0000end"},
+                "clean": "no nulls here",
+            }
+
+            await store_sse_event("run-123", "event-1", "test", data)
+
+            call_args = mock_event_store.store_event.call_args
+            _, stored_event = call_args[0]
+
+            # Null bytes must be stripped from stored data
+            json_str = json.dumps(stored_event.data)
+            assert "\\u0000" not in json_str
+            assert "\u0000" not in json_str
+
+            # Clean values must be preserved
+            assert stored_event.data["clean"] == "no nulls here"
+
+    @pytest.mark.asyncio
     async def test_store_sse_event_serialization_fallback(self):
         """Test fallback behavior when JSON serialization fails"""
         with patch("aegra_api.services.event_store.event_store") as mock_event_store:

@@ -233,7 +233,11 @@ class TestLangGraphServiceGraphs:
 
             async with service.get_graph("test_graph") as graph:
                 assert graph == mock_copy
-                mock_base_graph.copy.assert_called_once_with(update={"checkpointer": "checkpointer", "store": "store"})
+                mock_base_graph.copy.assert_called_once()
+                call_kwargs = mock_base_graph.copy.call_args[1]["update"]
+                assert call_kwargs["checkpointer"] == "checkpointer"
+                assert call_kwargs["store"] == "store"
+                assert "config" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_get_graph_not_found(self):
@@ -825,6 +829,8 @@ async def test_get_graph_context_manager_injects_checkpointer(monkeypatch):
     service._graph_registry["g2"] = {"file_path": "f", "export_name": "g"}
 
     class Precompiled:
+        config: dict = {}
+
         def copy(self, update=None):
             return f"copied:{update.get('checkpointer')}:{update.get('store')}"
 

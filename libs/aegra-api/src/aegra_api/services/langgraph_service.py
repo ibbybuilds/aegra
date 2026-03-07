@@ -8,6 +8,7 @@ Architecture:
 """
 
 import asyncio
+import copy
 import importlib.util
 import json
 import sys
@@ -317,8 +318,19 @@ class LangGraphService:
             # Try to create a copy with checkpointer/store injected.
             # NOTE: Do this BEFORE yield to avoid dual-yield when exceptions
             # occur in the context body.
+            # Deep-copy the graph's config to prevent astream from mutating
+            # the cached base graph's nested dicts (e.g. config.metadata).
+            # Pregel.copy() is shallow, so without this, all copies share
+            # the same metadata dict, and writes during execution pollute
+            # the base graph — breaking subsequent runs.
             try:
-                graph_to_use = base_graph.copy(update={"checkpointer": checkpointer, "store": store})
+                graph_to_use = base_graph.copy(
+                    update={
+                        "checkpointer": checkpointer,
+                        "store": store,
+                        "config": copy.deepcopy(base_graph.config),
+                    }
+                )
             except Exception as exc:
                 logger.warning(
                     "graph_checkpointer_injection_failed",

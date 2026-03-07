@@ -513,7 +513,11 @@ class TestNonFactoryGetGraphPreserved:
             async with service.get_graph("s") as graph:
                 assert graph is mock_copy
 
-            mock_base.copy.assert_called_once_with(update={"checkpointer": "cp", "store": "st"})
+            mock_base.copy.assert_called_once()
+            call_kwargs = mock_base.copy.call_args[1]["update"]
+            assert call_kwargs["checkpointer"] == "cp"
+            assert call_kwargs["store"] == "st"
+            assert "config" in call_kwargs
 
 
 # ---------------------------------------------------------------------------

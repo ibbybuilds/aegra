@@ -14,7 +14,7 @@ The store works without any configuration — it's available by default.
 ```python
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:8000")
+client = get_client(url="http://localhost:2026")
 
 await client.store.put_item(
     namespace=["users", "alice", "preferences"],

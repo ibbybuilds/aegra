@@ -1,13 +1,14 @@
 """Integration tests for EventStore service with real database"""
 
 import asyncio
+import json
 import sys
 from datetime import UTC, datetime
 
 import pytest
 
 from aegra_api.core.sse import SSEEvent
-from aegra_api.services.event_store import EventStore
+from aegra_api.services.event_store import EventStore, store_sse_event
 from aegra_api.settings import settings
 
 # Fix Windows event loop policy for psycopg3 compatibility
@@ -441,3 +442,44 @@ class TestEventStoreIntegration:
         assert retrieved_data["nested"]["null"] is None
         assert retrieved_data["nested"]["number"] == 42.5
         assert retrieved_data["metadata"]["tags"] == ["test", "complex", "json"]
+
+    @pytest.mark.asyncio
+    async def test_store_sse_event_with_null_bytes_does_not_crash(self, event_store: EventStore) -> None:
+        """Regression test: store_sse_event must strip \\u0000 null bytes before
+        inserting into PostgreSQL JSONB — PostgreSQL raises UntranslatableCharacter
+        otherwise (issue #226, reproduced with Tavily and other external tool output).
+
+        The event_store fixture already patches db_manager.lg_pool with a test pool,
+        so both store_sse_event (uses module-level singleton) and event_store.get_all_events
+        (uses fixture instance) go through the same test database connection.
+        """
+        run_id = "null-byte-regression-run"
+
+        # Simulate data from an external tool (e.g. Tavily) containing null bytes
+        data_with_nulls = {
+            "content": "search result\u0000with null byte",
+            "nested": {
+                "title": "article\u0000title",
+                "body": "text\u0000\u0000more text",
+            },
+            "clean_field": "this value has no nulls",
+            "score": 0.95,
+        }
+
+        # Must not raise psycopg.errors.UntranslatableCharacter
+        result = await store_sse_event(run_id, f"{run_id}_event_1", "messages", data_with_nulls)
+
+        assert result is not None
+        assert result.id == f"{run_id}_event_1"
+
+        # Verify stored data has null bytes stripped
+        events = await event_store.get_all_events(run_id)
+        assert len(events) == 1
+
+        stored_json = json.dumps(events[0].data)
+        assert "\\u0000" not in stored_json
+        assert "\u0000" not in stored_json
+
+        # Clean values must be preserved
+        assert events[0].data["clean_field"] == "this value has no nulls"
+        assert events[0].data["score"] == 0.95

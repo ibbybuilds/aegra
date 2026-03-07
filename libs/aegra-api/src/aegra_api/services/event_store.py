@@ -185,9 +185,12 @@ async def store_sse_event(run_id: str, event_id: str, event_type: str, data: dic
     """Store SSE event with proper serialization"""
     serializer = GeneralSerializer()
 
-    # Ensure JSONB-safe data by serializing complex objects
+    # Ensure JSONB-safe data by serializing complex objects.
+    # Also strip \u0000 (null bytes) — PostgreSQL JSONB rejects them.
     try:
-        safe_data = json.loads(json.dumps(data, default=serializer.serialize))
+        json_str = json.dumps(data, default=serializer.serialize)
+        json_str = json_str.replace("\\u0000", "")
+        safe_data = json.loads(json_str)
     except Exception:
         # Fallback to stringifying as a last resort to avoid crashing the run
         safe_data = {"raw": str(data)}

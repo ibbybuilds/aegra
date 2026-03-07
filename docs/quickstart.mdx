@@ -43,7 +43,7 @@ description: "Get a running Aegra server in under 5 minutes."
   </Step>
 </Steps>
 
-Your server is running at [http://localhost:8000](http://localhost:8000). Visit [http://localhost:8000/docs](http://localhost:8000/docs) to explore the API.
+Your server is running at [http://localhost:2026](http://localhost:2026). Visit [http://localhost:2026/docs](http://localhost:2026/docs) to explore the API.
 
 <Note>
   Always install `aegra-cli` directly — not the `aegra` meta-package. The `aegra` package on PyPI is a convenience wrapper that does not support version pinning.
@@ -59,7 +59,7 @@ from langgraph_sdk import get_client
 
 
 async def main():
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
 
     # Each graph in aegra.json gets a default assistant with the same ID
     thread = await client.threads.create()

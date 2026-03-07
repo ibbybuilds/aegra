@@ -36,8 +36,8 @@ class AppSettings(EnvBase):
 
     # Server config
     HOST: str = "0.0.0.0"  # nosec B104
-    PORT: int = 8000
-    SERVER_URL: str = "http://localhost:8000"
+    PORT: int = 2026
+    SERVER_URL: str = "http://localhost:2026"
 
     # App logic
     AEGRA_CONFIG: str = "aegra.json"  # Default config file path

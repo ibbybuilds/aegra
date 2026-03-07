@@ -13,7 +13,7 @@ from langgraph_sdk import get_client
 
 
 async def main():
-    client = get_client(url="http://localhost:8000")
+    client = get_client(url="http://localhost:2026")
 
     thread = await client.threads.create()
 

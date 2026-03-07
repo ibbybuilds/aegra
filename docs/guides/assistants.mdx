@@ -26,7 +26,7 @@ Create custom assistants with specific configurations:
 ```python
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:8000")
+client = get_client(url="http://localhost:2026")
 
 assistant = await client.assistants.create(
     graph_id="agent",

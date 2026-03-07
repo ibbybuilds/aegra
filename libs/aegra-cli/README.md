@@ -127,7 +127,7 @@ aegra dev [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--host HOST` | `127.0.0.1` | Host to bind the server to |
-| `--port PORT` | `8000` | Port to bind the server to |
+| `--port PORT` | `2026` | Port to bind the server to |
 | `--app APP` | `aegra_api.main:app` | Application import path |
 | `-c, --config PATH` | | Path to aegra.json config file |
 | `-e, --env-file PATH` | | Path to .env file |
@@ -137,7 +137,7 @@ aegra dev [OPTIONS]
 **Examples:**
 
 ```bash
-# Start with defaults (localhost:8000)
+# Start with defaults (localhost:2026)
 aegra dev
 
 # Start on all interfaces, port 3000
@@ -170,14 +170,14 @@ aegra serve [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--host HOST` | `0.0.0.0` | Host to bind the server to |
-| `--port PORT` | `8000` | Port to bind the server to |
+| `--port PORT` | `2026` | Port to bind the server to |
 | `--app APP` | `aegra_api.main:app` | Application import path |
 | `-c, --config PATH` | | Path to aegra.json config file |
 
 **Examples:**
 
 ```bash
-# Start with defaults (0.0.0.0:8000)
+# Start with defaults (0.0.0.0:2026)
 aegra serve
 
 # Start with a custom config
@@ -271,7 +271,7 @@ AUTH_TYPE=noop  # Options: noop, custom
 
 # Server (for aegra dev)
 HOST=0.0.0.0
-PORT=8000
+PORT=2026
 
 # Configuration
 AEGRA_CONFIG=aegra.json

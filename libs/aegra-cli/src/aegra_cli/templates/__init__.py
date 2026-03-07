@@ -195,7 +195,7 @@ services:
     build: .
     container_name: {slug}-api
     ports:
-      - "${{PORT:-8000}}:8000"
+      - "${{PORT:-2026}}:2026"
     env_file:
       - .env
     environment:
@@ -205,12 +205,12 @@ services:
       - POSTGRES_DB=${{POSTGRES_DB:-{slug}}}
       - AEGRA_CONFIG=aegra.json
       - AUTH_TYPE=${{AUTH_TYPE:-noop}}
-      - PORT=${{PORT:-8000}}
+      - PORT=${{PORT:-2026}}
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2026/health')"]
       interval: 30s
       start_period: 10s
     volumes:
@@ -275,9 +275,9 @@ COPY aegra.json .
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE 8000
+EXPOSE 2026
 
 USER app
 
-CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "2026"]
 """

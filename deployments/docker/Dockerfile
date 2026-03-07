@@ -64,10 +64,10 @@ COPY libs/aegra-api/alembic/ ./alembic/
 COPY aegra.json ./aegra.json
 COPY examples/ ./examples/
 
-EXPOSE 2026
+EXPOSE ${PORT:-2026}
 
 # Run as non-root
 USER app
 
 # Default command - can be overridden by docker-compose
-CMD ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "2026"]
+CMD ["sh", "-c", "exec uvicorn aegra_api.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-2026}"]

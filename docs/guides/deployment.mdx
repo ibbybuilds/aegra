@@ -101,7 +101,7 @@ This runs uvicorn directly without starting PostgreSQL. You provide a running da
 
     Or in your `Dockerfile`:
     ```dockerfile
-    CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "2026"]
+    CMD ["sh", "-c", "exec aegra serve --host ${HOST:-0.0.0.0} --port ${PORT:-2026}"]
     ```
   </Step>
 </Steps>
@@ -122,7 +122,7 @@ Use `aegra serve` as the container command in your pod spec:
 containers:
   - name: aegra
     image: your-registry/your-agent:latest
-    command: ["aegra", "serve", "--host", "0.0.0.0", "--port", "2026"]
+    command: ["aegra", "serve"]
     env:
       - name: DATABASE_URL
         valueFrom:

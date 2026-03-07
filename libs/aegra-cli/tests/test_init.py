@@ -150,7 +150,7 @@ class TestDockerGenerators:
     def test_docker_compose_has_api_healthcheck(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
         assert "urllib.request.urlopen" in compose
-        assert "localhost:2026/health" in compose
+        assert "localhost:${PORT:-2026}/health" in compose
 
     def test_docker_compose_api_depends_on_postgres(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
@@ -163,7 +163,7 @@ class TestDockerGenerators:
         assert "uv sync" in dockerfile
         assert "COPY pyproject.toml" in dockerfile
         assert "COPY src/" in dockerfile
-        assert "EXPOSE 2026" in dockerfile
+        assert "EXPOSE ${PORT:-2026}" in dockerfile
 
     def test_dockerfile_security_and_best_practices(self: TestDockerGenerators) -> None:
         dockerfile = get_dockerfile()
@@ -464,7 +464,7 @@ class TestInitFileContents:
 
         content = (project_dir / "docker-compose.yml").read_text()
         assert "urllib.request" in content
-        assert "localhost:2026/health" in content
+        assert "localhost:${PORT:-2026}/health" in content
 
     def test_no_prod_compose_generated(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path

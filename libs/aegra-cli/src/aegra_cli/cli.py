@@ -216,7 +216,7 @@ def dev(
     env_file: Path | None,
     no_db_check: bool,
     compose_file: Path | None,
-):
+) -> None:
     """Run the development server with hot reload.
 
     Starts uvicorn with --reload flag for development.

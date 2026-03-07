@@ -195,7 +195,7 @@ services:
     build: .
     container_name: {slug}-api
     ports:
-      - "${{PORT:-2026}}:2026"
+      - "${{PORT:-2026}}:${{PORT:-2026}}"
     env_file:
       - .env
     environment:
@@ -210,7 +210,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2026/health')"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${{PORT:-2026}}/health')\""]
       interval: 30s
       start_period: 10s
     volumes:
@@ -275,9 +275,9 @@ COPY aegra.json .
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE 2026
+EXPOSE ${PORT:-2026}
 
 USER app
 
-CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "2026"]
+CMD ["sh", "-c", "exec aegra serve --host ${HOST:-0.0.0.0} --port ${PORT:-2026}"]
 """

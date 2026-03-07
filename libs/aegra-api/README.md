@@ -58,7 +58,7 @@ export POSTGRES_DB=aegra
 alembic upgrade head
 
 # Start server
-uvicorn aegra_api.main:app --reload
+uvicorn aegra_api.main:app --port 2026 --reload
 ```
 
 ## Configuration

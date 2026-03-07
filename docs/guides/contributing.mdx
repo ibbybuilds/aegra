@@ -124,7 +124,7 @@ git commit -m "feat: add feature"
     docker compose up postgres -d
 
     # Start server (migrations run automatically on startup)
-    uv run --package aegra-api uvicorn aegra_api.main:app --reload
+    uv run --package aegra-api uvicorn aegra_api.main:app --port 2026 --reload
     ```
   </Tab>
 </Tabs>

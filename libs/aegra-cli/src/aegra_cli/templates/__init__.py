@@ -275,7 +275,7 @@ COPY aegra.json .
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE ${PORT:-2026}
+EXPOSE 2026
 
 USER app
 

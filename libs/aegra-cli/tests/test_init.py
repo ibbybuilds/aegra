@@ -163,7 +163,7 @@ class TestDockerGenerators:
         assert "uv sync" in dockerfile
         assert "COPY pyproject.toml" in dockerfile
         assert "COPY src/" in dockerfile
-        assert "EXPOSE ${PORT:-2026}" in dockerfile
+        assert "EXPOSE 2026" in dockerfile
 
     def test_dockerfile_security_and_best_practices(self: TestDockerGenerators) -> None:
         dockerfile = get_dockerfile()

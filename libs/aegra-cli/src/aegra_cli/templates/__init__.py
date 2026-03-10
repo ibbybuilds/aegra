@@ -177,6 +177,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg18
     container_name: {slug}-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}
       POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
@@ -194,6 +195,7 @@ services:
   {slug}:
     build: .
     container_name: {slug}-api
+    restart: unless-stopped
     ports:
       - "${{PORT:-2026}}:${{PORT:-2026}}"
     env_file:

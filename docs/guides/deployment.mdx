@@ -55,8 +55,9 @@ What it does:
 The generated `docker-compose.yml` includes:
 - PostgreSQL with pgvector
 - Your app container built from `Dockerfile`
-- Health checks on PostgreSQL
-- Volume mounts for your graphs and config
+- Health checks on both PostgreSQL and the API
+- `restart: unless-stopped` on all services — containers automatically restart on crashes or failed health checks, but respect manual `docker compose stop`
+- Volume mounts for your source code and config
 
 To stop:
 
@@ -186,6 +187,8 @@ Aegra provides health check endpoints for load balancers, Docker, and Kubernetes
 | `GET /ready` | Readiness check |
 | `GET /live` | Liveness check |
 | `GET /info` | Server info |
+
+The generated `docker-compose.yml` uses `/health` to monitor the API container. If the server hangs or becomes unresponsive, Docker marks it unhealthy after 3 consecutive failures (every 30 seconds). Combined with `restart: unless-stopped`, unhealthy containers are automatically restarted.
 
 ## Troubleshooting
 

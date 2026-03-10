@@ -151,6 +151,10 @@ class TestDockerGenerators:
         compose = get_docker_compose("myapp")
         assert "curl -sf http://localhost:${PORT:-2026}/health || exit 1" in compose
 
+    def test_docker_compose_has_restart_policy(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
+        assert compose.count("restart: unless-stopped") == 2
+
     def test_docker_compose_api_depends_on_postgres(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
         assert "depends_on:" in compose

@@ -149,8 +149,7 @@ class TestDockerGenerators:
 
     def test_docker_compose_has_api_healthcheck(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
-        assert "urllib.request.urlopen" in compose
-        assert "localhost:${PORT:-2026}/health" in compose
+        assert "curl -sf http://localhost:${PORT:-2026}/health || exit 1" in compose
 
     def test_docker_compose_api_depends_on_postgres(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
@@ -463,8 +462,7 @@ class TestInitFileContents:
         assert result.exit_code == 0
 
         content = (project_dir / "docker-compose.yml").read_text()
-        assert "urllib.request" in content
-        assert "localhost:${PORT:-2026}/health" in content
+        assert "curl -sf http://localhost:${PORT:-2026}/health || exit 1" in content
 
     def test_no_prod_compose_generated(
         self: TestInitFileContents, cli_runner: CliRunner, tmp_path: Path

@@ -210,7 +210,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${{PORT:-2026}}/health')\""]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${{PORT:-2026}}/health || exit 1"]
       interval: 30s
       start_period: 10s
     volumes:

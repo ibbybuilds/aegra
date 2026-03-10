@@ -70,10 +70,16 @@ After `aegra init`, your project looks like this:
 ```
 my-project/
 ├── aegra.json           # Graph and server configuration
-├── graphs/
-│   └── agent/
-│       └── graph.py     # Your LangGraph agent
+├── src/
+│   └── my_project/
+│       ├── __init__.py
+│       ├── graph.py     # Your LangGraph agent
+│       ├── state.py     # State and input schemas
+│       ├── context.py   # Runtime context
+│       ├── prompts.py   # System prompts
+│       └── utils.py     # Helper functions
 ├── .env.example         # Environment variable template
+├── .gitignore
 ├── Dockerfile           # Container build config
 ├── docker-compose.yml   # Local development stack
 ├── pyproject.toml       # Python dependencies

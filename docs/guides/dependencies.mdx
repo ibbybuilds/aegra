@@ -12,7 +12,7 @@ Add the `dependencies` array to your `aegra.json`:
 ```json
 {
   "graphs": {
-    "agent": "./graphs/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph"
   },
   "dependencies": [
     "./shared",
@@ -35,7 +35,7 @@ Given this project structure:
 ```
 my-project/
 ├── aegra.json
-├── graphs/
+├── src/
 │   └── my_agent/
 │       └── graph.py
 ├── shared/
@@ -52,7 +52,7 @@ Configure dependencies:
 ```json
 {
   "graphs": {
-    "my_agent": "./graphs/my_agent/graph.py:graph"
+    "my_agent": "./src/my_agent/graph.py:graph"
   },
   "dependencies": [
     "./shared",
@@ -64,7 +64,7 @@ Configure dependencies:
 Then import directly in your graph:
 
 ```python
-# graphs/my_agent/graph.py
+# src/my_agent/graph.py
 from utils import format_response
 from prompts import SYSTEM_PROMPT
 from custom_tools import MyCustomTool

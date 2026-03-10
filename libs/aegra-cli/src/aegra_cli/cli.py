@@ -55,7 +55,11 @@ def _resolve_server_option(
         return cli_value
     env_val = os.environ.get(env_var)
     if env_val is not None:
-        return type(default)(env_val)
+        try:
+            return type(default)(env_val)
+        except (ValueError, TypeError):
+            msg = f"Invalid value for {env_var}: {env_val!r} (expected {type(default).__name__})"
+            raise click.ClickException(msg) from None
     return default
 
 

@@ -1,8 +1,76 @@
-"""Tests for DatabaseSettings DATABASE_URL support."""
+"""Tests for AppSettings and DatabaseSettings."""
 
 import pytest
 
-from aegra_api.settings import DatabaseSettings
+from aegra_api.settings import AppSettings, DatabaseSettings
+
+
+class TestAppSettingsServerURL:
+    """Test SERVER_URL derivation from HOST/PORT."""
+
+    def _clear_app_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Remove env vars that affect AppSettings."""
+        for var in (
+            "HOST",
+            "PORT",
+            "SERVER_URL",
+            "PROJECT_NAME",
+            "AUTH_TYPE",
+            "ENV_MODE",
+            "DEBUG",
+            "LOG_LEVEL",
+            "LOG_VERBOSITY",
+            "AEGRA_CONFIG",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_derives_localhost_when_host_is_all_interfaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """SERVER_URL uses localhost when HOST=0.0.0.0."""
+        self._clear_app_env(monkeypatch)
+        app = AppSettings(_env_file=None)
+
+        assert app.HOST == "0.0.0.0"
+        assert app.PORT == 2026
+        assert app.SERVER_URL == "http://localhost:2026"
+
+    def test_derives_localhost_when_host_is_loopback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """SERVER_URL uses localhost when HOST=127.0.0.1."""
+        self._clear_app_env(monkeypatch)
+        monkeypatch.setenv("HOST", "127.0.0.1")
+        app = AppSettings(_env_file=None)
+
+        assert app.SERVER_URL == "http://localhost:2026"
+
+    def test_derives_with_custom_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """SERVER_URL uses the literal HOST when it's a custom address."""
+        self._clear_app_env(monkeypatch)
+        monkeypatch.setenv("HOST", "192.168.1.5")
+        app = AppSettings(_env_file=None)
+
+        assert app.SERVER_URL == "http://192.168.1.5:2026"
+
+    def test_derives_with_custom_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """SERVER_URL uses the configured PORT."""
+        self._clear_app_env(monkeypatch)
+        monkeypatch.setenv("PORT", "9090")
+        app = AppSettings(_env_file=None)
+
+        assert app.SERVER_URL == "http://localhost:9090"
+
+    def test_explicit_server_url_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Explicit SERVER_URL is not overridden by derivation."""
+        self._clear_app_env(monkeypatch)
+        monkeypatch.setenv("SERVER_URL", "https://api.example.com")
+        app = AppSettings(_env_file=None)
+
+        assert app.SERVER_URL == "https://api.example.com"
+
+    def test_default_port_is_2026(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Default PORT is 2026."""
+        self._clear_app_env(monkeypatch)
+        app = AppSettings(_env_file=None)
+
+        assert app.PORT == 2026
 
 
 class TestDatabaseURLSupport:

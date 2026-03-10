@@ -44,7 +44,7 @@ class AppSettings(EnvBase):
         """Derive SERVER_URL from HOST/PORT when not explicitly set."""
         if self.SERVER_URL is None:
             host = "localhost" if self.HOST in ("0.0.0.0", "127.0.0.1") else self.HOST  # nosec B104
-            self.SERVER_URL = f"http://{host}:{self.PORT}"
+            object.__setattr__(self, "SERVER_URL", f"http://{host}:{self.PORT}")
         return self
 
     # App logic

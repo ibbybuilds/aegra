@@ -137,6 +137,7 @@ class TestDevCommand:
             ):
                 mock_popen.return_value = create_mock_popen(0)
                 result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+                assert result.exit_code == 0, result.output
 
                 call_args = mock_popen.call_args[0][0]
                 port_idx = call_args.index("--port")
@@ -154,6 +155,7 @@ class TestDevCommand:
             ):
                 mock_popen.return_value = create_mock_popen(0)
                 result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--port", "7777"])
+                assert result.exit_code == 0, result.output
 
                 call_args = mock_popen.call_args[0][0]
                 port_idx = call_args.index("--port")
@@ -171,6 +173,7 @@ class TestDevCommand:
             ):
                 mock_popen.return_value = create_mock_popen(0)
                 result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+                assert result.exit_code == 0, result.output
 
                 call_args = mock_popen.call_args[0][0]
                 host_idx = call_args.index("--host")
@@ -848,6 +851,7 @@ class TestServeCommand:
             ):
                 mock_run.return_value = MagicMock(returncode=0)
                 result = cli_runner.invoke(cli, ["serve"])
+                assert result.exit_code == 0, result.output
 
                 cmd = mock_run.call_args[0][0]
                 port_idx = cmd.index("--port")
@@ -865,10 +869,29 @@ class TestServeCommand:
             ):
                 mock_run.return_value = MagicMock(returncode=0)
                 result = cli_runner.invoke(cli, ["serve", "--port", "7777"])
+                assert result.exit_code == 0, result.output
 
                 cmd = mock_run.call_args[0][0]
                 port_idx = cmd.index("--port")
                 assert cmd[port_idx + 1] == "7777"
+
+    def test_serve_host_from_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that serve command picks up HOST from env var when no CLI flag is passed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("HOST=192.168.1.5\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.run") as mock_run,
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+                result = cli_runner.invoke(cli, ["serve"])
+                assert result.exit_code == 0, result.output
+
+                cmd = mock_run.call_args[0][0]
+                host_idx = cmd.index("--host")
+                assert cmd[host_idx + 1] == "192.168.1.5"
 
     def test_serve_uvicorn_not_installed(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test error handling when uvicorn is not installed."""

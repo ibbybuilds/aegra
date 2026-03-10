@@ -52,6 +52,7 @@ FROM base AS final
 # Install only minimal runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from the builder stage.
@@ -70,4 +71,4 @@ EXPOSE 2026
 USER app
 
 # Default command - can be overridden by docker-compose
-CMD ["sh", "-c", "exec uvicorn aegra_api.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-2026}"]
+CMD ["aegra", "serve"]

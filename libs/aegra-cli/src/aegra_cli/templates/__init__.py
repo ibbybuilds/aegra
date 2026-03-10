@@ -269,6 +269,7 @@ FROM base AS final
 
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     ca-certificates \\
+    curl \\
     libpq5 \\
     && rm -rf /var/lib/apt/lists/*
 
@@ -281,5 +282,5 @@ EXPOSE 2026
 
 USER app
 
-CMD ["sh", "-c", "exec aegra serve --host ${HOST:-0.0.0.0} --port ${PORT:-2026}"]
+CMD ["aegra", "serve"]
 """

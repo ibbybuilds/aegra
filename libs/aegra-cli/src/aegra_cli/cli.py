@@ -35,6 +35,7 @@ def _resolve_server_option(
     ctx: click.Context,
     param_name: str,
     cli_value: str | int,
+    *,
     env_var: str,
     default: str | int,
 ) -> str | int:
@@ -54,7 +55,7 @@ def _resolve_server_option(
     if source == click.core.ParameterSource.COMMANDLINE:
         return cli_value
     env_val = os.environ.get(env_var)
-    if env_val is not None:
+    if env_val:
         try:
             return type(default)(env_val)
         except (ValueError, TypeError):
@@ -287,8 +288,8 @@ def dev(
         console.print(f"[yellow]Warning: .env file not found: {env_file}[/yellow]")
 
     # Resolve host/port with precedence: CLI flag > env var > default
-    host = _resolve_server_option(ctx, "host", host, "HOST", _DEFAULT_DEV_HOST)
-    port = _resolve_server_option(ctx, "port", port, "PORT", _DEFAULT_PORT)
+    host = _resolve_server_option(ctx, "host", host, env_var="HOST", default=_DEFAULT_DEV_HOST)
+    port = _resolve_server_option(ctx, "port", port, env_var="PORT", default=_DEFAULT_PORT)
 
     # Check and start PostgreSQL unless disabled
     if not no_db_check:
@@ -451,8 +452,8 @@ def serve(ctx: click.Context, host: str, port: int, app: str, config_file: Path 
     loaded_env = load_env_file(config_dir_env if config_dir_env.exists() else None)
 
     # Resolve host/port with precedence: CLI flag > env var > default
-    host = _resolve_server_option(ctx, "host", host, "HOST", _DEFAULT_SERVE_HOST)
-    port = _resolve_server_option(ctx, "port", port, "PORT", _DEFAULT_PORT)
+    host = _resolve_server_option(ctx, "host", host, env_var="HOST", default=_DEFAULT_SERVE_HOST)
+    port = _resolve_server_option(ctx, "port", port, env_var="PORT", default=_DEFAULT_PORT)
 
     info_lines = [
         "[bold green]Starting Aegra production server[/bold green]\n",

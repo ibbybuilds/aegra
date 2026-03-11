@@ -1,9 +1,15 @@
 """FastAPI application for Aegra (Agent Protocol Server)"""
 
 import asyncio
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+
+# Windows requires SelectorEventLoop for psycopg async connections.
+# ProactorEventLoop (the Windows default) is not compatible.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import structlog
 from asgi_correlation_id import CorrelationIdMiddleware

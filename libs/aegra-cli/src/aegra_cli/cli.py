@@ -25,6 +25,45 @@ from aegra_cli.utils.docker import ensure_postgres_running
 
 console = Console()
 
+# Default values for server options (single source of truth)
+_DEFAULT_DEV_HOST = "127.0.0.1"
+_DEFAULT_SERVE_HOST = "0.0.0.0"  # noqa: S104  # nosec B104 - intentional for Docker
+_DEFAULT_PORT = 2026
+
+
+def _resolve_server_option(
+    ctx: click.Context,
+    param_name: str,
+    cli_value: str | int,
+    *,
+    env_var: str,
+    default: str | int,
+) -> str | int:
+    """Resolve a server option with precedence: CLI flag > env var > default.
+
+    Args:
+        ctx: Click context to check parameter source.
+        param_name: Name of the Click parameter.
+        cli_value: Value from Click (may be the default).
+        env_var: Environment variable name to check.
+        default: The hardcoded default value.
+
+    Returns:
+        The resolved value with correct precedence.
+    """
+    source = ctx.get_parameter_source(param_name)
+    if source == click.core.ParameterSource.COMMANDLINE:
+        return cli_value
+    env_val = os.environ.get(env_var)
+    if env_val:
+        try:
+            return type(default)(env_val)
+        except (ValueError, TypeError):
+            msg = f"Invalid value for {env_var}: {env_val!r} (expected {type(default).__name__})"
+            raise click.ClickException(msg) from None
+    return default
+
+
 # Attempt to get aegra-api version
 try:
     from aegra_api import __version__ as api_version
@@ -125,13 +164,13 @@ def ensure_docker_files(project_path: Path, slug: str) -> Path:
 @cli.command()
 @click.option(
     "--host",
-    default="127.0.0.1",
+    default=_DEFAULT_DEV_HOST,
     help="Host to bind the server to.",
     show_default=True,
 )
 @click.option(
     "--port",
-    default=8000,
+    default=_DEFAULT_PORT,
     type=int,
     help="Port to bind the server to.",
     show_default=True,
@@ -172,7 +211,9 @@ def ensure_docker_files(project_path: Path, slug: str) -> Path:
     type=click.Path(exists=True, path_type=Path),
     help="Path to docker-compose.yml file for PostgreSQL.",
 )
+@click.pass_context
 def dev(
+    ctx: click.Context,
     host: str,
     port: int,
     app: str,
@@ -180,7 +221,7 @@ def dev(
     env_file: Path | None,
     no_db_check: bool,
     compose_file: Path | None,
-):
+) -> None:
     """Run the development server with hot reload.
 
     Starts uvicorn with --reload flag for development.
@@ -245,6 +286,10 @@ def dev(
     elif env_file is not None:
         # User specified a file but it doesn't exist (shouldn't happen due to click validation)
         console.print(f"[yellow]Warning: .env file not found: {env_file}[/yellow]")
+
+    # Resolve host/port with precedence: CLI flag > env var > default
+    host = _resolve_server_option(ctx, "host", host, env_var="HOST", default=_DEFAULT_DEV_HOST)
+    port = _resolve_server_option(ctx, "port", port, env_var="PORT", default=_DEFAULT_PORT)
 
     # Check and start PostgreSQL unless disabled
     if not no_db_check:
@@ -346,13 +391,13 @@ def dev(
 @cli.command()
 @click.option(
     "--host",
-    default="0.0.0.0",  # noqa: S104  # nosec B104 - intentional for Docker
+    default=_DEFAULT_SERVE_HOST,
     help="Host to bind the server to.",
     show_default=True,
 )
 @click.option(
     "--port",
-    default=8000,
+    default=_DEFAULT_PORT,
     type=int,
     help="Port to bind the server to.",
     show_default=True,
@@ -371,7 +416,8 @@ def dev(
     type=click.Path(exists=True, path_type=Path),
     help="Path to aegra.json config file (auto-discovered if not specified).",
 )
-def serve(host: str, port: int, app: str, config_file: Path | None) -> None:
+@click.pass_context
+def serve(ctx: click.Context, host: str, port: int, app: str, config_file: Path | None) -> None:
     """Run the production server.
 
     Starts uvicorn without --reload for production use.
@@ -404,6 +450,10 @@ def serve(host: str, port: int, app: str, config_file: Path | None) -> None:
     # Load .env file from config directory (same logic as dev command)
     config_dir_env = resolved_config.parent / ".env"
     loaded_env = load_env_file(config_dir_env if config_dir_env.exists() else None)
+
+    # Resolve host/port with precedence: CLI flag > env var > default
+    host = _resolve_server_option(ctx, "host", host, env_var="HOST", default=_DEFAULT_SERVE_HOST)
+    port = _resolve_server_option(ctx, "port", port, env_var="PORT", default=_DEFAULT_PORT)
 
     info_lines = [
         "[bold green]Starting Aegra production server[/bold green]\n",

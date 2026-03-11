@@ -63,16 +63,16 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AUTH_TYPE: noop
           HOST: "0.0.0.0"
-          PORT: "8000"
+          PORT: "2026"
           # Add examples to Python path for graph imports
           PYTHONPATH: ${{ github.workspace }}/examples
         working-directory: libs/aegra-api
         run: |
-          uv run uvicorn aegra_api.main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+          uv run uvicorn aegra_api.main:app --host 0.0.0.0 --port 2026 > server.log 2>&1 &
           echo $! > server.pid
           echo "Waiting for server to be ready..."
           for i in {1..30}; do
-            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            if curl -s http://localhost:2026/health > /dev/null 2>&1; then
               echo "Server is ready!"
               exit 0
             fi
@@ -86,7 +86,7 @@ jobs:
       - name: Run E2E tests
         working-directory: libs/aegra-api
         env:
-          SERVER_URL: http://localhost:8000
+          SERVER_URL: http://localhost:2026
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run pytest tests/e2e -v --tb=short --ignore=tests/e2e/manual_auth_tests
 

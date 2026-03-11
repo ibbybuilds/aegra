@@ -97,7 +97,7 @@ class TestDevCommand:
 
                 assert "--port" in call_args
                 port_idx = call_args.index("--port")
-                assert call_args[port_idx + 1] == "8000"
+                assert call_args[port_idx + 1] == "2026"
 
     def test_dev_custom_host(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command accepts custom host."""
@@ -124,6 +124,60 @@ class TestDevCommand:
                 call_args = mock_popen.call_args[0][0]
                 port_idx = call_args.index("--port")
                 assert call_args[port_idx + 1] == "3000"
+
+    def test_dev_port_from_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command picks up PORT from env var when no CLI flag is passed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("PORT=9090\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+                assert result.exit_code == 0, result.output
+
+                call_args = mock_popen.call_args[0][0]
+                port_idx = call_args.index("--port")
+                assert call_args[port_idx + 1] == "9090"
+
+    def test_dev_cli_flag_overrides_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that explicit --port flag takes precedence over PORT env var."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("PORT=9090\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--port", "7777"])
+                assert result.exit_code == 0, result.output
+
+                call_args = mock_popen.call_args[0][0]
+                port_idx = call_args.index("--port")
+                assert call_args[port_idx + 1] == "7777"
+
+    def test_dev_host_from_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that dev command picks up HOST from env var when no CLI flag is passed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("HOST=0.0.0.0\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check"])
+                assert result.exit_code == 0, result.output
+
+                call_args = mock_popen.call_args[0][0]
+                host_idx = call_args.index("--host")
+                assert call_args[host_idx + 1] == "0.0.0.0"
 
     def test_dev_custom_app(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test that dev command accepts custom app path."""
@@ -781,9 +835,63 @@ class TestServeCommand:
                 assert "--host" in cmd
                 assert "0.0.0.0" in cmd
                 assert "--port" in cmd
-                assert "8000" in cmd
+                assert "2026" in cmd
                 # No --reload flag (production mode)
                 assert "--reload" not in cmd
+
+    def test_serve_port_from_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that serve command picks up PORT from env var when no CLI flag is passed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("PORT=9090\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.run") as mock_run,
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+                result = cli_runner.invoke(cli, ["serve"])
+                assert result.exit_code == 0, result.output
+
+                cmd = mock_run.call_args[0][0]
+                port_idx = cmd.index("--port")
+                assert cmd[port_idx + 1] == "9090"
+
+    def test_serve_cli_flag_overrides_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that explicit --port flag takes precedence over PORT env var."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("PORT=9090\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.run") as mock_run,
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+                result = cli_runner.invoke(cli, ["serve", "--port", "7777"])
+                assert result.exit_code == 0, result.output
+
+                cmd = mock_run.call_args[0][0]
+                port_idx = cmd.index("--port")
+                assert cmd[port_idx + 1] == "7777"
+
+    def test_serve_host_from_env_var(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that serve command picks up HOST from env var when no CLI flag is passed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+            Path(".env").write_text("HOST=192.168.1.5\n")
+
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch("aegra_cli.cli.subprocess.run") as mock_run,
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+                result = cli_runner.invoke(cli, ["serve"])
+                assert result.exit_code == 0, result.output
+
+                cmd = mock_run.call_args[0][0]
+                host_idx = cmd.index("--host")
+                assert cmd[host_idx + 1] == "192.168.1.5"
 
     def test_serve_uvicorn_not_installed(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Test error handling when uvicorn is not installed."""

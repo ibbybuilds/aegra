@@ -52,6 +52,7 @@ FROM base AS final
 # Install only minimal runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from the builder stage.
@@ -64,10 +65,10 @@ COPY libs/aegra-api/alembic/ ./alembic/
 COPY aegra.json ./aegra.json
 COPY examples/ ./examples/
 
-EXPOSE 8000
+EXPOSE 2026
 
 # Run as non-root
 USER app
 
 # Default command - can be overridden by docker-compose
-CMD ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["aegra", "serve"]

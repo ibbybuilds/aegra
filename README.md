@@ -60,14 +60,14 @@ cp .env.example .env
 docker compose up
 ```
 
-Open [http://localhost:8000/docs](http://localhost:8000/docs) to explore the API.
+Open [http://localhost:2026/docs](http://localhost:2026/docs) to explore the API.
 
 Your existing LangGraph code works without changes:
 
 ```python
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:8000")
+client = get_client(url="http://localhost:2026")
 
 assistant = await client.assistants.create(graph_id="agent")
 thread = await client.threads.create()

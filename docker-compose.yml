@@ -2,6 +2,7 @@ services:
   # PostgreSQL database for LangGraph and metadata
   postgres:
     image: pgvector/pgvector:pg18
+    restart: unless-stopped
     env_file:
       - .env
     ports:
@@ -19,8 +20,9 @@ services:
     build:
       context: .
       dockerfile: deployments/docker/Dockerfile
+    restart: unless-stopped
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "${PORT:-2026}:${PORT:-2026}"
     env_file:
       - .env
     environment:
@@ -40,7 +42,7 @@ services:
         echo 'Running database migrations...' &&
         alembic upgrade head &&
         echo 'Starting Aegra server...' &&
-        uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
+        uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-2026} --reload
       "
 
   # Redis (optional - for advanced queuing in future phases)

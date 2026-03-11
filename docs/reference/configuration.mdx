@@ -27,8 +27,8 @@ aegra dev
 {
   "dependencies": ["./shared"],
   "graphs": {
-    "agent": "./graphs/react_agent/graph.py:graph",
-    "agent_hitl": "./graphs/react_agent_hitl/graph.py:graph"
+    "agent": "./src/react_agent/graph.py:graph",
+    "agent_hitl": "./src/react_agent_hitl/graph.py:graph"
   },
   "auth": {
     "path": "./my_auth.py:auth",
@@ -79,8 +79,8 @@ Define your LangGraph agents.
 ```json
 {
   "graphs": {
-    "agent": "./graphs/react_agent/graph.py:graph",
-    "custom_agent": "./my_graphs/custom.py:my_graph"
+    "agent": "./src/react_agent/graph.py:graph",
+    "custom_agent": "./src/custom/graph.py:my_graph"
   }
 }
 ```
@@ -277,7 +277,7 @@ See [semantic store guide](/guides/semantic-store) for details.
 ```json
 {
   "graphs": {
-    "agent": "./graphs/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph"
   }
 }
 ```
@@ -287,7 +287,7 @@ See [semantic store guide](/guides/semantic-store) for details.
 ```json
 {
   "graphs": {
-    "agent": "./graphs/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph"
   },
   "auth": {
     "path": "./my_auth.py:auth"
@@ -300,7 +300,7 @@ See [semantic store guide](/guides/semantic-store) for details.
 ```json
 {
   "graphs": {
-    "agent": "./graphs/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph"
   },
   "http": {
     "app": "./custom_routes.py:app"
@@ -313,7 +313,7 @@ See [semantic store guide](/guides/semantic-store) for details.
 ```json
 {
   "graphs": {
-    "agent": "./graphs/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph"
   },
   "auth": {
     "path": "./auth/production_auth.py:auth"

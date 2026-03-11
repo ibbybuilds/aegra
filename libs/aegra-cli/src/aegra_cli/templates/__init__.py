@@ -177,6 +177,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg18
     container_name: {slug}-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${{POSTGRES_USER:-{slug}}}
       POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-{slug}_secret}}
@@ -194,8 +195,9 @@ services:
   {slug}:
     build: .
     container_name: {slug}-api
+    restart: unless-stopped
     ports:
-      - "${{PORT:-8000}}:8000"
+      - "${{PORT:-2026}}:${{PORT:-2026}}"
     env_file:
       - .env
     environment:
@@ -205,12 +207,12 @@ services:
       - POSTGRES_DB=${{POSTGRES_DB:-{slug}}}
       - AEGRA_CONFIG=aegra.json
       - AUTH_TYPE=${{AUTH_TYPE:-noop}}
-      - PORT=${{PORT:-8000}}
+      - PORT=${{PORT:-2026}}
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${{PORT:-2026}}/health || exit 1"]
       interval: 30s
       start_period: 10s
     volumes:
@@ -267,6 +269,7 @@ FROM base AS final
 
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     ca-certificates \\
+    curl \\
     libpq5 \\
     && rm -rf /var/lib/apt/lists/*
 
@@ -275,9 +278,9 @@ COPY aegra.json .
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE 8000
+EXPOSE 2026
 
 USER app
 
-CMD ["aegra", "serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["aegra", "serve"]
 """

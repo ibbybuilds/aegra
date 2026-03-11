@@ -70,10 +70,16 @@ After `aegra init`, your project looks like this:
 ```
 my-project/
 ├── aegra.json           # Graph and server configuration
-├── graphs/
-│   └── agent/
-│       └── graph.py     # Your LangGraph agent
+├── src/
+│   └── my_project/
+│       ├── __init__.py
+│       ├── graph.py     # Your LangGraph agent
+│       ├── state.py     # State and input schemas
+│       ├── context.py   # Runtime context
+│       ├── prompts.py   # System prompts
+│       └── utils.py     # Helper functions
 ├── .env.example         # Environment variable template
+├── .gitignore
 ├── Dockerfile           # Container build config
 ├── docker-compose.yml   # Local development stack
 ├── pyproject.toml       # Python dependencies
@@ -91,7 +97,7 @@ uv run aegra dev
 In another terminal:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:2026/health
 ```
 
 You should see:
@@ -100,4 +106,4 @@ You should see:
 {"status": "healthy"}
 ```
 
-Visit [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive API documentation.
+Visit [http://localhost:2026/docs](http://localhost:2026/docs) for the interactive API documentation.

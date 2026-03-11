@@ -58,7 +58,7 @@ export POSTGRES_DB=aegra
 alembic upgrade head
 
 # Start server
-uvicorn aegra_api.main:app --reload
+uvicorn aegra_api.main:app --port 2026 --reload
 ```
 
 ## Configuration
@@ -93,7 +93,7 @@ AUTH_TYPE=noop  # Options: noop, custom
 
 # Server
 HOST=0.0.0.0
-PORT=8000
+PORT=2026
 
 # Configuration
 AEGRA_CONFIG=aegra.json

@@ -19,7 +19,7 @@ Add the `store` section to your `aegra.json`:
 ```json
 {
   "graphs": {
-    "agent": "./graphs/agent/graph.py:graph"
+    "agent": "./src/agent/graph.py:graph"
   },
   "store": {
     "index": {
@@ -83,7 +83,7 @@ COHERE_API_KEY=...
 ```python
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:8000")
+client = get_client(url="http://localhost:2026")
 
 await client.store.put(
     namespace=["user", "123", "preferences"],

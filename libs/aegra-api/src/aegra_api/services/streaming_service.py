@@ -51,11 +51,14 @@ class StreamingService:
 
     async def signal_run_cancelled(self, run_id: str) -> None:
         """Signal that a run was cancelled."""
+        broker = broker_manager.get_broker(run_id)
+        if broker is None or broker.is_finished():
+            return
+
         counter = self.event_counters.get(run_id, 0) + 1
         self.event_counters[run_id] = counter
         event_id = generate_event_id(run_id, counter)
 
-        broker = broker_manager.get_or_create_broker(run_id)
         await broker.put(event_id, ("end", {"status": "interrupted"}))
         broker_manager.cleanup_broker(run_id)
 
@@ -63,14 +66,19 @@ class StreamingService:
         """Signal that a run encountered an error.
 
         Sends a proper 'error' event to the broker followed by an 'end' event.
+        Uses get_broker (not get_or_create) to avoid creating a new broker for
+        a run that already finished, which would cause duplicate error events.
         """
+        broker = broker_manager.get_broker(run_id)
+        if broker is None or broker.is_finished():
+            return
+
         counter = self.event_counters.get(run_id, 0) + 1
         self.event_counters[run_id] = counter
         error_event_id = generate_event_id(run_id, counter)
 
         error_payload = {"error": error_type, "message": error_message}
 
-        broker = broker_manager.get_or_create_broker(run_id)
         await broker.put(error_event_id, ("error", error_payload))
 
         counter += 1
@@ -126,11 +134,16 @@ class StreamingService:
     async def _stream_live_events(self, run: Run, last_sent_sequence: int) -> AsyncIterator[str]:
         """Stream live events from broker."""
         run_id = run.run_id
-        broker = broker_manager.get_or_create_broker(run_id)
+        broker = broker_manager.get_broker(run_id)
 
-        # If run finished and broker is done, nothing to stream
-        if run.status in ["success", "error", "interrupted"] and broker.is_finished():
+        # If run is in a terminal state and broker is either missing or finished,
+        # there are no live events to stream. Using get_broker (not get_or_create)
+        # avoids creating a blank broker that would hang forever in aiter().
+        if run.status in ["success", "error", "interrupted"] and (broker is None or broker.is_finished()):
             return
+
+        if broker is None:
+            broker = broker_manager.get_or_create_broker(run_id)
 
         async for event_id, raw_event in broker.aiter():
             # Skip duplicates that were already replayed
@@ -186,15 +199,6 @@ class StreamingService:
         except Exception as e:
             logger.error(f"Error cancelling run {run_id}: {e}")
             return False
-
-    async def _update_run_status(self, run_id: str, status: str, output: Any = None, error: str | None = None) -> None:
-        """Update run status in database using the shared updater."""
-        try:
-            from aegra_api.api.runs import update_run_status
-
-            await update_run_status(run_id, status, output, error)
-        except Exception as e:
-            logger.error(f"Error updating run status for {run_id}: {e}")
 
     def is_run_streaming(self, run_id: str) -> bool:
         """Check if run is currently active (has a broker)."""

@@ -12,7 +12,6 @@ from typing import Any
 import structlog
 
 from aegra_api.services.base_broker import BaseBrokerManager, BaseRunBroker
-from aegra_api.services.redis_broker import RedisBrokerManager
 from aegra_api.settings import settings
 
 logger = structlog.getLogger(__name__)
@@ -151,6 +150,9 @@ def _create_broker_manager() -> BaseBrokerManager:
     otherwise the default in-memory BrokerManager.
     """
     if settings.redis.REDIS_BROKER_ENABLED:
+        # Conditional import: redis is only required when the Redis broker is enabled
+        from aegra_api.services.redis_broker import RedisBrokerManager
+
         logger.info("Using Redis broker for SSE streaming")
         return RedisBrokerManager()
     logger.info("Using in-memory broker for SSE streaming")

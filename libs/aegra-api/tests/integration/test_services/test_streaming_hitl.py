@@ -16,11 +16,11 @@ class TestEventConverter:
     """Test event converter for SSE formatting."""
 
     @pytest.fixture
-    def event_converter(self):
+    def event_converter(self) -> EventConverter:
         """Create event converter instance."""
         return EventConverter()
 
-    def test_convert_interrupt_values_event(self, event_converter):
+    def test_convert_interrupt_values_event(self, event_converter: EventConverter) -> None:
         """Test converting values event with interrupt to SSE."""
         event_id = "test-123"
         raw_event = (
@@ -35,7 +35,7 @@ class TestEventConverter:
         assert "data: " in sse_event
         assert "__interrupt__" in sse_event
 
-    def test_parse_raw_event_tuple_formats(self, event_converter):
+    def test_parse_raw_event_tuple_formats(self, event_converter: EventConverter) -> None:
         """Test parsing different tuple formats."""
         # Test 2-tuple format
         raw_event = ("values", {"test": "data"})

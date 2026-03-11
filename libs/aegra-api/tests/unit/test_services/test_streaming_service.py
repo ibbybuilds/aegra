@@ -62,10 +62,12 @@ class TestStreamingService:
         service = StreamingService()
         run_id = "run-123"
 
-        mock_broker = AsyncMock()
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = False
+        mock_broker.put = AsyncMock()
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
 
             await service.signal_run_cancelled(run_id)
 
@@ -77,6 +79,17 @@ class TestStreamingService:
             # Should cleanup broker
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
+    async def test_signal_run_cancelled_skips_when_no_broker(self) -> None:
+        """Test that signal_run_cancelled is a no-op when broker doesn't exist"""
+        service = StreamingService()
+
+        with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
+            mock_manager.get_broker.return_value = None
+
+            await service.signal_run_cancelled("run-123")
+
+            mock_manager.cleanup_broker.assert_not_called()
+
     async def test_signal_run_error(self) -> None:
         """Test signalling run error sends error event then end event"""
         service = StreamingService()
@@ -84,10 +97,12 @@ class TestStreamingService:
         error_msg = "Something went wrong"
         error_type = "ValueError"
 
-        mock_broker = AsyncMock()
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = False
+        mock_broker.put = AsyncMock()
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
 
             await service.signal_run_error(run_id, error_msg, error_type)
 
@@ -111,16 +126,29 @@ class TestStreamingService:
             # Should cleanup broker
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
+    async def test_signal_run_error_skips_when_no_broker(self) -> None:
+        """Test that signal_run_error is a no-op when broker doesn't exist"""
+        service = StreamingService()
+
+        with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
+            mock_manager.get_broker.return_value = None
+
+            await service.signal_run_error("run-123", "error msg")
+
+            mock_manager.cleanup_broker.assert_not_called()
+
     async def test_signal_run_error_default_type(self) -> None:
         """Test signal_run_error with default error type"""
         service = StreamingService()
         run_id = "run-123"
         error_msg = "Generic error"
 
-        mock_broker = AsyncMock()
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = False
+        mock_broker.put = AsyncMock()
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
 
             await service.signal_run_error(run_id, error_msg)
 
@@ -162,6 +190,7 @@ class TestStreamingService:
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
             mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
             service._convert_raw_to_sse = AsyncMock(side_effect=["sse1", "sse2", "sse3", "sse4"])  # type: ignore[assignment]
 
             events: list[str] = []
@@ -199,6 +228,7 @@ class TestStreamingService:
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
             mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
 
             async for _ in service.stream_run_execution(run, last_event_id=last_id):
                 pass
@@ -234,6 +264,7 @@ class TestStreamingService:
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
             mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
             service._convert_raw_to_sse = AsyncMock(side_effect=["sse6", "sse7"])  # type: ignore[assignment]
 
             events: list[str] = []

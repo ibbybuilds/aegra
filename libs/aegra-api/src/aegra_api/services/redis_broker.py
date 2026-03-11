@@ -23,6 +23,8 @@ _serializer = GeneralSerializer()
 
 # TTL for the replay buffer (1 hour)
 _REPLAY_TTL_SECONDS = 3600
+# Max events in the replay buffer (prevents unbounded growth)
+_REPLAY_MAX_EVENTS = 10_000
 
 
 def _serialize_payload(payload: Any) -> str:
@@ -67,24 +69,38 @@ class RedisRunBroker(BaseRunBroker):
             }
         )
 
+        is_end = isinstance(payload, tuple) and len(payload) >= 1 and payload[0] == "end"
+
         try:
             client = redis_manager.get_client()
 
             if resumable:
-                await client.rpush(self._cache_key, message)  # type: ignore[invalid-await]
-                await client.expire(self._cache_key, _REPLAY_TTL_SECONDS)
+                pipe = client.pipeline()
+                pipe.rpush(self._cache_key, message)
+                pipe.ltrim(self._cache_key, -_REPLAY_MAX_EVENTS, -1)
+                pipe.expire(self._cache_key, _REPLAY_TTL_SECONDS)
+                await pipe.execute()  # type: ignore[invalid-await]
 
             await client.publish(self._channel, message)
 
-            if isinstance(payload, tuple) and len(payload) >= 1 and payload[0] == "end":
+            if is_end:
                 self._finished = True
         except RedisError as e:
             logger.error(f"Redis publish failed for run {self.run_id}: {e}")
+            # Even if Redis fails, mark finished for end events so aiter() can exit
+            # rather than looping forever waiting for an end event that won't arrive.
+            if is_end:
+                self._finished = True
 
     async def aiter(self) -> AsyncIterator[tuple[str, Any]]:
         client = redis_manager.get_client()
         pubsub = client.pubsub()
         await pubsub.subscribe(self._channel)
+
+        # After subscribing, check if the run already ended (closes the race where
+        # the end event was published before we subscribed on this instance).
+        end_already_in_buffer = await self._check_end_in_buffer()
+
         try:
             while True:
                 message = await pubsub.get_message(
@@ -92,7 +108,7 @@ class RedisRunBroker(BaseRunBroker):
                     timeout=0.5,
                 )
                 if message is None:
-                    if self._finished:
+                    if self._finished or end_already_in_buffer:
                         break
                     continue
 
@@ -111,10 +127,28 @@ class RedisRunBroker(BaseRunBroker):
             await pubsub.unsubscribe(self._channel)
             await pubsub.aclose()
 
+    async def _check_end_in_buffer(self) -> bool:
+        """Check if an 'end' event is already in the replay buffer.
+
+        Used after subscribing to detect runs that finished before we subscribed,
+        preventing infinite loops in cross-instance consumer scenarios.
+        """
+        try:
+            client = redis_manager.get_client()
+            raw_messages = await client.lrange(self._cache_key, -1, -1)  # type: ignore[invalid-await]
+            if raw_messages:
+                data = json.loads(raw_messages[0])
+                payload = _deserialize_payload(data["payload"])
+                if isinstance(payload, tuple) and len(payload) >= 1 and payload[0] == "end":
+                    return True
+        except RedisError:
+            pass
+        return False
+
     async def replay(self, last_event_id: str | None) -> list[tuple[str, Any]]:
         try:
             client = redis_manager.get_client()
-            raw_messages = await client.lrange(self._cache_key, 0, -1)  # type: ignore[invalid-await]
+            raw_messages = await client.lrange(self._cache_key, 0, _REPLAY_MAX_EVENTS - 1)  # type: ignore[invalid-await]
         except RedisError as e:
             logger.error(f"Redis replay failed for run {self.run_id}: {e}")
             return []

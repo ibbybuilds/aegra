@@ -64,9 +64,13 @@ class TestRedisRunBroker:
 
     @pytest.mark.asyncio
     async def test_put_publishes_and_caches(self) -> None:
-        """Test that put() publishes to channel and stores in cache list"""
+        """Test that put() publishes to channel and stores in cache list via pipeline"""
         broker = self._make_broker()
-        mock_client = AsyncMock()
+        mock_pipe = MagicMock()
+        mock_pipe.execute = AsyncMock()
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock()
+        mock_client.pipeline.return_value = mock_pipe
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -82,20 +86,24 @@ class TestRedisRunBroker:
             assert data["event_id"] == "evt-1"
             assert data["payload"] == ["values", {"msg": "hello"}]
 
-            # Should store in cache list
-            mock_client.rpush.assert_called_once()
-            cache_key, cached_msg = mock_client.rpush.call_args[0]
+            # Should use pipeline for cache operations
+            mock_client.pipeline.assert_called_once()
+            mock_pipe.rpush.assert_called_once()
+            cache_key, cached_msg = mock_pipe.rpush.call_args[0]
             assert cache_key == "aegra:run:cache:run-123"
             assert json.loads(cached_msg) == data
 
-            # Should set TTL
-            mock_client.expire.assert_called_once()
+            # Should trim and set TTL in pipeline
+            mock_pipe.ltrim.assert_called_once()
+            mock_pipe.expire.assert_called_once()
+            mock_pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_put_non_resumable_skips_cache(self) -> None:
-        """Test that put() with resumable=False skips the cache"""
+        """Test that put() with resumable=False skips the cache pipeline"""
         broker = self._make_broker()
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock()
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -103,13 +111,16 @@ class TestRedisRunBroker:
             await broker.put("evt-1", ("values", {"msg": "hello"}), resumable=False)
 
             mock_client.publish.assert_called_once()
-            mock_client.rpush.assert_not_called()
-            mock_client.expire.assert_not_called()
+            mock_client.pipeline.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_put_end_event_marks_finished(self) -> None:
         broker = self._make_broker()
-        mock_client = AsyncMock()
+        mock_pipe = MagicMock()
+        mock_pipe.execute = AsyncMock()
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock()
+        mock_client.pipeline.return_value = mock_pipe
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -122,7 +133,8 @@ class TestRedisRunBroker:
     async def test_put_after_finished_skips(self) -> None:
         broker = self._make_broker()
         broker.mark_finished()
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock()
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -134,8 +146,11 @@ class TestRedisRunBroker:
     @pytest.mark.asyncio
     async def test_put_handles_redis_failure_gracefully(self) -> None:
         broker = self._make_broker()
-        mock_client = AsyncMock()
-        mock_client.rpush.side_effect = RedisConnectionError("Redis down")
+        mock_pipe = MagicMock()
+        mock_pipe.execute = AsyncMock(side_effect=RedisConnectionError("Redis down"))
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock()
+        mock_client.pipeline.return_value = mock_pipe
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -169,6 +184,8 @@ class TestRedisRunBroker:
 
         mock_client = MagicMock()
         mock_client.pubsub.return_value = mock_pubsub
+        # _check_end_in_buffer calls lrange — return empty (no end in buffer yet)
+        mock_client.lrange = AsyncMock(return_value=[])
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -207,6 +224,7 @@ class TestRedisRunBroker:
 
         mock_client = MagicMock()
         mock_client.pubsub.return_value = mock_pubsub
+        mock_client.lrange = AsyncMock(return_value=[])
 
         with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
@@ -298,6 +316,63 @@ class TestRedisRunBroker:
             events = await broker.replay(None)
 
         assert events == []
+
+    @pytest.mark.asyncio
+    async def test_check_end_in_buffer_returns_true_when_end_present(self) -> None:
+        """Test that _check_end_in_buffer detects end events in replay buffer"""
+        broker = self._make_broker()
+        mock_client = AsyncMock()
+        mock_client.lrange.return_value = [
+            json.dumps({"event_id": "evt-end", "payload": ["end", {"status": "success"}]})
+        ]
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+            result = await broker._check_end_in_buffer()
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_check_end_in_buffer_returns_false_when_no_end(self) -> None:
+        """Test that _check_end_in_buffer returns False when no end event"""
+        broker = self._make_broker()
+        mock_client = AsyncMock()
+        mock_client.lrange.return_value = [json.dumps({"event_id": "evt-1", "payload": ["values", {"a": 1}]})]
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+            result = await broker._check_end_in_buffer()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_aiter_exits_when_end_already_in_buffer(self) -> None:
+        """Test that aiter() exits immediately when end event is already in replay buffer"""
+        broker = self._make_broker()
+
+        mock_pubsub = AsyncMock()
+        mock_pubsub.subscribe = AsyncMock()
+        mock_pubsub.unsubscribe = AsyncMock()
+        mock_pubsub.aclose = AsyncMock()
+        # Return None (no live messages) — should exit because end is in buffer
+        mock_pubsub.get_message = AsyncMock(return_value=None)
+
+        mock_client = MagicMock()
+        mock_client.pubsub.return_value = mock_pubsub
+        # _check_end_in_buffer sees end event in last position
+        mock_client.lrange = AsyncMock(
+            return_value=[json.dumps({"event_id": "evt-end", "payload": ["end", {"status": "success"}]})]
+        )
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+
+            events: list[tuple[str, object]] = []
+            async for event_id, payload in broker.aiter():
+                events.append((event_id, payload))
+
+        # Should exit with no live events since end was already in buffer
+        assert len(events) == 0
 
     def test_mark_finished(self) -> None:
         broker = self._make_broker()

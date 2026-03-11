@@ -430,7 +430,8 @@ class TestRedisBrokerManager:
         manager.cleanup_broker("run-123")
 
         assert broker.is_finished()
-        assert manager.get_broker("run-123") is broker
+        # Broker should be removed from the manager after cleanup
+        assert manager.get_broker("run-123") is None
 
     def test_remove_broker(self) -> None:
         manager = self._make_manager()

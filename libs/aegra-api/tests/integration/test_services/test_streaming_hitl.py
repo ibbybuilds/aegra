@@ -35,6 +35,18 @@ class TestEventConverter:
         assert "data: " in sse_event
         assert "__interrupt__" in sse_event
 
+    def test_convert_updates_event(self, event_converter: EventConverter) -> None:
+        """Test converting updates event to SSE preserves stream mode."""
+        event_id = "test-456"
+        raw_event = ("updates", {"status": "waiting"})
+
+        sse_event = event_converter.convert_raw_to_sse(event_id, raw_event)
+
+        assert sse_event is not None
+        assert "event: updates" in sse_event
+        assert "data: " in sse_event
+        assert "waiting" in sse_event
+
     def test_parse_raw_event_tuple_formats(self, event_converter: EventConverter) -> None:
         """Test parsing different tuple formats."""
         # Test 2-tuple format

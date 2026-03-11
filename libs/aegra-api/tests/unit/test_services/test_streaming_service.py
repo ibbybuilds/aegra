@@ -275,6 +275,59 @@ class TestStreamingService:
             assert len(events) == 2
             assert events == ["sse6", "sse7"]
 
+    async def test_stream_deduplicates_replay_and_live_overlap(self) -> None:
+        """Test that events replayed on reconnect and then re-emitted live are deduplicated.
+
+        Simulates: client saw events 1-4, reconnects with last_event_id=event_4,
+        replay returns events 5-6, live stream re-emits event_6 (overlap) plus new events.
+        Event_6 should NOT be duplicated in the output.
+        """
+        service = StreamingService()
+        run = Run(
+            run_id="run-123",
+            status="running",
+            user_id="user-1",
+            thread_id="thread-1",
+            assistant_id="agent",
+            input={"message": "hello"},
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = False
+        # Replay returns events after event_4 (the last_event_id)
+        mock_broker.replay = AsyncMock(
+            return_value=[
+                ("run-123_event_5", ("values", {"a": 5})),
+                ("run-123_event_6", ("values", {"a": 6})),
+            ]
+        )
+
+        async def mock_aiter() -> AsyncGenerator[tuple[str, Any], None]:
+            # Live stream re-emits event_6 (overlap) plus new events
+            yield "run-123_event_6", ("values", {"a": 6})
+            yield "run-123_event_7", ("values", {"a": 7})
+            yield "run-123_event_8", ("end", {"status": "success"})
+
+        mock_broker.aiter = mock_aiter
+
+        with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
+            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_broker.return_value = mock_broker
+            # Only 4 convert calls expected (event_6 skipped in live)
+            service._convert_raw_to_sse = AsyncMock(  # type: ignore[assignment]
+                side_effect=["sse5", "sse6", "sse7", "sse8"]
+            )
+
+            events: list[str] = []
+            async for event in service.stream_run_execution(run, last_event_id="run-123_event_4"):
+                events.append(event)
+
+            # Should get replay (5, 6) + live (7, 8) — event_6 NOT duplicated
+            assert len(events) == 4
+            assert events == ["sse5", "sse6", "sse7", "sse8"]
+
     async def test_cancel_background_task(self) -> None:
         """Test cancelling background task"""
         service = StreamingService()

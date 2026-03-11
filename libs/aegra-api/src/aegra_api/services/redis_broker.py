@@ -211,10 +211,10 @@ class RedisBrokerManager(BaseBrokerManager):
         return self._brokers.get(run_id)
 
     def cleanup_broker(self, run_id: str) -> None:
-        broker = self._brokers.get(run_id)
+        broker = self._brokers.pop(run_id, None)
         if broker:
             broker.mark_finished()
-            logger.debug(f"Marked Redis broker for run {run_id} for cleanup")
+            logger.debug(f"Cleaned up Redis broker for run {run_id}")
 
     def remove_broker(self, run_id: str) -> None:
         broker = self._brokers.pop(run_id, None)

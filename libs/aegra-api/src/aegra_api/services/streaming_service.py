@@ -105,7 +105,11 @@ class StreamingService:
             if last_event_id:
                 last_sent_sequence = self._extract_event_sequence(last_event_id)
 
-            async for sse_event in self._replay_stored_events(run_id, last_event_id):
+            async for event_id, sse_event in self._replay_stored_events(run_id, last_event_id):
+                # Track the highest replayed sequence for live dedup
+                replayed_seq = self._extract_event_sequence(event_id)
+                if replayed_seq > last_sent_sequence:
+                    last_sent_sequence = replayed_seq
                 yield sse_event
 
             # Stream live events if run is still active
@@ -121,15 +125,19 @@ class StreamingService:
             logger.error(f"Error in stream_run_execution for run {run_id}: {e}")
             yield create_error_event(str(e))
 
-    async def _replay_stored_events(self, run_id: str, last_event_id: str | None) -> AsyncIterator[str]:
-        """Replay stored events from the broker's replay buffer."""
+    async def _replay_stored_events(self, run_id: str, last_event_id: str | None) -> AsyncIterator[tuple[str, str]]:
+        """Replay stored events from the broker's replay buffer.
+
+        Yields (event_id, sse_event) tuples so the caller can track
+        the highest replayed sequence for live deduplication.
+        """
         broker = broker_manager.get_or_create_broker(run_id)
         stored_events = await broker.replay(last_event_id)
 
         for event_id, raw_event in stored_events:
             sse_event = await self._convert_raw_to_sse(event_id, raw_event)
             if sse_event:
-                yield sse_event
+                yield event_id, sse_event
 
     async def _stream_live_events(self, run: Run, last_sent_sequence: int) -> AsyncIterator[str]:
         """Stream live events from broker."""

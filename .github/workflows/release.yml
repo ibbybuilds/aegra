@@ -97,8 +97,8 @@ jobs:
 
   # ---------------------------------------------------------------
   # Publish stage — sequential (API first, CLI depends on it)
-  # Each environment has a protection rule requiring manual approval,
-  # so you approve once and both publish back-to-back.
+  # Each environment (release-api, release-cli) has its own protection
+  # rule requiring separate manual approval before publishing.
   # ---------------------------------------------------------------
   publish-api:
     needs: [build-api]

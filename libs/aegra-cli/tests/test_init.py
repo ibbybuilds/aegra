@@ -153,12 +153,22 @@ class TestDockerGenerators:
 
     def test_docker_compose_has_restart_policy(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
-        assert compose.count("restart: unless-stopped") == 2
+        assert compose.count("restart: unless-stopped") == 3  # postgres + redis + api
 
-    def test_docker_compose_api_depends_on_postgres(self: TestDockerGenerators) -> None:
+    def test_docker_compose_has_redis(self: TestDockerGenerators) -> None:
+        compose = get_docker_compose("myapp")
+        assert "redis:" in compose
+        assert "myapp-redis" in compose
+        assert "redis:7-alpine" in compose
+        assert "REDIS_BROKER_ENABLED=true" in compose
+        assert "REDIS_URL=redis://redis:6379/0" in compose
+
+    def test_docker_compose_api_depends_on_postgres_and_redis(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
         assert "depends_on:" in compose
         assert "service_healthy" in compose
+        assert "postgres:" in compose
+        assert "redis:" in compose
 
     def test_dockerfile_installs_project(self: TestDockerGenerators) -> None:
         dockerfile = get_dockerfile()

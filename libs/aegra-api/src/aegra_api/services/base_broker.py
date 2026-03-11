@@ -6,28 +6,45 @@ from typing import Any
 
 
 class BaseRunBroker(ABC):
-    """Abstract base class for a run-specific event broker"""
+    """Abstract base class for a run-specific event broker.
+
+    Handles both live event broadcast and replay storage for SSE reconnection.
+    """
 
     @abstractmethod
-    async def put(self, event_id: str, payload: Any) -> None:
-        """Put an event into the broker queue"""
-        pass
+    async def put(self, event_id: str, payload: Any, *, resumable: bool = True) -> None:
+        """Publish an event to live subscribers and optionally store for replay.
+
+        Args:
+            event_id: Unique event identifier (format: {run_id}_event_{seq}).
+            payload: The event data (typically a tuple like ("values", {...})).
+            resumable: If True, store the event for replay on reconnect.
+        """
 
     @abstractmethod
     def aiter(self) -> AsyncIterator[tuple[str, Any]]:
-        """Async iterator yielding (event_id, payload) pairs"""
-        # Abstract async generator method; must be implemented by subclass
-        raise NotImplementedError("aiter method must be implemented by subclass")
+        """Async iterator yielding (event_id, payload) pairs."""
+        ...
+
+    @abstractmethod
+    async def replay(self, last_event_id: str | None) -> list[tuple[str, Any]]:
+        """Return stored events for replay on reconnect.
+
+        Args:
+            last_event_id: If provided, return events after this ID.
+                           If None, return all stored events.
+
+        Returns:
+            List of (event_id, payload) tuples in order.
+        """
 
     @abstractmethod
     def mark_finished(self) -> None:
-        """Mark this broker as finished"""
-        pass
+        """Mark this broker as finished."""
 
     @abstractmethod
     def is_finished(self) -> bool:
-        """Check if this broker is finished"""
-        pass
+        """Check if this broker is finished."""
 
 
 class BaseBrokerManager(ABC):
@@ -46,6 +63,11 @@ class BaseBrokerManager(ABC):
     @abstractmethod
     def cleanup_broker(self, run_id: str) -> None:
         """Clean up a broker for a run"""
+        pass
+
+    @abstractmethod
+    def remove_broker(self, run_id: str) -> None:
+        """Remove a broker completely"""
         pass
 
     @abstractmethod

@@ -23,6 +23,7 @@ from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
 from aegra_api.core.health import router as health_router
 from aegra_api.core.migrations import run_migrations_async
+from aegra_api.core.redis_manager import redis_manager
 from aegra_api.core.route_merger import (
     merge_exception_handlers,
     merge_lifespans,
@@ -30,7 +31,6 @@ from aegra_api.core.route_merger import (
 from aegra_api.middleware import ContentTypeFixMiddleware, StructLogMiddleware
 from aegra_api.models.errors import AgentProtocolError, get_error_type
 from aegra_api.observability.setup import setup_observability
-from aegra_api.services.event_store import event_store
 from aegra_api.services.langgraph_service import get_langgraph_service
 from aegra_api.settings import settings
 from aegra_api.utils.setup_logging import setup_logging
@@ -94,8 +94,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     langgraph_service = get_langgraph_service()
     await langgraph_service.initialize()
 
-    # Initialize event store cleanup task
-    await event_store.start_cleanup_task()
+    # Initialize Redis broker (if enabled)
+    if settings.redis.REDIS_BROKER_ENABLED:
+        await redis_manager.initialize()
 
     yield
 
@@ -104,8 +105,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         if not task.done():
             task.cancel()
 
-    # Stop event store cleanup task
-    await event_store.stop_cleanup_task()
+    # Close Redis broker (if enabled)
+    if settings.redis.REDIS_BROKER_ENABLED:
+        await redis_manager.close()
 
     await db_manager.close()
 

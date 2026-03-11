@@ -138,12 +138,26 @@ class ObservabilitySettings(EnvBase):
     PHOENIX_API_KEY: str | None = None
 
 
+class RedisSettings(EnvBase):
+    """Redis settings for the event broker.
+
+    When REDIS_BROKER_ENABLED is True, SSE streaming uses Redis pub/sub
+    instead of in-memory queues, enabling multi-instance deployments.
+    """
+
+    REDIS_BROKER_ENABLED: bool = False
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_CHANNEL_PREFIX: str = "aegra:run:"
+    REDIS_MAX_CONNECTIONS: int = 20
+
+
 class Settings:
     def __init__(self) -> None:
         self.app = AppSettings()
         self.db = DatabaseSettings()
         self.pool = PoolSettings()
         self.observability = ObservabilitySettings()
+        self.redis = RedisSettings()
 
 
 settings = Settings()

@@ -169,9 +169,9 @@ def get_docker_compose(slug: str) -> str:
         docker-compose.yml content string.
     """
     return f"""\
-# Docker Compose - PostgreSQL + API
-# aegra dev  -> docker compose up postgres -d  (database only)
-# aegra up   -> docker compose up --build      (full stack)
+# Docker Compose - PostgreSQL + Redis + API
+# aegra dev  -> docker compose up postgres -d  (database only, in-memory broker)
+# aegra up   -> docker compose up --build      (full stack, Redis broker)
 
 services:
   postgres:
@@ -192,6 +192,20 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: {slug}-redis
+    restart: unless-stopped
+    ports:
+      - "${{REDIS_PORT:-6379}}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   {slug}:
     build: .
     container_name: {slug}-api
@@ -208,8 +222,12 @@ services:
       - AEGRA_CONFIG=aegra.json
       - AUTH_TYPE=${{AUTH_TYPE:-noop}}
       - PORT=${{PORT:-2026}}
+      - REDIS_BROKER_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${{PORT:-2026}}/health || exit 1"]
@@ -221,6 +239,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
 """
 
 

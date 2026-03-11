@@ -26,7 +26,6 @@ from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
 from aegra_api.observability.span_enrichment import make_run_trace_context
-from aegra_api.services.broker import broker_manager
 from aegra_api.services.graph_streaming import stream_graph_events
 from aegra_api.services.langgraph_service import create_run_config, get_langgraph_service
 from aegra_api.services.streaming_service import streaming_service
@@ -994,11 +993,8 @@ async def execute_run_async(
                         # Create event tuple for broker/storage
                         event_tuple = (event_type, event_data)
 
-                        # Forward to broker for live consumers (already filtered by graph_streaming)
+                        # Forward to broker for live consumers and replay storage
                         await streaming_service.put_to_broker(run_id, event_id, event_tuple)
-
-                        # Store for replay (already filtered by graph_streaming)
-                        await streaming_service.store_event_from_raw(run_id, event_id, event_tuple)
 
                         # Check for interrupt
                         if isinstance(event_data, dict) and "__interrupt__" in event_data:
@@ -1009,18 +1005,15 @@ async def execute_run_async(
                             final_output = event_data
 
                     except Exception as event_error:
-                        # Error processing individual event - send error to frontend immediately
+                        # Error processing individual event - log and re-raise
+                        # Error signaling to broker is handled by the outermost except block
                         logger.error(f"[execute_run_async] error processing event for run_id={run_id}: {event_error}")
-                        error_type = type(event_error).__name__
-                        await streaming_service.signal_run_error(run_id, str(event_error), error_type)
                         raise
 
             except Exception as stream_error:
                 # Error during streaming (e.g., graph execution error)
-                # Send error to frontend before re-raising
+                # Re-raise to outermost except block which handles error signaling
                 logger.error(f"[execute_run_async] streaming error for run_id={run_id}: {stream_error}")
-                error_type = type(stream_error).__name__
-                await streaming_service.signal_run_error(run_id, str(stream_error), error_type)
                 raise
 
         if has_interrupt:
@@ -1055,12 +1048,9 @@ async def execute_run_async(
             raise RuntimeError(f"No database session available to update thread {thread_id} status") from None
         # Set thread status to "error" when run fails (matches API specification)
         await set_thread_status(session, thread_id, "error")
-        # Note: Error event already sent to broker in inner exception handler
-        # Only signal if broker still exists (cleanup not yet called)
-        broker = broker_manager.get_broker(run_id)
-        if broker and not broker.is_finished():
-            error_type = type(e).__name__
-            await streaming_service.signal_run_error(run_id, str(e), error_type)
+        # Signal error to broker so SSE consumers get the error event
+        error_type = type(e).__name__
+        await streaming_service.signal_run_error(run_id, str(e), error_type)
         # Don't re-raise: this runs as a background task (asyncio.create_task),
         # so re-raising causes "Task exception was never retrieved" warnings.
         # The error is already fully handled (run status, thread status, broker).

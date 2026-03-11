@@ -63,6 +63,10 @@ When you use `aegra dev` or `aegra up`, PostgreSQL is started automatically via 
 
 Docker is required for local development (`aegra dev` starts a PostgreSQL container). For production, you can either run everything in Docker (`aegra up`) or provide an external database and run with `aegra serve`.
 
+### Windows
+
+`aegra dev` and `aegra up` work on Windows. However, `aegra serve` (production mode without Docker) is not supported on Windows because psycopg requires `SelectorEventLoop` while Windows defaults to `ProactorEventLoop`. For production deployments, use Docker or a Linux server.
+
 ## Project structure
 
 After `aegra init`, your project looks like this:

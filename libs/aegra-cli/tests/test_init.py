@@ -165,10 +165,34 @@ class TestDockerGenerators:
 
     def test_docker_compose_api_depends_on_postgres_and_redis(self: TestDockerGenerators) -> None:
         compose = get_docker_compose("myapp")
-        assert "depends_on:" in compose
-        assert "service_healthy" in compose
-        assert "postgres:" in compose
-        assert "redis:" in compose
+        # Extract the api service's depends_on block by finding the section
+        # between "depends_on:" and the next 4-space-indented key
+        lines = compose.splitlines()
+        in_api_service = False
+        in_depends_on = False
+        depends_on_lines: list[str] = []
+        for line in lines:
+            stripped = line.rstrip()
+            # Detect api service block (container_name has the slug)
+            if "container_name: myapp-api" in stripped:
+                in_api_service = True
+            # Exit api service block on next top-level service (2-space indent with colon)
+            elif in_api_service and stripped and not stripped.startswith(" "):
+                in_api_service = False
+                in_depends_on = False
+            if in_api_service and stripped.strip() == "depends_on:":
+                in_depends_on = True
+                continue
+            if in_depends_on:
+                # depends_on entries are at 6+ spaces; a line at 4 spaces exits the block
+                if stripped and not stripped.startswith("      "):
+                    in_depends_on = False
+                else:
+                    depends_on_lines.append(stripped)
+        depends_on_block = "\n".join(depends_on_lines)
+        assert "postgres:" in depends_on_block, "API service should depend on postgres"
+        assert "redis:" in depends_on_block, "API service should depend on redis"
+        assert "service_healthy" in depends_on_block
 
     def test_dockerfile_installs_project(self: TestDockerGenerators) -> None:
         dockerfile = get_dockerfile()

@@ -184,7 +184,7 @@ class StreamingService:
         """Interrupt a running execution."""
         try:
             self._cancel_background_task(run_id)
-            await self.signal_run_error(run_id, "Run was interrupted")
+            await self.signal_run_cancelled(run_id)
             return True
         except Exception as e:
             logger.error(f"Error interrupting run {run_id}: {e}")

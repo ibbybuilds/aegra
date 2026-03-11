@@ -34,7 +34,7 @@ def downgrade() -> None:
         sa.Column("run_id", sa.Text(), nullable=False),
         sa.Column("seq", sa.Integer(), nullable=False),
         sa.Column("event", sa.Text(), nullable=False),
-        sa.Column("data", postgresql.JSONB(), nullable=True),
+        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column(
             "created_at",
             sa.TIMESTAMP(timezone=True),

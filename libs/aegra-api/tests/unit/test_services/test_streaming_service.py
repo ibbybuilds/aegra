@@ -288,19 +288,19 @@ class TestStreamingService:
             mock_task.cancel.assert_called_once()
 
     async def test_interrupt_run(self) -> None:
-        """Test run interruption cancels task and signals to broker"""
+        """Test run interruption cancels task and signals cancelled to broker"""
         service = StreamingService()
         run_id = "run-123"
 
         with (
             patch.object(service, "_cancel_background_task") as mock_cancel,
-            patch.object(service, "signal_run_error") as mock_signal,
+            patch.object(service, "signal_run_cancelled") as mock_signal,
         ):
             success = await service.interrupt_run(run_id)
 
             assert success is True
             mock_cancel.assert_called_once_with(run_id)
-            mock_signal.assert_awaited_with(run_id, "Run was interrupted")
+            mock_signal.assert_awaited_with(run_id)
 
     async def test_cancel_run(self) -> None:
         """Test run cancellation cancels task and signals to broker"""

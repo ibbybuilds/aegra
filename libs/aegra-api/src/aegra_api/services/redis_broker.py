@@ -122,6 +122,7 @@ class RedisRunBroker(BaseRunBroker):
                 yield event_id, payload
 
                 if isinstance(payload, tuple) and len(payload) >= 1 and payload[0] == "end":
+                    self._finished = True
                     break
         finally:
             await pubsub.unsubscribe(self._channel)

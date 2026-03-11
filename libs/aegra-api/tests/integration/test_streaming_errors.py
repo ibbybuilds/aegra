@@ -13,7 +13,8 @@ import pytest
 
 from aegra_api.api.runs import execute_run_async
 from aegra_api.models import User
-from aegra_api.services.broker import BrokerManager, RunBroker, broker_manager
+from aegra_api.services import streaming_service as streaming_service_module
+from aegra_api.services.broker import BrokerManager, RunBroker
 
 
 @pytest.mark.asyncio
@@ -32,18 +33,22 @@ class TestStreamingErrorHandling:
     def thread_id(self) -> str:
         return str(uuid4())
 
+    @pytest.fixture
+    def local_broker_manager(self, monkeypatch: pytest.MonkeyPatch) -> BrokerManager:
+        """Provide a fresh BrokerManager for each test, patched into the modules under test."""
+        manager = BrokerManager()
+        monkeypatch.setattr(streaming_service_module, "broker_manager", manager)
+        return manager
+
     async def test_error_during_event_processing_sent_to_frontend(
-        self, mock_user: User, run_id: str, thread_id: str
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
     ) -> None:
         """Test that errors during event processing are caught and sent immediately"""
         graph_id = "test-graph"
 
         # Create a broker to capture events
         broker = RunBroker(run_id)
-
-        # Store broker directly for testing
-        assert isinstance(broker_manager, BrokerManager)
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         # Mock graph that yields events, then fails during processing
         mock_graph = MagicMock()
@@ -111,7 +116,9 @@ class TestStreamingErrorHandling:
             assert "message" in error_event[1]
             assert "Graph execution failed" in str(error_event[1]["message"])
 
-    async def test_error_stored_for_replay(self, mock_user: User, run_id: str, thread_id: str) -> None:
+    async def test_error_stored_for_replay(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
         """Test that error events are stored in the broker's replay buffer"""
         graph_id = "test-graph"
 
@@ -120,9 +127,7 @@ class TestStreamingErrorHandling:
             raise RuntimeError("Storage test error")
 
         broker = RunBroker(run_id)
-
-        assert isinstance(broker_manager, BrokerManager)
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         with (
             patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
@@ -162,7 +167,9 @@ class TestStreamingErrorHandling:
             assert error_payload[1]["error"] == "RuntimeError"
             assert "Storage test error" in error_payload[1]["message"]
 
-    async def test_error_type_preserved(self, mock_user: User, run_id: str, thread_id: str) -> None:
+    async def test_error_type_preserved(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
         """Test that error type is correctly preserved and sent"""
         graph_id = "test-graph"
 
@@ -172,10 +179,7 @@ class TestStreamingErrorHandling:
             yield  # This will never be reached but makes it an async generator
 
         broker = RunBroker(run_id)
-
-        # Store broker directly for testing
-        assert isinstance(broker_manager, BrokerManager)
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         with (
             patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
@@ -225,7 +229,9 @@ class TestStreamingErrorHandling:
             assert error_event[1]["error"] == "ValueError"
             assert error_event[1]["message"] == "Type preservation test"
 
-    async def test_multiple_errors_only_send_once(self, mock_user: User, run_id: str, thread_id: str) -> None:
+    async def test_multiple_errors_only_send_once(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
         """Test that if error is caught in inner handler, outer handler doesn't duplicate"""
         graph_id = "test-graph"
 
@@ -234,10 +240,7 @@ class TestStreamingErrorHandling:
             raise KeyError("Single error test")
 
         broker = RunBroker(run_id)
-
-        # Store broker directly for testing
-        assert isinstance(broker_manager, BrokerManager)
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         with (
             patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,

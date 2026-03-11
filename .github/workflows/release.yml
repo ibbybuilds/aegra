@@ -20,6 +20,9 @@ env:
   PYTHON_VERSION: "3.12"
 
 jobs:
+  # ---------------------------------------------------------------
+  # Build stage — both packages build in parallel
+  # ---------------------------------------------------------------
   build-api:
     if: inputs.package == 'aegra-api' || inputs.package == 'both'
     runs-on: ubuntu-latest
@@ -56,40 +59,8 @@ jobs:
           path: libs/aegra-api/dist/
           if-no-files-found: error
 
-  publish-api:
-    needs: [build-api]
-    if: |
-      always() &&
-      needs.build-api.result == 'success' &&
-      (inputs.package == 'aegra-api' || inputs.package == 'both')
-    runs-on: ubuntu-latest
-    environment: release-api
-    permissions:
-      id-token: write  # Required for trusted publishing
-
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist-aegra-api
-          path: dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
-          verbose: true
-          print-hash: true
-          attestations: false
-
   build-cli:
-    # CLI depends on aegra-api, so when releasing both:
-    # - Wait for publish-api to succeed so pip can find aegra-api
-    # When releasing CLI only, we just need to check aegra-api is already on PyPI
-    needs: [publish-api]
-    if: |
-      always() &&
-      (inputs.package == 'aegra-cli' || inputs.package == 'both') &&
-      (inputs.package == 'aegra-cli' || needs.publish-api.result == 'success')
+    if: inputs.package == 'aegra-cli' || inputs.package == 'both'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-version.outputs.version }}
@@ -124,12 +95,43 @@ jobs:
           path: libs/aegra-cli/dist/
           if-no-files-found: error
 
+  # ---------------------------------------------------------------
+  # Publish stage — sequential (API first, CLI depends on it)
+  # Each environment (release-api, release-cli) has its own protection
+  # rule requiring separate manual approval before publishing.
+  # ---------------------------------------------------------------
+  publish-api:
+    needs: [build-api]
+    if: |
+      always() &&
+      needs.build-api.result == 'success' &&
+      (inputs.package == 'aegra-api' || inputs.package == 'both')
+    runs-on: ubuntu-latest
+    environment: release-api
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-aegra-api
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          verbose: true
+          print-hash: true
+          attestations: false
+
   publish-cli:
-    needs: [build-cli]
+    needs: [build-cli, publish-api]
     if: |
       always() &&
       needs.build-cli.result == 'success' &&
-      (inputs.package == 'aegra-cli' || inputs.package == 'both')
+      (inputs.package == 'aegra-cli' || inputs.package == 'both') &&
+      (inputs.package == 'aegra-cli' || needs.publish-api.result == 'success')
     runs-on: ubuntu-latest
     environment: release-cli
     permissions:
@@ -149,6 +151,9 @@ jobs:
           print-hash: true
           attestations: false
 
+  # ---------------------------------------------------------------
+  # GitHub Release — after all publishes complete
+  # ---------------------------------------------------------------
   create-release:
     needs: [build-api, build-cli, publish-api, publish-cli]
     if: |

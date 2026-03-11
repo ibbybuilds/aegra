@@ -141,9 +141,10 @@ class RedisRunBroker(BaseRunBroker):
                 data = json.loads(raw_messages[0])
                 payload = _deserialize_payload(data["payload"])
                 if isinstance(payload, tuple) and len(payload) >= 1 and payload[0] == "end":
+                    self._finished = True
                     return True
-        except RedisError:
-            pass
+        except RedisError as e:
+            logger.warning(f"Failed checking replay buffer for end event for run {self.run_id}: {e}")
         return False
 
     async def replay(self, last_event_id: str | None) -> list[tuple[str, Any]]:

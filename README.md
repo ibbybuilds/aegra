@@ -32,7 +32,7 @@ Aegra is a drop-in replacement for LangSmith Deployments. Use the same LangGraph
 
 ### Using the CLI (Recommended)
 
-**Prerequisites:** Python 3.11+, Docker (for PostgreSQL)
+**Prerequisites:** Python 3.12+, Docker (for PostgreSQL)
 
 ```bash
 pip install aegra-cli

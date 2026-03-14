@@ -145,6 +145,7 @@ aegra version           # Show version info
 - [FastAPI](https://fastapi.tiangolo.com/) - HTTP layer
 - [LangGraph](https://github.com/langchain-ai/langgraph) - State management & graph execution
 - [PostgreSQL](https://www.postgresql.org/) - Persistence & checkpoints
+- [Redis](https://redis.io/) - Job queue, SSE pub/sub, crash recovery
 - [OpenTelemetry](https://opentelemetry.io/) - Observability standard
 - [pgvector](https://github.com/pgvector/pgvector) - Vector embeddings
 

@@ -68,7 +68,7 @@ class TestStreamingService:
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
             mock_manager.get_or_create_broker.return_value = mock_broker
-            mock_manager.get_event_sequence = AsyncMock(return_value=0)
+            mock_manager.allocate_event_id = AsyncMock(return_value="run-123_event_1")
 
             await service.signal_run_cancelled(run_id)
 
@@ -107,7 +107,7 @@ class TestStreamingService:
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
             mock_manager.get_or_create_broker.return_value = mock_broker
-            mock_manager.get_event_sequence = AsyncMock(return_value=0)
+            mock_manager.allocate_event_id = AsyncMock(side_effect=["run-123_event_1", "run-123_event_2"])
 
             await service.signal_run_error(run_id, error_msg, error_type)
 
@@ -157,7 +157,7 @@ class TestStreamingService:
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
             mock_manager.get_or_create_broker.return_value = mock_broker
-            mock_manager.get_event_sequence = AsyncMock(return_value=0)
+            mock_manager.allocate_event_id = AsyncMock(side_effect=["run-123_event_1", "run-123_event_2"])
 
             await service.signal_run_error(run_id, error_msg)
 

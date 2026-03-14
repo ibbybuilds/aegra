@@ -103,15 +103,15 @@ class TestWaitForRunExceptionPaths:
         # Mock dependencies
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -189,15 +189,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -269,15 +269,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -336,15 +336,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -417,15 +417,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -499,15 +499,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -578,15 +578,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -639,14 +639,14 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
         ):
             # Graph list doesn't include assistant's graph
             mock_lg_service.return_value.list_graphs.return_value = ["other-graph"]
@@ -713,15 +713,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
@@ -792,15 +792,15 @@ class TestWaitForRunExceptionPaths:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs._validate_resume_command", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_preparation._validate_resume_command", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.resolve_assistant_id",
+                "aegra_api.services.run_preparation.resolve_assistant_id",
                 return_value="test-assistant",
             ),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.update_thread_metadata", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.uuid4", return_value=run_id),
+            patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
+            patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,

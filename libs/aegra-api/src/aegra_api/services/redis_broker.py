@@ -316,6 +316,26 @@ class RedisBrokerManager(BaseBrokerManager):
             logger.warning(f"Failed to read event counter for run {run_id}: {e}")
         return 0
 
+    async def allocate_event_id(self, run_id: str) -> str:
+        """Atomically allocate the next event sequence number and return the event_id.
+
+        Uses Redis INCR which is atomic — two concurrent callers will always
+        get different sequence numbers. This prevents the race condition where
+        get_event_sequence + 1 could return the same value to two callers.
+        """
+        counter_key = f"{self._counter_prefix}{run_id}"
+        try:
+            client = redis_manager.get_client()
+            seq = await client.incr(counter_key)  # type: ignore[invalid-await]
+            await client.expire(counter_key, _REPLAY_TTL_SECONDS)  # type: ignore[invalid-await]
+            return generate_event_id(run_id, int(seq))
+        except RedisError as e:
+            logger.warning(f"Failed to allocate event_id for run {run_id}: {e}")
+            # Fallback: use timestamp-based ID (unique but not sequential)
+            import time
+
+            return generate_event_id(run_id, int(time.time() * 1000))
+
     async def _listen_for_cancel_commands(self) -> None:
         """Background task: subscribe to cancel channel with reconnect backoff."""
         attempt = 0
@@ -371,8 +391,7 @@ class RedisBrokerManager(BaseBrokerManager):
 
         broker = self.get_or_create_broker(run_id)
         if not broker.is_finished():
-            counter = await self.get_event_sequence(run_id) + 1
-            event_id = generate_event_id(run_id, counter)
+            event_id = await self.allocate_event_id(run_id)
             await broker.put(event_id, ("end", {"status": "interrupted"}))
             self.cleanup_broker(run_id)
 

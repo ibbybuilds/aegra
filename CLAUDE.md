@@ -76,6 +76,12 @@ aegra/
 
 **Key principle:** LangGraph handles ALL state persistence and graph execution. FastAPI provides only HTTP/Agent Protocol compliance.
 
+### Run Execution Architecture
+- **Production mode** (`REDIS_BROKER_ENABLED=true`): Runs are dispatched via a Redis job queue (BLPOP). Workers run as concurrent asyncio tasks inside each instance (default: 3 workers x 10 jobs = 30 concurrent runs per instance). Lease-based crash recovery with heartbeat and reaper. Execution params stored in Postgres so workers can reconstruct jobs. OpenTelemetry trace context propagates across the Redis queue boundary.
+- **Dev mode** (`aegra dev`, `REDIS_BROKER_ENABLED=false`): Runs execute as in-process asyncio tasks via `LocalExecutor`. No Redis needed. SSE uses an in-memory broker.
+- Key files: `services/executor.py` (factory), `services/local_executor.py` (dev), `services/worker_executor.py` (prod), `services/lease_reaper.py` (crash recovery), `models/run_job.py` (serialized execution params).
+- See `docs/guides/worker-architecture.mdx` for the full architecture documentation.
+
 ## Development Rules
 
 ### Type Annotations (STRICT)
@@ -179,9 +185,21 @@ After implementing a feature or fixing a bug, **verify the work end-to-end again
    - **Custom verification script** (large responses or multi-step flows): write a Python script with `httpx` to call endpoints, parse responses, and assert results, then clean up
 4. **Cleanup** — `docker compose down` when done (unless user wants it kept running).
 
+#### E2E Testing in Both Modes
+Aegra has two execution modes (dev = LocalExecutor, prod = WorkerExecutor). E2E tests should pass in **both** modes. Use the Makefile targets:
+
+```bash
+make e2e-dev     # Dev mode (no Redis, in-process tasks)
+make e2e-prod    # Prod mode (Redis workers, lease recovery)
+make e2e-both    # Run both sequentially
+```
+
+Tests marked `@pytest.mark.prod_only` are skipped in dev mode (they require Redis workers). Multi-instance and stress tests in `tests/e2e/multi_instance/` are manual-only — run them explicitly when testing worker architecture or scaling changes.
+
 ### LLM Agent Anti-Patterns (IMPORTANT)
 These rules exist because AI agents repeatedly make these mistakes. Follow them carefully:
 
+- **Never pipe long command output through `tail`.** When running tests, builds, or any command where you need to see results, do NOT use `| tail -N` — the results you need will scroll past and be lost. Use `| grep "passed\|failed\|error"` to filter, or just let the full output show. If output is too long, use `| tail -30` with a generous line count, not `| tail -5`.
 - **Only modify code related to the task at hand.** Do not "helpfully" refactor, rename, or clean up adjacent code — this introduces breakage and scope creep.
 - **When tests fail, fix the ROOT CAUSE, not the symptom.** Do not delete failing assertions, weaken test conditions, or add workarounds to make tests pass. Investigate why the test fails and fix the underlying bug.
 - **NEVER add conditional logic that returns hardcoded values for specific test inputs.** This is cheating, not fixing.

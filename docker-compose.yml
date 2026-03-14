@@ -30,6 +30,8 @@ services:
       - PYTHONPATH=/app/src
       - REDIS_BROKER_ENABLED=true
       - REDIS_URL=redis://redis:6379/0
+      - WORKER_COUNT=3
+      - N_JOBS_PER_WORKER=10
     depends_on:
       postgres:
         condition: service_healthy

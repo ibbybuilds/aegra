@@ -90,3 +90,14 @@ class BaseBrokerManager(ABC):
         Used by signal methods (cancel, error) to generate the next event ID
         when they need to inject events into a run's stream.
         """
+
+    async def allocate_event_id(self, run_id: str) -> str:
+        """Atomically allocate the next event sequence number and return event_id.
+
+        Default implementation uses get_event_sequence + 1 (not atomic).
+        Redis backend overrides with atomic INCR.
+        """
+        from aegra_api.utils import generate_event_id
+
+        counter = await self.get_event_sequence(run_id) + 1
+        return generate_event_id(run_id, counter)

@@ -101,6 +101,7 @@ testpaths = ["tests"]
 markers = [
     "unit: unit tests",
     "e2e: end-to-end tests requiring a running server",
+    "prod_only: tests that require Redis workers (skipped in dev mode)",
 ]
 
 [dependency-groups]

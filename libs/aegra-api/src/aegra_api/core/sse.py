@@ -46,6 +46,7 @@ def get_sse_headers() -> dict[str, str]:
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "Content-Type": "text/event-stream",
+        "X-Accel-Buffering": "no",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Last-Event-ID",
     }

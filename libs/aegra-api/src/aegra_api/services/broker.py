@@ -14,7 +14,7 @@ import structlog
 from aegra_api.core.active_runs import active_runs
 from aegra_api.services.base_broker import BaseBrokerManager, BaseRunBroker
 from aegra_api.settings import settings
-from aegra_api.utils import extract_event_sequence, generate_event_id
+from aegra_api.utils import extract_event_sequence
 
 logger = structlog.getLogger(__name__)
 
@@ -139,8 +139,7 @@ class BrokerManager(BaseBrokerManager):
 
         broker = self.get_or_create_broker(run_id)
         if not broker.is_finished():
-            counter = await self.get_event_sequence(run_id) + 1
-            event_id = generate_event_id(run_id, counter)
+            event_id = await self.allocate_event_id(run_id)
             await broker.put(event_id, ("end", {"status": "interrupted"}))
             self.cleanup_broker(run_id)
 

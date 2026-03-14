@@ -120,7 +120,7 @@ class TestStatelessWaitForRun:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_service,
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_service,
             patch("aegra_api.api.stateless_runs._delete_thread_by_id", new_callable=AsyncMock),
         ):
             mock_service.return_value.list_graphs.return_value = ["test-graph"]
@@ -216,7 +216,7 @@ class TestStatelessWaitForRun:
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_service,
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_service,
             patch("aegra_api.api.runs.execute_run_async"),
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("asyncio.wait_for", new_callable=AsyncMock),
@@ -265,7 +265,7 @@ class TestStatelessStreamRun:
         client = make_client(app)
 
         with (
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_service,
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_service,
             patch("aegra_api.api.stateless_runs._delete_thread_by_id", new_callable=AsyncMock),
         ):
             mock_service.return_value.list_graphs.return_value = ["test-graph"]
@@ -322,7 +322,7 @@ class TestStatelessCreateRun:
         client = make_client(app)
 
         with (
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_service,
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_service,
             patch("aegra_api.api.stateless_runs._delete_thread_by_id", new_callable=AsyncMock),
         ):
             mock_service.return_value.list_graphs.return_value = ["test-graph"]

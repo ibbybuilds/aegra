@@ -113,6 +113,16 @@ class Run(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
 
+    # Worker execution: stores RunJob params so workers can reconstruct
+    # the job from the database after receiving a run_id via Redis.
+    execution_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Lease-based crash recovery: tracks which worker owns a run and
+    # when the lease expires. A background reaper re-enqueues runs
+    # whose leases have expired (worker crashed).
+    claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
     # Indexes for performance
     __table_args__ = (
         Index("idx_runs_thread_id", "thread_id"),
@@ -120,6 +130,7 @@ class Run(Base):
         Index("idx_runs_status", "status"),
         Index("idx_runs_assistant_id", "assistant_id"),
         Index("idx_runs_created_at", "created_at"),
+        Index("idx_runs_lease_reaper", "status", "lease_expires_at"),
     )
 
 

@@ -17,7 +17,6 @@ from aegra_api.api.stateless_runs import router as stateless_runs_router
 from aegra_api.api.store import router as store_router
 from aegra_api.api.threads import router as threads_router
 from aegra_api.config import HttpConfig, get_config_dir, load_http_config
-from aegra_api.core.active_runs import active_runs
 from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
@@ -32,7 +31,9 @@ from aegra_api.middleware import ContentTypeFixMiddleware, StructLogMiddleware
 from aegra_api.models.errors import AgentProtocolError, get_error_type
 from aegra_api.observability.setup import setup_observability
 from aegra_api.services.broker import broker_manager
+from aegra_api.services.executor import executor
 from aegra_api.services.langgraph_service import get_langgraph_service
+from aegra_api.services.lease_reaper import lease_reaper
 from aegra_api.settings import settings
 from aegra_api.utils.setup_logging import setup_logging
 
@@ -99,14 +100,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Start broker manager (cleanup task for in-memory, cancel listener for Redis)
     await broker_manager.start()
 
+    # Start executor (spawns worker coroutines when Redis is enabled)
+    await executor.start()
+
+    # Start lease reaper (recovers crashed worker runs, Redis mode only)
+    if settings.redis.REDIS_BROKER_ENABLED:
+        await lease_reaper.start()
+
     yield
 
-    # Shutdown: Stop broker manager before closing Redis (uses the connection)
+    # Shutdown order: reaper → executor (drains jobs) → broker → Redis → DB
+    if settings.redis.REDIS_BROKER_ENABLED:
+        await lease_reaper.stop()
+    await executor.stop()
     await broker_manager.stop()
-
-    for task in active_runs.values():
-        if not task.done():
-            task.cancel()
 
     # Close Redis broker (if enabled)
     if settings.redis.REDIS_BROKER_ENABLED:

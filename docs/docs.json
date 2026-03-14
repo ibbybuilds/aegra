@@ -70,7 +70,8 @@
               "guides/custom-routes",
               "guides/dependencies",
               "guides/observability",
-              "guides/deployment"
+              "guides/deployment",
+              "guides/worker-architecture"
             ]
           },
           {

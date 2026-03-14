@@ -106,11 +106,11 @@ class DatabaseSettings(EnvBase):
 class PoolSettings(EnvBase):
     """Connection pool settings for SQLAlchemy and LangGraph."""
 
-    SQLALCHEMY_POOL_SIZE: int = 2
-    SQLALCHEMY_MAX_OVERFLOW: int = 0
+    SQLALCHEMY_POOL_SIZE: int = 5
+    SQLALCHEMY_MAX_OVERFLOW: int = 10
 
-    LANGGRAPH_MIN_POOL_SIZE: int = 1
-    LANGGRAPH_MAX_POOL_SIZE: int = 6
+    LANGGRAPH_MIN_POOL_SIZE: int = 2
+    LANGGRAPH_MAX_POOL_SIZE: int = 10
 
 
 class ObservabilitySettings(EnvBase):
@@ -151,6 +151,33 @@ class RedisSettings(EnvBase):
     REDIS_MAX_CONNECTIONS: int = 20
 
 
+class WorkerSettings(EnvBase):
+    """Worker configuration for background graph execution.
+
+    When REDIS_BROKER_ENABLED is True, runs are dispatched to worker
+    coroutines via a Redis List job queue instead of local asyncio tasks.
+    Each worker loop dequeues run_ids from Redis and spawns up to
+    N_JOBS_PER_WORKER concurrent asyncio tasks for graph execution.
+    """
+
+    WORKER_COUNT: int = 3
+    N_JOBS_PER_WORKER: int = 10
+    WORKER_QUEUE_KEY: str = "aegra:jobs"
+    WORKER_DRAIN_TIMEOUT: float = 30.0
+    BG_JOB_TIMEOUT_SECS: int = 3600
+    BG_JOB_MAX_RETRIES: int = 3
+
+    # Lease-based crash recovery.
+    # The lease must be long enough that a healthy worker NEVER loses it.
+    # Safety margin = LEASE / HEARTBEAT = 60/10 = 6 missed heartbeats
+    # before expiry. A single missed heartbeat (DB pool contention, GC)
+    # should never cause lease loss.
+    LEASE_DURATION_SECONDS: int = 60
+    HEARTBEAT_INTERVAL_SECONDS: int = 10
+    REAPER_INTERVAL_SECONDS: int = 20
+    POSTGRES_POLL_INTERVAL_SECONDS: int = 5
+
+
 class Settings:
     def __init__(self) -> None:
         self.app = AppSettings()
@@ -158,6 +185,7 @@ class Settings:
         self.pool = PoolSettings()
         self.observability = ObservabilitySettings()
         self.redis = RedisSettings()
+        self.worker = WorkerSettings()
 
 
 settings = Settings()

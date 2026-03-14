@@ -550,7 +550,7 @@ class TestRedisBrokerManager:
         with (
             patch.dict("aegra_api.core.active_runs.active_runs", {"run-123": mock_task}, clear=True),
             patch.object(manager, "get_or_create_broker", return_value=mock_broker),
-            patch.object(manager, "get_event_sequence", new_callable=AsyncMock, return_value=5),
+            patch.object(manager, "allocate_event_id", new_callable=AsyncMock, return_value="run-123_event_6"),
         ):
             await manager._execute_cancel("run-123")
 

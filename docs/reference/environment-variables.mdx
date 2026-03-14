@@ -97,6 +97,34 @@ Aegra uses two connection pools: one for SQLAlchemy (metadata) and one for LangG
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `TOGETHER_API_KEY` | Together AI API key |
 
+## Redis
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_BROKER_ENABLED` | `false` | Enable Redis for multi-instance SSE streaming and worker job dispatch |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `REDIS_CHANNEL_PREFIX` | `aegra:run:` | Prefix for Redis pub/sub channels |
+| `REDIS_MAX_CONNECTIONS` | `20` | Maximum Redis connection pool size |
+
+## Workers
+
+When `REDIS_BROKER_ENABLED=true`, runs are dispatched via a Redis job queue (BLPOP) and executed by concurrent asyncio worker tasks. Each instance runs multiple worker loops, each with a semaphore limiting concurrent jobs. Workers use lease-based crash recovery with heartbeats and a reaper process. See the [worker architecture guide](/guides/worker-architecture) for the full design.
+
+In dev mode (`REDIS_BROKER_ENABLED=false`), runs execute as in-process asyncio tasks with no Redis required.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKER_COUNT` | `3` | Number of worker loops per instance |
+| `N_JOBS_PER_WORKER` | `10` | Maximum concurrent runs per worker loop |
+| `BG_JOB_TIMEOUT_SECS` | `3600` | Maximum execution time per run (seconds) |
+| `LEASE_DURATION_SECONDS` | `30` | Lease TTL before a crashed run is reclaimed |
+| `HEARTBEAT_INTERVAL_SECONDS` | `10` | How often workers extend their lease |
+| `REAPER_INTERVAL_SECONDS` | `15` | How often the reaper scans for expired leases |
+| `POSTGRES_POLL_INTERVAL_SECONDS` | `5` | Fallback poll interval when Redis is unavailable |
+| `WORKER_DRAIN_TIMEOUT` | `30.0` | Graceful shutdown wait time (seconds) |
+
+Total capacity per instance = `WORKER_COUNT` x `N_JOBS_PER_WORKER` (default: 30 concurrent runs).
+
 ## Observability (OpenTelemetry)
 
 | Variable | Default | Description |

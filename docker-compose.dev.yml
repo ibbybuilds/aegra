@@ -1,0 +1,18 @@
+# Dev mode override — disables Redis, uses in-process executor.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# This runs Aegra with LocalExecutor (asyncio.create_task) and
+# in-memory broker — same as `aegra dev` but inside Docker.
+
+services:
+  aegra:
+    environment:
+      - REDIS_BROKER_ENABLED=false
+      - REDIS_URL=redis://localhost:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Keep Redis running but Aegra won't use it (REDIS_BROKER_ENABLED=false).
+  # This avoids compose dependency issues while still allowing the same
+  # docker-compose.yml base.

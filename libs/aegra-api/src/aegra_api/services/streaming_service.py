@@ -10,7 +10,7 @@ from aegra_api.core.sse import create_error_event
 from aegra_api.models import Run
 from aegra_api.services.broker import broker_manager
 from aegra_api.services.event_converter import EventConverter
-from aegra_api.utils import extract_event_sequence, generate_event_id
+from aegra_api.utils import extract_event_sequence
 
 logger = structlog.getLogger(__name__)
 
@@ -59,10 +59,7 @@ class StreamingService:
         if broker.is_finished():
             return
 
-        counter = await broker_manager.get_event_sequence(run_id) + 1
-        self.event_counters[run_id] = counter
-        event_id = generate_event_id(run_id, counter)
-
+        event_id = await broker_manager.allocate_event_id(run_id)
         await broker.put(event_id, ("end", {"status": "interrupted"}))
         broker_manager.cleanup_broker(run_id)
 
@@ -76,17 +73,11 @@ class StreamingService:
         if broker.is_finished():
             return
 
-        counter = await broker_manager.get_event_sequence(run_id) + 1
-        self.event_counters[run_id] = counter
-        error_event_id = generate_event_id(run_id, counter)
-
+        error_event_id = await broker_manager.allocate_event_id(run_id)
         error_payload = {"error": error_type, "message": error_message}
-
         await broker.put(error_event_id, ("error", error_payload))
 
-        counter += 1
-        self.event_counters[run_id] = counter
-        end_event_id = generate_event_id(run_id, counter)
+        end_event_id = await broker_manager.allocate_event_id(run_id)
         await broker.put(end_event_id, ("end", {"status": "error"}))
         broker_manager.cleanup_broker(run_id)
 

@@ -29,7 +29,7 @@ class StreamingService:
     def _next_event_counter(self, run_id: str, event_id: str) -> int:
         """Update and return the next event counter for a run."""
         try:
-            idx = self._extract_event_sequence(event_id)
+            idx = extract_event_sequence(event_id)
             current = self.event_counters.get(run_id, 0)
             if idx > current:
                 self.event_counters[run_id] = idx
@@ -50,12 +50,16 @@ class StreamingService:
         await broker.put(event_id, raw_event)
 
     async def signal_run_cancelled(self, run_id: str) -> None:
-        """Signal that a run was cancelled."""
-        broker = broker_manager.get_broker(run_id)
-        if broker is None or broker.is_finished():
+        """Signal that a run was cancelled.
+
+        Uses get_or_create_broker so this works cross-instance: any instance
+        can signal cancellation since the broker is backed by Redis.
+        """
+        broker = broker_manager.get_or_create_broker(run_id)
+        if broker.is_finished():
             return
 
-        counter = self.event_counters.get(run_id, 0) + 1
+        counter = await broker_manager.get_event_sequence(run_id) + 1
         self.event_counters[run_id] = counter
         event_id = generate_event_id(run_id, counter)
 
@@ -66,14 +70,13 @@ class StreamingService:
         """Signal that a run encountered an error.
 
         Sends a proper 'error' event to the broker followed by an 'end' event.
-        Uses get_broker (not get_or_create) to avoid creating a new broker for
-        a run that already finished, which would cause duplicate error events.
+        Uses get_or_create_broker so this works cross-instance.
         """
-        broker = broker_manager.get_broker(run_id)
-        if broker is None or broker.is_finished():
+        broker = broker_manager.get_or_create_broker(run_id)
+        if broker.is_finished():
             return
 
-        counter = self.event_counters.get(run_id, 0) + 1
+        counter = await broker_manager.get_event_sequence(run_id) + 1
         self.event_counters[run_id] = counter
         error_event_id = generate_event_id(run_id, counter)
 
@@ -87,10 +90,6 @@ class StreamingService:
         await broker.put(end_event_id, ("end", {"status": "error"}))
         broker_manager.cleanup_broker(run_id)
 
-    def _extract_event_sequence(self, event_id: str) -> int:
-        """Extract numeric sequence from event_id format: {run_id}_event_{sequence}."""
-        return extract_event_sequence(event_id)
-
     async def stream_run_execution(
         self,
         run: Run,
@@ -103,11 +102,11 @@ class StreamingService:
             # Replay stored events first
             last_sent_sequence = 0
             if last_event_id:
-                last_sent_sequence = self._extract_event_sequence(last_event_id)
+                last_sent_sequence = extract_event_sequence(last_event_id)
 
             async for event_id, sse_event in self._replay_stored_events(run_id, last_event_id):
                 # Track the highest replayed sequence for live dedup
-                replayed_seq = self._extract_event_sequence(event_id)
+                replayed_seq = extract_event_sequence(event_id)
                 if replayed_seq > last_sent_sequence:
                     last_sent_sequence = replayed_seq
                 yield sse_event
@@ -119,7 +118,7 @@ class StreamingService:
         except asyncio.CancelledError:
             logger.debug(f"Stream cancelled for run {run_id}")
             if cancel_on_disconnect:
-                self._cancel_background_task(run_id)
+                await broker_manager.request_cancel(run_id, "cancel")
             raise
         except Exception as e:
             logger.error(f"Error in stream_run_execution for run {run_id}: {e}")
@@ -155,7 +154,7 @@ class StreamingService:
 
         async for event_id, raw_event in broker.aiter():
             # Skip duplicates that were already replayed
-            current_sequence = self._extract_event_sequence(event_id)
+            current_sequence = extract_event_sequence(event_id)
             if current_sequence <= last_sent_sequence:
                 continue
 
@@ -164,45 +163,25 @@ class StreamingService:
                 yield sse_event
                 last_sent_sequence = current_sequence
 
-    def _cancel_background_task(self, run_id: str) -> bool:
-        """Cancel the asyncio task for a run."""
-        try:
-            from aegra_api.api.runs import active_runs
-
-            task = active_runs.get(run_id)
-            if task and not task.done():
-                logger.info(f"Cancelling asyncio task for run {run_id}")
-                task.cancel()
-                return True
-            elif task and task.done():
-                logger.debug(f"Task for run {run_id} already completed")
-                return False
-            else:
-                logger.debug(f"No active task found for run {run_id}")
-                return False
-        except Exception as e:
-            logger.warning(f"Failed to cancel background task for run {run_id}: {e}")
-            return False
-
-    async def _convert_raw_to_sse(self, event_id: str, raw_event: Any) -> str | None:
-        """Convert a raw event from broker to SSE format."""
-        return self.event_converter.convert_raw_to_sse(event_id, raw_event)
-
     async def interrupt_run(self, run_id: str) -> bool:
-        """Interrupt a running execution."""
+        """Interrupt a running execution.
+
+        Delegates to broker_manager for cross-instance support via Redis pub/sub.
+        """
         try:
-            self._cancel_background_task(run_id)
-            await self.signal_run_cancelled(run_id)
+            await broker_manager.request_cancel(run_id, "interrupt")
             return True
         except Exception as e:
             logger.error(f"Error interrupting run {run_id}: {e}")
             return False
 
     async def cancel_run(self, run_id: str) -> bool:
-        """Cancel a pending or running execution."""
+        """Cancel a pending or running execution.
+
+        Delegates to broker_manager for cross-instance support via Redis pub/sub.
+        """
         try:
-            self._cancel_background_task(run_id)
-            await self.signal_run_cancelled(run_id)
+            await broker_manager.request_cancel(run_id, "cancel")
             return True
         except Exception as e:
             logger.error(f"Error cancelling run {run_id}: {e}")
@@ -216,6 +195,10 @@ class StreamingService:
     async def cleanup_run(self, run_id: str) -> None:
         """Clean up streaming resources for a run."""
         broker_manager.cleanup_broker(run_id)
+
+    async def _convert_raw_to_sse(self, event_id: str, raw_event: Any) -> str | None:
+        """Convert a raw event from broker to SSE format."""
+        return self.event_converter.convert_raw_to_sse(event_id, raw_event)
 
 
 # Global streaming service instance

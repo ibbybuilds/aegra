@@ -14,6 +14,7 @@ from langgraph.types import Command, Send
 from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_ctx import with_auth_ctx
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
@@ -41,9 +42,7 @@ logger = structlog.getLogger(__name__)
 serializer = GeneralSerializer()
 
 
-# NOTE: We keep only an in-memory task registry for asyncio.Task handles.
-# All run metadata/state is persisted via ORM.
-active_runs: dict[str, asyncio.Task] = {}
+# active_runs is imported from aegra_api.core.active_runs (dependency-free module)
 
 # Default stream modes for background run execution
 DEFAULT_STREAM_MODES = ["values"]

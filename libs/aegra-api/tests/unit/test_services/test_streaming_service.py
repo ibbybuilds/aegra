@@ -67,7 +67,8 @@ class TestStreamingService:
         mock_broker.put = AsyncMock()
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_broker.return_value = mock_broker
+            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_event_sequence = AsyncMock(return_value=0)
 
             await service.signal_run_cancelled(run_id)
 
@@ -79,12 +80,15 @@ class TestStreamingService:
             # Should cleanup broker
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
-    async def test_signal_run_cancelled_skips_when_no_broker(self) -> None:
-        """Test that signal_run_cancelled is a no-op when broker doesn't exist"""
+    async def test_signal_run_cancelled_skips_when_finished(self) -> None:
+        """Test that signal_run_cancelled is a no-op when broker is finished"""
         service = StreamingService()
 
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = True
+
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_broker.return_value = None
+            mock_manager.get_or_create_broker.return_value = mock_broker
 
             await service.signal_run_cancelled("run-123")
 
@@ -102,7 +106,8 @@ class TestStreamingService:
         mock_broker.put = AsyncMock()
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_broker.return_value = mock_broker
+            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_event_sequence = AsyncMock(return_value=0)
 
             await service.signal_run_error(run_id, error_msg, error_type)
 
@@ -126,12 +131,15 @@ class TestStreamingService:
             # Should cleanup broker
             mock_manager.cleanup_broker.assert_called_with(run_id)
 
-    async def test_signal_run_error_skips_when_no_broker(self) -> None:
-        """Test that signal_run_error is a no-op when broker doesn't exist"""
+    async def test_signal_run_error_skips_when_finished(self) -> None:
+        """Test that signal_run_error is a no-op when broker is finished"""
         service = StreamingService()
 
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = True
+
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_broker.return_value = None
+            mock_manager.get_or_create_broker.return_value = mock_broker
 
             await service.signal_run_error("run-123", "error msg")
 
@@ -148,7 +156,8 @@ class TestStreamingService:
         mock_broker.put = AsyncMock()
 
         with patch("aegra_api.services.streaming_service.broker_manager") as mock_manager:
-            mock_manager.get_broker.return_value = mock_broker
+            mock_manager.get_or_create_broker.return_value = mock_broker
+            mock_manager.get_event_sequence = AsyncMock(return_value=0)
 
             await service.signal_run_error(run_id, error_msg)
 
@@ -328,47 +337,29 @@ class TestStreamingService:
             assert len(events) == 4
             assert events == ["sse5", "sse6", "sse7", "sse8"]
 
-    async def test_cancel_background_task(self) -> None:
-        """Test cancelling background task"""
+    async def test_interrupt_run_delegates_to_broker_manager(self) -> None:
+        """Test run interruption delegates to broker_manager"""
         service = StreamingService()
         run_id = "run-123"
 
-        mock_task = MagicMock()
-        mock_task.done.return_value = False
-
-        with patch.dict("aegra_api.api.runs.active_runs", {run_id: mock_task}, clear=True):
-            service._cancel_background_task(run_id)
-            mock_task.cancel.assert_called_once()
-
-    async def test_interrupt_run(self) -> None:
-        """Test run interruption cancels task and signals cancelled to broker"""
-        service = StreamingService()
-        run_id = "run-123"
-
-        with (
-            patch.object(service, "_cancel_background_task") as mock_cancel,
-            patch.object(service, "signal_run_cancelled") as mock_signal,
-        ):
+        with patch("aegra_api.services.streaming_service.broker_manager") as mock_bm:
+            mock_bm.request_cancel = AsyncMock()
             success = await service.interrupt_run(run_id)
 
             assert success is True
-            mock_cancel.assert_called_once_with(run_id)
-            mock_signal.assert_awaited_with(run_id)
+            mock_bm.request_cancel.assert_awaited_once_with(run_id, "interrupt")
 
-    async def test_cancel_run(self) -> None:
-        """Test run cancellation cancels task and signals to broker"""
+    async def test_cancel_run_delegates_to_broker_manager(self) -> None:
+        """Test run cancellation delegates to broker_manager"""
         service = StreamingService()
         run_id = "run-123"
 
-        with (
-            patch.object(service, "_cancel_background_task") as mock_cancel,
-            patch.object(service, "signal_run_cancelled") as mock_signal,
-        ):
+        with patch("aegra_api.services.streaming_service.broker_manager") as mock_bm:
+            mock_bm.request_cancel = AsyncMock()
             success = await service.cancel_run(run_id)
 
             assert success is True
-            mock_cancel.assert_called_once_with(run_id)
-            mock_signal.assert_awaited_with(run_id)
+            mock_bm.request_cancel.assert_awaited_once_with(run_id, "cancel")
 
     async def test_is_run_streaming(self) -> None:
         """Test fetching if run is streaming"""

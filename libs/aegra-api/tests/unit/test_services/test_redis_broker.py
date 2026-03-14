@@ -60,7 +60,12 @@ class TestRedisRunBroker:
     """Test RedisRunBroker class"""
 
     def _make_broker(self, run_id: str = "run-123") -> RedisRunBroker:
-        return RedisRunBroker(run_id, f"aegra:run:{run_id}", f"aegra:run:cache:{run_id}")
+        return RedisRunBroker(
+            run_id,
+            f"aegra:run:{run_id}",
+            f"aegra:run:cache:{run_id}",
+            f"aegra:run:counter:{run_id}",
+        )
 
     @pytest.mark.asyncio
     async def test_put_publishes_and_caches(self) -> None:
@@ -93,9 +98,10 @@ class TestRedisRunBroker:
             assert cache_key == "aegra:run:cache:run-123"
             assert json.loads(cached_msg) == data
 
-            # Should trim and set TTL in pipeline
+            # Should trim, set TTL, and increment counter in pipeline
             mock_pipe.ltrim.assert_called_once()
-            mock_pipe.expire.assert_called_once()
+            mock_pipe.expire.assert_called()
+            mock_pipe.incr.assert_called_once_with("aegra:run:counter:run-123")
             mock_pipe.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -418,7 +424,7 @@ class TestRedisBrokerManager:
 
         assert retrieved is created
 
-    def test_get_nonexistent_broker(self) -> None:
+    def test_get_nonexistent_broker_returns_none(self) -> None:
         manager = self._make_manager()
         broker = manager.get_broker("nonexistent")
 
@@ -430,30 +436,145 @@ class TestRedisBrokerManager:
         manager.cleanup_broker("run-123")
 
         assert broker.is_finished()
-        # Broker should be removed from the manager after cleanup
-        assert manager.get_broker("run-123") is None
+        assert "run-123" not in manager._brokers
 
     def test_remove_broker(self) -> None:
         manager = self._make_manager()
         manager.get_or_create_broker("run-123")
         manager.remove_broker("run-123")
 
-        assert manager.get_broker("run-123") is None
+        assert "run-123" not in manager._brokers
 
     def test_remove_nonexistent_broker(self) -> None:
         manager = self._make_manager()
         manager.remove_broker("nonexistent")
 
-    @pytest.mark.asyncio
-    async def test_cleanup_task_is_noop(self) -> None:
-        manager = self._make_manager()
-        await manager.start_cleanup_task()
-        await manager.stop_cleanup_task()
-
-    def test_broker_has_cache_key(self) -> None:
-        """Test that created brokers have correct cache key"""
+    def test_broker_has_correct_keys(self) -> None:
+        """Test that created brokers have correct cache and counter keys"""
         manager = self._make_manager()
         broker = manager.get_or_create_broker("run-123")
 
         assert broker._cache_key == "aegra:run:cache:run-123"
         assert broker._channel == "aegra:run:run-123"
+        assert broker._counter_key == "aegra:run:counter:run-123"
+
+    @pytest.mark.asyncio
+    async def test_get_event_sequence_reads_from_redis(self) -> None:
+        """Test that get_event_sequence reads the INCR counter from Redis"""
+        manager = self._make_manager()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = "42"
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+
+            result = await manager.get_event_sequence("run-123")
+
+        assert result == 42
+        mock_client.get.assert_awaited_once_with("aegra:run:counter:run-123")
+
+    @pytest.mark.asyncio
+    async def test_get_event_sequence_returns_zero_when_no_counter(self) -> None:
+        """Test that get_event_sequence returns 0 when no counter exists"""
+        manager = self._make_manager()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = None
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+
+            result = await manager.get_event_sequence("run-123")
+
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_get_event_sequence_handles_redis_error(self) -> None:
+        """Test that get_event_sequence returns 0 on Redis error"""
+        manager = self._make_manager()
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = RedisConnectionError("Redis down")
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+
+            result = await manager.get_event_sequence("run-123")
+
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_request_cancel_publishes_to_redis(self) -> None:
+        """Test that request_cancel publishes cancel command to Redis"""
+        manager = self._make_manager()
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock()
+
+        with patch("aegra_api.services.redis_broker.redis_manager") as mock_rm:
+            mock_rm.get_client.return_value = mock_client
+
+            await manager.request_cancel("run-123", "cancel")
+
+            mock_client.publish.assert_awaited_once()
+            channel, message = mock_client.publish.call_args[0]
+            assert channel == "aegra:run:cancel"
+            payload = json.loads(message)
+            assert payload == {"run_id": "run-123", "action": "cancel"}
+
+    @pytest.mark.asyncio
+    async def test_request_cancel_falls_back_on_redis_error(self) -> None:
+        """Test that request_cancel falls back to local execution on Redis error"""
+        manager = self._make_manager()
+        mock_client = MagicMock()
+        mock_client.publish = AsyncMock(side_effect=RedisConnectionError("Redis down"))
+
+        with (
+            patch("aegra_api.services.redis_broker.redis_manager") as mock_rm,
+            patch.object(manager, "_execute_cancel", new_callable=AsyncMock) as mock_exec,
+        ):
+            mock_rm.get_client.return_value = mock_client
+
+            await manager.request_cancel("run-123", "cancel")
+
+            mock_exec.assert_awaited_once_with("run-123")
+
+    @pytest.mark.asyncio
+    async def test_execute_cancel_cancels_local_task(self) -> None:
+        """Test that _execute_cancel cancels a locally-owned task"""
+        manager = self._make_manager()
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+
+        mock_broker = MagicMock()
+        mock_broker.is_finished.return_value = False
+        mock_broker.put = AsyncMock()
+
+        with (
+            patch.dict("aegra_api.core.active_runs.active_runs", {"run-123": mock_task}, clear=True),
+            patch.object(manager, "get_or_create_broker", return_value=mock_broker),
+            patch.object(manager, "get_event_sequence", new_callable=AsyncMock, return_value=5),
+        ):
+            await manager._execute_cancel("run-123")
+
+            mock_task.cancel.assert_called_once()
+            mock_broker.put.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_cancel_ignores_missing_task(self) -> None:
+        """Test that _execute_cancel does nothing when task not found locally"""
+        manager = self._make_manager()
+
+        with patch.dict("aegra_api.core.active_runs.active_runs", {}, clear=True):
+            await manager._execute_cancel("run-123")
+            # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_start_and_stop(self) -> None:
+        """Test start creates listener task and stop cancels it"""
+        manager = self._make_manager()
+
+        with patch.object(manager, "_listen_for_cancel_commands", new_callable=AsyncMock):
+            await manager.start()
+            assert manager._running is True
+            assert manager._listener_task is not None
+
+            await manager.stop()
+            assert manager._running is False

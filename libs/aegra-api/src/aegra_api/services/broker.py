@@ -11,8 +11,10 @@ from typing import Any
 
 import structlog
 
+from aegra_api.core.active_runs import active_runs
 from aegra_api.services.base_broker import BaseBrokerManager, BaseRunBroker
 from aegra_api.settings import settings
+from aegra_api.utils import extract_event_sequence, generate_event_id
 
 logger = structlog.getLogger(__name__)
 
@@ -92,7 +94,7 @@ class BrokerManager(BaseBrokerManager):
 
     def __init__(self) -> None:
         self._brokers: dict[str, RunBroker] = {}
-        self._cleanup_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task[None] | None = None
 
     def get_or_create_broker(self, run_id: str) -> RunBroker:
         if run_id not in self._brokers:
@@ -114,15 +116,44 @@ class BrokerManager(BaseBrokerManager):
             del self._brokers[run_id]
             logger.debug(f"Removed broker for run {run_id}")
 
-    async def start_cleanup_task(self) -> None:
+    async def start(self) -> None:
+        """Start the periodic cleanup task."""
         if self._cleanup_task is None or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(self._cleanup_old_brokers())
 
-    async def stop_cleanup_task(self) -> None:
+    async def stop(self) -> None:
+        """Stop the periodic cleanup task."""
         if self._cleanup_task and not self._cleanup_task.done():
             self._cleanup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
+
+    async def request_cancel(self, run_id: str, action: str = "cancel") -> None:
+        """Cancel a run locally by cancelling its asyncio task."""
+        task = active_runs.get(run_id)
+        if task is None or task.done():
+            return
+
+        logger.info(f"Executing {action} for run {run_id} (local task)")
+        task.cancel()
+
+        broker = self.get_or_create_broker(run_id)
+        if not broker.is_finished():
+            counter = await self.get_event_sequence(run_id) + 1
+            event_id = generate_event_id(run_id, counter)
+            await broker.put(event_id, ("end", {"status": "interrupted"}))
+            self.cleanup_broker(run_id)
+
+    async def get_event_sequence(self, run_id: str) -> int:
+        """Derive event sequence from the replay buffer length."""
+        broker = self._brokers.get(run_id)
+        if broker and broker._replay_buffer:
+            last_event_id = broker._replay_buffer[-1][0]
+            try:
+                return extract_event_sequence(last_event_id)
+            except ValueError:
+                pass
+        return 0
 
     async def _cleanup_old_brokers(self) -> None:
         """Remove finished brokers older than 1 hour every 5 minutes."""

@@ -1,6 +1,5 @@
 """FastAPI application for Aegra (Agent Protocol Server)"""
 
-import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -18,6 +17,7 @@ from aegra_api.api.stateless_runs import router as stateless_runs_router
 from aegra_api.api.store import router as store_router
 from aegra_api.api.threads import router as threads_router
 from aegra_api.config import HttpConfig, get_config_dir, load_http_config
+from aegra_api.core.active_runs import active_runs
 from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
@@ -35,9 +35,6 @@ from aegra_api.services.broker import broker_manager
 from aegra_api.services.langgraph_service import get_langgraph_service
 from aegra_api.settings import settings
 from aegra_api.utils.setup_logging import setup_logging
-
-# Task management for run cancellation
-active_runs: dict[str, asyncio.Task] = {}
 
 OPENAPI_TAGS: list[dict[str, Any]] = [
     {"name": "Assistants", "description": "A configured instance of a graph."},
@@ -99,18 +96,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if settings.redis.REDIS_BROKER_ENABLED:
         await redis_manager.initialize()
 
-    # Start broker cleanup task (no-op for Redis backend, periodic cleanup for in-memory)
-    await broker_manager.start_cleanup_task()
+    # Start broker manager (cleanup task for in-memory, cancel listener for Redis)
+    await broker_manager.start()
 
     yield
 
-    # Shutdown: Clean up connections and cancel active runs
+    # Shutdown: Stop broker manager before closing Redis (uses the connection)
+    await broker_manager.stop()
+
     for task in active_runs.values():
         if not task.done():
             task.cancel()
-
-    # Stop broker cleanup task
-    await broker_manager.stop_cleanup_task()
 
     # Close Redis broker (if enabled)
     if settings.redis.REDIS_BROKER_ENABLED:

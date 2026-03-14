@@ -3,19 +3,27 @@
 Uses Redis pub/sub for live event broadcast and Redis Lists for replay storage.
 The replay buffer (Redis List) stores resumable events with a TTL so they
 auto-expire without a cleanup loop. On reconnect, LRANGE fetches missed events.
+
+Event sequence counters are stored as Redis INCR keys for O(1) cross-instance
+access (instead of deriving from the replay buffer with O(N) LRANGE).
 """
 
+import asyncio
+import contextlib
 import json
+import random
 from collections.abc import AsyncIterator
 from typing import Any
 
 import structlog
 from redis import RedisError
 
+from aegra_api.core.active_runs import active_runs
 from aegra_api.core.redis_manager import redis_manager
 from aegra_api.core.serializers import GeneralSerializer
 from aegra_api.services.base_broker import BaseBrokerManager, BaseRunBroker
 from aegra_api.settings import settings
+from aegra_api.utils import generate_event_id
 
 logger = structlog.getLogger(__name__)
 
@@ -25,6 +33,11 @@ _serializer = GeneralSerializer()
 _REPLAY_TTL_SECONDS = 3600
 # Max events in the replay buffer (prevents unbounded growth)
 _REPLAY_MAX_EVENTS = 10_000
+
+# Reconnect backoff for Redis pub/sub listeners
+_BACKOFF_BASE = 0.5
+_BACKOFF_MAX = 30.0
+_BACKOFF_FACTOR = 2.0
 
 
 def _serialize_payload(payload: Any) -> str:
@@ -44,6 +57,13 @@ def _deserialize_payload(raw: Any) -> Any:
     return raw
 
 
+def _backoff_delay(attempt: int) -> float:
+    """Calculate exponential backoff delay with jitter."""
+    delay = min(_BACKOFF_BASE * (_BACKOFF_FACTOR**attempt), _BACKOFF_MAX)
+    jitter = random.uniform(0, delay * 0.25)  # noqa: S311  # nosec B311
+    return delay + jitter
+
+
 class RedisRunBroker(BaseRunBroker):
     """Broker for a single run backed by Redis pub/sub + Redis Lists.
 
@@ -51,10 +71,11 @@ class RedisRunBroker(BaseRunBroker):
     Consumer: LRANGE for replay, then SUBSCRIBE for live events.
     """
 
-    def __init__(self, run_id: str, channel: str, cache_key: str) -> None:
+    def __init__(self, run_id: str, channel: str, cache_key: str, counter_key: str) -> None:
         self.run_id = run_id
         self._channel = channel
         self._cache_key = cache_key
+        self._counter_key = counter_key
         self._finished = False
 
     async def put(self, event_id: str, payload: Any, *, resumable: bool = True) -> None:
@@ -79,6 +100,8 @@ class RedisRunBroker(BaseRunBroker):
                 pipe.rpush(self._cache_key, message)
                 pipe.ltrim(self._cache_key, -_REPLAY_MAX_EVENTS, -1)
                 pipe.expire(self._cache_key, _REPLAY_TTL_SECONDS)
+                pipe.incr(self._counter_key)
+                pipe.expire(self._counter_key, _REPLAY_TTL_SECONDS)
                 await pipe.execute()  # type: ignore[invalid-await]
 
             await client.publish(self._channel, message)
@@ -93,6 +116,25 @@ class RedisRunBroker(BaseRunBroker):
                 self._finished = True
 
     async def aiter(self) -> AsyncIterator[tuple[str, Any]]:
+        attempt = 0
+        while not self._finished:
+            try:
+                async for event_id, payload in self._subscribe_and_listen():
+                    attempt = 0
+                    yield event_id, payload
+                # Clean exit from _subscribe_and_listen (end event or finished)
+                break
+            except RedisError as e:
+                attempt += 1
+                delay = _backoff_delay(attempt)
+                logger.warning(
+                    f"Redis pub/sub error for run {self.run_id}, retrying in {delay:.1f}s: {e}",
+                    attempt=attempt,
+                )
+                await asyncio.sleep(delay)
+
+    async def _subscribe_and_listen(self) -> AsyncIterator[tuple[str, Any]]:
+        """Subscribe to the channel and yield events until end or disconnect."""
         client = redis_manager.get_client()
         pubsub = client.pubsub()
         await pubsub.subscribe(self._channel)
@@ -189,26 +231,37 @@ class RedisRunBroker(BaseRunBroker):
 
 
 class RedisBrokerManager(BaseBrokerManager):
-    """Manages RedisRunBroker instances.
+    """Manages RedisRunBroker instances with cross-instance cancel support.
 
-    Brokers are tracked locally for status checks (is_run_streaming).
-    Redis handles TTL-based cleanup for the replay buffer — no cleanup task needed.
+    The local _brokers dict is a cache for status checks. Redis is the source
+    of truth for event data. Cancel commands are broadcast via a dedicated
+    pub/sub channel so any instance can cancel a run.
     """
 
     def __init__(self) -> None:
         self._brokers: dict[str, RedisRunBroker] = {}
         self._channel_prefix = settings.redis.REDIS_CHANNEL_PREFIX
         self._cache_prefix = f"{self._channel_prefix}cache:"
+        self._counter_prefix = f"{self._channel_prefix}counter:"
+        self._cancel_channel = f"{self._channel_prefix}cancel"
+        self._listener_task: asyncio.Task[None] | None = None
+        self._running: bool = False
+
+    def _make_broker(self, run_id: str) -> RedisRunBroker:
+        """Create a RedisRunBroker for a run_id."""
+        channel = f"{self._channel_prefix}{run_id}"
+        cache_key = f"{self._cache_prefix}{run_id}"
+        counter_key = f"{self._counter_prefix}{run_id}"
+        return RedisRunBroker(run_id, channel, cache_key, counter_key)
 
     def get_or_create_broker(self, run_id: str) -> RedisRunBroker:
         if run_id not in self._brokers:
-            channel = f"{self._channel_prefix}{run_id}"
-            cache_key = f"{self._cache_prefix}{run_id}"
-            self._brokers[run_id] = RedisRunBroker(run_id, channel, cache_key)
+            self._brokers[run_id] = self._make_broker(run_id)
             logger.debug(f"Created Redis broker for run {run_id}")
         return self._brokers[run_id]
 
     def get_broker(self, run_id: str) -> RedisRunBroker | None:
+        """Get an existing broker from the local cache, or None."""
         return self._brokers.get(run_id)
 
     def cleanup_broker(self, run_id: str) -> None:
@@ -222,6 +275,106 @@ class RedisBrokerManager(BaseBrokerManager):
         if broker:
             broker.mark_finished()
             logger.debug(f"Removed Redis broker for run {run_id}")
+
+    async def start(self) -> None:
+        """Start the cancel command listener."""
+        self._running = True
+        self._listener_task = asyncio.create_task(self._listen_for_cancel_commands())
+        logger.info("Redis broker manager started", cancel_channel=self._cancel_channel)
+
+    async def stop(self) -> None:
+        """Stop the cancel command listener."""
+        self._running = False
+        if self._listener_task and not self._listener_task.done():
+            self._listener_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._listener_task
+            self._listener_task = None
+        logger.debug("Redis broker manager stopped")
+
+    async def request_cancel(self, run_id: str, action: str = "cancel") -> None:
+        """Broadcast a cancel command via Redis pub/sub."""
+        message = json.dumps({"run_id": run_id, "action": action})
+        try:
+            client = redis_manager.get_client()
+            await client.publish(self._cancel_channel, message)
+            logger.info(f"Published {action} command for run {run_id}")
+        except RedisError as e:
+            logger.error(f"Failed to publish {action} for run {run_id}: {e}")
+            # Fall back to local execution — if the task is on this instance,
+            # we can still cancel it even if Redis publish fails.
+            await self._execute_cancel(run_id)
+
+    async def get_event_sequence(self, run_id: str) -> int:
+        """Read the current event sequence counter from Redis (O(1) GET)."""
+        try:
+            client = redis_manager.get_client()
+            value = await client.get(f"{self._counter_prefix}{run_id}")  # type: ignore[invalid-await]
+            if value is not None:
+                return int(value)
+        except (RedisError, ValueError) as e:
+            logger.warning(f"Failed to read event counter for run {run_id}: {e}")
+        return 0
+
+    async def _listen_for_cancel_commands(self) -> None:
+        """Background task: subscribe to cancel channel with reconnect backoff."""
+        attempt = 0
+        while self._running:
+            try:
+                await self._subscribe_and_handle_cancels()
+                attempt = 0
+            except asyncio.CancelledError:
+                break
+            except RedisError as e:
+                attempt += 1
+                delay = _backoff_delay(attempt)
+                logger.error(
+                    f"Cancel listener disconnected, retrying in {delay:.1f}s: {e}",
+                    attempt=attempt,
+                )
+                await asyncio.sleep(delay)
+
+    async def _subscribe_and_handle_cancels(self) -> None:
+        """Subscribe to cancel channel and process commands until stopped."""
+        client = redis_manager.get_client()
+        pubsub = client.pubsub()
+        await pubsub.subscribe(self._cancel_channel)
+
+        try:
+            while self._running:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=0.5,
+                )
+                if message is None:
+                    continue
+                if message["type"] != "message":
+                    continue
+
+                try:
+                    data = json.loads(message["data"])
+                    await self._execute_cancel(data["run_id"])
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Invalid cancel message: {e}")
+        finally:
+            await pubsub.unsubscribe(self._cancel_channel)
+            await pubsub.aclose()
+
+    async def _execute_cancel(self, run_id: str) -> None:
+        """Cancel a locally-owned task and signal the broker."""
+        task = active_runs.get(run_id)
+        if task is None or task.done():
+            return
+
+        logger.info(f"Cancelling run {run_id} (local task found)")
+        task.cancel()
+
+        broker = self.get_or_create_broker(run_id)
+        if not broker.is_finished():
+            counter = await self.get_event_sequence(run_id) + 1
+            event_id = generate_event_id(run_id, counter)
+            await broker.put(event_id, ("end", {"status": "interrupted"}))
+            self.cleanup_broker(run_id)
 
     async def start_cleanup_task(self) -> None:
         """No-op. Redis TTL handles replay buffer expiry."""

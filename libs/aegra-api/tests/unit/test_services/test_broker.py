@@ -196,17 +196,17 @@ class TestBrokerManager:
         manager.remove_broker("nonexistent")
 
     @pytest.mark.asyncio
-    async def test_start_and_stop_cleanup_task(self):
-        """Test starting and stopping cleanup task"""
+    async def test_start_and_stop(self):
+        """Test starting and stopping broker manager"""
         manager = BrokerManager()
 
-        # Start cleanup task
-        await manager.start_cleanup_task()
+        # Start (creates cleanup task)
+        await manager.start()
 
         assert manager._cleanup_task is not None
         assert not manager._cleanup_task.done()
 
-        # Stop cleanup task
-        await manager.stop_cleanup_task()
+        # Stop (cancels cleanup task)
+        await manager.stop()
 
         assert manager._cleanup_task.cancelled() or manager._cleanup_task.done()

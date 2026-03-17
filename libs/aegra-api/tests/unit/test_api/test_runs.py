@@ -138,8 +138,8 @@ class TestRunsEndpoints:
             assert "Graph" in str(exc.value.detail)
 
     @pytest.mark.asyncio
-    async def test_create_run_config_context_conflict(self, mock_user: User, mock_session: AsyncMock) -> None:
-        """Test validation error when both configurable and context are provided."""
+    async def test_create_run_config_context_allowed(self, mock_user: User, mock_session: AsyncMock) -> None:
+        """Test both configurable and context are accepted."""
         thread_id = "test-thread-123"
         request = RunCreate(
             assistant_id="test-assistant",
@@ -157,12 +157,14 @@ class TestRunsEndpoints:
             ),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
+            mock_session.scalar.return_value = None
 
             with pytest.raises(HTTPException) as exc:
                 await create_run(thread_id, request, mock_user, mock_session)
 
-            assert exc.value.status_code == 400
-            assert "Cannot specify both configurable and context" in str(exc.value.detail)
+            # Validation conflict is removed; request proceeds to assistant lookup
+            assert exc.value.status_code == 404
+            assert "Assistant" in str(exc.value.detail) and "not found" in str(exc.value.detail)
 
     @pytest.mark.asyncio
     async def test_get_run_success(self, mock_user: User, mock_session: AsyncMock) -> None:

@@ -208,16 +208,9 @@ async def create_run(
     context = request.context or {}
     configurable = config.get("configurable", {})
 
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
+    if context and not configurable:
+        pass
+    elif not context:
         context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(
@@ -330,16 +323,9 @@ async def create_and_stream_run(
     context = request.context or {}
     configurable = config.get("configurable", {})
 
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
+    if context and not configurable:
+        pass
+    elif not context:
         context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(
@@ -653,16 +639,9 @@ async def wait_for_run(
         context = request.context or {}
         configurable = config.get("configurable", {})
 
-        if config.get("configurable") and context:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-            )
-
-        if context:
-            configurable = context.copy()
-            config["configurable"] = configurable
-        else:
+        if context and not configurable:
+            pass
+        elif not context:
             context = configurable.copy()
 
         assistant_stmt = select(AssistantORM).where(

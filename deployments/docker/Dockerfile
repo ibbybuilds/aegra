@@ -1,3 +1,19 @@
+# =============================================================================
+# Aegra Base Image
+# =============================================================================
+# Reusable base image containing only the Aegra core runtime + Alembic
+# migrations. Does NOT include aegra.json or agent code — those are added
+# by consumer projects via an overlay Dockerfile or volume mounts.
+#
+# Build:
+#   docker build -f deployments/docker/Dockerfile -t aegra-base:0.8.2 .
+#
+# Use as overlay base:
+#   FROM aegra-base:0.8.2
+#   COPY aegra.json ./aegra.json
+#   COPY src/ ./src/
+# =============================================================================
+
 ARG PY_VERSION=3.12
 FROM python:${PY_VERSION}-slim-bookworm AS base
 ARG PY_VERSION
@@ -31,8 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY libs/aegra-api/pyproject.toml libs/aegra-api/README.md ./
 COPY uv.lock ./
 
-# Install dependencies from lockfile (includes dev deps for example agents).
-RUN uv export --frozen --no-emit-project --format=requirements-txt > requirements.txt && \
+# Install production dependencies only (no dev deps like langchain-openai, pytest, etc.).
+RUN uv export --frozen --no-emit-project --no-dev --format=requirements-txt > requirements.txt && \
     uv pip install --system --compile-bytecode -r requirements.txt && \
     rm requirements.txt
 
@@ -49,21 +65,24 @@ RUN uv pip install --system --compile-bytecode --no-deps .
 # -----------------------------
 FROM base AS final
 
-# Install only minimal runtime libs
+LABEL org.opencontainers.image.title="aegra-base"
+LABEL org.opencontainers.image.description="Aegra core runtime — self-hosted Agent Protocol server"
+LABEL org.opencontainers.image.source="https://github.com/ibbybuilds/aegra"
+
+# Install only minimal runtime libs (libpq5 needed by psycopg)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from the builder stage.
 COPY --from=builder /usr/local/lib/python${PY_VERSION}/site-packages/ /usr/local/lib/python${PY_VERSION}/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
-# Copy runtime assets required by the app and alembic
+# Copy runtime assets required by alembic (migrations run on startup)
 COPY libs/aegra-api/alembic.ini ./alembic.ini
 COPY libs/aegra-api/alembic/ ./alembic/
-COPY aegra.json ./aegra.json
-COPY examples/ ./examples/
 
 EXPOSE 2026
 

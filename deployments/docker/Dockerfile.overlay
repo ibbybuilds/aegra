@@ -1,0 +1,63 @@
+# =============================================================================
+# Aegra Overlay Image
+# =============================================================================
+# Thin image that adds custom graphs + their dependencies on top of the
+# Aegra base image.  Copy this file into your consumer project and adapt
+# the COPY paths to match your project layout.
+#
+# Expected project structure:
+#   my-project/
+#   ├── Dockerfile          (this file)
+#   ├── aegra.json          (graph config — references ./src/)
+#   ├── pyproject.toml      (agent dependencies, e.g. langchain-openai)
+#   ├── uv.lock             (lockfile — run `uv lock` to generate)
+#   └── src/
+#       └── my_agent/
+#           ├── __init__.py
+#           └── graph.py
+#
+# Build:
+#   docker build -t my-agent:latest .
+#
+# Build with a specific base image version:
+#   docker build --build-arg AEGRA_BASE_IMAGE=aegra-base:0.8.2 -t my-agent:latest .
+# =============================================================================
+
+ARG AEGRA_BASE_IMAGE=aegra-base:0.8.2
+FROM ${AEGRA_BASE_IMAGE}
+
+# --- Install additional Python dependencies for custom graphs ----------------
+# Switch to root temporarily for package installation
+USER root
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+
+# Install build tools needed for native extensions (e.g. psycopg, numpy)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency specification (pyproject.toml + optional lockfile)
+COPY pyproject.toml uv.loc[k] ./
+
+# Install agent dependencies from lockfile into system Python.
+# Uses --no-dev to skip test/lint deps, --no-emit-project to skip the project itself.
+# Dependencies already present in the base image (e.g. fastapi, langgraph) are skipped.
+RUN uv export --frozen --no-emit-project --no-dev --format=requirements-txt > /tmp/reqs.txt && \
+    uv pip install --system --compile-bytecode -r /tmp/reqs.txt && \
+    rm /tmp/reqs.txt
+
+# Clean up build tools and uv to keep the image small
+RUN rm /bin/uv && \
+    apt-get purge -y --auto-remove build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- Copy project files ------------------------------------------------------
+COPY aegra.json ./aegra.json
+COPY src/ ./src/
+
+# Switch back to non-root user
+USER app
+
+# CMD is inherited from the base image: ["aegra", "serve"]

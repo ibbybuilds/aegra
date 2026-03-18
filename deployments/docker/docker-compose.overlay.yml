@@ -1,0 +1,63 @@
+# =============================================================================
+# Docker Compose — Overlay Reference
+# =============================================================================
+# Reference docker-compose.yml for consumer projects using the Aegra overlay
+# pattern.  Copy this file into your project root and adjust service names,
+# ports, and volume paths to match your project layout.
+#
+# Usage:
+#   docker compose up --build        # Build overlay + start full stack
+#   docker compose up postgres -d    # Start database only (for local dev)
+# =============================================================================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aegra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegra_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-aegra}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegra}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  aegra:
+    build:
+      context: .
+      # Points to the overlay Dockerfile in your project root.
+      # If you copied Dockerfile.overlay as "Dockerfile", use: dockerfile: Dockerfile
+      dockerfile: Dockerfile
+      args:
+        # Pin the base image version to match your aegra-api dependency.
+        AEGRA_BASE_IMAGE: ${AEGRA_BASE_IMAGE:-aegra-base:0.8.2}
+    restart: unless-stopped
+    ports:
+      - "${PORT:-2026}:${PORT:-2026}"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - AUTH_TYPE=${AUTH_TYPE:-noop}
+      - PORT=${PORT:-2026}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${PORT:-2026}/health || exit 1"]
+      interval: 30s
+      start_period: 10s
+    # For local development: mount source + config for hot-reload-like workflow.
+    # Comment out for production (baked into the overlay image).
+    # volumes:
+    #   - ./src:/app/src:ro
+    #   - ./aegra.json:/app/aegra.json:ro
+
+volumes:
+  postgres_data:

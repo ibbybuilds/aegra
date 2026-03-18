@@ -1,3 +1,15 @@
+# =============================================================================
+# Docker Compose — Aegra Core Development
+# =============================================================================
+# This compose file is for developing Aegra itself (the core server).
+# The base image (deployments/docker/Dockerfile) does NOT contain aegra.json
+# or example agents — they are volume-mounted below for local development.
+#
+# For consumer projects that build on top of the base image, see:
+#   deployments/docker/Dockerfile.overlay
+#   deployments/docker/docker-compose.overlay.yml
+# =============================================================================
+
 services:
   # PostgreSQL database for LangGraph and metadata
   postgres:
@@ -15,7 +27,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Aegra Server
+  # Aegra Server (dev mode — source + config mounted from host)
   aegra:
     build:
       context: .

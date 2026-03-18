@@ -115,6 +115,83 @@ This runs uvicorn directly without starting PostgreSQL. You provide a running da
 | `--config` / `-c` | Auto-detected | Path to `aegra.json` |
 </Accordion>
 
+## Base image + overlay pattern
+
+For teams that want a reusable Aegra image shared across multiple agent projects, Aegra provides a **base image** that contains only the core runtime. Each project then builds a thin **overlay image** that adds its graphs and dependencies.
+
+### Building the base image
+
+The base image Dockerfile is at `deployments/docker/Dockerfile`. It contains:
+- Aegra API + CLI packages
+- Alembic database migrations
+- Production dependencies only (no dev/test tools)
+
+It does **not** contain `aegra.json` or any agent code.
+
+```bash
+docker build -f deployments/docker/Dockerfile \
+  -t your-registry/aegra-base:0.8.2 .
+```
+
+Push it to your container registry so consumer projects can reference it.
+
+### Creating an overlay image
+
+Each agent project builds on top of the base image. A reference Dockerfile is at `deployments/docker/Dockerfile.overlay`.
+
+Expected project structure:
+
+```
+my-agent-project/
+├── Dockerfile          # Copy of Dockerfile.overlay
+├── aegra.json          # Graph config (references ./src/)
+├── pyproject.toml      # Agent dependencies (e.g. langchain-openai)
+├── uv.lock             # Lockfile (run `uv lock` to generate)
+└── src/
+    └── my_agent/
+        ├── __init__.py
+        └── graph.py
+```
+
+Example `aegra.json`:
+
+```json
+{
+  "dependencies": ["./src"],
+  "graphs": {
+    "my_agent": "./src/my_agent/graph.py:graph"
+  }
+}
+```
+
+Build the overlay:
+
+```bash
+docker build -t my-agent:latest .
+```
+
+Override the base image version via build arg:
+
+```bash
+docker build \
+  --build-arg AEGRA_BASE_IMAGE=your-registry/aegra-base:0.8.2 \
+  -t my-agent:latest .
+```
+
+### How it works
+
+The overlay Dockerfile:
+1. Starts from the pre-built Aegra base image
+2. Installs additional Python dependencies from your `pyproject.toml` + `uv.lock` (packages already in the base image are skipped)
+3. Copies your `aegra.json` and agent source code into the image
+4. Inherits the `aegra serve` entrypoint from the base image
+
+At startup, Aegra reads `aegra.json`, adds the `dependencies` paths to `sys.path`, and dynamically imports your graph modules.
+
+### Reference docker-compose.yml
+
+A complete reference compose file is at `deployments/docker/docker-compose.overlay.yml`. It includes PostgreSQL and the overlay app service with health checks.
+
 ## Kubernetes
 
 Use `aegra serve` as the container command in your pod spec:

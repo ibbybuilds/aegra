@@ -131,7 +131,7 @@ aegra version           # Show version info
 | [Streaming](https://docs.aegra.dev/guides/streaming) | 8 SSE stream modes with reconnection |
 | [Store](https://docs.aegra.dev/guides/store) | Key-value and semantic search storage |
 | [Observability](https://docs.aegra.dev/guides/observability) | Fan-out tracing to Langfuse, Phoenix, or any OTLP backend |
-| [Deployment](https://docs.aegra.dev/guides/deployment) | Docker, PaaS, and Kubernetes deployment |
+| [Deployment](https://docs.aegra.dev/guides/deployment) | Docker, PaaS, Kubernetes, and base image overlay pattern |
 | [Migration](https://docs.aegra.dev/migration) | Migrate from LangSmith Deployments |
 
 ## 💬 Community & Support

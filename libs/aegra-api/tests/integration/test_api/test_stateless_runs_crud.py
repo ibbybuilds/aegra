@@ -365,7 +365,7 @@ class TestStatelessCreateRun:
         )
         assert resp.status_code == 422
 
-    def test_config_context_conflict(self) -> None:
+    def test_config_context_allowed(self) -> None:
         """Both configurable and context are allowed."""
         app = create_test_app(include_runs=True, include_threads=False)
 

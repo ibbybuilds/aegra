@@ -695,7 +695,7 @@ class TestWaitForRun:
         # Should fail because thread is not interrupted
         assert resp.status_code == 400
 
-    def test_wait_for_run_with_config_and_context_allowed(self):
+    def test_wait_for_run_with_config_and_context_allowed(self) -> None:
         """Test wait endpoint allows both configurable and context."""
         app = create_test_app(include_runs=True, include_threads=False)
 
@@ -720,7 +720,7 @@ class TestWaitForRun:
 class TestCreateRunValidation:
     """Additional validation tests for create_run."""
 
-    def test_create_run_config_context_allowed(self):
+    def test_create_run_config_context_allowed(self) -> None:
         """Test create_run allows both configurable and context."""
         app = create_test_app(include_runs=True, include_threads=False)
         override_session_dependency(app, BasicSession)

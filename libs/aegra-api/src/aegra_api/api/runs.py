@@ -207,6 +207,8 @@ async def create_run(
     config = request.config or {}
     context = request.context or {}
     configurable = config.get("configurable", {})
+    if not isinstance(configurable, dict):
+        raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
 
     if context and not configurable:
         pass
@@ -322,6 +324,8 @@ async def create_and_stream_run(
     config = request.config or {}
     context = request.context or {}
     configurable = config.get("configurable", {})
+    if not isinstance(configurable, dict):
+        raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
 
     if context and not configurable:
         pass
@@ -638,6 +642,8 @@ async def wait_for_run(
         config = request.config or {}
         context = request.context or {}
         configurable = config.get("configurable", {})
+        if not isinstance(configurable, dict):
+            raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
 
         if context and not configurable:
             pass

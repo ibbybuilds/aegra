@@ -1,9 +1,9 @@
 # =============================================================================
 # Aegra Base Image
 # =============================================================================
-# Reusable base image containing only the Aegra core runtime + Alembic
-# migrations. Does NOT include aegra.json or agent code — those are added
-# by consumer projects via an overlay Dockerfile or volume mounts.
+# Reusable base image containing the Aegra core runtime (aegra-api + aegra-cli)
+# and Alembic migrations. Does NOT include aegra.json or agent code — those are
+# added by consumer projects via an overlay Dockerfile or volume mounts.
 #
 # Build:
 #   docker build -f deployments/docker/Dockerfile -t aegra-base:0.8.2 .
@@ -43,22 +43,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy aegra-api package files and workspace lockfile
-COPY libs/aegra-api/pyproject.toml libs/aegra-api/README.md ./
-COPY uv.lock ./
+# Copy workspace definition + both package manifests + lockfile.
+# This allows uv to resolve the full dependency tree for aegra-cli
+# (which transitively includes all aegra-api dependencies).
+COPY pyproject.toml uv.lock ./
+COPY libs/aegra-api/pyproject.toml libs/aegra-api/README.md ./libs/aegra-api/
+COPY libs/aegra-cli/pyproject.toml libs/aegra-cli/README.md ./libs/aegra-cli/
 
-# Install production dependencies only (no dev deps like langchain-openai, pytest, etc.).
-RUN uv export --frozen --no-emit-project --no-dev --format=requirements-txt > requirements.txt && \
+# Install all external production dependencies for aegra-cli (includes
+# aegra-api deps transitively: fastapi, langgraph, sqlalchemy, ...
+# plus CLI deps: click, rich, jinja2, python-dotenv).
+# --no-emit-workspace excludes workspace packages themselves (installed from source below).
+RUN uv export --frozen --package aegra-cli --no-emit-project --no-emit-workspace --no-dev \
+        --format=requirements-txt > requirements.txt && \
     uv pip install --system --compile-bytecode -r requirements.txt && \
     rm requirements.txt
 
-# Copy the actual project source code and forced includes (alembic).
-COPY libs/aegra-api/src/ ./src/
-COPY libs/aegra-api/alembic.ini ./alembic.ini
-COPY libs/aegra-api/alembic/ ./alembic/
+# Copy source code for both packages.
+COPY libs/aegra-api/src/ ./libs/aegra-api/src/
+COPY libs/aegra-api/alembic.ini ./libs/aegra-api/alembic.ini
+COPY libs/aegra-api/alembic/ ./libs/aegra-api/alembic/
+COPY libs/aegra-cli/src/ ./libs/aegra-cli/src/
 
-# Install the project package itself.
-RUN uv pip install --system --compile-bytecode --no-deps .
+# Install both workspace packages from local source (no deps — already installed above).
+RUN uv pip install --system --compile-bytecode --no-deps ./libs/aegra-api && \
+    uv pip install --system --compile-bytecode --no-deps ./libs/aegra-cli
 
 # -----------------------------
 # Final, minimal runtime image

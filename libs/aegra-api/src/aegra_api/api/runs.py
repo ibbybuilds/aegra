@@ -69,6 +69,24 @@ def map_command_to_langgraph(cmd: dict[str, Any]) -> Command:
     )
 
 
+def _resolve_context(
+    config: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive context from configurable if not explicitly provided.
+
+    When the caller provides context, it is used as-is. Otherwise,
+    context is derived from config.configurable for backward compat.
+    Raises HTTPException(422) if configurable is not a mapping.
+    """
+    configurable = config.get("configurable", {})
+    if not isinstance(configurable, dict):
+        raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
+    if not context:
+        return configurable.copy()
+    return context
+
+
 async def set_thread_status(session: AsyncSession, thread_id: str, status: str) -> None:
     """Update the status column of a thread.
 
@@ -205,20 +223,7 @@ async def create_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config or {}
-    context = request.context or {}
-    configurable = config.get("configurable", {})
-
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
-        context = configurable.copy()
+    context = _resolve_context(config, request.context or {})
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -327,20 +332,7 @@ async def create_and_stream_run(
     resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
     config = request.config or {}
-    context = request.context or {}
-    configurable = config.get("configurable", {})
-
-    if config.get("configurable") and context:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-        )
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
-        context = configurable.copy()
+    context = _resolve_context(config, request.context or {})
 
     assistant_stmt = select(AssistantORM).where(
         AssistantORM.assistant_id == resolved_assistant_id,
@@ -650,20 +642,7 @@ async def wait_for_run(
         resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
 
         config = request.config or {}
-        context = request.context or {}
-        configurable = config.get("configurable", {})
-
-        if config.get("configurable") and context:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot specify both configurable and context. Prefer setting context alone. Context was introduced in LangGraph 0.6.0 and is the long term planned replacement for configurable.",
-            )
-
-        if context:
-            configurable = context.copy()
-            config["configurable"] = configurable
-        else:
-            context = configurable.copy()
+        context = _resolve_context(config, request.context or {})
 
         assistant_stmt = select(AssistantORM).where(
             AssistantORM.assistant_id == resolved_assistant_id,

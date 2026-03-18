@@ -365,8 +365,8 @@ class TestStatelessCreateRun:
         )
         assert resp.status_code == 422
 
-    def test_config_context_conflict(self) -> None:
-        """Both configurable and context → 400."""
+    def test_config_context_allowed(self) -> None:
+        """Both configurable and context are allowed."""
         app = create_test_app(include_runs=True, include_threads=False)
 
         class Session(DummySessionBase):
@@ -385,7 +385,8 @@ class TestStatelessCreateRun:
                 "context": {"key": "val"},
             },
         )
-        assert resp.status_code == 400
+        # Validation conflict is removed; request proceeds to assistant lookup
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

@@ -695,8 +695,8 @@ class TestWaitForRun:
         # Should fail because thread is not interrupted
         assert resp.status_code == 400
 
-    def test_wait_for_run_with_config_and_context_conflict(self):
-        """Test wait endpoint rejects both configurable and context"""
+    def test_wait_for_run_with_config_and_context_allowed(self) -> None:
+        """Test wait endpoint allows both configurable and context."""
         app = create_test_app(include_runs=True, include_threads=False)
 
         override_session_dependency(app, BasicSession)
@@ -713,15 +713,15 @@ class TestWaitForRun:
                 },
             )
 
-        # Should reject having both configurable and context
-        assert resp.status_code == 400
+        # Validation conflict is removed; request proceeds to assistant lookup
+        assert resp.status_code == 404
 
 
 class TestCreateRunValidation:
     """Additional validation tests for create_run."""
 
-    def test_create_run_config_context_conflict(self):
-        """Test create_run rejects both configurable and context."""
+    def test_create_run_config_context_allowed(self) -> None:
+        """Test create_run allows both configurable and context."""
         app = create_test_app(include_runs=True, include_threads=False)
         override_session_dependency(app, BasicSession)
         client = make_client(app)
@@ -735,8 +735,8 @@ class TestCreateRunValidation:
                 "context": {"key": "value"},
             },
         )
-        assert resp.status_code == 400
-        assert "Cannot specify both" in resp.json()["detail"]
+        # Validation conflict is removed; request proceeds to assistant lookup
+        assert resp.status_code == 404
 
     def test_create_run_assistant_not_found(self):
         """Test create_run with non-existent assistant."""

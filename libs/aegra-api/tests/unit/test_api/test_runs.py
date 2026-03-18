@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from aegra_api.api.runs import create_run, get_run, join_run, list_runs, update_run
+from aegra_api.api.runs import _resolve_context, create_run, get_run, join_run, list_runs, update_run
 from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.models import Run, RunCreate, RunStatus, User
@@ -369,3 +369,49 @@ class TestRunsEndpoints:
 
             mock_wait.assert_called_once()  # Should wait on task
             assert result == {"result": "waited"}
+
+
+class TestResolveContext:
+    """Unit tests for the _resolve_context helper."""
+
+    def test_returns_context_when_provided(self) -> None:
+        """When caller provides context, return it unchanged."""
+        config: dict = {"configurable": {"key": "val"}}
+        context = {"token": "secret"}
+        result = _resolve_context(config, context)
+        assert result == {"token": "secret"}
+
+    def test_derives_context_from_configurable_when_empty(self) -> None:
+        """When context is empty, fall back to a copy of configurable."""
+        config: dict = {"configurable": {"a": 1, "b": 2}}
+        result = _resolve_context(config, {})
+        assert result == {"a": 1, "b": 2}
+
+    def test_returns_empty_dict_when_both_empty(self) -> None:
+        """When both context and configurable are empty, return empty dict."""
+        result = _resolve_context({}, {})
+        assert result == {}
+
+    def test_raises_422_when_configurable_not_a_mapping(self) -> None:
+        """Non-dict configurable must raise HTTPException with status 422."""
+        config: dict = {"configurable": ["not", "a", "dict"]}
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_context(config, {})
+        assert exc_info.value.status_code == 422
+        assert "configurable" in exc_info.value.detail
+
+    def test_derived_context_is_a_copy(self) -> None:
+        """Modifying the returned dict must not mutate config.configurable."""
+        configurable: dict = {"x": 1}
+        config: dict = {"configurable": configurable}
+        result = _resolve_context(config, {})
+        result["x"] = 99
+        assert configurable["x"] == 1
+
+    def test_context_not_mixed_with_configurable(self) -> None:
+        """Provided context should not be merged with configurable keys."""
+        config: dict = {"configurable": {"model": "gpt-4"}}
+        context = {"user_id": "alice"}
+        result = _resolve_context(config, context)
+        assert "model" not in result
+        assert result == {"user_id": "alice"}

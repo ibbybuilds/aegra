@@ -229,8 +229,9 @@ def graph(config):
         assert "cfg" in _FACTORY_KWARGS
         # Should have stored the callable
         assert "cfg" in service._graph_factories
-        # The base graph (from default call) should be returned
-        assert isinstance(result, Pregel)
+        # Factory graphs return None — the factory is NOT called with defaults
+        # at load time; it will be invoked per-request with proper user/config.
+        assert result is None
 
         sys.modules.pop("graphs.cfg", None)
 
@@ -274,7 +275,8 @@ def graph(runtime: ServerRuntime):
 
         assert "rt" in _FACTORY_KWARGS
         assert "rt" in service._graph_factories
-        assert isinstance(result, Pregel)
+        # Factory graphs return None — no default-args call at load time.
+        assert result is None
 
         sys.modules.pop("graphs.rt", None)
 
@@ -625,3 +627,99 @@ class TestGetGraphWithContext:
         assert isinstance(received_runtime, _ExecutionRuntime)
         # Should fall back to raw dict, not crash
         assert received_runtime.context is invalid_ctx
+
+
+# ---------------------------------------------------------------------------
+# Regression: factory NOT called with user=None at startup (issue #245)
+# ---------------------------------------------------------------------------
+
+
+class TestFactoryNotCalledAtStartup:
+    """Verify that factory graphs are classified but NOT invoked at load time.
+
+    Regression test for https://github.com/ibbybuilds/aegra/issues/245:
+    dynamic graph factories were called with ``user=None`` during server
+    startup for schema extraction, causing the first request to get a graph
+    compiled without user context.
+    """
+
+    @pytest.mark.asyncio
+    async def test_factory_not_invoked_during_load(self, graph_module_dir: Path) -> None:
+        """_load_graph_from_file must NOT call the factory for config/runtime factories."""
+        _write_graph_module(
+            graph_module_dir,
+            "tracked_factory.py",
+            """\
+from unittest.mock import Mock
+from langgraph.pregel import Pregel
+from langgraph_sdk.runtime import ServerRuntime
+
+call_log: list[dict] = []
+
+def graph(config: dict, runtime: ServerRuntime):
+    call_log.append({"config": config, "user": runtime.user})
+    g = Mock(spec=Pregel)
+    g.copy = Mock(return_value=g)
+    return g
+""",
+        )
+
+        service = LangGraphService()
+        service.config_path = graph_module_dir / "aegra.json"
+        service._graph_registry = {
+            "tracked": {
+                "file_path": str(graph_module_dir / "tracked_factory.py"),
+                "export_name": "graph",
+            }
+        }
+
+        result = await service._load_graph_from_file("tracked", service._graph_registry["tracked"])
+
+        # Factory should be registered but NOT called
+        assert "tracked" in service._graph_factories
+        assert result is None
+
+        # Verify the factory was never invoked (no calls logged)
+        import importlib
+
+        mod = importlib.import_module("graphs.tracked")
+        assert mod.call_log == [], (
+            "Factory should not be called at load time; "
+            f"got {len(mod.call_log)} call(s) with user={mod.call_log[0]['user'] if mod.call_log else '?'}"
+        )
+
+        sys.modules.pop("graphs.tracked", None)
+
+    @pytest.mark.asyncio
+    async def test_first_request_receives_user(self) -> None:
+        """First get_graph() call should pass user through to factory, not use cached default."""
+        received_users: list[Any] = []
+
+        def factory(config: dict[str, Any], runtime: ServerRuntime) -> Mock:
+            received_users.append(runtime.user)
+            g = Mock(spec=Pregel)
+            g.copy = Mock(return_value=g)
+            return g
+
+        service = LangGraphService()
+        service._graph_registry = {"u": {"file_path": "u.py", "export_name": "graph"}}
+        service._graph_factories = {"u": factory}
+        classify_factory(factory, "u")
+
+        mock_user = Mock()
+        mock_user.identity = "test-user"
+
+        with patch("aegra_api.core.database.db_manager") as mock_db:
+            mock_db.get_checkpointer = Mock(return_value=Mock())
+            mock_db.get_store = Mock(return_value=Mock())
+
+            async with service.get_graph(
+                "u",
+                config={"configurable": {}},
+                access_context="threads.create_run",
+                user=mock_user,
+            ) as _graph:
+                pass
+
+        assert len(received_users) == 1
+        assert received_users[0] is mock_user

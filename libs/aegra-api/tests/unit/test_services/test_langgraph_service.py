@@ -64,6 +64,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+            patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
         ):
             service = LangGraphService()
             await service.initialize()
@@ -81,6 +82,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+            patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
         ):
             service = LangGraphService("explicit.json")
             await service.initialize()
@@ -99,6 +101,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+            patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
         ):
             service = LangGraphService()
             await service.initialize()
@@ -117,6 +120,7 @@ class TestLangGraphServiceConfig:
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.open", mock_open(read_data=json.dumps(config_data))),
             patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+            patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
         ):
             service = LangGraphService()
             await service.initialize()

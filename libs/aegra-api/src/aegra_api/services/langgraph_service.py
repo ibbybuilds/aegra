@@ -99,6 +99,14 @@ class LangGraphService:
         # Load graph registry from config
         self._load_graph_registry()
 
+        # Eagerly load all graph modules so factory graphs are classified
+        # before the first request arrives.  This populates _graph_factories
+        # (and _base_graph_cache for static graphs) without calling factory
+        # functions with empty user/config — fixing the bug where the first
+        # request would fall through to the static path and get a graph
+        # compiled with user=None.
+        await self._load_all_graph_modules()
+
         # Pre-register assistants for each graph using deterministic UUIDs so
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
@@ -117,6 +125,23 @@ class LangGraphService:
                 "file_path": file_path,
                 "export_name": export_name,
             }
+
+    async def _load_all_graph_modules(self) -> None:
+        """Eagerly load all graph modules, classifying factories without calling them.
+
+        For static graphs, the compiled graph is cached in ``_base_graph_cache``.
+        For factory graphs, the callable is stored in ``_graph_factories`` for
+        per-request invocation — the factory is NOT called here, so no graph is
+        compiled with ``user=None``.
+        """
+        for graph_id, graph_info in self._graph_registry.items():
+            raw_graph = await self._load_graph_from_file(graph_id, graph_info)
+            if raw_graph is not None:
+                # Static graph — compile and cache
+                if isinstance(raw_graph, StateGraph):
+                    logger.info("compiling_graph", graph_id=graph_id)
+                    raw_graph = raw_graph.compile()
+                self._base_graph_cache[graph_id] = raw_graph
 
     def _setup_dependencies(self) -> None:
         """Add dependency paths to sys.path for graph imports.
@@ -202,6 +227,10 @@ class LangGraphService:
         the base graph is immutable - we create copies with checkpointer/store
         injected per-request.
 
+        For factory graphs whose modules were already loaded by
+        ``_load_all_graph_modules``, this lazily calls the factory with
+        default args to produce a base graph for schema extraction.
+
         @param graph_id: The graph identifier from aegra.json
         @returns: Compiled Pregel graph (without checkpointer/store)
         @raises ValueError: If graph_id not found or loading fails
@@ -213,10 +242,14 @@ class LangGraphService:
         if graph_id in self._base_graph_cache:
             return self._base_graph_cache[graph_id]
 
-        graph_info = self._graph_registry[graph_id]
-
-        # Load graph from file
-        raw_graph = await self._load_graph_from_file(graph_id, graph_info)
+        # Factory graph that was classified but never called with defaults yet.
+        # Call now to produce a base graph for schema extraction.
+        if graph_id in self._graph_factories:
+            raw_graph = await self._call_factory_with_defaults(self._graph_factories[graph_id], graph_id)
+        else:
+            graph_info = self._graph_registry[graph_id]
+            # Load graph from file
+            raw_graph = await self._load_graph_from_file(graph_id, graph_info)
 
         # Compile if it's a StateGraph
         if isinstance(raw_graph, StateGraph):
@@ -392,23 +425,26 @@ class LangGraphService:
 
         return await self._get_base_graph(graph_id)
 
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Pregel | StateGraph:
+    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Pregel | StateGraph | None:
         """Load graph from filesystem.
 
         Paths are resolved relative to the config file's directory.
 
         For callable exports, the function inspects the signature to detect
         factory patterns. 0-arg factories are called once at load time.
-        Config/runtime factories are registered for per-request invocation,
-        and called once with default args to produce a base graph for schema
-        extraction.
+        Config/runtime factories are registered in ``_graph_factories`` for
+        per-request invocation and ``None`` is returned — no default-args
+        call is made here, so factory graphs are never compiled with
+        ``user=None`` at startup.
 
         Args:
             graph_id: The graph identifier from aegra.json.
             graph_info: Dict with ``file_path`` and ``export_name`` keys.
 
         Returns:
-            A compiled ``Pregel`` or uncompiled ``StateGraph``.
+            A compiled ``Pregel`` or uncompiled ``StateGraph`` for static
+            graphs, or ``None`` for factory graphs (the factory is stored
+            in ``_graph_factories`` instead).
 
         Raises:
             ValueError: If the file or export is not found.
@@ -458,10 +494,13 @@ class LangGraphService:
                 async with generate_graph(graph, graph_id) as resolved:
                     graph = resolved
             else:
-                # Config/runtime factory — store the callable for per-request invocation.
-                # Call once with defaults to get a base graph for schema extraction.
+                # Config/runtime factory — store the callable for per-request
+                # invocation.  Do NOT call with defaults here; the factory will
+                # be invoked with the real user/config on each request.  If a
+                # base graph is needed later for schema extraction, _get_base_graph
+                # will call _call_factory_with_defaults lazily.
                 self._graph_factories[graph_id] = graph
-                graph = await self._call_factory_with_defaults(graph, graph_id)
+                return
 
         return graph
 

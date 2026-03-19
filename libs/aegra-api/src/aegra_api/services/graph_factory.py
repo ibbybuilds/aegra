@@ -33,6 +33,7 @@ from langgraph_sdk.runtime import (
 )
 
 from aegra_api.core.auth_ctx import get_auth_ctx
+from aegra_api.models.auth import User
 
 logger = structlog.get_logger(__name__)
 
@@ -315,7 +316,7 @@ def build_server_runtime(
     *,
     access_context: AccessContext,
     store: BaseStore | None,
-    user: BaseUser | None = None,
+    user: User | BaseUser | None = None,
     context: Any = None,
 ) -> ServerRuntime:
     """Construct the appropriate ``ServerRuntime`` variant for the access context.

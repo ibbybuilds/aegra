@@ -65,7 +65,7 @@ class LangGraphService:
         # invoked per-request with the appropriate ServerRuntime/config.
         self._graph_factories: dict[str, Callable] = {}
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Load configuration file and setup graph registry.
 
         Resolution order:
@@ -248,8 +248,18 @@ class LangGraphService:
             raw_graph = await self._call_factory_with_defaults(self._graph_factories[graph_id], graph_id)
         else:
             graph_info = self._graph_registry[graph_id]
-            # Load graph from file
+            # Load graph from file — may return None if the module turns out
+            # to be a factory (discovered during lazy loading).
             raw_graph = await self._load_graph_from_file(graph_id, graph_info)
+
+        # _load_graph_from_file returns None for factory graphs that were
+        # just discovered and stored in _graph_factories. Retry via the
+        # factory path now that the callable is registered.
+        if raw_graph is None and graph_id in self._graph_factories:
+            raw_graph = await self._call_factory_with_defaults(self._graph_factories[graph_id], graph_id)
+
+        if raw_graph is None:
+            raise ValueError(f"Failed to load graph '{graph_id}': module did not produce a graph")
 
         # Compile if it's a StateGraph
         if isinstance(raw_graph, StateGraph):
@@ -623,7 +633,9 @@ def inject_user_context(user: Any | None, base_config: dict[str, Any] | None = N
     return config
 
 
-def create_thread_config(thread_id: str, user, additional_config: dict = None) -> dict:
+def create_thread_config(
+    thread_id: str, user: User | BaseUser | None, additional_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Create LangGraph configuration for a specific thread with user context"""
     base_config = {"configurable": {"thread_id": thread_id}}
 
@@ -636,10 +648,10 @@ def create_thread_config(thread_id: str, user, additional_config: dict = None) -
 def create_run_config(
     run_id: str,
     thread_id: str,
-    user,
-    additional_config: dict = None,
-    checkpoint: dict | None = None,
-) -> dict:
+    user: User | BaseUser | None,
+    additional_config: dict[str, Any] | None = None,
+    checkpoint: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Create LangGraph configuration for a specific run with full context.
 
     The function is *additive*: it never removes or renames anything the client

@@ -684,7 +684,7 @@ async def get_thread_history_post(
         state_snapshots = []
         kwargs = {
             "limit": limit,
-            "before": before,
+            "before": {"configurable": {"checkpoint_id": before}} if before else None,
         }
         if metadata is not None:
             kwargs["metadata"] = metadata

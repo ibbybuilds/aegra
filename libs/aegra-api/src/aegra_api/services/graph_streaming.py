@@ -115,11 +115,20 @@ async def stream_graph_events(
 
     # Check if graph is a remote (JavaScript) implementation
     try:
-        from langgraph_api.js.base import BaseRemotePregel
+        from aegra_api.services.js_graph_wrapper import JSGraphWrapper
 
-        is_js_graph = isinstance(graph, BaseRemotePregel)
+        is_js_graph = isinstance(graph, JSGraphWrapper)
     except ImportError:
         is_js_graph = False
+
+    # Also check for external bridge (BaseRemotePregel)
+    if not is_js_graph:
+        try:
+            from langgraph_api.js.base import BaseRemotePregel
+
+            is_js_graph = isinstance(graph, BaseRemotePregel)
+        except ImportError:
+            pass
 
     # Python graphs need messages-tuple converted to standard messages mode
     if "messages-tuple" in stream_modes_set and not is_js_graph:

@@ -20,6 +20,11 @@ TEMPLATES: list[dict[str, str]] = [
         "name": "ReAct Agent",
         "description": "An agent with tools that reasons and acts step by step.",
     },
+    {
+        "id": "langgraphjs-chatbot",
+        "name": "LangGraph.js Chatbot",
+        "description": "A simple chatbot built with LangGraph.js (TypeScript).",
+    },
 ]
 
 

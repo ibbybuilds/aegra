@@ -201,11 +201,27 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
             files_skipped += 1
 
     # --- aegra.json ---
-    aegra_config = {
-        "name": project_name,
-        "dependencies": ["./src"],
-        "graphs": {slug: f"./src/{slug}/graph.py:graph"},
-    }
+    manifest = load_template_manifest(selected["id"])
+    is_js_template = manifest.get("runtime") == "langgraphjs"
+
+    if is_js_template:
+        # LangGraph.js templates use the runtime object format
+        aegra_config = {
+            "name": project_name,
+            "dependencies": ["./src"],
+            "graphs": {
+                slug: {
+                    "runtime": "langgraphjs",
+                    "path": f"./src/{slug}/graph.ts:graph",
+                }
+            },
+        }
+    else:
+        aegra_config = {
+            "name": project_name,
+            "dependencies": ["./src"],
+            "graphs": {slug: f"./src/{slug}/graph.py:graph"},
+        }
     _write("aegra.json", json.dumps(aegra_config, indent=2) + "\n")
 
     # --- Template files (from manifest) ---
@@ -246,5 +262,9 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
     click.echo(click.style("Next steps:", bold=True))
     click.echo(f"  cd {project_path.name}")
     click.echo("  cp .env.example .env       # Configure your environment")
-    click.echo("  uv sync                    # Install dependencies")
+    if is_js_template:
+        click.echo("  npm install                # Install Node.js dependencies")
+        click.echo("  pip install aegra-cli      # Install Aegra CLI (if needed)")
+    else:
+        click.echo("  uv sync                    # Install dependencies")
     click.echo("  uv run aegra dev           # Start developing!")

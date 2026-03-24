@@ -9,6 +9,7 @@ Architecture:
 
 import asyncio
 import copy
+import importlib
 import importlib.util
 import json
 import sys
@@ -60,7 +61,7 @@ class LangGraphService:
         self._graph_registry: dict[str, Any] = {}
         # Cache for base graph definitions (without checkpointer/store).
         # For factory graphs, this holds the default-compiled graph (for schema extraction).
-        self._base_graph_cache: dict[str, Pregel] = {}
+        self._base_graph_cache: dict[str, Any] = {}
         # Factory callables — stored alongside the base cache so they can be
         # invoked per-request with the appropriate ServerRuntime/config.
         self._graph_factories: dict[str, Callable] = {}
@@ -103,20 +104,57 @@ class LangGraphService:
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
 
-    def _load_graph_registry(self):
+    def _parse_graph_entry(self, graph_id: str, graph_entry: str | dict[str, Any]) -> dict[str, str]:
+        """Parse and validate a graph entry from config.
+
+        Supported formats:
+        - Legacy string: ``"./path/to/graph.py:graph"``
+        - Object: ``{"runtime": "python" | "langgraphjs", "path": "./path:export"}``
+        """
+        runtime = "python"
+        graph_path: str
+
+        if isinstance(graph_entry, str):
+            graph_path = graph_entry
+        elif isinstance(graph_entry, dict):
+            runtime_value = graph_entry.get("runtime", "python")
+            if runtime_value not in {"python", "langgraphjs"}:
+                raise ValueError(
+                    f"Invalid runtime '{runtime_value}' for graph '{graph_id}'. "
+                    "Supported runtimes: 'python', 'langgraphjs'"
+                )
+            runtime = runtime_value
+
+            raw_path = graph_entry.get("path")
+            if not isinstance(raw_path, str) or not raw_path:
+                raise ValueError(
+                    f"Invalid graph config for '{graph_id}'. Object entries must include a non-empty 'path' string"
+                )
+            graph_path = raw_path
+        else:
+            raise ValueError(
+                f"Invalid graph config for '{graph_id}'. Expected a string or an object with runtime/path fields"
+            )
+
+        if ":" not in graph_path:
+            raise ValueError(f"Invalid graph path format for '{graph_id}': {graph_path}")
+
+        file_path, export_name = graph_path.split(":", 1)
+        if not file_path or not export_name:
+            raise ValueError(f"Invalid graph path format for '{graph_id}': {graph_path}")
+
+        return {
+            "runtime": runtime,
+            "file_path": file_path,
+            "export_name": export_name,
+        }
+
+    def _load_graph_registry(self) -> None:
         """Load graph definitions from aegra.json"""
         graphs_config = self.config.get("graphs", {})
 
-        for graph_id, graph_path in graphs_config.items():
-            # Parse path format: "./graphs/weather_agent.py:graph"
-            if ":" not in graph_path:
-                raise ValueError(f"Invalid graph path format: {graph_path}")
-
-            file_path, export_name = graph_path.split(":", 1)
-            self._graph_registry[graph_id] = {
-                "file_path": file_path,
-                "export_name": export_name,
-            }
+        for graph_id, graph_entry in graphs_config.items():
+            self._graph_registry[graph_id] = self._parse_graph_entry(graph_id, graph_entry)
 
     def _setup_dependencies(self) -> None:
         """Add dependency paths to sys.path for graph imports.
@@ -195,7 +233,7 @@ class LangGraphService:
         finally:
             await session.close()
 
-    async def _get_base_graph(self, graph_id: str) -> Pregel:
+    async def _get_base_graph(self, graph_id: str) -> Any:
         """Get the base compiled graph without checkpointer/store.
 
         Caches the compiled graph structure for reuse. This is safe because
@@ -238,7 +276,7 @@ class LangGraphService:
         access_context: AccessContext = "threads.create_run",
         user: User | BaseUser | None = None,
         context: dict[str, Any] | None = None,
-    ) -> AsyncIterator[Pregel]:
+    ) -> AsyncIterator[Any]:
         """Get a graph instance for execution with checkpointer/store injected.
 
         For factory graphs, the factory is invoked per-request with the
@@ -349,7 +387,7 @@ class LangGraphService:
         config: dict[str, Any] | None = None,
         access_context: AccessContext = "assistants.read",
         user: User | BaseUser | None = None,
-    ) -> Pregel:
+    ) -> Any:
         """Get a graph instance for validation/schema extraction only.
 
         For factory graphs, the factory is invoked with the given access context
@@ -392,7 +430,101 @@ class LangGraphService:
 
         return await self._get_base_graph(graph_id)
 
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Pregel | StateGraph:
+    async def _load_langgraphjs_graph(self, graph_id: str, graph_info: dict[str, str]) -> Any:
+        """Load a LangGraphJS graph via the Aegra JS bridge subprocess.
+
+        The bridge spawns a Node.js process that loads and executes
+        LangGraph.js graphs, communicating via JSON-RPC over stdin/stdout.
+
+        Falls back to the ``langgraph_api.js`` loader if the bridge is
+        not available (e.g. when using the official LangGraph API server
+        bridge package).
+        """
+        from aegra_api.services.js_bridge import JSBridgeError, get_js_bridge
+        from aegra_api.services.js_graph_wrapper import JSGraphWrapper
+
+        raw_path = graph_info["file_path"]
+        export_name = graph_info["export_name"]
+        file_path = Path(raw_path)
+
+        if not file_path.is_absolute():
+            file_path = (self.config_path.parent / file_path).resolve()
+
+        if not file_path.exists():
+            raise ValueError(f"LangGraphJS graph file not found: {file_path}")
+
+        # --- Primary: Aegra JS bridge ---
+        try:
+            bridge = await get_js_bridge()
+            graph_info_result = await bridge.load_graph(str(file_path), export_name, graph_id)
+            logger.info(
+                "Loaded LangGraphJS graph via bridge",
+                graph_id=graph_id,
+                file_path=str(file_path),
+            )
+            return JSGraphWrapper(bridge, graph_id, graph_info_result)
+
+        except JSBridgeError as bridge_exc:
+            logger.warning(
+                "JS bridge failed, trying fallback loaders",
+                graph_id=graph_id,
+                error=str(bridge_exc),
+            )
+
+        # --- Fallback: langgraph_api.js loader (external bridge package) ---
+        loader_candidates: list[tuple[str, list[str]]] = [
+            ("langgraph_api.js.loader", ["load_graph", "load_graph_from_path", "load_js_graph"]),
+            ("langgraph_api.js", ["load_graph", "load_graph_from_path", "load_js_graph"]),
+        ]
+
+        import_errors: list[str] = []
+
+        for module_name, function_names in loader_candidates:
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError as exc:
+                import_errors.append(f"{module_name}: {exc}")
+                continue
+
+            for function_name in function_names:
+                loader = getattr(module, function_name, None)
+                if not callable(loader):
+                    continue
+
+                call_patterns: list[tuple[Any, ...]] = [
+                    (str(file_path), export_name),
+                    (str(file_path),),
+                ]
+
+                for args in call_patterns:
+                    try:
+                        result = loader(*args)
+                    except TypeError:
+                        continue
+
+                    if asyncio.iscoroutine(result):
+                        result = await result
+
+                    return result
+
+                try:
+                    result = loader(str(file_path), export_name=export_name)
+                except TypeError:
+                    continue
+
+                if asyncio.iscoroutine(result):
+                    result = await result
+
+                return result
+
+        import_summary = "; ".join(import_errors) if import_errors else "No compatible JS loader entrypoint found"
+        raise ValueError(
+            "Failed to load LangGraphJS graph. Ensure Node.js 18+ is installed "
+            "and libs/aegra-js-bridge/ dependencies are set up, or install a "
+            f"LangGraph JS bridge package. Details: {import_summary}"
+        )
+
+    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Any:
         """Load graph from filesystem.
 
         Paths are resolved relative to the config file's directory.
@@ -413,6 +545,10 @@ class LangGraphService:
         Raises:
             ValueError: If the file or export is not found.
         """
+        runtime = graph_info.get("runtime", "python")
+        if runtime == "langgraphjs":
+            return await self._load_langgraphjs_graph(graph_id, graph_info)
+
         raw_path = graph_info["file_path"]
         file_path = Path(raw_path)
 

@@ -180,7 +180,20 @@ def _ensure_js_dependencies(config_path: Path) -> None:
         )
         return
 
+    if not isinstance(config, dict):
+        console.print(
+            f"[yellow]Warning:[/yellow] Invalid config format in {config_path}:"
+            " expected JSON object"
+        )
+        return
+
     graphs = config.get("graphs", {})
+    if not isinstance(graphs, dict):
+        console.print(
+            f"[yellow]Warning:[/yellow] Invalid 'graphs' section in {config_path}: expected object"
+        )
+        return
+
     js_graphs = {}
     for graph_id, entry in graphs.items():
         if isinstance(entry, dict) and entry.get("runtime") == "langgraphjs":
@@ -228,9 +241,16 @@ def _ensure_js_dependencies(config_path: Path) -> None:
     installed_dirs: set[str] = set()
 
     for graph_id, entry in js_graphs.items():
-        graph_path_str = entry.get("path", "")
+        graph_path_value = entry.get("path", "")
+        if not isinstance(graph_path_value, str) or not graph_path_value:
+            console.print(
+                f"[yellow]Warning:[/yellow] Graph '{graph_id}' has invalid 'path';"
+                " skipping npm install"
+            )
+            continue
+        graph_path_str = graph_path_value
         if ":" in graph_path_str:
-            file_part = graph_path_str.split(":")[0]
+            file_part = graph_path_str.rsplit(":", 1)[0]
         else:
             file_part = graph_path_str
 

@@ -67,8 +67,8 @@ async for chunk in client.runs.stream(
 
 ## Graph Structure
 
-```
+```text
 __start__ → chatbot → __end__
 ```
 
-Single node graph — the `chatbot` node invokes the LLM with the full message history and returns the response.
+Single-node graph — the `chatbot` node invokes the LLM with the full message history and returns the response.

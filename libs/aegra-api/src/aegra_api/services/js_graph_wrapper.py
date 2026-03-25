@@ -302,14 +302,12 @@ class JSGraphWrapper:
         """Merge the provided config with the instance config."""
         base = copy.deepcopy(self.config) if self.config else {}
         if config:
-            if isinstance(config, dict):
-                # Deep merge configurable
-                base_cfg = base.get("configurable", {})
-                new_cfg = config.get("configurable", {})
-                merged_cfg = {**base_cfg, **new_cfg}
-                base = {**base, **config, "configurable": merged_cfg}
-            else:
-                base = dict(config)
+            config_dict = dict(config) if not isinstance(config, dict) else config
+            # Deep merge configurable
+            base_cfg = base.get("configurable", {})
+            new_cfg = config_dict.get("configurable", {})
+            merged_cfg = {**base_cfg, **new_cfg}
+            base = {**base, **config_dict, "configurable": merged_cfg}
         return base
 
     # ------------------------------------------------------------------

@@ -6,7 +6,7 @@ Node.js bridge that allows the Aegra Python API to execute [LangGraph.js](https:
 
 The Aegra API spawns this package as a child process. Communication happens over **stdin** (requests) and **stdout** (responses). Diagnostic logs go to **stderr** so they never interfere with the protocol.
 
-```
+```text
 ┌──────────────┐  stdin (JSON-RPC)   ┌──────────────────┐
 │  Aegra API   │ ──────────────────► │  aegra-js-bridge  │
 │  (Python)    │ ◄────────────────── │  (Node.js / tsx)  │
@@ -89,7 +89,7 @@ During a `stream` call the bridge sends `stream_event` **notifications** (no `id
 
 ## Project Structure
 
-```
+```text
 src/
 ├── index.ts           # Entry point – stdin/stdout JSON-RPC server loop
 ├── protocol.ts        # JSON-RPC 2.0 types & serialization

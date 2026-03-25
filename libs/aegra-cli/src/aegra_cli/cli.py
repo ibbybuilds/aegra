@@ -172,9 +172,12 @@ def _ensure_js_dependencies(config_path: Path) -> None:
         config_path: Resolved path to aegra.json.
     """
     try:
-        with config_path.open() as f:
+        with config_path.open(encoding="utf-8") as f:
             config = json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError) as exc:
+        console.print(
+            f"[yellow]Warning:[/yellow] Could not read {config_path}: {exc}"
+        )
         return
 
     graphs = config.get("graphs", {})
@@ -214,8 +217,11 @@ def _ensure_js_dependencies(config_path: Path) -> None:
             )
             return
         console.print(f"[dim]Node.js {version_str} detected for LangGraph.js graphs[/dim]")
-    except Exception:
-        pass
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        console.print(
+            f"[yellow]Warning:[/yellow] Could not determine Node.js version: {exc}"
+        )
+        return
 
     # Install npm dependencies for each JS graph's directory
     config_dir = config_path.parent
@@ -232,7 +238,7 @@ def _ensure_js_dependencies(config_path: Path) -> None:
 
         # Look for package.json in the graph dir or its parents (up to config_dir)
         pkg_dir = graph_dir
-        while pkg_dir != config_dir.parent:
+        while True:
             pkg_json = pkg_dir / "package.json"
             if pkg_json.exists():
                 dir_key = str(pkg_dir)
@@ -263,7 +269,7 @@ def _ensure_js_dependencies(config_path: Path) -> None:
                                 "Install Node.js 18+ from [cyan]https://nodejs.org/[/cyan]"
                             )
                 break
-            if pkg_dir == config_dir:
+            if pkg_dir == config_dir or pkg_dir == pkg_dir.parent:
                 break
             pkg_dir = pkg_dir.parent
 

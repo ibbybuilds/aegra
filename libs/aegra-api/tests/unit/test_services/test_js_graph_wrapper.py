@@ -295,3 +295,122 @@ class TestJSGraphWrapperMisc:
 
     def test_initial_config_empty(self, wrapper):
         assert wrapper.config == {}
+
+
+class TestJSGraphWrapperStream:
+    """Tests for astream execution."""
+
+    async def test_astream_yields_mode_data_tuples(self, wrapper, mock_bridge):
+        """astream yields (mode, data) tuples from the bridge."""
+
+        async def mock_stream(*args, **kwargs):
+            for event in [
+                {"mode": "values", "data": {"messages": ["hello"]}},
+                {"mode": "updates", "data": {"node": "chatbot"}},
+            ]:
+                yield event
+
+        mock_bridge.stream = MagicMock(return_value=mock_stream())
+
+        results = []
+        async for item in wrapper.astream(
+            {"messages": [{"role": "user", "content": "hi"}]},
+            {"configurable": {"thread_id": "t1"}},
+        ):
+            results.append(item)
+
+        assert len(results) == 2
+        assert results[0] == ("values", {"messages": ["hello"]})
+        assert results[1] == ("updates", {"node": "chatbot"})
+
+    async def test_astream_saves_final_checkpoint(self, wrapper, mock_bridge):
+        """astream saves the final values state as a checkpoint."""
+
+        async def mock_stream(*args, **kwargs):
+            yield {"mode": "values", "data": {"messages": ["final"]}}
+
+        mock_bridge.stream = MagicMock(return_value=mock_stream())
+
+        mock_cp = MagicMock()
+        mock_cp.aput = AsyncMock()
+        wrapper.checkpointer = mock_cp
+
+        results = []
+        async for item in wrapper.astream(
+            {"messages": []},
+            {"configurable": {"thread_id": "t1"}},
+        ):
+            results.append(item)
+
+        mock_cp.aput.assert_called_once()
+        call_args = mock_cp.aput.call_args[0]
+        checkpoint = call_args[1]
+        assert checkpoint["channel_values"] == {"messages": ["final"]}
+
+    async def test_astream_no_checkpoint_without_values(self, wrapper, mock_bridge):
+        """astream does not save a checkpoint if no values events are received."""
+
+        async def mock_stream(*args, **kwargs):
+            yield {"mode": "updates", "data": {"node": "chatbot"}}
+
+        mock_bridge.stream = MagicMock(return_value=mock_stream())
+
+        mock_cp = MagicMock()
+        mock_cp.aput = AsyncMock()
+        wrapper.checkpointer = mock_cp
+
+        results = []
+        async for item in wrapper.astream(
+            {"messages": []},
+            {"configurable": {"thread_id": "t1"}},
+        ):
+            results.append(item)
+
+        mock_cp.aput.assert_not_called()
+
+
+class TestJSGraphWrapperStreamEvents:
+    """Tests for astream_events execution."""
+
+    async def test_astream_events_wraps_in_v2_format(self, wrapper, mock_bridge):
+        """astream_events wraps output in LangChain v2 event format."""
+
+        async def mock_stream(*args, **kwargs):
+            yield {"mode": "values", "data": {"messages": ["hello"]}}
+
+        mock_bridge.stream = MagicMock(return_value=mock_stream())
+
+        results = []
+        async for event in wrapper.astream_events(
+            {"messages": []},
+            {"configurable": {"thread_id": "t1", "run_id": "run-123"}},
+        ):
+            results.append(event)
+
+        assert len(results) == 1
+        assert results[0]["event"] == "on_chain_stream"
+        assert results[0]["run_id"] == "run-123"
+        assert results[0]["data"]["chunk"] == ("values", {"messages": ["hello"]})
+        assert results[0]["tags"] == []
+
+    async def test_astream_events_multiple_events(self, wrapper, mock_bridge):
+        """astream_events yields one event per stream chunk."""
+
+        async def mock_stream(*args, **kwargs):
+            yield {"mode": "values", "data": {"messages": ["a"]}}
+            yield {"mode": "updates", "data": {"node": "chatbot"}}
+            yield {"mode": "values", "data": {"messages": ["a", "b"]}}
+
+        mock_bridge.stream = MagicMock(return_value=mock_stream())
+
+        results = []
+        async for event in wrapper.astream_events(
+            {"messages": []},
+            {"configurable": {"thread_id": "t1"}},
+        ):
+            results.append(event)
+
+        assert len(results) == 3
+        assert results[0]["data"]["chunk"][0] == "values"
+        assert results[1]["data"]["chunk"][0] == "updates"
+        assert results[2]["data"]["chunk"][0] == "values"

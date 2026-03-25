@@ -139,7 +139,7 @@ class LangGraphService:
         if ":" not in graph_path:
             raise ValueError(f"Invalid graph path format for '{graph_id}': {graph_path}")
 
-        file_path, export_name = graph_path.split(":", 1)
+        file_path, export_name = graph_path.rsplit(":", 1)
         if not file_path or not export_name:
             raise ValueError(f"Invalid graph path format for '{graph_id}': {graph_path}")
 

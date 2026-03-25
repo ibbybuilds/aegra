@@ -381,8 +381,8 @@ class JSBridge:
                 await logger.adebug("JS bridge stderr", output=line.decode().rstrip())
         except asyncio.CancelledError:
             return
-        except Exception:
-            pass
+        except (OSError, UnicodeDecodeError) as exc:
+            await logger.awarning("JS bridge stderr reader failed", exc_info=exc)
 
     async def _dispatch(self, msg: dict) -> None:
         """Route an incoming JSON-RPC message to the right handler."""
@@ -439,12 +439,33 @@ class JSBridge:
 
 
 def _find_node() -> str:
-    """Find the Node.js binary."""
+    """Find the Node.js binary and verify version >= 18."""
     node = shutil.which("node")
     if not node:
         raise JSBridgeError(
             "Node.js not found. Install Node.js 18+ to use LangGraph.js graphs.\nDownload from: https://nodejs.org/"
         )
+
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            [node, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        version_str = result.stdout.strip().lstrip("v")
+        major = int(version_str.split(".")[0])
+        if major < 18:
+            raise JSBridgeError(
+                f"Node.js {version_str} detected but LangGraph.js requires 18+.\n"
+                "Download from: https://nodejs.org/"
+            )
+    except JSBridgeError:
+        raise
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.warning("Could not determine Node.js version", exc_info=exc)
 
     return node
 
@@ -463,21 +484,25 @@ def _find_npx() -> str:
 # Singleton
 # ------------------------------------------------------------------
 
+_bridge_lock = asyncio.Lock()
 _bridge_instance: JSBridge | None = None
 
 
 async def get_js_bridge() -> JSBridge:
     """Get or create the singleton JS bridge instance."""
     global _bridge_instance
-    if _bridge_instance is None or not _bridge_instance.is_running:
-        _bridge_instance = JSBridge()
-        await _bridge_instance.start()
-    return _bridge_instance
+    async with _bridge_lock:
+        if _bridge_instance is None:
+            _bridge_instance = JSBridge()
+        if not _bridge_instance.is_running:
+            await _bridge_instance.start()
+        return _bridge_instance
 
 
 async def stop_js_bridge() -> None:
     """Stop the singleton JS bridge if running."""
     global _bridge_instance
-    if _bridge_instance is not None:
-        await _bridge_instance.stop()
-        _bridge_instance = None
+    async with _bridge_lock:
+        if _bridge_instance is not None:
+            await _bridge_instance.stop()
+            _bridge_instance = None

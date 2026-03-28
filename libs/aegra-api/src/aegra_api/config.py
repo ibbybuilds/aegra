@@ -23,7 +23,7 @@ class CorsConfig(TypedDict, total=False):
 
 
 class HttpConfig(TypedDict, total=False):
-    """HTTP configuration options for custom routes"""
+    """HTTP configuration options for custom routes and protocol adapters"""
 
     app: str
     """Import path for custom Starlette/FastAPI app to mount"""
@@ -31,6 +31,10 @@ class HttpConfig(TypedDict, total=False):
     """Apply Aegra authentication dependency to custom routes (uses FastAPI dependencies, not middleware)"""
     cors: CorsConfig | None
     """Custom CORS configuration"""
+    disable_a2a: bool
+    """Disable A2A (Agent-to-Agent) protocol endpoint. Default: False (enabled)."""
+    disable_mcp: bool
+    """Disable MCP (Model Context Protocol) endpoint. Default: False (enabled)."""
 
 
 class StoreIndexConfig(TypedDict, total=False):

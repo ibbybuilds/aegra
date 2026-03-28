@@ -7,6 +7,8 @@ Aegra is an open-source, self-hosted alternative to LangSmith Deployments. This 
 ## Features
 
 - **Agent Protocol Compliant**: Works with Agent Chat UI, LangGraph Studio, CopilotKit
+- **A2A Protocol**: Agent-to-Agent communication for multi-agent workflows
+- **MCP Support**: Exposes agents as MCP tools for Claude Desktop, Cursor, and other MCP clients
 - **Drop-in Replacement**: Compatible with the LangGraph SDK
 - **Self-Hosted**: Run on your own PostgreSQL database
 - **Streaming Support**: Real-time streaming of agent responses
@@ -119,6 +121,10 @@ OTEL_TARGETS=LANGFUSE,PHOENIX
 | `/store` | PUT | Save to vector store |
 | `/store/search` | POST | Semantic search |
 | `/health` | GET | Health check |
+| `/mcp` | POST | MCP (Model Context Protocol) Streamable HTTP endpoint |
+| `/a2a/{assistant_id}` | POST | A2A JSON-RPC endpoint |
+| `/.well-known/agent-card.json` | GET | A2A agent card discovery |
+| `/a2a/agent-cards` | GET | List all A2A agent cards |
 
 ## Creating Graphs
 

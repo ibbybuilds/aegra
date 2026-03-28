@@ -13,6 +13,10 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute, APIRouter
 
 from aegra_api import __version__
+from aegra_api.adapters.a2a_adapter import mount_a2a
+from aegra_api.adapters.a2a_service import get_a2a_service
+from aegra_api.adapters.mcp_adapter import mount_mcp
+from aegra_api.adapters.mcp_service import get_mcp_service
 from aegra_api.api.assistants import router as assistants_router
 from aegra_api.api.runs import router as runs_router
 from aegra_api.api.stateless_runs import router as stateless_runs_router
@@ -94,6 +98,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Initialize LangGraph service
     langgraph_service = get_langgraph_service()
     await langgraph_service.initialize()
+
+    # Wire LangGraph service into MCP service so tool calls can execute graphs
+    get_mcp_service().set_langgraph_service(langgraph_service)
+
+    # Wire LangGraph service into A2A service so agent calls can execute graphs
+    get_a2a_service().set_langgraph_service(langgraph_service)
 
     # Initialize event store cleanup task
     await event_store.start_cleanup_task()
@@ -266,6 +276,29 @@ def _include_core_routers(app: FastAPI) -> None:
     app.include_router(store_router)
 
 
+def _mount_protocol_adapters(app: FastAPI, http_config: HttpConfig | None) -> None:
+    """Conditionally mount A2A and MCP protocol adapters.
+
+    Both adapters are enabled by default. Disable via aegra.json:
+        {"http": {"disable_mcp": true, "disable_a2a": true}}
+
+    Args:
+        app: FastAPI application instance
+        http_config: HTTP configuration from aegra.json or None
+    """
+    if not (http_config or {}).get("disable_mcp", False):
+        mount_mcp(app)
+        logger.info("MCP protocol adapter enabled")
+    else:
+        logger.info("MCP protocol adapter disabled via config")
+
+    if not (http_config or {}).get("disable_a2a", False):
+        mount_a2a(app)
+        logger.info("A2A protocol adapter enabled")
+    else:
+        logger.info("A2A protocol adapter disabled via config")
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -296,6 +329,7 @@ def create_app() -> FastAPI:
         if not application.openapi_tags:
             application.openapi_tags = OPENAPI_TAGS
         _include_core_routers(application)
+        _mount_protocol_adapters(application, http_config)
 
         # Add root endpoint if not already defined
         if not any(route.path == "/" for route in application.routes if hasattr(route, "path")):
@@ -322,6 +356,7 @@ def create_app() -> FastAPI:
 
         _add_common_middleware(application, cors_config)
         _include_core_routers(application)
+        _mount_protocol_adapters(application, http_config)
 
         for exc_type, handler in exception_handlers.items():
             application.exception_handler(exc_type)(handler)

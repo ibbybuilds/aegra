@@ -37,6 +37,8 @@ aegra dev
   "http": {
     "app": "./custom_routes.py:app",
     "enable_custom_route_auth": false,
+    "disable_a2a": false,
+    "disable_mcp": false,
     "cors": {
       "allow_origins": ["https://example.com"],
       "allow_credentials": true
@@ -239,10 +241,22 @@ Configure custom routes and CORS.
 |-------|------|---------|-------------|
 | `app` | `string` | `None` | Import path to custom FastAPI app |
 | `enable_custom_route_auth` | `bool` | `false` | Apply Aegra auth to all custom routes |
+| `disable_a2a` | `bool` | `false` | Disable the A2A (Agent-to-Agent) protocol endpoint at `/a2a/` |
+| `disable_mcp` | `bool` | `false` | Disable the MCP (Model Context Protocol) endpoint at `/mcp` |
 | `cors.allow_origins` | `list[str]` | `["*"]` | Allowed CORS origins |
 | `cors.allow_credentials` | `bool` | `false` when origins is `["*"]`, `true` otherwise | Allow credentials in CORS requests |
 
 See [custom routes guide](/guides/custom-routes) for details.
+
+### `disable_a2a`
+- **Type:** `boolean`
+- **Default:** `false`
+- Disable the A2A (Agent-to-Agent) protocol endpoint at `/a2a/`.
+
+### `disable_mcp`
+- **Type:** `boolean`
+- **Default:** `false`
+- Disable the MCP (Model Context Protocol) endpoint at `/mcp`.
 
 ## `store`
 

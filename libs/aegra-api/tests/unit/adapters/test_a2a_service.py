@@ -164,7 +164,7 @@ def test_all_statuses_mapped() -> None:
 
 def test_status_mapping_covers_known_run_statuses() -> None:
     """The expected run statuses are present in the mapping."""
-    expected = {"pending", "running", "success", "error", "interrupted"}
+    expected = {"pending", "running", "success", "error", "timeout", "interrupted"}
     assert expected.issubset(set(RUN_STATUS_TO_TASK_STATE.keys()))
 
 

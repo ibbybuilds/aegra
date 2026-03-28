@@ -52,6 +52,7 @@ RUN_STATUS_TO_TASK_STATE: dict[str, str] = {
     "running": "working",
     "success": "completed",
     "error": "failed",
+    "timeout": "failed",
     "interrupted": "input-required",
 }
 
@@ -208,7 +209,11 @@ class A2AService:
             ValueError: If any message part is not a text part.
             ValueError: If ``assistant_id`` is not a known graph in the
                 registry.
+            RuntimeError: If the LangGraph service has not been initialized.
         """
+        if not self._langgraph_service:
+            raise RuntimeError("LangGraph service not initialized")
+
         registry: dict[str, Any] = self._langgraph_service._graph_registry
 
         # Resolve graph_id: if assistant_id is already a graph key use it
@@ -277,6 +282,9 @@ class A2AService:
         Yields:
             SSE-formatted strings containing A2A streaming events.
         """
+        if not self._langgraph_service:
+            raise RuntimeError("LangGraph service not initialized")
+
         registry: dict[str, Any] = self._langgraph_service._graph_registry
         graph_id = assistant_id if assistant_id in registry else assistant_id
         resolved_assistant_id = resolve_assistant_id(graph_id, registry)

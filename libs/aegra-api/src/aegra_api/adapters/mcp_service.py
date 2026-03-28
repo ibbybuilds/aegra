@@ -45,6 +45,9 @@ class MCPService:
             List of tool descriptor dicts with ``name``, ``description``,
             and ``inputSchema`` keys.
         """
+        if not self._langgraph_service:
+            return []
+
         tools: list[dict[str, Any]] = []
         registry: dict[str, Any] = self._langgraph_service._graph_registry
 
@@ -85,7 +88,11 @@ class MCPService:
 
         Raises:
             ValueError: If ``tool_name`` is not a known graph ID.
+            RuntimeError: If the LangGraph service has not been initialized.
         """
+        if not self._langgraph_service:
+            raise RuntimeError("LangGraph service not initialized")
+
         registry: dict[str, Any] = self._langgraph_service._graph_registry
 
         if tool_name not in registry:

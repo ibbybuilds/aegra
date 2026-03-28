@@ -4220,6 +4220,10 @@
           "before": {
             "anyOf": [
               {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
                 "type": "string"
               },
               {
@@ -4227,7 +4231,7 @@
               }
             ],
             "title": "Before",
-            "description": "Return states before this checkpoint ID"
+            "description": "Return states before this checkpoint (checkpoint dict or checkpoint ID string)"
           },
           "metadata": {
             "anyOf": [

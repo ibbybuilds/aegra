@@ -88,7 +88,7 @@ from langgraph_sdk import get_client
 async def main():
     client = get_client(url="http://localhost:2026")
 
-    await client.store.put(
+    await client.store.put_item(
         namespace=["user", "123", "preferences"],
         key="coding_style",
         value={
@@ -104,7 +104,7 @@ asyncio.run(main())
 
 ```python
 # Assumes an initialized client inside an async function — see example above
-results = await client.store.search(
+results = await client.store.search_items(
     namespace_prefix=["user", "123"],
     query="How does this user like to write code?",
     limit=5,

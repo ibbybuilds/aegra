@@ -681,10 +681,19 @@ async def get_thread_history_post(
         elif checkpoint_ns is not None:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
+        # Convert `before` to a RunnableConfig for aget_state_history.
+        # The SDK sends `before` as either a checkpoint ID string or a
+        # Checkpoint dict with thread_id/checkpoint_ns/checkpoint_id keys.
+        before_config: dict[str, Any] | None = None
+        if isinstance(before, str):
+            before_config = {"configurable": {"checkpoint_id": before}}
+        elif isinstance(before, dict):
+            before_config = {"configurable": before}
+
         state_snapshots = []
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "limit": limit,
-            "before": before,
+            "before": before_config,
         }
         if metadata is not None:
             kwargs["metadata"] = metadata

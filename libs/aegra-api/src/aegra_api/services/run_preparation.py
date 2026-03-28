@@ -28,13 +28,6 @@ from aegra_api.utils.run_utils import _merge_jsonb
 logger = structlog.getLogger(__name__)
 
 
-CONFIGURABLE_CONTEXT_CONFLICT_MSG = (
-    "Cannot specify both configurable and context. Prefer setting context alone. "
-    "Context was introduced in LangGraph 0.6.0 and is the long term planned "
-    "replacement for configurable."
-)
-
-
 async def _validate_resume_command(session: AsyncSession, thread_id: str, command: dict[str, Any] | None) -> None:
     """Validate resume command requirements."""
     if command and command.get("resume") is not None:
@@ -127,14 +120,12 @@ async def _prepare_run(
     config = request.config or {}
     context = request.context or {}
     configurable = config.get("configurable", {})
+    if not isinstance(configurable, dict):
+        raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
 
-    if config.get("configurable") and context:
-        raise HTTPException(status_code=400, detail=CONFIGURABLE_CONTEXT_CONFLICT_MSG)
-
-    if context:
-        configurable = context.copy()
-        config["configurable"] = configurable
-    else:
+    if context and not configurable:
+        pass
+    elif not context:
         context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(

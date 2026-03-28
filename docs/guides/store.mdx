@@ -12,19 +12,26 @@ The store works without any configuration — it's available by default.
 ### Put an item
 
 ```python
+import asyncio
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:2026")
 
-await client.store.put_item(
-    namespace=["users", "alice", "preferences"],
-    key="theme",
-    value={"color": "dark", "font_size": 14},
-)
+async def main():
+    client = get_client(url="http://localhost:2026")
+
+    await client.store.put_item(
+        namespace=["users", "alice", "preferences"],
+        key="theme",
+        value={"color": "dark", "font_size": 14},
+    )
+
+
+asyncio.run(main())
 ```
 
 <Note>
   Values must be JSON objects (dicts). Primitive values like strings or numbers are not accepted.
+  The snippets below assume you are inside an `async def` function with an initialized `client` — see the example above.
 </Note>
 
 ### Get an item

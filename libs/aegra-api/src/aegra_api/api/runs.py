@@ -23,7 +23,6 @@ from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
 from aegra_api.services.executor import executor
 from aegra_api.services.run_executor import execute_run as execute_run_async  # noqa: F401
 from aegra_api.services.run_preparation import (
-    CONFIGURABLE_CONTEXT_CONFLICT_MSG,  # noqa: F401
     _prepare_run,
     _validate_resume_command,  # noqa: F401
     update_thread_metadata,  # noqa: F401
@@ -84,6 +83,7 @@ async def create_run(
             request.context = {**(request.context or {}), **value_context}
 
     _run_id, run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
+
     return run
 
 

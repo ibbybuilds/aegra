@@ -190,7 +190,7 @@ async def inspect_state():
     history = await client.threads.get_history(thread_id)
     print(f"Total checkpoints: {len(history)}")
     for entry in history:
-        print(f"  Checkpoint: {entry['checkpoint_id']}")
+        print(f"  Checkpoint: {entry['checkpoint']['checkpoint_id']}")
 
 
 asyncio.run(inspect_state())

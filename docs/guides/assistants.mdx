@@ -24,18 +24,24 @@ This automatically creates an assistant with ID `"agent"` that you can use immed
 Create custom assistants with specific configurations:
 
 ```python
+import asyncio
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:2026")
 
-assistant = await client.assistants.create(
-    graph_id="agent",
-    name="Customer Support Agent",
-    description="Handles customer inquiries with web search",
-    metadata={"department": "support", "tier": "premium"},
-)
+async def main():
+    client = get_client(url="http://localhost:2026")
 
-print(assistant["assistant_id"])
+    # Create an assistant from your graph
+    assistant = await client.assistants.create(
+        graph_id="agent",
+        name="Customer Support Agent",
+        description="Handles customer inquiries with web search",
+        metadata={"department": "support", "tier": "premium"},
+    )
+    print(f"Assistant ID: {assistant['assistant_id']}")
+
+
+asyncio.run(main())
 ```
 
 ### Idempotent creation
@@ -49,6 +55,10 @@ assistant = await client.assistants.create(
     if_exists="do_nothing",  # Returns existing if already created
 )
 ```
+
+<Note>
+  The snippets below assume you are inside an `async def` function with an initialized `client` — see the example above.
+</Note>
 
 ## Listing and searching
 

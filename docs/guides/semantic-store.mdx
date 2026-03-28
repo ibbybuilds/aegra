@@ -81,22 +81,29 @@ COHERE_API_KEY=...
 ### Storing items
 
 ```python
+import asyncio
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:2026")
 
-await client.store.put(
-    namespace=["user", "123", "preferences"],
-    key="coding_style",
-    value={
-        "text": "I prefer clean code with descriptive variable names and minimal comments"
-    },
-)
+async def main():
+    client = get_client(url="http://localhost:2026")
+
+    await client.store.put(
+        namespace=["user", "123", "preferences"],
+        key="coding_style",
+        value={
+            "text": "I prefer clean code with descriptive variable names and minimal comments"
+        },
+    )
+
+
+asyncio.run(main())
 ```
 
 ### Semantic search
 
 ```python
+# Assumes an initialized client inside an async function — see example above
 results = await client.store.search(
     namespace_prefix=["user", "123"],
     query="How does this user like to write code?",

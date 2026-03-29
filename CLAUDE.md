@@ -107,6 +107,14 @@ def process(items): ...
 - Use absolute imports with `aegra_api.*` prefix.
 - **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** (confirmed by actual `ImportError`) or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If unsure, put it at the top — only move inline after confirming the import cycle with an actual error.
 
+### Linter Suppressions (`noqa`, `type: ignore`)
+- **NEVER suppress a lint warning when the underlying issue can be fixed.** `# noqa: F401` on a dead re-export means you should delete the re-export and fix the importers. `# type: ignore` on a type mismatch means you should fix the types.
+- Suppressions are **only acceptable** when:
+  1. The linter is genuinely wrong (false positive for this specific case).
+  2. There is no correct fix — e.g., `# noqa: S311` on `random.uniform` used for jitter (not security), or `# noqa: B017` when an SDK doesn't expose specific exception types.
+  3. A third-party API forces an incompatible type that cannot be narrowed.
+- If you're tempted to add a suppression, first try to fix the code. If you can't, add a comment explaining **why** the suppression is necessary.
+
 ### Error Handling
 - **NEVER use bare `except:` or `except Exception: pass`.** Always catch specific exceptions.
 - Handle errors at function entry with **guard clauses and early returns** — place the happy path last.

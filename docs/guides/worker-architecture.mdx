@@ -153,6 +153,47 @@ Key details:
 3. **Heartbeats** extend the lease every 10 seconds. If a worker crashes, the lease expires and the run becomes eligible for recovery.
 4. **OpenTelemetry trace context** propagates across the Redis queue boundary, so traces span the full request lifecycle.
 
+### Streaming run with crash recovery
+
+The full picture — a streaming run shows how the client SSE connection, worker execution, and reaper recovery all interact:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Redis
+    participant Worker
+    participant DB
+    participant Reaper
+
+    Client->>API: POST /runs/stream
+    API->>DB: INSERT run (status=pending, execution_params)
+    API->>Redis: RPUSH run_id to job queue
+    API-->>Client: SSE stream (waiting for broker events)
+
+    Worker->>Redis: BLPOP job queue (5s timeout)
+    Redis-->>Worker: run_id
+    Worker->>DB: UPDATE SET status=running, claimed_by=worker, lease_expires_at=now+30s WHERE status=pending
+    DB-->>Worker: rowcount=1 (lease acquired)
+    Worker->>DB: SELECT execution_params
+    Worker->>Worker: execute_run(job) + heartbeat_loop
+    loop every 10s
+        Worker->>DB: UPDATE lease_expires_at = now+30s
+    end
+    Worker->>Redis: PUBLISH events to SSE channel
+    Redis-->>Client: SSE events
+    Worker->>DB: finalize_run (status=success/interrupted/error)
+    Worker->>DB: UPDATE claimed_by=NULL, lease_expires_at=NULL
+    Worker->>Redis: SET done key (TTL 1h)
+
+    Note over Reaper: every 15s
+    Reaper->>DB: SELECT runs WHERE status=running AND lease_expires_at < now
+    DB-->>Reaper: crashed_run_ids
+    Reaper->>DB: UPDATE status=pending, claimed_by=NULL WHERE status=running AND lease_expires_at < now
+    Reaper->>DB: increment _retry_count in execution_params
+    Reaper->>Redis: RPUSH run_id (re-enqueue for another worker)
+```
+
 ## Crash recovery
 
 Every instance runs a `LeaseReaper` background task that scans for runs with expired leases. When a worker crashes (OOM, kill signal, network partition), its heartbeat stops and the lease expires. The reaper resets the run to `pending` and re-enqueues it. The new worker resumes from the last checkpoint.

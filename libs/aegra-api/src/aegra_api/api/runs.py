@@ -92,7 +92,7 @@ async def create_and_stream_run(
     after the client disconnects (default is `"cancel"`). Use `stream_mode`
     to control which event types are emitted.
     """
-    run_id, run, _job = await _prepare_run(session, thread_id, request, user, initial_status="running")
+    run_id, run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
     # Default to cancel on disconnect - this matches user expectation that clicking
     # "Cancel" in the frontend will stop the backend task. Users can explicitly

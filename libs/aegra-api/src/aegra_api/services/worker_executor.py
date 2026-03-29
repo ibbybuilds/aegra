@@ -274,9 +274,15 @@ class WorkerExecutor(BaseExecutor):
         except Exception:
             logger.exception("Worker job failed", worker=worker_name, run_id=run_id)
         finally:
+            # Cancel both child tasks — job_task may still be running if
+            # this coroutine was cancelled by wait_for timeout (CancelledError
+            # is delivered to `await job_task`, but the Task itself is not
+            # cancelled automatically).
+            if not job_task.done():
+                job_task.cancel()
             heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
+                await asyncio.gather(job_task, heartbeat_task, return_exceptions=True)
             await _release_lease(run_id, worker_name)
 
             elapsed = (datetime.now(UTC) - lease_acquired_at).total_seconds()

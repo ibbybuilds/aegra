@@ -524,3 +524,45 @@ class TestExecuteAndRelease:
         assert not semaphore.locked()
         # Cleaned up
         assert run_id not in active_runs
+
+
+class TestExecuteWithLease:
+    @pytest.mark.asyncio
+    async def test_cancels_job_task_in_finally(self) -> None:
+        """Regression: when _execute_with_lease is cancelled (e.g. by wait_for
+        timeout), the inner job_task must also be cancelled to prevent orphaned
+        execution that corrupts run state."""
+        run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        executor = WorkerExecutor()
+
+        job_task_was_cancelled = False
+
+        async def long_running_job(job: object) -> None:
+            nonlocal job_task_was_cancelled
+            try:
+                await asyncio.sleep(9999)
+            except asyncio.CancelledError:
+                job_task_was_cancelled = True
+                raise
+
+        mock_loaded = MagicMock(spec=_LoadedRun)
+        mock_loaded.job = _make_run_job()
+        mock_loaded.trace = {}
+
+        with (
+            patch(f"{MODULE}._acquire_and_load", new_callable=AsyncMock, return_value=mock_loaded),
+            patch(f"{MODULE}._restore_trace_context"),
+            patch(f"{MODULE}.execute_run", side_effect=long_running_job),
+            patch(f"{MODULE}._heartbeat_loop", new_callable=AsyncMock),
+            patch(f"{MODULE}._release_lease", new_callable=AsyncMock),
+        ):
+            # Run _execute_with_lease in a task and cancel it (simulating wait_for timeout).
+            # The CancelledError is caught internally by _execute_with_lease's
+            # except block, so the task completes normally — but the inner
+            # job_task must still have been cancelled.
+            task = asyncio.create_task(executor._execute_with_lease(run_id, "worker-0"))
+            await asyncio.sleep(0.05)  # Let it start
+            task.cancel()
+            await task  # Completes normally (CancelledError is handled internally)
+
+        assert job_task_was_cancelled, "job_task must be cancelled when _execute_with_lease is cancelled"

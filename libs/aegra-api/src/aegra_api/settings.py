@@ -175,6 +175,7 @@ class WorkerSettings(EnvBase):
     LEASE_DURATION_SECONDS: int = 30
     HEARTBEAT_INTERVAL_SECONDS: int = 10
     REAPER_INTERVAL_SECONDS: int = 15
+    STUCK_PENDING_THRESHOLD_SECONDS: int = 120
     POSTGRES_POLL_INTERVAL_SECONDS: int = 5
 
     @model_validator(mode="after")

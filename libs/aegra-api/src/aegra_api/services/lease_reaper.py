@@ -109,7 +109,7 @@ class LeaseReaper:
                 select(RunORM.run_id).where(
                     RunORM.status == "pending",
                     RunORM.claimed_by.is_(None),
-                    RunORM.created_at < now - timedelta(minutes=2),
+                    RunORM.created_at < now - timedelta(seconds=settings.worker.STUCK_PENDING_THRESHOLD_SECONDS),
                 )
             )
             stuck_pending = [row[0] for row in stuck_result.fetchall()]

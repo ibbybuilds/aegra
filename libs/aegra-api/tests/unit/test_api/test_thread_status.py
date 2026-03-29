@@ -51,7 +51,7 @@ class TestSetThreadStatus:
         """Test that set_thread_status imports and uses validation."""
         session = AsyncMock()
 
-        # Patch validate_thread_status in the utils module to verify it's called
+        # Patch validate_thread_status where it's used (in run_status module)
         with patch("aegra_api.services.run_status.validate_thread_status") as mock_validate:
             mock_validate.return_value = "busy"
             await set_thread_status(session, "thread-123", "busy")

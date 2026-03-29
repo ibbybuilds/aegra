@@ -206,6 +206,7 @@ async def test_worker_crash_recovery() -> None:
             ["docker", "compose", "-f", "docker-compose.multi.yml", "kill", "aegra-b"],
             capture_output=True,
             cwd=COMPOSE_DIR,
+            check=True,
         )
 
         # Wait for lease to expire (10s) + reaper interval (5s) + execution time
@@ -227,6 +228,7 @@ async def test_worker_crash_recovery() -> None:
                 ["docker", "compose", "-f", "docker-compose.multi.yml", "up", "-d", "aegra-b"],
                 capture_output=True,
                 cwd=COMPOSE_DIR,
+                check=True,
             )
             await asyncio.sleep(5)
 

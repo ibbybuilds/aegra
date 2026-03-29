@@ -68,7 +68,6 @@ class TestRunsStreamingEndpoints:
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.active_runs", {}),
             patch("aegra_api.api.runs.streaming_service.stream_run_execution") as mock_stream_exec,
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
@@ -153,9 +152,9 @@ class TestRunsStreamingEndpoints:
     @pytest.mark.asyncio
     async def test_execute_run_async_error_handling(self, mock_user: User, mock_session: AsyncMock) -> None:
         """Test that errors during streaming are properly caught and sent to broker"""
-        from aegra_api.api.runs import execute_run_async
         from aegra_api.models.run_job import RunExecution, RunIdentity, RunJob
         from aegra_api.services.broker import RunBroker, broker_manager
+        from aegra_api.services.run_executor import execute_run as execute_run_async
 
         run_id = str(uuid4())
         thread_id = str(uuid4())

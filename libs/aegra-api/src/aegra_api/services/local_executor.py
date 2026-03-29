@@ -50,7 +50,10 @@ class LocalExecutor(BaseExecutor):
         logger.info("Local executor started (in-process asyncio tasks)")
 
     async def stop(self) -> None:
-        for _run_id, task in list(active_runs.items()):
-            if not task.done():
-                task.cancel()
+        tasks_to_cancel = [task for task in active_runs.values() if not task.done()]
+        for task in tasks_to_cancel:
+            task.cancel()
+        if tasks_to_cancel:
+            logger.info("Draining cancelled tasks", count=len(tasks_to_cancel))
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
         logger.info("Local executor stopped")

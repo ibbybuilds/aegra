@@ -21,20 +21,8 @@ from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
 from aegra_api.services.executor import executor
-from aegra_api.services.run_executor import execute_run as execute_run_async  # noqa: F401
-from aegra_api.services.run_preparation import (
-    _prepare_run,
-    _validate_resume_command,  # noqa: F401
-    update_thread_metadata,  # noqa: F401
-)
-from aegra_api.services.run_status import (
-    set_thread_status,  # noqa: F401
-    update_run_status,  # noqa: F401
-)
+from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.services.streaming_service import streaming_service
-from aegra_api.utils.run_utils import (
-    map_command_to_langgraph,  # noqa: F401
-)
 from aegra_api.utils.status_compat import validate_run_status
 
 router = APIRouter(tags=["Thread Runs"], dependencies=auth_dependency)
@@ -327,8 +315,6 @@ async def wait_for_run(
         await executor.wait_for_completion(run_id, timeout=300.0)
     except TimeoutError:
         logger.warning(f"[wait_for_run] timeout waiting for run_id={run_id}")
-    except Exception:
-        logger.exception(f"[wait_for_run] unexpected exception in run_id={run_id}")
 
     # Session block 2: read final output
     async with maker() as session:

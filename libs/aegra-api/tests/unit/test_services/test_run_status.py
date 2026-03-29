@@ -86,7 +86,7 @@ class TestSetThreadStatus:
         await set_thread_status(session, "thread-1", "idle")
 
         session.execute.assert_awaited_once()
-        session.commit.assert_awaited_once()
+        session.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_raises_when_thread_not_found(self) -> None:

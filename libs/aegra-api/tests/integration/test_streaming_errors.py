@@ -11,11 +11,11 @@ from uuid import uuid4
 
 import pytest
 
-from aegra_api.api.runs import execute_run_async
 from aegra_api.models import User
 from aegra_api.models.run_job import RunExecution, RunIdentity, RunJob
 from aegra_api.services import streaming_service as streaming_service_module
 from aegra_api.services.broker import BrokerManager, RunBroker
+from aegra_api.services.run_executor import execute_run as execute_run_async
 
 
 @pytest.mark.asyncio

@@ -806,7 +806,6 @@ class TestWaitForRunTimeouts:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("asyncio.wait_for", side_effect=TimeoutError),
             patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_service,
-            patch("aegra_api.api.runs.execute_run_async"),
         ):
             mock_service.return_value.list_graphs.return_value = ["test-graph"]
 

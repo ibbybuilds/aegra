@@ -49,7 +49,6 @@ async def execute_run(job: RunJob) -> None:
                 thread_status="interrupted",
                 output=final_output.data,
             )
-            await _signal_end_event(run_id, "interrupted")
         else:
             await finalize_run(
                 run_id,
@@ -58,17 +57,19 @@ async def execute_run(job: RunJob) -> None:
                 thread_status="idle",
                 output=final_output.data,
             )
-            await _signal_end_event(run_id, "success")
 
     except asyncio.CancelledError:
         await finalize_run(run_id, thread_id, status="interrupted", thread_status="idle", output={})
-        await streaming_service.signal_run_cancelled(run_id)
+        await _best_effort_signal(streaming_service.signal_run_cancelled, run_id)
         raise
     except Exception as exc:
         logger.exception("Run failed", run_id=run_id)
         safe_message = f"{type(exc).__name__}: execution failed"
         await finalize_run(run_id, thread_id, status="error", thread_status="error", output={}, error=str(exc))
-        await streaming_service.signal_run_error(run_id, safe_message, type(exc).__name__)
+        await _best_effort_signal(streaming_service.signal_run_error, run_id, safe_message, type(exc).__name__)
+    else:
+        status = "interrupted" if final_output.has_interrupt else "success"
+        await _best_effort_signal(_signal_end_event, run_id, status)
     finally:
         await streaming_service.cleanup_run(run_id)
         active_runs.pop(run_id, None)
@@ -78,6 +79,18 @@ async def execute_run(job: RunJob) -> None:
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
+
+async def _best_effort_signal(fn: Any, *args: Any) -> None:
+    """Call a signaling function, logging but not raising on failure.
+
+    Signaling (end events, cancel/error notifications) must not override
+    an already-committed DB status if it fails.
+    """
+    try:
+        await fn(*args)
+    except Exception:
+        logger.warning("Signal failed (best-effort, DB status already committed)", fn=fn.__name__)
 
 
 class _GraphResult:
@@ -109,7 +122,7 @@ async def _stream_graph(job: RunJob) -> _GraphResult:
             user=job.user,
             context=job.execution.context,
         ) as graph,
-        with_auth_ctx(job.user, []),  # type: ignore[arg-type]
+        with_auth_ctx(job.user, job.user.permissions),  # type: ignore[arg-type]
     ):
         async for event_type, event_data in stream_graph_events(
             graph=graph,

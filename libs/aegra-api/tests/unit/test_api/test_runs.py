@@ -65,7 +65,6 @@ class TestRunsEndpoints:
             patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
             patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 

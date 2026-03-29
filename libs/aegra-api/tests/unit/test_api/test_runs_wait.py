@@ -116,7 +116,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
@@ -202,7 +201,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.side_effect = asyncio.CancelledError()
@@ -215,8 +213,8 @@ class TestWaitForRunExceptionPaths:
             assert mock_wait_for.called
 
     @pytest.mark.asyncio
-    async def test_wait_for_run_generic_exception(self) -> None:
-        """Test that generic Exception is handled gracefully."""
+    async def test_wait_for_run_generic_exception_propagates(self) -> None:
+        """Test that unexpected exceptions from wait_for_completion propagate as errors."""
         thread_id = "test-thread-123"
         run_id = str(uuid4())
         user = User(identity="test-user", scopes=[])
@@ -236,7 +234,6 @@ class TestWaitForRunExceptionPaths:
 
         session_1 = AsyncMock()
         session_1.add = MagicMock()
-        session_2 = AsyncMock()
 
         assistant = AssistantORM(
             assistant_id="test-assistant",
@@ -247,25 +244,9 @@ class TestWaitForRunExceptionPaths:
             updated_at=datetime.now(UTC),
         )
 
-        run_orm = RunORM(
-            run_id=run_id,
-            thread_id=thread_id,
-            assistant_id="test-assistant",
-            status="error",
-            input={"message": "test"},
-            config={},
-            context={},
-            user_id="test-user",
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
-            output={},
-            error_message="Something went wrong",
-        )
-
         session_1.scalar.return_value = assistant
-        session_2.scalar.return_value = run_orm
 
-        mock_maker = _make_multi_session_maker(session_1, session_2)
+        mock_maker = _make_multi_session_maker(session_1)
 
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
@@ -278,21 +259,14 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.services.run_preparation.set_thread_status", new_callable=AsyncMock),
             patch("aegra_api.services.run_preparation.update_thread_metadata", new_callable=AsyncMock),
             patch("aegra_api.services.run_preparation.uuid4", return_value=run_id),
-            patch("aegra_api.api.runs.asyncio.create_task") as mock_create_task,
-            patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
-            patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
-            patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
+            patch("aegra_api.api.runs.executor") as mock_executor,
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
-            mock_wait_for.side_effect = Exception("Test exception")
-            mock_task = AsyncMock()
-            mock_create_task.return_value = mock_task
+            mock_executor.submit = AsyncMock()
+            mock_executor.wait_for_completion = AsyncMock(side_effect=RuntimeError("Redis connection lost"))
 
-            result = await wait_for_run(thread_id, request, user)
-
-            assert result == {}
-            assert mock_wait_for.called
+            with pytest.raises(RuntimeError, match="Redis connection lost"):
+                await wait_for_run(thread_id, request, user)
 
     @pytest.mark.asyncio
     async def test_wait_for_run_disappeared(self) -> None:
@@ -349,7 +323,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None  # Task completes normally
@@ -431,7 +404,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
             patch("aegra_api.api.runs.logger") as mock_logger,
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -512,7 +484,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -591,7 +562,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -726,7 +696,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async", new_callable=MagicMock),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None
@@ -805,7 +774,6 @@ class TestWaitForRunExceptionPaths:
             patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
             patch("aegra_api.api.runs.asyncio.wait_for") as mock_wait_for,
             patch("aegra_api.api.runs.active_runs", {}),
-            patch("aegra_api.api.runs.execute_run_async"),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
             mock_wait_for.return_value = None

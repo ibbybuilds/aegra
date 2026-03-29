@@ -491,7 +491,6 @@ class TestExecuteAndRelease:
         assert registered_in_active is True
         # Cleaned up after execution
         assert run_id not in active_runs
-        assert run_id not in executor._run_tasks
         # Semaphore was released
         assert not semaphore.locked()
 

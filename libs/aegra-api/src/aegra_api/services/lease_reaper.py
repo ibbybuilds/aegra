@@ -64,15 +64,16 @@ class LeaseReaper:
         if not crashed and not stuck_pending:
             return
 
-        # Crashed workers: check retry limits before re-enqueueing
+        # Crashed workers: reset first (atomic claim), then check retries
         if crashed:
             logger.warning("Reaping crashed worker runs", count=len(crashed), run_ids=crashed)
-            retryable, exhausted = await self._check_retry_limits(crashed)
-            if exhausted:
-                await self._mark_permanently_failed(exhausted)
-            if retryable:
-                actually_reset = await self._reset_to_pending(retryable)
-                await self._reenqueue(actually_reset)
+            actually_reset = await self._reset_to_pending(crashed)
+            if actually_reset:
+                retryable, exhausted = await self._check_retry_limits(actually_reset)
+                if exhausted:
+                    await self._mark_permanently_failed(exhausted)
+                if retryable:
+                    await self._reenqueue(retryable)
 
         # Stuck pending: just re-enqueue (never executed, no retry budget)
         if stuck_pending:

@@ -50,6 +50,7 @@ async def update_thread_metadata(
     """Update thread metadata with assistant and graph information (dialect agnostic).
 
     If thread doesn't exist, auto-creates it.
+    Does NOT commit — the caller controls the transaction boundary.
     """
     # Read-modify-write to avoid DB-specific JSON concat operators
     thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
@@ -73,7 +74,6 @@ async def update_thread_metadata(
             user_id=user_id,
         )
         session.add(thread_orm)
-        await session.commit()
         return
 
     md = dict(getattr(thread, "metadata_json", {}) or {})
@@ -86,7 +86,6 @@ async def update_thread_metadata(
     await session.execute(
         update(ThreadORM).where(ThreadORM.thread_id == thread_id).values(metadata_json=md, updated_at=datetime.now(UTC))
     )
-    await session.commit()
 
 
 async def _prepare_run(

@@ -51,10 +51,6 @@ class WorkerExecutor(BaseExecutor):
         self._job_tasks: set[asyncio.Task[None]] = set()
         self._running = False
         self._instance_id = f"{socket.gethostname()}-{os.getpid()}"
-        # Per-run task registry for cancel propagation.
-        # RedisBrokerManager._execute_cancel checks active_runs first,
-        # then falls through. We register here so cancels reach worker jobs.
-        self._run_tasks: dict[str, asyncio.Task[None]] = {}
 
     # ------------------------------------------------------------------
     # Submit (API side)
@@ -208,7 +204,6 @@ class WorkerExecutor(BaseExecutor):
         current_task = asyncio.current_task()
         if current_task is not None:
             active_runs[run_id] = current_task
-            self._run_tasks[run_id] = current_task
         try:
             await asyncio.wait_for(
                 self._execute_with_lease(run_id, worker_name),
@@ -230,7 +225,6 @@ class WorkerExecutor(BaseExecutor):
             logger.exception("Unexpected error in job execution", run_id=run_id)
         finally:
             active_runs.pop(run_id, None)
-            self._run_tasks.pop(run_id, None)
             semaphore.release()
 
     # ------------------------------------------------------------------
@@ -322,8 +316,9 @@ class _LoadedRun:
 async def _acquire_and_load(run_id: str, worker_name: str) -> _LoadedRun | None:
     """Acquire lease and load job in a single DB session.
 
-    Combines two round-trips (lease UPDATE + job SELECT) into one.
-    Returns None if lease was not acquired or job data is missing.
+    Combines the lease UPDATE + job SELECT into one session. If the row
+    is missing execution_params (data corruption / pre-migration row),
+    releases the claim and marks the run as errored.
     """
     lease_until = datetime.now(UTC) + timedelta(seconds=settings.worker.LEASE_DURATION_SECONDS)
     maker = _get_session_maker()
@@ -345,7 +340,22 @@ async def _acquire_and_load(run_id: str, worker_name: str) -> _LoadedRun | None:
         await session.commit()
 
         if run_orm is None or run_orm.execution_params is None:
-            logger.warning("Run not found or missing execution_params after lease", run_id=run_id)
+            logger.warning(
+                "Run not found or missing execution_params after lease, releasing claim",
+                run_id=run_id,
+                worker=worker_name,
+            )
+            await session.execute(
+                update(RunORM)
+                .where(RunORM.run_id == run_id, RunORM.claimed_by == worker_name)
+                .values(
+                    claimed_by=None,
+                    lease_expires_at=None,
+                    status="error",
+                    error_message="Run missing execution_params (data corruption or pre-migration row)",
+                )
+            )
+            await session.commit()
             return None
 
         job = RunJob.from_run_orm(run_orm)

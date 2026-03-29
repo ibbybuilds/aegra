@@ -127,7 +127,8 @@ class TestReenqueue:
 
 class TestReap:
     @pytest.mark.asyncio
-    async def test_crashed_runs_go_through_retry_check(self) -> None:
+    async def test_crashed_runs_reset_before_retry_check(self) -> None:
+        """Reset claims ownership atomically, then retry check runs on claimed set only."""
         reaper = LeaseReaper()
 
         with (
@@ -135,17 +136,20 @@ class TestReap:
                 LeaseReaper, "_find_recoverable", new_callable=AsyncMock, return_value=(["run-1", "run-2"], [])
             ),
             patch.object(
-                LeaseReaper, "_check_retry_limits", new_callable=AsyncMock, return_value=(["run-1"], ["run-2"])
-            ),
-            patch.object(
-                LeaseReaper, "_reset_to_pending", new_callable=AsyncMock, return_value=["run-1"]
+                LeaseReaper, "_reset_to_pending", new_callable=AsyncMock, return_value=["run-1", "run-2"]
             ) as mock_reset,
+            patch.object(
+                LeaseReaper, "_check_retry_limits", new_callable=AsyncMock, return_value=(["run-1"], ["run-2"])
+            ) as mock_retry,
             patch.object(LeaseReaper, "_reenqueue", new_callable=AsyncMock) as mock_reenqueue,
             patch.object(LeaseReaper, "_mark_permanently_failed", new_callable=AsyncMock) as mock_fail,
         ):
             await reaper._reap()
 
-        mock_reset.assert_awaited_once_with(["run-1"])
+        # Reset called with ALL crashed (atomic ownership claim)
+        mock_reset.assert_awaited_once_with(["run-1", "run-2"])
+        # Retry check only runs on actually_reset set
+        mock_retry.assert_awaited_once_with(["run-1", "run-2"])
         mock_reenqueue.assert_awaited_once_with(["run-1"])
         mock_fail.assert_awaited_once_with(["run-2"])
 

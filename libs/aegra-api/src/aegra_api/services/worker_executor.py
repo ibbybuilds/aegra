@@ -259,13 +259,16 @@ class WorkerExecutor(BaseExecutor):
             run_id=run_id,
             graph_id=loaded.job.identity.graph_id,
         )
+        # Wrap execute_run in a task so the heartbeat can cancel it on
+        # lease loss, preventing double execution by a second worker.
+        job_task = asyncio.create_task(execute_run(loaded.job))
         heartbeat_task = asyncio.create_task(
-            _heartbeat_loop(run_id, worker_name),
+            _heartbeat_loop(run_id, worker_name, job_task=job_task),
             context=contextvars.copy_context(),
         )
 
         try:
-            await execute_run(loaded.job)
+            await job_task
         except asyncio.CancelledError:
             logger.info("Worker job cancelled", worker=worker_name, run_id=run_id)
         except Exception:
@@ -375,8 +378,17 @@ async def _release_lease(run_id: str, worker_name: str) -> None:
         await session.commit()
 
 
-async def _heartbeat_loop(run_id: str, worker_name: str) -> None:
-    """Extend lease periodically while the job is running."""
+async def _heartbeat_loop(
+    run_id: str,
+    worker_name: str,
+    *,
+    job_task: asyncio.Task[None] | None = None,
+) -> None:
+    """Extend lease periodically while the job is running.
+
+    If the lease is lost (another worker claimed the run), cancels
+    ``job_task`` to prevent double execution.
+    """
     interval = settings.worker.HEARTBEAT_INTERVAL_SECONDS
     duration = settings.worker.LEASE_DURATION_SECONDS
     maker = _get_session_maker()
@@ -394,10 +406,12 @@ async def _heartbeat_loop(run_id: str, worker_name: str) -> None:
                 await session.commit()
             if result.rowcount == 0:  # type: ignore[union-attr]
                 logger.warning(
-                    "Lease lost, another worker may have claimed this run",
+                    "Lease lost, cancelling job to prevent double execution",
                     run_id=run_id,
                     worker=worker_name,
                 )
+                if job_task is not None and not job_task.done():
+                    job_task.cancel()
                 return
             logger.debug("Lease extended", run_id=run_id, worker=worker_name)
         except Exception:

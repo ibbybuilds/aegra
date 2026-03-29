@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import json
 import random
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -332,8 +333,6 @@ class RedisBrokerManager(BaseBrokerManager):
         except RedisError as e:
             logger.warning(f"Failed to allocate event_id for run {run_id}: {e}")
             # Fallback: use timestamp-based ID (unique but not sequential)
-            import time
-
             return generate_event_id(run_id, int(time.time() * 1000))
 
     async def _listen_for_cancel_commands(self) -> None:

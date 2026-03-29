@@ -107,7 +107,11 @@ async def _prepare_run(
     run_id = str(uuid4())
     langgraph_service = get_langgraph_service()
     logger.info(
-        f"[_prepare_run] scheduling run_id={run_id} thread_id={thread_id} user={user.identity} status={initial_status}"
+        "Scheduling run",
+        run_id=run_id,
+        thread_id=thread_id,
+        user_id=user.identity,
+        status=initial_status,
     )
 
     # Resolve assistant / graph
@@ -122,9 +126,7 @@ async def _prepare_run(
     if not isinstance(configurable, dict):
         raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
 
-    if context and not configurable:
-        pass
-    elif not context:
+    if not context:
         context = configurable.copy()
 
     assistant_stmt = select(AssistantORM).where(
@@ -200,6 +202,6 @@ async def _prepare_run(
 
     # Submit to executor
     await executor.submit(job)
-    logger.info(f"[_prepare_run] submitted to executor run_id={run_id}")
+    logger.info("Submitted run to executor", run_id=run_id)
 
     return run_id, run, job

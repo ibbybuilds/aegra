@@ -177,6 +177,16 @@ class WorkerSettings(EnvBase):
     REAPER_INTERVAL_SECONDS: int = 15
     POSTGRES_POLL_INTERVAL_SECONDS: int = 5
 
+    @model_validator(mode="after")
+    def _validate_lease_timing(self) -> "WorkerSettings":
+        if self.LEASE_DURATION_SECONDS <= 2 * self.HEARTBEAT_INTERVAL_SECONDS:
+            raise ValueError(
+                f"LEASE_DURATION_SECONDS ({self.LEASE_DURATION_SECONDS}) must be "
+                f"greater than 2 * HEARTBEAT_INTERVAL_SECONDS ({self.HEARTBEAT_INTERVAL_SECONDS}). "
+                f"A worker must survive at least 2 missed heartbeats before its lease expires."
+            )
+        return self
+
 
 class Settings:
     def __init__(self) -> None:

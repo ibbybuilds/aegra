@@ -1,8 +1,8 @@
-"""Tests for AppSettings and DatabaseSettings."""
+"""Tests for AppSettings, DatabaseSettings, and WorkerSettings."""
 
 import pytest
 
-from aegra_api.settings import AppSettings, DatabaseSettings
+from aegra_api.settings import AppSettings, DatabaseSettings, WorkerSettings
 
 
 class TestAppSettingsServerURL:
@@ -159,3 +159,49 @@ class TestDatabaseURLSupport:
 
         # _normalize_scheme won't match, so URL passes through as-is
         assert db.DATABASE_URL == "not-a-url"
+
+
+class TestWorkerSettingsLeaseValidation:
+    """Test that lease timing invariants are enforced at startup."""
+
+    def _clear_worker_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in (
+            "LEASE_DURATION_SECONDS",
+            "HEARTBEAT_INTERVAL_SECONDS",
+            "REAPER_INTERVAL_SECONDS",
+            "WORKER_COUNT",
+            "N_JOBS_PER_WORKER",
+            "WORKER_QUEUE_KEY",
+            "WORKER_DRAIN_TIMEOUT",
+            "BG_JOB_TIMEOUT_SECS",
+            "BG_JOB_MAX_RETRIES",
+            "POSTGRES_POLL_INTERVAL_SECONDS",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_defaults_pass_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_worker_env(monkeypatch)
+        ws = WorkerSettings(_env_file=None)
+        assert ws.LEASE_DURATION_SECONDS == 30
+        assert ws.HEARTBEAT_INTERVAL_SECONDS == 10
+
+    def test_rejects_lease_equal_to_two_heartbeats(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_worker_env(monkeypatch)
+        monkeypatch.setenv("LEASE_DURATION_SECONDS", "20")
+        monkeypatch.setenv("HEARTBEAT_INTERVAL_SECONDS", "10")
+        with pytest.raises(ValueError, match="LEASE_DURATION_SECONDS.*must be greater"):
+            WorkerSettings(_env_file=None)
+
+    def test_rejects_lease_less_than_two_heartbeats(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_worker_env(monkeypatch)
+        monkeypatch.setenv("LEASE_DURATION_SECONDS", "10")
+        monkeypatch.setenv("HEARTBEAT_INTERVAL_SECONDS", "10")
+        with pytest.raises(ValueError, match="LEASE_DURATION_SECONDS.*must be greater"):
+            WorkerSettings(_env_file=None)
+
+    def test_accepts_lease_greater_than_two_heartbeats(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._clear_worker_env(monkeypatch)
+        monkeypatch.setenv("LEASE_DURATION_SECONDS", "21")
+        monkeypatch.setenv("HEARTBEAT_INTERVAL_SECONDS", "10")
+        ws = WorkerSettings(_env_file=None)
+        assert ws.LEASE_DURATION_SECONDS == 21

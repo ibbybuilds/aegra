@@ -169,12 +169,12 @@ class WorkerSettings(EnvBase):
 
     # Lease-based crash recovery.
     # The lease must be long enough that a healthy worker NEVER loses it.
-    # Safety margin = LEASE / HEARTBEAT = 60/10 = 6 missed heartbeats
-    # before expiry. A single missed heartbeat (DB pool contention, GC)
-    # should never cause lease loss.
-    LEASE_DURATION_SECONDS: int = 60
+    # Safety margin = LEASE / HEARTBEAT = 30/10 = 3 missed heartbeats
+    # before expiry (industry standard — matches Kubernetes liveness probes).
+    # Worst-case recovery: ~30s lease expiry + ~20s reaper interval = ~50s.
+    LEASE_DURATION_SECONDS: int = 30
     HEARTBEAT_INTERVAL_SECONDS: int = 10
-    REAPER_INTERVAL_SECONDS: int = 20
+    REAPER_INTERVAL_SECONDS: int = 15
     POSTGRES_POLL_INTERVAL_SECONDS: int = 5
 
 

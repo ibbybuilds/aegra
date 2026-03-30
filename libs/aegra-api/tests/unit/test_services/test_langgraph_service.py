@@ -613,7 +613,7 @@ class TestLangGraphServiceConfigs:
         thread_id = "thread-456"
         additional_config = {"custom": "value"}
 
-        result = create_thread_config(thread_id, mock_user, additional_config)
+        result = create_thread_config(thread_id, mock_user, additional_config=additional_config)
 
         assert result["configurable"]["thread_id"] == thread_id
         assert result["configurable"]["user_id"] == "user-123"
@@ -648,7 +648,7 @@ class TestLangGraphServiceConfigs:
             "aegra_api.services.langgraph_service.get_tracing_callbacks",
             return_value=[],
         ):
-            result = create_run_config(run_id, thread_id, mock_user, additional_config)
+            result = create_run_config(run_id, thread_id, mock_user, additional_config=additional_config)
 
         assert result["configurable"]["run_id"] == run_id
         assert result["configurable"]["thread_id"] == thread_id
@@ -733,7 +733,7 @@ class TestLangGraphServiceConfigs:
             "aegra_api.services.langgraph_service.get_tracing_callbacks",
             return_value=mock_callbacks,
         ):
-            result = create_run_config(run_id, thread_id, mock_user, additional_config)
+            result = create_run_config(run_id, thread_id, mock_user, additional_config=additional_config)
 
         # Should have existing + tracing callbacks
         assert len(result["callbacks"]) == 3
@@ -758,7 +758,7 @@ class TestLangGraphServiceConfigs:
             "aegra_api.services.langgraph_service.get_tracing_callbacks",
             return_value=mock_callbacks,
         ):
-            result = create_run_config(run_id, thread_id, mock_user, additional_config)
+            result = create_run_config(run_id, thread_id, mock_user, additional_config=additional_config)
 
         assert result["callbacks"] == mock_callbacks
 

@@ -909,7 +909,13 @@ async def execute_run_async(
         # Get graph and execute
         langgraph_service = get_langgraph_service()
 
-        run_config = create_run_config(run_id, thread_id, user, config or {}, checkpoint)
+        run_config = create_run_config(
+            run_id,
+            thread_id,
+            user,
+            additional_config=config or {},
+            checkpoint=checkpoint,
+        )
 
         # Handle human-in-the-loop fields
         if interrupt_before is not None:

@@ -332,7 +332,7 @@ async def get_thread_state(
         )
 
         langgraph_service = get_langgraph_service()
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
         if checkpoint_ns:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
@@ -426,7 +426,7 @@ async def update_thread_state(
         )
 
         langgraph_service = get_langgraph_service()
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
 
         if request.checkpoint_id:
             config["configurable"]["checkpoint_id"] = request.checkpoint_id
@@ -551,7 +551,7 @@ async def get_thread_state_at_checkpoint(
 
         langgraph_service = get_langgraph_service()
 
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
         config["configurable"]["checkpoint_id"] = checkpoint_id
         if checkpoint_ns:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
@@ -672,7 +672,7 @@ async def get_thread_history_post(
 
         langgraph_service = get_langgraph_service()
 
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
         if checkpoint:
             cfg_cp = checkpoint.copy()
             if checkpoint_ns is not None:

@@ -55,7 +55,7 @@ class _TestRequiredConfig(BaseModel):
 
 @pytest.fixture(autouse=True)
 def _clean_factory_state() -> Iterator[None]:
-    """Ensure factory registry is clean for each test."""
+    """Ensure factory registry and dynamically loaded graph modules are clean for each test."""
     _FACTORY_KWARGS.clear()
     _FACTORY_CONTEXT_TYPES.clear()
     try:
@@ -63,6 +63,9 @@ def _clean_factory_state() -> Iterator[None]:
     finally:
         _FACTORY_KWARGS.clear()
         _FACTORY_CONTEXT_TYPES.clear()
+        for key in list(sys.modules.keys()):
+            if key.startswith("graphs.") or key.startswith("aegra_graphs."):
+                sys.modules.pop(key, None)
 
 
 @pytest.fixture()
@@ -115,9 +118,6 @@ graph = FakeGraph()
         # Should be the raw export
         assert result.__class__.__name__ == "FakeGraph"
 
-        # Cleanup
-        sys.modules.pop("graphs.static", None)
-
 
 # ---------------------------------------------------------------------------
 # 0-arg factory (existing behavior preserved)
@@ -154,8 +154,6 @@ def graph():
         # The factory should have been called and returned its result
         assert hasattr(result, "_called_factory")
 
-        sys.modules.pop("graphs.zero", None)
-
     @pytest.mark.asyncio
     async def test_zero_arg_async_factory(self, graph_module_dir: Path) -> None:
         _write_graph_module(
@@ -185,8 +183,6 @@ async def graph():
 
         assert "zero_async" not in _FACTORY_KWARGS
         assert hasattr(result, "_async_factory")
-
-        sys.modules.pop("graphs.zero_async", None)
 
 
 # ---------------------------------------------------------------------------
@@ -233,8 +229,6 @@ def graph(config):
         # at load time; it will be invoked per-request with proper user/config.
         assert result is None
 
-        sys.modules.pop("graphs.cfg", None)
-
 
 # ---------------------------------------------------------------------------
 # Runtime factory
@@ -277,8 +271,6 @@ def graph(runtime: ServerRuntime):
         assert "rt" in service._graph_factories
         # Factory graphs return None — no default-args call at load time.
         assert result is None
-
-        sys.modules.pop("graphs.rt", None)
 
 
 # ---------------------------------------------------------------------------
@@ -645,7 +637,7 @@ class TestFactoryNotCalledAtStartup:
 
     @pytest.mark.asyncio
     async def test_factory_not_invoked_during_load(self, graph_module_dir: Path) -> None:
-        """_load_graph_from_file must NOT call the factory for config/runtime factories."""
+        """_load_all_graph_modules must NOT call the factory for config/runtime factories."""
         _write_graph_module(
             graph_module_dir,
             "tracked_factory.py",
@@ -673,22 +665,20 @@ def graph(config: dict, runtime: ServerRuntime):
             }
         }
 
-        result = await service._load_graph_from_file("tracked", service._graph_registry["tracked"])
+        await service._load_all_graph_modules()
 
         # Factory should be registered but NOT called
         assert "tracked" in service._graph_factories
-        assert result is None
+        assert "tracked" not in service._base_graph_cache
 
         # Verify the factory was never invoked (no calls logged)
         import importlib
 
-        mod = importlib.import_module("graphs.tracked")
+        mod = importlib.import_module("aegra_graphs.tracked")
         assert mod.call_log == [], (
             "Factory should not be called at load time; "
             f"got {len(mod.call_log)} call(s) with user={mod.call_log[0]['user'] if mod.call_log else '?'}"
         )
-
-        sys.modules.pop("graphs.tracked", None)
 
     @pytest.mark.asyncio
     async def test_first_request_receives_user(self) -> None:

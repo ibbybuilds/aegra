@@ -29,6 +29,7 @@ from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.core.orm import AssistantVersion as AssistantVersionORM
 from aegra_api.core.orm import get_session
 from aegra_api.models import Assistant, AssistantCreate, AssistantUpdate
+from aegra_api.models.auth import User
 from aegra_api.services.langgraph_service import LangGraphService, get_langgraph_service
 
 
@@ -463,11 +464,11 @@ class AssistantService:
 
         return version_list
 
-    async def get_assistant_schemas(self, assistant_id: str, user_identity: str) -> dict:
+    async def get_assistant_schemas(self, assistant_id: str, user: User) -> dict[str, Any]:
         """Get input, output, state, config and context schemas for an assistant"""
         stmt = select(AssistantORM).where(
             AssistantORM.assistant_id == assistant_id,
-            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"),
+            or_(AssistantORM.user_id == user.identity, AssistantORM.user_id == "system"),
         )
         assistant = await self.session.scalar(stmt)
 
@@ -477,7 +478,10 @@ class AssistantService:
         try:
             # Use get_graph_for_validation since we only need schema extraction,
             # not checkpointer/store for execution
-            graph = await self.langgraph_service.get_graph_for_validation(assistant.graph_id)
+            graph = await self.langgraph_service.get_graph_for_validation(
+                assistant.graph_id,
+                user=user,
+            )
             schemas = _extract_graph_schemas(graph)
 
             return {"graph_id": assistant.graph_id, **schemas}
@@ -485,11 +489,11 @@ class AssistantService:
         except Exception as e:
             raise HTTPException(400, f"Failed to extract schemas: {str(e)}") from e
 
-    async def get_assistant_graph(self, assistant_id: str, xray: bool | int, user_identity: str) -> dict:
+    async def get_assistant_graph(self, assistant_id: str, xray: bool | int, user: User) -> dict[str, Any]:
         """Get the graph structure for visualization"""
         stmt = select(AssistantORM).where(
             AssistantORM.assistant_id == assistant_id,
-            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"),
+            or_(AssistantORM.user_id == user.identity, AssistantORM.user_id == "system"),
         )
         assistant = await self.session.scalar(stmt)
 
@@ -499,7 +503,10 @@ class AssistantService:
         try:
             # Use get_graph_for_validation since we only need graph structure,
             # not checkpointer/store for execution
-            graph = await self.langgraph_service.get_graph_for_validation(assistant.graph_id)
+            graph = await self.langgraph_service.get_graph_for_validation(
+                assistant.graph_id,
+                user=user,
+            )
 
             # Validate xray if it's an integer (not a boolean)
             if isinstance(xray, int) and not isinstance(xray, bool) and xray <= 0:
@@ -527,12 +534,12 @@ class AssistantService:
         assistant_id: str,
         namespace: str | None,
         recurse: bool,
-        user_identity: str,
-    ) -> dict:
+        user: User,
+    ) -> dict[str, Any]:
         """Get subgraphs of an assistant"""
         stmt = select(AssistantORM).where(
             AssistantORM.assistant_id == assistant_id,
-            or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"),
+            or_(AssistantORM.user_id == user.identity, AssistantORM.user_id == "system"),
         )
         assistant = await self.session.scalar(stmt)
 
@@ -542,7 +549,10 @@ class AssistantService:
         try:
             # Use get_graph_for_validation since we only need schema extraction,
             # not checkpointer/store for execution
-            graph = await self.langgraph_service.get_graph_for_validation(assistant.graph_id)
+            graph = await self.langgraph_service.get_graph_for_validation(
+                assistant.graph_id,
+                user=user,
+            )
 
             try:
                 subgraphs = {

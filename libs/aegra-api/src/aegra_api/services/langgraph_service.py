@@ -44,6 +44,17 @@ State = TypeVar("State")
 logger = structlog.get_logger(__name__)
 
 
+def _module_name_for(graph_id: str) -> str:
+    """Return a safe ``sys.modules`` key for a dynamically loaded graph.
+
+    Sanitises the *graph_id* so it cannot shadow real packages (e.g. ``os.path``,
+    ``json``) by replacing dots, slashes, and hyphens with underscores and
+    placing the result under a private ``aegra_graphs.`` namespace.
+    """
+    safe_id = graph_id.replace(".", "_").replace("/", "_").replace("-", "_")
+    return f"aegra_graphs.{safe_id}"
+
+
 class LangGraphService:
     """Service to work with LangGraph CLI configuration and graphs.
 
@@ -111,7 +122,7 @@ class LangGraphService:
         # clients can pass graph_id directly.
         await self._ensure_default_assistants()
 
-    def _load_graph_registry(self):
+    def _load_graph_registry(self) -> None:
         """Load graph definitions from aegra.json"""
         graphs_config = self.config.get("graphs", {})
 
@@ -268,8 +279,10 @@ class LangGraphService:
         else:
             compiled_graph = raw_graph
 
-        # Cache the base compiled graph (without checkpointer/store)
-        self._base_graph_cache[graph_id] = compiled_graph
+        # Only cache static graphs — factory graphs must be re-invoked
+        # each time so their result reflects the current user/config context.
+        if graph_id not in self._graph_factories:
+            self._base_graph_cache[graph_id] = compiled_graph
         return compiled_graph
 
     @asynccontextmanager
@@ -470,7 +483,7 @@ class LangGraphService:
             raise ValueError(f"Graph file not found: {file_path}")
 
         # Dynamic import of graph module
-        spec = importlib.util.spec_from_file_location(f"graphs.{graph_id}", str(file_path.resolve()))
+        spec = importlib.util.spec_from_file_location(_module_name_for(graph_id), str(file_path.resolve()))
         if spec is None or spec.loader is None:
             raise ValueError(f"Failed to load graph module: {file_path}")
 
@@ -549,6 +562,14 @@ class LangGraphService:
 
         Clears both the base graph cache and the factory callable registry,
         as well as the factory dispatch hooks in the ``graph_factory`` module.
+        The module is also removed from ``sys.modules`` so the next import
+        re-executes the file.
+
+        After invalidation, ``_graph_factories`` is empty. The next call to
+        ``_get_base_graph`` will fall through to ``_load_graph_from_file``,
+        which re-discovers and re-classifies the factory, then retries via
+        the factory path — so callers do not need to re-run
+        ``_load_all_graph_modules`` after invalidation.
 
         Args:
             graph_id: Specific graph to invalidate, or ``None`` to clear all.
@@ -556,12 +577,12 @@ class LangGraphService:
         if graph_id:
             self._base_graph_cache.pop(graph_id, None)
             self._graph_factories.pop(graph_id, None)
-            sys.modules.pop(f"graphs.{graph_id}", None)
+            sys.modules.pop(_module_name_for(graph_id), None)
         else:
             self._base_graph_cache.clear()
             self._graph_factories.clear()
             for key in list(sys.modules.keys()):
-                if key.startswith("graphs."):
+                if key.startswith("aegra_graphs."):
                     sys.modules.pop(key, None)
         clear_factory_registry(graph_id)
 
@@ -634,7 +655,7 @@ def inject_user_context(user: Any | None, base_config: dict[str, Any] | None = N
 
 
 def create_thread_config(
-    thread_id: str, user: User | BaseUser | None, additional_config: dict[str, Any] | None = None
+    thread_id: str, user: User | BaseUser | None, *, additional_config: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Create LangGraph configuration for a specific thread with user context"""
     base_config = {"configurable": {"thread_id": thread_id}}
@@ -649,6 +670,7 @@ def create_run_config(
     run_id: str,
     thread_id: str,
     user: User | BaseUser | None,
+    *,
     additional_config: dict[str, Any] | None = None,
     checkpoint: dict[str, Any] | None = None,
 ) -> dict[str, Any]:

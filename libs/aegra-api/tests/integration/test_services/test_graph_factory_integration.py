@@ -7,6 +7,7 @@ These tests verify the end-to-end flow from factory detection in
 
 from __future__ import annotations
 
+import importlib
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -672,8 +673,6 @@ def graph(config: dict, runtime: ServerRuntime):
         assert "tracked" not in service._base_graph_cache
 
         # Verify the factory was never invoked (no calls logged)
-        import importlib
-
         mod = importlib.import_module("aegra_graphs.tracked")
         assert mod.call_log == [], (
             "Factory should not be called at load time; "
@@ -682,11 +681,11 @@ def graph(config: dict, runtime: ServerRuntime):
 
     @pytest.mark.asyncio
     async def test_first_request_receives_user(self) -> None:
-        """First get_graph() call should pass user through to factory, not use cached default."""
-        received_users: list[Any] = []
+        """First get_graph() call should pass user and config through to factory."""
+        received_calls: list[dict[str, Any]] = []
 
         def factory(config: dict[str, Any], runtime: ServerRuntime) -> Mock:
-            received_users.append(runtime.user)
+            received_calls.append({"config": config, "user": runtime.user})
             g = Mock(spec=Pregel)
             g.copy = Mock(return_value=g)
             return g
@@ -698,6 +697,7 @@ def graph(config: dict, runtime: ServerRuntime):
 
         mock_user = Mock()
         mock_user.identity = "test-user"
+        request_config: dict[str, Any] = {"configurable": {"thread_id": "t-1", "run_id": "r-1"}}
 
         with patch("aegra_api.core.database.db_manager") as mock_db:
             mock_db.get_checkpointer = Mock(return_value=Mock())
@@ -705,14 +705,15 @@ def graph(config: dict, runtime: ServerRuntime):
 
             async with service.get_graph(
                 "u",
-                config={"configurable": {}},
+                config=request_config,
                 access_context="threads.create_run",
                 user=mock_user,
             ) as _graph:
                 pass
 
-        assert len(received_users) == 1
-        assert received_users[0] is mock_user
+        assert len(received_calls) == 1
+        assert received_calls[0]["user"] is mock_user
+        assert received_calls[0]["config"]["configurable"]["thread_id"] == "t-1"
 
     @pytest.mark.asyncio
     async def test_post_invalidation_request_receives_user(self, graph_module_dir: Path) -> None:
@@ -725,10 +726,10 @@ from unittest.mock import Mock
 from langgraph.pregel import Pregel
 from langgraph_sdk.runtime import ServerRuntime
 
-received_users: list = []
+received_calls: list[dict] = []
 
 def graph(config: dict, runtime: ServerRuntime):
-    received_users.append(runtime.user)
+    received_calls.append({"config": config, "user": runtime.user})
     g = Mock(spec=Pregel)
     g.copy = Mock(return_value=g)
     return g
@@ -754,6 +755,7 @@ def graph(config: dict, runtime: ServerRuntime):
 
         mock_user = Mock()
         mock_user.identity = "post-invalidation-user"
+        request_config: dict[str, Any] = {"configurable": {"thread_id": "t-2", "run_id": "r-2"}}
 
         with patch("aegra_api.core.database.db_manager") as mock_db:
             mock_db.get_checkpointer = Mock(return_value=Mock())
@@ -761,19 +763,18 @@ def graph(config: dict, runtime: ServerRuntime):
 
             async with service.get_graph(
                 "pi",
-                config={"configurable": {}},
+                config=request_config,
                 access_context="threads.create_run",
                 user=mock_user,
             ) as _graph:
                 pass
 
-        import importlib
-
         mod = importlib.import_module("aegra_graphs.pi")
         # The factory must be called exactly once — with the real user only.
         # No spurious user=None invocation from _call_factory_with_defaults.
-        assert len(mod.received_users) == 1, (
-            f"Expected 1 factory call, got {len(mod.received_users)}: "
-            f"{[u.identity if hasattr(u, 'identity') else u for u in mod.received_users]}"
+        assert len(mod.received_calls) == 1, (
+            f"Expected 1 factory call, got {len(mod.received_calls)}: "
+            f"{[c['user'].identity if hasattr(c['user'], 'identity') else c['user'] for c in mod.received_calls]}"
         )
-        assert mod.received_users[0] is mock_user
+        assert mod.received_calls[0]["user"] is mock_user
+        assert mod.received_calls[0]["config"]["configurable"]["thread_id"] == "t-2"

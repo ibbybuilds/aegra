@@ -124,7 +124,21 @@ class LangGraphService:
 
     def _load_graph_registry(self) -> None:
         """Load graph definitions from aegra.json"""
+        if self.config is None:
+            raise ValueError("Configuration not loaded")
         graphs_config = self.config.get("graphs", {})
+
+        # Detect graph_ids that collide after sanitisation (e.g. "a.b" and
+        # "a_b" both map to aegra_graphs.a_b in sys.modules).
+        seen_modules: dict[str, str] = {}
+        for graph_id in graphs_config:
+            mod_name = _module_name_for(graph_id)
+            if mod_name in seen_modules:
+                raise ValueError(
+                    f"Graph IDs '{seen_modules[mod_name]}' and '{graph_id}' "
+                    f"collide after sanitisation (both map to {mod_name})"
+                )
+            seen_modules[mod_name] = graph_id
 
         for graph_id, graph_path in graphs_config.items():
             # Parse path format: "./graphs/weather_agent.py:graph"
@@ -160,6 +174,8 @@ class LangGraphService:
         Supports paths from the 'dependencies' config key.
         Paths are resolved relative to the config file location.
         """
+        if self.config is None:
+            raise ValueError("Configuration not loaded")
         dependencies = self.config.get("dependencies", [])
         if not dependencies:
             return
@@ -338,15 +354,17 @@ class LangGraphService:
 
         # Resolve the factory callable. Normally populated by
         # _load_all_graph_modules() at startup, but may be empty after
-        # invalidate_cache(). In that case _get_base_graph() will
-        # re-discover and re-register the factory via _load_graph_from_file,
-        # so we re-check _graph_factories afterwards.
+        # invalidate_cache(). In that case we re-load the module to
+        # re-classify the factory without invoking it with user=None.
         factory = self._graph_factories.get(graph_id)
 
-        if not factory:
-            # Trigger lazy loading — may re-populate _graph_factories
-            # as a side effect if the graph turns out to be a factory.
-            await self._get_base_graph(graph_id)
+        if not factory and graph_id not in self._base_graph_cache:
+            # Neither factory nor cached static graph — re-load from file
+            # (post-invalidation path). This re-classifies factories without
+            # calling _call_factory_with_defaults(user=None).
+            graph_info = self._graph_registry.get(graph_id)
+            if graph_info:
+                await self._load_graph_from_file(graph_id, graph_info)
             factory = self._graph_factories.get(graph_id)
 
         if factory:

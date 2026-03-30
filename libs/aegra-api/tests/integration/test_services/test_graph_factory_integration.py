@@ -770,7 +770,10 @@ def graph(config: dict, runtime: ServerRuntime):
         import importlib
 
         mod = importlib.import_module("aegra_graphs.pi")
-        # The factory should have been called with the real user, not user=None
-        assert len(mod.received_users) >= 1
-        # Last call (the execution call) should have the real user
-        assert mod.received_users[-1] is mock_user
+        # The factory must be called exactly once — with the real user only.
+        # No spurious user=None invocation from _call_factory_with_defaults.
+        assert len(mod.received_users) == 1, (
+            f"Expected 1 factory call, got {len(mod.received_users)}: "
+            f"{[u.identity if hasattr(u, 'identity') else u for u in mod.received_users]}"
+        )
+        assert mod.received_users[0] is mock_user

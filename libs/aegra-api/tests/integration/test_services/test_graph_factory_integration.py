@@ -64,7 +64,7 @@ def _clean_factory_state() -> Iterator[None]:
         _FACTORY_KWARGS.clear()
         _FACTORY_CONTEXT_TYPES.clear()
         for key in list(sys.modules.keys()):
-            if key.startswith("graphs.") or key.startswith("aegra_graphs."):
+            if key.startswith("aegra_graphs."):
                 sys.modules.pop(key, None)
 
 
@@ -713,3 +713,64 @@ def graph(config: dict, runtime: ServerRuntime):
 
         assert len(received_users) == 1
         assert received_users[0] is mock_user
+
+    @pytest.mark.asyncio
+    async def test_post_invalidation_request_receives_user(self, graph_module_dir: Path) -> None:
+        """After invalidate_cache(), the first get_graph() must still invoke the factory with the real user."""
+        _write_graph_module(
+            graph_module_dir,
+            "post_invalidation.py",
+            """\
+from unittest.mock import Mock
+from langgraph.pregel import Pregel
+from langgraph_sdk.runtime import ServerRuntime
+
+received_users: list = []
+
+def graph(config: dict, runtime: ServerRuntime):
+    received_users.append(runtime.user)
+    g = Mock(spec=Pregel)
+    g.copy = Mock(return_value=g)
+    return g
+""",
+        )
+
+        service = LangGraphService()
+        service.config_path = graph_module_dir / "aegra.json"
+        service._graph_registry = {
+            "pi": {
+                "file_path": str(graph_module_dir / "post_invalidation.py"),
+                "export_name": "graph",
+            }
+        }
+
+        # Initial load — factory is classified
+        await service._load_all_graph_modules()
+        assert "pi" in service._graph_factories
+
+        # Simulate hot-reload
+        service.invalidate_cache("pi")
+        assert "pi" not in service._graph_factories
+
+        mock_user = Mock()
+        mock_user.identity = "post-invalidation-user"
+
+        with patch("aegra_api.core.database.db_manager") as mock_db:
+            mock_db.get_checkpointer = Mock(return_value=Mock())
+            mock_db.get_store = Mock(return_value=Mock())
+
+            async with service.get_graph(
+                "pi",
+                config={"configurable": {}},
+                access_context="threads.create_run",
+                user=mock_user,
+            ) as _graph:
+                pass
+
+        import importlib
+
+        mod = importlib.import_module("aegra_graphs.pi")
+        # The factory should have been called with the real user, not user=None
+        assert len(mod.received_users) >= 1
+        # Last call (the execution call) should have the real user
+        assert mod.received_users[-1] is mock_user

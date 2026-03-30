@@ -336,9 +336,21 @@ class LangGraphService:
         checkpointer = db_manager.get_checkpointer()
         store = db_manager.get_store()
 
-        if graph_id in self._graph_factories:
+        # Resolve the factory callable. Normally populated by
+        # _load_all_graph_modules() at startup, but may be empty after
+        # invalidate_cache(). In that case _get_base_graph() will
+        # re-discover and re-register the factory via _load_graph_from_file,
+        # so we re-check _graph_factories afterwards.
+        factory = self._graph_factories.get(graph_id)
+
+        if not factory:
+            # Trigger lazy loading — may re-populate _graph_factories
+            # as a side effect if the graph turns out to be a factory.
+            await self._get_base_graph(graph_id)
+            factory = self._graph_factories.get(graph_id)
+
+        if factory:
             # Factory path — invoke per-request with ServerRuntime
-            factory = self._graph_factories[graph_id]
             run_config = config or {"configurable": {}}
             coerced_context = coerce_context(context, graph_id)
             server_runtime = build_server_runtime(
@@ -368,7 +380,7 @@ class LangGraphService:
 
                 yield graph_to_use
         else:
-            # Static path — use cached base graph
+            # Static path — use cached base graph (already loaded above)
             base_graph = await self._get_base_graph(graph_id)
 
             # Try to create a copy with checkpointer/store injected.
@@ -528,10 +540,18 @@ class LangGraphService:
         return graph
 
     async def _call_factory_with_defaults(self, fn: Callable, graph_id: str) -> Pregel | StateGraph:
-        """Call a factory with default/empty args to get a base graph for schema extraction.
+        """Call a factory with minimal args to get a base graph for schema extraction.
 
-        Uses ``assistants.read`` access context to signal that the factory is
-        being called for introspection, not execution.
+        Intended **only** for introspection (schema extraction, graph
+        structure discovery) — never for the hot execution path. Uses
+        ``assistants.read`` access context and ``user=None``.
+
+        .. note::
+
+            ``build_server_runtime(user=None)`` may fall back to
+            ``get_auth_ctx()`` if called within an HTTP request context,
+            so the runtime may carry a real user. This is incidental,
+            not guaranteed — callers must not rely on it.
 
         Args:
             fn: The factory callable.

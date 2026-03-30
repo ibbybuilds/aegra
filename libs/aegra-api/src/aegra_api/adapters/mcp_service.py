@@ -6,12 +6,15 @@ becomes a callable MCP tool. Tool execution delegates to the existing
 creation, graph execution, waiting for output, and cleanup.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import structlog
 
 from aegra_api.api.stateless_runs import stateless_wait_for_run
 from aegra_api.models import RunCreate, User
+from aegra_api.services.langgraph_service import LangGraphService
 from aegra_api.utils.assistants import resolve_assistant_id
 
 logger = structlog.get_logger(__name__)
@@ -25,9 +28,9 @@ class MCPService:
     """
 
     def __init__(self) -> None:
-        self._langgraph_service: Any = None
+        self._langgraph_service: LangGraphService | None = None
 
-    def set_langgraph_service(self, service: Any) -> None:
+    def set_langgraph_service(self, service: LangGraphService) -> None:
         """Inject the LangGraphService dependency.
 
         Args:

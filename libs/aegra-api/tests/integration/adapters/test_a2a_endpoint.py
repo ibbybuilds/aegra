@@ -306,7 +306,7 @@ async def test_tasks_get_delegates_to_service() -> None:
     body = resp.json()
     assert body["result"]["id"] == "run-99"
     assert body["id"] == 7
-    service.get_task.assert_awaited_once_with("run-99")
+    service.get_task.assert_awaited_once_with("run-99", _TEST_USER)
 
 
 # ---------------------------------------------------------------------------

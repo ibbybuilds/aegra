@@ -5,6 +5,7 @@ discovery at /.well-known/agent-card.json.
 Uses the `a2a-sdk` library.
 """
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
@@ -58,7 +59,7 @@ def _rpc_error(code: int, message: str, rpc_id: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _make_well_known_handler(service: A2AService):  # type: ignore[return]
+def _make_well_known_handler(service: A2AService) -> Callable[..., Awaitable[JSONResponse]]:
     """Return a route handler for GET /.well-known/agent-card.json.
 
     Args:
@@ -121,7 +122,7 @@ def _make_well_known_handler(service: A2AService):  # type: ignore[return]
     return _well_known_agent_card
 
 
-def _make_agent_cards_handler(service: A2AService):  # type: ignore[return]
+def _make_agent_cards_handler(service: A2AService) -> Callable[..., Awaitable[JSONResponse]]:
     """Return a route handler for GET /a2a/agent-cards.
 
     Args:
@@ -167,7 +168,7 @@ def _make_agent_cards_handler(service: A2AService):  # type: ignore[return]
     return _list_agent_cards
 
 
-def _make_rpc_handler(service: A2AService):  # type: ignore[return]
+def _make_rpc_handler(service: A2AService) -> Callable[..., Awaitable[Response]]:
     """Return a route handler for POST /a2a/{assistant_id}.
 
     Args:
@@ -229,7 +230,7 @@ def _make_rpc_handler(service: A2AService):  # type: ignore[return]
                 logger.error(
                     "A2A send_message error", error=str(exc), assistant_id=assistant_id
                 )
-                return JSONResponse(content=_rpc_error(-32603, f"Internal error: {exc}", rpc_id))
+                return JSONResponse(content=_rpc_error(-32603, "Internal server error", rpc_id))
             return JSONResponse(content=_rpc_ok(result, rpc_id))
 
         if method == "tasks/get":
@@ -241,12 +242,12 @@ def _make_rpc_handler(service: A2AService):  # type: ignore[return]
                     content=_rpc_error(-32602, "Missing required param: id", rpc_id)
                 )
             try:
-                task_result: dict[str, Any] = await service.get_task(task_id_param)
+                task_result: dict[str, Any] = await service.get_task(task_id_param, user)
             except ValueError as exc:
                 return JSONResponse(content=_rpc_error(-32602, str(exc), rpc_id))
             except Exception as exc:
                 logger.error("A2A get_task error", error=str(exc), task_id=task_id_param)
-                return JSONResponse(content=_rpc_error(-32603, f"Internal error: {exc}", rpc_id))
+                return JSONResponse(content=_rpc_error(-32603, "Internal server error", rpc_id))
             return JSONResponse(content=_rpc_ok(task_result, rpc_id))
 
         if method == "tasks/cancel":
@@ -259,12 +260,12 @@ def _make_rpc_handler(service: A2AService):  # type: ignore[return]
                 )
             try:
                 await streaming_service.cancel_run(cancel_task_id)
-                cancelled_task: dict[str, Any] = await service.get_task(cancel_task_id)
+                cancelled_task: dict[str, Any] = await service.get_task(cancel_task_id, user)
             except ValueError as exc:
                 return JSONResponse(content=_rpc_error(-32602, str(exc), rpc_id))
             except Exception as exc:
                 logger.error("A2A tasks/cancel error", error=str(exc), task_id=cancel_task_id)
-                return JSONResponse(content=_rpc_error(-32603, f"Internal error: {exc}", rpc_id))
+                return JSONResponse(content=_rpc_error(-32603, "Internal server error", rpc_id))
             return JSONResponse(content=_rpc_ok(cancelled_task, rpc_id))
 
         if method == "message/stream":
@@ -295,7 +296,7 @@ def _make_rpc_handler(service: A2AService):  # type: ignore[return]
                 logger.error(
                     "A2A message/stream error", error=str(exc), assistant_id=assistant_id
                 )
-                return JSONResponse(content=_rpc_error(-32603, f"Internal error: {exc}", rpc_id))
+                return JSONResponse(content=_rpc_error(-32603, "Internal server error", rpc_id))
 
         return JSONResponse(
             content=_rpc_error(-32601, f"Method not found: {method!r}", rpc_id)
@@ -326,6 +327,9 @@ def mount_a2a(app: FastAPI) -> None:
     """
     service: A2AService = get_a2a_service()
 
+    # Discovery endpoints are intentionally unauthenticated per the A2A spec.
+    # Agent cards are public metadata (graph IDs, capabilities) — not sensitive.
+    # This matches LangSmith's behavior.
     app.add_api_route(
         "/.well-known/agent-card.json",
         _make_well_known_handler(service),

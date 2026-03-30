@@ -211,6 +211,16 @@ def test_card_url_uses_assistant_id() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _make_null_session_maker() -> MagicMock:
+    """Return a mock session maker whose sessions return None from scalar."""
+    mock_session = AsyncMock()
+    mock_session.scalar = AsyncMock(return_value=None)
+    mock_maker = MagicMock()
+    mock_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+    return mock_maker
+
+
 @pytest.mark.asyncio
 async def test_send_message_delegates_to_wait_for_run() -> None:
     """send_message invokes wait_for_run and returns a Task dict."""
@@ -224,6 +234,9 @@ async def test_send_message_delegates_to_wait_for_run() -> None:
     with patch(
         "aegra_api.adapters.a2a_service.wait_for_run",
         new=AsyncMock(return_value=fake_output),
+    ), patch(
+        "aegra_api.adapters.a2a_service._get_session_maker",
+        return_value=_make_null_session_maker(),
     ):
         result = await service.send_message(
             assistant_id="my_graph",
@@ -253,6 +266,9 @@ async def test_send_message_generates_thread_id_when_none() -> None:
     with patch(
         "aegra_api.adapters.a2a_service.wait_for_run",
         side_effect=_capture_wait,
+    ), patch(
+        "aegra_api.adapters.a2a_service._get_session_maker",
+        return_value=_make_null_session_maker(),
     ):
         result = await service.send_message(
             assistant_id="agent",
@@ -289,6 +305,9 @@ async def test_send_message_returns_no_artifacts_when_empty_output() -> None:
     with patch(
         "aegra_api.adapters.a2a_service.wait_for_run",
         new=AsyncMock(return_value={}),
+    ), patch(
+        "aegra_api.adapters.a2a_service._get_session_maker",
+        return_value=_make_null_session_maker(),
     ):
         result = await service.send_message(
             assistant_id="graph",

@@ -12,6 +12,8 @@ status management. Threads are preserved (not deleted) so that
 multi-turn conversations maintain history.
 """
 
+from __future__ import annotations
+
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -39,6 +41,7 @@ from aegra_api.api.runs import create_and_stream_run, wait_for_run
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.models import RunCreate, User
+from aegra_api.services.langgraph_service import LangGraphService
 from aegra_api.utils.assistants import resolve_assistant_id
 
 logger = structlog.get_logger(__name__)
@@ -104,9 +107,13 @@ def convert_output_to_parts(output: dict[str, Any]) -> list[dict[str, Any]]:
     messages: list[Any] = output.get("messages", [])
     parts: list[dict[str, Any]] = []
     for msg in messages:
-        if not isinstance(msg, AIMessage):
+        if isinstance(msg, AIMessage):
+            content = msg.content
+        elif isinstance(msg, dict) and msg.get("type") in ("ai", "AIMessage", "AIMessageChunk"):
+            content = msg.get("content", "")
+        else:
             continue
-        content = msg.content
+
         if isinstance(content, str):
             parts.append({"kind": "text", "text": content})
         elif isinstance(content, list):
@@ -129,9 +136,9 @@ class A2AService:
     """
 
     def __init__(self) -> None:
-        self._langgraph_service: Any = None
+        self._langgraph_service: LangGraphService | None = None
 
-    def set_langgraph_service(self, service: Any) -> None:
+    def set_langgraph_service(self, service: LangGraphService) -> None:
         """Inject the LangGraphService dependency.
 
         Args:
@@ -216,9 +223,7 @@ class A2AService:
 
         registry: dict[str, Any] = self._langgraph_service._graph_registry
 
-        # Resolve graph_id: if assistant_id is already a graph key use it
-        # directly; otherwise use it as-is for resolve_assistant_id.
-        graph_id = assistant_id if assistant_id in registry else assistant_id
+        graph_id = assistant_id
         resolved_assistant_id = resolve_assistant_id(graph_id, registry)
 
         # Convert parts to LangChain messages
@@ -234,6 +239,24 @@ class A2AService:
 
         output = await wait_for_run(thread_id, request, user)
 
+        # Look up actual run status from DB
+        maker = _get_session_maker()
+        async with maker() as db_session:
+            latest_run: RunORM | None = await db_session.scalar(
+                select(RunORM)
+                .where(RunORM.thread_id == thread_id, RunORM.user_id == user.identity)
+                .order_by(RunORM.created_at.desc())
+                .limit(1)
+            )
+
+        if latest_run:
+            actual_status = RUN_STATUS_TO_TASK_STATE.get(latest_run.status or "pending", "unknown")
+            actual_task_state = TaskState(actual_status)
+            effective_task_id = latest_run.run_id
+        else:
+            actual_task_state = TaskState.completed
+            effective_task_id = task_id or str(uuid4())
+
         # Build A2A response
         output_parts = convert_output_to_parts(output)
         a2a_parts = [Part(root=TextPart(text=p["text"])) for p in output_parts]
@@ -242,14 +265,10 @@ class A2AService:
             [Artifact(artifactId="output", parts=a2a_parts)] if a2a_parts else None
         )
 
-        # Read the actual run_id from the DB (wait_for_run creates it internally)
-        # For now, use task_id if provided, otherwise generate one
-        effective_task_id = task_id or str(uuid4())
-
         task = Task(
             id=effective_task_id,
             contextId=thread_id,
-            status=TaskStatus(state=TaskState.completed),
+            status=TaskStatus(state=actual_task_state),
             artifacts=artifacts,
         )
         return task.model_dump(by_alias=True)
@@ -286,7 +305,7 @@ class A2AService:
             raise RuntimeError("LangGraph service not initialized")
 
         registry: dict[str, Any] = self._langgraph_service._graph_registry
-        graph_id = assistant_id if assistant_id in registry else assistant_id
+        graph_id = assistant_id
         resolved_assistant_id = resolve_assistant_id(graph_id, registry)
 
         langchain_messages = convert_parts_to_langchain(parts)
@@ -315,7 +334,10 @@ class A2AService:
 
         # Convert Agent Protocol SSE events to A2A events
         accumulated_text = ""
+        stream_ended = False
         async for chunk in streaming_response.body_iterator:
+            if stream_ended:
+                break
             if not isinstance(chunk, str):
                 chunk = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
 
@@ -350,6 +372,7 @@ class A2AService:
 
                 elif line.startswith("event: end"):
                     # Stream ended — emit final artifact and completed status
+                    stream_ended = True
                     break
 
         # Emit final artifact chunk if we accumulated text
@@ -375,11 +398,12 @@ class A2AService:
         )
         yield f"data: {completed_event.model_dump_json(by_alias=True)}\n\n"
 
-    async def get_task(self, task_id: str) -> dict[str, Any]:
+    async def get_task(self, task_id: str, user: User) -> dict[str, Any]:
         """Look up a task by its run ID and return the A2A Task dict.
 
         Args:
             task_id: The run ID (A2A task ID) to look up.
+            user: The authenticated user making the request.
 
         Returns:
             A2A Task dict with the current status.
@@ -390,7 +414,10 @@ class A2AService:
         maker = _get_session_maker()
         async with maker() as session:
             run_record: RunORM | None = await session.scalar(
-                select(RunORM).where(RunORM.run_id == task_id)
+                select(RunORM).where(
+                    RunORM.run_id == task_id,
+                    RunORM.user_id == user.identity,
+                )
             )
 
         if run_record is None:

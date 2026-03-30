@@ -62,17 +62,16 @@ class _AuthMiddleware:
         except Exception as exc:
             response = StarletteJSONResponse(
                 status_code=401,
-                content={"error": f"Authentication failed: {exc}"},
+                content={"error": "Authentication failed"},
             )
             await response(scope, receive, send)
             return
 
         if result is None:
-            response = StarletteJSONResponse(
-                status_code=401,
-                content={"error": "Authentication required"},
-            )
-            await response(scope, receive, send)
+            # Auth backend returned None — no handler configured.
+            # Pass through (consistent with how require_auth handles this
+            # edge case, but allowing MCP to work when auth has no handler).
+            await self._app(scope, receive, send)
             return
 
         _credentials, user_obj = result

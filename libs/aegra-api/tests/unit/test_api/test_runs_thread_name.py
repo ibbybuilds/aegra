@@ -16,9 +16,7 @@ class TestExtractThreadName:
         assert _extract_thread_name({"messages": "not a list"}) == ""
 
     def test_extracts_content_from_dict_message(self) -> None:
-        result = _extract_thread_name(
-            {"messages": [{"role": "human", "content": "Hello world"}]}
-        )
+        result = _extract_thread_name({"messages": [{"role": "human", "content": "Hello world"}]})
         assert result == "Hello world"
 
     def test_extracts_first_message_with_content(self) -> None:
@@ -55,10 +53,10 @@ class TestExtractThreadName:
         assert result == "Real content"
 
     def test_truncates_long_content_at_word_boundary(self) -> None:
-        long_content = "word " * 30  # 150 chars
+        long_content = "word " * 30  # 148 chars after strip
         result = _extract_thread_name({"messages": [{"content": long_content}]})
         assert result.endswith("...")
-        assert len(result) <= 104  # 100 + "..."
+        assert len(result) <= 104  # 100 chars + "..."
 
     def test_handles_langchain_message_objects(self) -> None:
         class FakeMessage:
@@ -68,13 +66,54 @@ class TestExtractThreadName:
         assert result == "Object message"
 
     def test_returns_empty_for_none_content(self) -> None:
-        result = _extract_thread_name(
-            {"messages": [{"role": "human", "content": None}]}
-        )
+        result = _extract_thread_name({"messages": [{"role": "human", "content": None}]})
         assert result == ""
 
     def test_returns_empty_for_non_string_content(self) -> None:
-        result = _extract_thread_name(
-            {"messages": [{"role": "human", "content": 42}]}
-        )
+        result = _extract_thread_name({"messages": [{"role": "human", "content": 42}]})
         assert result == ""
+
+    def test_extracts_from_list_content_blocks(self) -> None:
+        """OpenAI-compatible SDKs send content as list of blocks."""
+        result = _extract_thread_name(
+            {
+                "messages": [
+                    {
+                        "role": "human",
+                        "content": [{"type": "text", "text": "Hello from blocks"}],
+                    }
+                ]
+            }
+        )
+        assert result == "Hello from blocks"
+
+    def test_joins_multiple_text_blocks(self) -> None:
+        result = _extract_thread_name(
+            {
+                "messages": [
+                    {
+                        "role": "human",
+                        "content": [
+                            {"type": "text", "text": "Part one"},
+                            {"type": "image_url", "image_url": {"url": "..."}},
+                            {"type": "text", "text": "Part two"},
+                        ],
+                    }
+                ]
+            }
+        )
+        assert result == "Part one Part two"
+
+    def test_skips_list_blocks_without_text_type(self) -> None:
+        result = _extract_thread_name(
+            {
+                "messages": [
+                    {
+                        "role": "human",
+                        "content": [{"type": "image_url", "image_url": {"url": "..."}}],
+                    },
+                    {"role": "human", "content": "Fallback"},
+                ]
+            }
+        )
+        assert result == "Fallback"

@@ -114,24 +114,46 @@ async def set_thread_status(session: AsyncSession, thread_id: str, status: str) 
 _THREAD_NAME_MAX_LENGTH = 100
 
 
+def _resolve_content_text(content: Any) -> str:
+    """Extract plain text from a message content field.
+
+    Handles both plain strings and list-of-blocks format used by some SDKs::
+
+        [{"type": "text", "text": "Hello world"}]
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if isinstance(text, str):
+                    parts.append(text)
+        return " ".join(parts)
+    return ""
+
+
 def _extract_thread_name(input_data: dict[str, Any]) -> str:
     """Derive a thread name from the first human message in the run input.
 
     Supports the common ``{"messages": [{"role": "human", "content": "..."}]}``
     shape emitted by agent-chat-ui, LangGraph Studio, and the JS/Python SDKs.
+    Also handles list-of-blocks content from OpenAI-compatible APIs.
     Returns an empty string when no suitable message is found.
     """
     messages = input_data.get("messages")
     if not isinstance(messages, list) or not messages:
         return ""
     for msg in messages:
-        content: str | None = None
+        raw_content: Any = None
         if isinstance(msg, dict):
-            content = msg.get("content")
+            raw_content = msg.get("content")
         elif hasattr(msg, "content"):
-            content = getattr(msg, "content", None)
-        if isinstance(content, str) and content.strip():
-            name = content.strip()
+            raw_content = getattr(msg, "content", None)
+        text = _resolve_content_text(raw_content)
+        if text.strip():
+            name = text.strip()
             if len(name) > _THREAD_NAME_MAX_LENGTH:
                 return name[:_THREAD_NAME_MAX_LENGTH].rsplit(" ", 1)[0] + "..."
             return name
@@ -143,6 +165,7 @@ async def update_thread_metadata(
     thread_id: str,
     assistant_id: str,
     graph_id: str,
+    *,
     user_id: str | None = None,
     input_data: dict[str, Any] | None = None,
 ) -> None:
@@ -277,7 +300,9 @@ async def create_run(
 
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
-    await update_thread_metadata(session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input)
+    await update_thread_metadata(
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input
+    )
     await set_thread_status(session, thread_id, "busy")
 
     # Persist run record via ORM model in core.orm (Run table)
@@ -386,7 +411,9 @@ async def create_and_stream_run(
 
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
-    await update_thread_metadata(session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input)
+    await update_thread_metadata(
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input
+    )
     await set_thread_status(session, thread_id, "busy")
 
     # Persist run record
@@ -696,7 +723,9 @@ async def wait_for_run(
 
         # Mark thread as busy and update metadata with assistant/graph info
         # update_thread_metadata will auto-create thread if it doesn't exist
-        await update_thread_metadata(session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input)
+        await update_thread_metadata(
+            session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input
+        )
         await set_thread_status(session, thread_id, "busy")
 
         # Persist run record

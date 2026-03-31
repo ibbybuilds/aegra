@@ -152,6 +152,9 @@ def _extract_thread_name(input_data: dict[str, Any]) -> str:
         if isinstance(msg, dict):
             role_val = msg.get("role")
             role = role_val if isinstance(role_val, str) else None
+            if role is None:
+                type_val = msg.get("type")
+                role = type_val if isinstance(type_val, str) else None
             raw_content = msg.get("content")
         elif hasattr(msg, "content"):
             raw_content = getattr(msg, "content", None)

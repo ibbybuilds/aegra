@@ -84,6 +84,11 @@ class TestExtractThreadName:
         result = _extract_thread_name({"messages": [{"role": "user", "content": "Hi there"}]})
         assert result == "Hi there"
 
+    def test_accepts_type_human_in_dict_messages(self) -> None:
+        """Aegra docs/examples commonly send message type instead of role."""
+        result = _extract_thread_name({"messages": [{"type": "human", "content": "Hello from docs"}]})
+        assert result == "Hello from docs"
+
     def test_returns_empty_for_none_content(self) -> None:
         result = _extract_thread_name({"messages": [{"role": "human", "content": None}]})
         assert result == ""

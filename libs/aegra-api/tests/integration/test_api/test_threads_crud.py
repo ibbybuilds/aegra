@@ -100,6 +100,37 @@ class TestCreateThread:
         assert data["status"] == "idle"
         assert data["metadata"]["thread_name"] == "Test Thread"
 
+    def test_create_thread_preserves_graph_id_from_metadata(self, client):
+        """Test that client-provided graph_id in metadata is preserved (fixes #254)."""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"graph_id": "agent"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["graph_id"] == "agent"
+
+    def test_create_thread_normalizes_camel_case_graph_id(self, client):
+        """Test that JS SDK camelCase graphId is normalized to graph_id (fixes #254)."""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"graphId": "agent"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["graph_id"] == "agent"
+        assert "graphId" not in data["metadata"]
+
+    def test_create_thread_snake_case_graph_id_takes_precedence(self, client):
+        """Test that graph_id takes precedence over graphId when both are provided."""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"graph_id": "snake", "graphId": "camel"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["graph_id"] == "snake"
+
     def test_create_thread_empty_request(self, client):
         """Test creating a thread with empty request body"""
         resp = client.post("/threads", json={})

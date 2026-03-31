@@ -157,14 +157,15 @@ async def create_thread(
                 raise HTTPException(409, f"Thread '{thread_id}' already exists")
 
     metadata = request.metadata or {}
-    metadata.update(
-        {
-            "owner": user.identity,
-            "assistant_id": None,
-            "graph_id": None,
-            "thread_name": metadata.get("thread_name", ""),
-        }
-    )
+    # Always enforce owner from authenticated user
+    metadata["owner"] = user.identity
+    # Preserve client-provided values; only set defaults if missing.
+    # The JS SDK sends camelCase "graphId" — normalize to snake_case.
+    if "graphId" in metadata:
+        metadata.setdefault("graph_id", metadata.pop("graphId"))
+    metadata.setdefault("assistant_id", None)
+    metadata.setdefault("graph_id", None)
+    metadata.setdefault("thread_name", "")
 
     thread_orm = ThreadORM(
         thread_id=thread_id,

@@ -259,7 +259,7 @@ async def get_assistant_schemas(
     Returns the input, output, state, and config schemas derived from the
     underlying graph's type annotations.
     """
-    return await service.get_assistant_schemas(assistant_id, user.identity)
+    return await service.get_assistant_schemas(assistant_id, user)
 
 
 @router.get("/assistants/{assistant_id}/graph", responses={**NOT_FOUND})
@@ -279,7 +279,7 @@ async def get_assistant_graph(
     """
     # Default to False if not provided
     xray_value = xray if xray is not None else False
-    return await service.get_assistant_graph(assistant_id, xray_value, user.identity)
+    return await service.get_assistant_graph(assistant_id, xray_value, user)
 
 
 @router.get("/assistants/{assistant_id}/subgraphs", responses={**NOT_FOUND})
@@ -296,4 +296,4 @@ async def get_assistant_subgraphs(
     `recurse=true` to include deeply nested subgraphs, or filter to a single
     namespace.
     """
-    return await service.get_assistant_subgraphs(assistant_id, namespace, recurse, user.identity)
+    return await service.get_assistant_subgraphs(assistant_id, namespace, recurse, user)

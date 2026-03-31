@@ -35,7 +35,10 @@ class TestLangGraphServiceRealFiles:
             config_path = Path(temp_dir) / "aegra.json"
             config_path.write_text(json.dumps(config_data))
 
-            with patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"):
+            with (
+                patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+                patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
+            ):
                 service = LangGraphService(str(config_path))
                 await service.initialize()
 
@@ -57,6 +60,7 @@ class TestLangGraphServiceRealFiles:
             with (
                 patch.object(settings.app, "AEGRA_CONFIG", str(config_path)),
                 patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+                patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
             ):
                 service = LangGraphService()
                 await service.initialize()
@@ -86,6 +90,7 @@ class TestLangGraphServiceRealFiles:
             with (
                 patch.object(settings.app, "AEGRA_CONFIG", None),
                 patch("aegra_api.services.langgraph_service.LangGraphService._ensure_default_assistants"),
+                patch("aegra_api.services.langgraph_service.LangGraphService._load_all_graph_modules"),
             ):
                 service = LangGraphService()
                 await service.initialize()

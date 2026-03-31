@@ -100,6 +100,38 @@ class TestCreateThread:
         assert data["status"] == "idle"
         assert data["metadata"]["thread_name"] == "Test Thread"
 
+    def test_create_thread_preserves_graph_id_from_metadata(self, client):
+        """Test that client-provided graph_id in metadata is preserved (fixes #254)."""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"graph_id": "agent"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["graph_id"] == "agent"
+
+    def test_create_thread_does_not_normalize_camel_case_graph_id(self, client):
+        """Thread metadata should stay server-canonical; JS SDK already sends snake_case on the wire."""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"graphId": "agent"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["graph_id"] is None
+        assert data["metadata"]["graphId"] == "agent"
+
+    def test_create_thread_snake_case_graph_id_takes_precedence(self, client):
+        """Canonical graph_id is preserved even if an unrelated camelCase key is also present."""
+        resp = client.post(
+            "/threads",
+            json={"metadata": {"graph_id": "snake", "graphId": "camel"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metadata"]["graph_id"] == "snake"
+        assert data["metadata"]["graphId"] == "camel"
+
     def test_create_thread_empty_request(self, client):
         """Test creating a thread with empty request body"""
         resp = client.post("/threads", json={})

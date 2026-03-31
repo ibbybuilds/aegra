@@ -54,16 +54,35 @@ class TestExtractThreadName:
 
     def test_truncates_long_content_at_word_boundary(self) -> None:
         long_content = "word " * 30  # 148 chars after strip
-        result = _extract_thread_name({"messages": [{"content": long_content}]})
+        result = _extract_thread_name({"messages": [{"role": "human", "content": long_content}]})
         assert result.endswith("...")
         assert len(result) <= 104  # 100 chars + "..."
 
     def test_handles_langchain_message_objects(self) -> None:
         class FakeMessage:
+            type = "human"
             content = "Object message"
 
         result = _extract_thread_name({"messages": [FakeMessage()]})
         assert result == "Object message"
+
+    def test_skips_non_human_messages(self) -> None:
+        """Only human/user messages should be used for thread name."""
+        result = _extract_thread_name(
+            {
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant"},
+                    {"role": "assistant", "content": "Hello!"},
+                    {"role": "human", "content": "What is Python?"},
+                ]
+            }
+        )
+        assert result == "What is Python?"
+
+    def test_accepts_user_role(self) -> None:
+        """OpenAI-style 'user' role should work same as 'human'."""
+        result = _extract_thread_name({"messages": [{"role": "user", "content": "Hi there"}]})
+        assert result == "Hi there"
 
     def test_returns_empty_for_none_content(self) -> None:
         result = _extract_thread_name({"messages": [{"role": "human", "content": None}]})

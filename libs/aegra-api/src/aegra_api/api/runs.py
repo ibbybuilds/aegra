@@ -145,12 +145,21 @@ def _extract_thread_name(input_data: dict[str, Any]) -> str:
     messages = input_data.get("messages")
     if not isinstance(messages, list) or not messages:
         return ""
+    _HUMAN_ROLES = {"human", "user"}
     for msg in messages:
         raw_content: Any = None
+        role: str | None = None
         if isinstance(msg, dict):
+            role_val = msg.get("role")
+            role = role_val if isinstance(role_val, str) else None
             raw_content = msg.get("content")
         elif hasattr(msg, "content"):
             raw_content = getattr(msg, "content", None)
+            # langchain BaseMessage uses .type for the role
+            msg_type = getattr(msg, "type", None)
+            role = msg_type if isinstance(msg_type, str) else None
+        if role not in _HUMAN_ROLES:
+            continue
         text = _resolve_content_text(raw_content)
         if text.strip():
             name = text.strip()
@@ -301,7 +310,7 @@ async def create_run(
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user_id=user.identity, input_data=request.input
     )
     await set_thread_status(session, thread_id, "busy")
 
@@ -412,7 +421,7 @@ async def create_and_stream_run(
     # Mark thread as busy and update metadata with assistant/graph info
     # update_thread_metadata will auto-create thread if it doesn't exist
     await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input
+        session, thread_id, assistant.assistant_id, assistant.graph_id, user_id=user.identity, input_data=request.input
     )
     await set_thread_status(session, thread_id, "busy")
 
@@ -724,7 +733,12 @@ async def wait_for_run(
         # Mark thread as busy and update metadata with assistant/graph info
         # update_thread_metadata will auto-create thread if it doesn't exist
         await update_thread_metadata(
-            session, thread_id, assistant.assistant_id, assistant.graph_id, user.identity, input_data=request.input
+            session,
+            thread_id,
+            assistant.assistant_id,
+            assistant.graph_id,
+            user_id=user.identity,
+            input_data=request.input,
         )
         await set_thread_status(session, thread_id, "busy")
 

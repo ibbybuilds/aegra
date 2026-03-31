@@ -26,6 +26,16 @@ logger = structlog.getLogger(__name__)
 
 _DEFAULT_STREAM_MODES = ["values"]
 
+# Run IDs whose cancellation was triggered by lease loss (not user action).
+# When a heartbeat detects lease loss, it adds the run_id here before
+# cancelling the job task. execute_run's CancelledError handler checks
+# this set to skip finalize_run and SSE signaling — the reaper has already
+# re-enqueued the run and another worker will execute it. Without this,
+# the old worker would write status="interrupted" and send an SSE end event,
+# prematurely closing client streams and potentially overwriting the new
+# worker's status.
+_lease_loss_cancellations: set[str] = set()
+
 
 async def execute_run(job: RunJob) -> None:
     """Execute a graph run, stream events to the broker, and update DB.
@@ -59,8 +69,15 @@ async def execute_run(job: RunJob) -> None:
             )
 
     except asyncio.CancelledError:
-        await finalize_run(run_id, thread_id, status="interrupted", thread_status="idle", output={})
-        await _best_effort_signal(streaming_service.signal_run_cancelled, run_id)
+        if run_id in _lease_loss_cancellations:
+            # Lease was lost — the reaper re-enqueued this run for another
+            # worker.  Do NOT finalize or send SSE events; the new worker
+            # owns the run now.
+            _lease_loss_cancellations.discard(run_id)
+            logger.info("Lease-loss cancel, skipping finalize", run_id=run_id)
+        else:
+            await finalize_run(run_id, thread_id, status="interrupted", thread_status="idle", output={})
+            await _best_effort_signal(streaming_service.signal_run_cancelled, run_id)
         raise
     except Exception as exc:
         logger.exception("Run failed", run_id=run_id)

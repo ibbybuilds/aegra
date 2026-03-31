@@ -28,7 +28,7 @@ from aegra_api.core.redis_manager import redis_manager
 from aegra_api.models.run_job import RunJob
 from aegra_api.observability.span_enrichment import set_trace_context
 from aegra_api.services.base_executor import BaseExecutor
-from aegra_api.services.run_executor import _DONE_KEY_PREFIX, execute_run
+from aegra_api.services.run_executor import _DONE_KEY_PREFIX, _lease_loss_cancellations, execute_run
 from aegra_api.services.run_status import update_run_status
 from aegra_api.settings import settings
 
@@ -417,6 +417,7 @@ async def _heartbeat_loop(
                     worker=worker_name,
                 )
                 if job_task is not None and not job_task.done():
+                    _lease_loss_cancellations.add(run_id)
                     job_task.cancel()
                 return
             logger.debug("Lease extended", run_id=run_id, worker=worker_name)

@@ -210,3 +210,72 @@ class TestSignalRunDone:
 
             # Should not raise
             await _signal_run_done("run-1")
+
+
+class TestLeaseLossCancellation:
+    @pytest.mark.asyncio
+    async def test_lease_loss_cancel_skips_finalize_and_signal(self) -> None:
+        """Regression: when cancellation is due to lease loss (not user action),
+        execute_run must NOT finalize the run or send SSE events — another
+        worker will re-execute it."""
+        mock_update = AsyncMock()
+        mock_finalize = AsyncMock()
+
+        with (
+            patch("aegra_api.services.run_executor.update_run_status", mock_update),
+            patch("aegra_api.services.run_executor.finalize_run", mock_finalize),
+            patch("aegra_api.services.run_executor.streaming_service") as mock_streaming,
+            patch("aegra_api.services.run_executor._signal_run_done", new_callable=AsyncMock),
+            patch(
+                "aegra_api.services.run_executor._stream_graph",
+                new_callable=AsyncMock,
+                side_effect=asyncio.CancelledError,
+            ),
+        ):
+            mock_streaming.signal_run_cancelled = AsyncMock()
+            mock_streaming.cleanup_run = AsyncMock()
+
+            from aegra_api.services.run_executor import _lease_loss_cancellations, execute_run
+
+            # Simulate heartbeat marking this as a lease-loss cancel
+            _lease_loss_cancellations.add("run-1")
+            try:
+                with pytest.raises(asyncio.CancelledError):
+                    await execute_run(_make_job())
+            finally:
+                _lease_loss_cancellations.discard("run-1")
+
+        # finalize_run must NOT be called — the new worker owns this run
+        mock_finalize.assert_not_awaited()
+        # SSE cancel signal must NOT be sent — clients should stay connected
+        mock_streaming.signal_run_cancelled.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_user_cancel_still_finalizes(self) -> None:
+        """Normal (user-initiated) cancellation must still finalize and signal."""
+        mock_update = AsyncMock()
+        mock_finalize = AsyncMock()
+
+        with (
+            patch("aegra_api.services.run_executor.update_run_status", mock_update),
+            patch("aegra_api.services.run_executor.finalize_run", mock_finalize),
+            patch("aegra_api.services.run_executor.streaming_service") as mock_streaming,
+            patch("aegra_api.services.run_executor._signal_run_done", new_callable=AsyncMock),
+            patch(
+                "aegra_api.services.run_executor._stream_graph",
+                new_callable=AsyncMock,
+                side_effect=asyncio.CancelledError,
+            ),
+        ):
+            mock_streaming.signal_run_cancelled = AsyncMock()
+            mock_streaming.cleanup_run = AsyncMock()
+
+            from aegra_api.services.run_executor import execute_run
+
+            with pytest.raises(asyncio.CancelledError):
+                await execute_run(_make_job())
+
+        # Normal cancel: finalize and signal MUST happen
+        mock_finalize.assert_awaited_once()
+        assert mock_finalize.await_args.kwargs["status"] == "interrupted"
+        mock_streaming.signal_run_cancelled.assert_awaited_once_with("run-1")

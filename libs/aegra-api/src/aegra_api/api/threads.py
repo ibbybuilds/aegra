@@ -160,9 +160,6 @@ async def create_thread(
     # Always enforce owner from authenticated user
     metadata["owner"] = user.identity
     # Preserve client-provided values; only set defaults if missing.
-    # The JS SDK sends camelCase "graphId" — normalize to snake_case.
-    if "graphId" in metadata:
-        metadata.setdefault("graph_id", metadata.pop("graphId"))
     metadata.setdefault("assistant_id", None)
     metadata.setdefault("graph_id", None)
     metadata.setdefault("thread_name", "")

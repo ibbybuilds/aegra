@@ -48,6 +48,7 @@ aegra/
 │   ├── aegra-api/                    # Core API package
 │   │   ├── src/aegra_api/            # Main application code
 │   │   │   ├── api/                  # Agent Protocol endpoints
+│   │   │   ├── adapters/             # Protocol adapters (A2A, MCP)
 │   │   │   ├── services/             # Business logic layer
 │   │   │   ├── core/                 # Infrastructure (database, auth, orm, health, migrations)
 │   │   │   ├── models/               # Pydantic request/response schemas
@@ -198,6 +199,14 @@ These rules exist because AI agents repeatedly make these mistakes. Follow them 
 - Use `subprocess.run([...], shell=False)` — never `shell=True` with user input.
 
 ## Architecture
+
+### Protocol Adapters
+The `adapters/` directory contains protocol bridge implementations that expose Aegra agents via additional protocols:
+
+- **A2A adapter** — Implements the [Agent-to-Agent protocol](https://google.github.io/A2A/) at `/a2a/{assistant_id}`. Translates A2A JSON-RPC messages (`message/send`, `message/stream`, `tasks/get`, `tasks/cancel`) into Agent Protocol runs. Maps A2A `contextId` to `thread_id` and `taskId` to `run_id`.
+- **MCP adapter** — Implements [Model Context Protocol](https://modelcontextprotocol.io/) at `/mcp` using Streamable HTTP transport. Exposes each configured graph as an MCP tool (one tool per graph, name = graph_id).
+
+Both adapters are enabled by default and can be disabled via `aegra.json` (`http.disable_a2a`, `http.disable_mcp`). Both share the same auth stack as the Agent Protocol endpoints.
 
 ### Database Architecture
 The system uses two connection pools:

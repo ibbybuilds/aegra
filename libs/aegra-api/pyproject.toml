@@ -1,6 +1,6 @@
 [project]
 name = "aegra-api"
-version = "0.8.3"
+version = "0.8.4"
 description = "Aegra core API - Self-hosted Agent Protocol server"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -44,6 +44,10 @@ dependencies = [
     # Utils
     "structlog>=25.4.0",
     "asgi-correlation-id>=4.3.4",
+
+    # Protocol adapters
+    "mcp>=1.26.0",
+    "a2a-sdk[http-server]>=0.3.25",
 ]
 
 [project.urls]

@@ -346,6 +346,7 @@ async def stress_redis_flap() -> StressResult:
         subprocess.run(
             ["docker", "compose", "-f", "docker-compose.multi.yml", "pause", "redis"],
             capture_output=True,
+            check=True,
             cwd=COMPOSE_DIR,
         )
 
@@ -356,6 +357,7 @@ async def stress_redis_flap() -> StressResult:
         subprocess.run(
             ["docker", "compose", "-f", "docker-compose.multi.yml", "unpause", "redis"],
             capture_output=True,
+            check=True,
             cwd=COMPOSE_DIR,
         )
 
@@ -399,6 +401,7 @@ async def stress_single_worker_backpressure() -> StressResult:
     subprocess.run(
         ["docker", "compose", "-f", "docker-compose.multi.yml", "kill", "aegra-b"],
         capture_output=True,
+        check=True,
         cwd=COMPOSE_DIR,
     )
     await asyncio.sleep(3)
@@ -434,6 +437,7 @@ async def stress_single_worker_backpressure() -> StressResult:
         subprocess.run(
             ["docker", "compose", "-f", "docker-compose.multi.yml", "up", "-d", "aegra-b"],
             capture_output=True,
+            check=True,
             cwd=COMPOSE_DIR,
         )
         await asyncio.sleep(5)
@@ -480,6 +484,7 @@ async def stress_network_partition() -> StressResult:
         subprocess.run(
             ["docker", "compose", "-f", "docker-compose.multi.yml", "kill", "nginx"],
             capture_output=True,
+            check=True,
             cwd=COMPOSE_DIR,
         )
 
@@ -492,6 +497,7 @@ async def stress_network_partition() -> StressResult:
         subprocess.run(
             ["docker", "compose", "-f", "docker-compose.multi.yml", "up", "-d", "nginx"],
             capture_output=True,
+            check=True,
             cwd=COMPOSE_DIR,
         )
         await asyncio.sleep(3)

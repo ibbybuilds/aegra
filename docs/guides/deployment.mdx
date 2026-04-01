@@ -84,7 +84,7 @@ For platforms like Railway, Render, or Fly.io — use `aegra serve`:
 aegra serve
 ```
 
-This runs uvicorn directly without starting PostgreSQL or Redis. You provide running database and Redis instances via environment variables.
+This runs uvicorn directly without starting PostgreSQL. You provide a running database instance via environment variables. Redis is only required when `REDIS_BROKER_ENABLED=true` (recommended for multi-instance production deployments). Without Redis, runs execute as in-process asyncio tasks — suitable for single-instance deployments.
 
 <Steps>
   <Step title="Create a PostgreSQL addon on your platform">

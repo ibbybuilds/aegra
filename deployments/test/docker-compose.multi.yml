@@ -38,7 +38,7 @@ services:
       - PYTHONPATH=/app/src
       - REDIS_BROKER_ENABLED=true
       - REDIS_URL=redis://redis:6379/0
-      - WORKER_COUNT=2
+      - WORKER_COUNT=3
       - LEASE_DURATION_SECONDS=10
       - HEARTBEAT_INTERVAL_SECONDS=3
       - REAPER_INTERVAL_SECONDS=5
@@ -69,7 +69,7 @@ services:
       - PYTHONPATH=/app/src
       - REDIS_BROKER_ENABLED=true
       - REDIS_URL=redis://redis:6379/0
-      - WORKER_COUNT=2
+      - WORKER_COUNT=3
       - LEASE_DURATION_SECONDS=10
       - HEARTBEAT_INTERVAL_SECONDS=3
       - REAPER_INTERVAL_SECONDS=5

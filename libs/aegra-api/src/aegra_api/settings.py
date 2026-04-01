@@ -106,11 +106,11 @@ class DatabaseSettings(EnvBase):
 class PoolSettings(EnvBase):
     """Connection pool settings for SQLAlchemy and LangGraph."""
 
-    SQLALCHEMY_POOL_SIZE: int = 5
-    SQLALCHEMY_MAX_OVERFLOW: int = 10
+    SQLALCHEMY_POOL_SIZE: int = 10
+    SQLALCHEMY_MAX_OVERFLOW: int = 20
 
-    LANGGRAPH_MIN_POOL_SIZE: int = 2
-    LANGGRAPH_MAX_POOL_SIZE: int = 10
+    LANGGRAPH_MIN_POOL_SIZE: int = 5
+    LANGGRAPH_MAX_POOL_SIZE: int = 20
 
 
 class ObservabilitySettings(EnvBase):
@@ -148,7 +148,7 @@ class RedisSettings(EnvBase):
     REDIS_BROKER_ENABLED: bool = False
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_CHANNEL_PREFIX: str = "aegra:run:"
-    REDIS_MAX_CONNECTIONS: int = 20
+    REDIS_MAX_CONNECTIONS: int = 250
 
 
 class WorkerSettings(EnvBase):

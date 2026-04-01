@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute, APIRouter
 
+from aegra_api import __version__
 from aegra_api.api.assistants import router as assistants_router
 from aegra_api.api.runs import router as runs_router
 from aegra_api.api.stateless_runs import router as stateless_runs_router
@@ -146,7 +147,7 @@ async def root_handler() -> dict[str, str]:
     """Root endpoint"""
     return {
         "message": settings.app.PROJECT_NAME,
-        "version": settings.app.VERSION,
+        "version": __version__,
         "status": "running",
     }
 

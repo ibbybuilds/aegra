@@ -8,23 +8,29 @@ Threads are the core persistence unit in Aegra. Each thread represents a convers
 ## Creating threads
 
 ```python
+import asyncio
 from langgraph_sdk import get_client
 
-client = get_client(url="http://localhost:2026")
 
-# Create a thread
-thread = await client.threads.create()
+async def main():
+    client = get_client(url="http://localhost:2026")
 
-# Create with metadata
-thread = await client.threads.create(
-    metadata={"user_name": "Alice", "session": "onboarding"},
-)
+    # Create a thread
+    thread = await client.threads.create()
 
-# Create with a specific ID (idempotent)
-thread = await client.threads.create(
-    thread_id="my-thread-123",
-    if_exists="do_nothing",  # Don't error if it already exists
-)
+    # Create with metadata
+    thread = await client.threads.create(
+        metadata={"user_name": "Alice", "session": "onboarding"},
+    )
+
+    # Create with a specific ID (idempotent)
+    thread = await client.threads.create(
+        thread_id="my-thread-123",
+        if_exists="do_nothing",  # Don't error if it already exists
+    )
+
+
+asyncio.run(main())
 ```
 
 ## Thread status
@@ -42,6 +48,10 @@ Threads have a status that reflects their current state:
 thread = await client.threads.get(thread_id)
 print(thread["status"])  # "idle", "busy", "interrupted", "error"
 ```
+
+<Note>
+  The snippets below assume you are inside an `async def` function with an initialized `client` — see the example above.
+</Note>
 
 ## Getting thread state
 
@@ -63,7 +73,7 @@ print(state["tasks"])
 print(state["interrupts"])
 
 # Checkpoint info
-print(state["checkpoint_id"])
+print(state["checkpoint"]["checkpoint_id"])
 ```
 
 ## Updating thread state
@@ -87,7 +97,7 @@ Every state change creates a checkpoint. You can browse the full history:
 history = await client.threads.get_history(thread_id)
 
 for entry in history:
-    print(f"Checkpoint: {entry['checkpoint_id']}")
+    print(f"Checkpoint: {entry['checkpoint']['checkpoint_id']}")
     print(f"  Values: {entry['values']}")
     print(f"  Next: {entry['next']}")
 ```
@@ -98,7 +108,7 @@ for entry in history:
 # Go back in time to a specific checkpoint
 state = await client.threads.get_state(
     thread_id,
-    checkpoint_id="your-checkpoint-id",
+    checkpoint={"checkpoint_id": "your-checkpoint-id"},
 )
 ```
 

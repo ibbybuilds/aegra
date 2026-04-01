@@ -157,14 +157,12 @@ async def create_thread(
                 raise HTTPException(409, f"Thread '{thread_id}' already exists")
 
     metadata = request.metadata or {}
-    metadata.update(
-        {
-            "owner": user.identity,
-            "assistant_id": None,
-            "graph_id": None,
-            "thread_name": metadata.get("thread_name", ""),
-        }
-    )
+    # Always enforce owner from authenticated user
+    metadata["owner"] = user.identity
+    # Preserve client-provided values; only set defaults if missing.
+    metadata.setdefault("assistant_id", None)
+    metadata.setdefault("graph_id", None)
+    metadata.setdefault("thread_name", "")
 
     thread_orm = ThreadORM(
         thread_id=thread_id,
@@ -332,7 +330,7 @@ async def get_thread_state(
         )
 
         langgraph_service = get_langgraph_service()
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
         if checkpoint_ns:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
@@ -426,7 +424,7 @@ async def update_thread_state(
         )
 
         langgraph_service = get_langgraph_service()
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
 
         if request.checkpoint_id:
             config["configurable"]["checkpoint_id"] = request.checkpoint_id
@@ -551,7 +549,7 @@ async def get_thread_state_at_checkpoint(
 
         langgraph_service = get_langgraph_service()
 
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
         config["configurable"]["checkpoint_id"] = checkpoint_id
         if checkpoint_ns:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
@@ -672,7 +670,7 @@ async def get_thread_history_post(
 
         langgraph_service = get_langgraph_service()
 
-        config: dict[str, Any] = create_thread_config(thread_id, user, {})
+        config: dict[str, Any] = create_thread_config(thread_id, user)
         if checkpoint:
             cfg_cp = checkpoint.copy()
             if checkpoint_ns is not None:
@@ -681,10 +679,19 @@ async def get_thread_history_post(
         elif checkpoint_ns is not None:
             config["configurable"]["checkpoint_ns"] = checkpoint_ns
 
+        # Convert `before` to a RunnableConfig for aget_state_history.
+        # The SDK sends `before` as either a checkpoint ID string or a
+        # Checkpoint dict with thread_id/checkpoint_ns/checkpoint_id keys.
+        before_config: dict[str, Any] | None = None
+        if isinstance(before, str):
+            before_config = {"configurable": {"checkpoint_id": before}}
+        elif isinstance(before, dict):
+            before_config = {"configurable": before}
+
         state_snapshots = []
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "limit": limit,
-            "before": before,
+            "before": before_config,
         }
         if metadata is not None:
             kwargs["metadata"] = metadata

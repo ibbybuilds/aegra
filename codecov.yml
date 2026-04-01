@@ -39,10 +39,11 @@ comment:
   # Use condensed layout for cleaner, more focused PR comments
   layout: "condensed_header, condensed_files, condensed_footer"
   behavior: default  # Update existing comment, or post new if doesn't exist
-  # Only post if coverage changes (reduces noise)
-  require_changes: true
-  # Require both base and head reports for meaningful comparison
-  require_base: true
+  # Post comments even when there is no visible coverage delta.
+  # This keeps PR feedback consistent for docs-only and config-only changes.
+  require_changes: false
+  # Allow comments when base coverage is unavailable or cannot be compared cleanly.
+  require_base: false
   require_head: true
   # Hide project coverage, focus on patch/diff coverage (cleaner view)
   hide_project_coverage: true

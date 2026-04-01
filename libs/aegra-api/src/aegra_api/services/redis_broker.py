@@ -392,7 +392,10 @@ class RedisBrokerManager(BaseBrokerManager):
         if not broker.is_finished():
             event_id = await self.allocate_event_id(run_id)
             await broker.put(event_id, ("end", {"status": "interrupted"}))
-            self.cleanup_broker(run_id)
+            # Do NOT call cleanup_broker here — execute_run's finally block
+            # owns cleanup.  Leaving the finished broker in _brokers lets
+            # signal_run_cancelled see is_finished() → True and skip the
+            # duplicate end event.
 
     async def start_cleanup_task(self) -> None:
         """No-op. Redis TTL handles replay buffer expiry."""

@@ -88,6 +88,7 @@ async def execute_run(job: RunJob) -> None:
         status = "interrupted" if final_output.has_interrupt else "success"
         await _best_effort_signal(_signal_end_event, run_id, status)
     finally:
+        _lease_loss_cancellations.discard(run_id)  # safe no-op if not present
         await streaming_service.cleanup_run(run_id)
         active_runs.pop(run_id, None)
         await _signal_run_done(run_id)

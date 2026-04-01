@@ -33,3 +33,6 @@ htmlcov/
 
 # MacOS
 .DS_Store
+
+# Claude
+.claude/

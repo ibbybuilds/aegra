@@ -3,7 +3,7 @@
   "info": {
     "title": "Aegra",
     "description": "Production-ready Agent Protocol server",
-    "version": "0.8.5"
+    "version": "0.8.6"
   },
   "paths": {
     "/info": {
@@ -4231,7 +4231,7 @@
               }
             ],
             "title": "Before",
-            "description": "Return states before this checkpoint (checkpoint dict or checkpoint ID string)"
+            "description": "Return states before this checkpoint (checkpoint ID string, raw checkpoint dict, or RunnableConfig with 'configurable' key)"
           },
           "metadata": {
             "anyOf": [

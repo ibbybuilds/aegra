@@ -30,8 +30,10 @@ logger = structlog.getLogger(__name__)
 
 _serializer = GeneralSerializer()
 
-# TTL for the replay buffer (1 hour)
-_REPLAY_TTL_SECONDS = 3600
+# TTL for the replay buffer — safety net for runs that crash without cleanup.
+# cleanup_run() deletes the broker on normal completion; this TTL only matters
+# if cleanup never fires (e.g. process crash, OOM kill).
+_REPLAY_TTL_SECONDS = 600  # 10 minutes
 # Max events in the replay buffer (prevents unbounded growth)
 _REPLAY_MAX_EVENTS = 10_000
 

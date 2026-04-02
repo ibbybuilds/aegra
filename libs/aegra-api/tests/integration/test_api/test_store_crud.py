@@ -595,6 +595,65 @@ class TestNamespaceScoping:
         namespace = call_args[0][0]  # First positional arg
         assert "users" in namespace or "test-user" in namespace
 
+    def test_put_cross_user_namespace_is_remapped(self, client, mock_store) -> None:
+        """Test that a cross-user namespace is scoped under the caller's prefix"""
+        resp = client.put(
+            "/store/items",
+            json={
+                "namespace": ["users", "other-user", "secrets"],
+                "key": "stolen",
+                "value": {"data": "nope"},
+            },
+        )
+
+        assert resp.status_code == 204
+        call_args = mock_store.aput.call_args
+        namespace = call_args.kwargs["namespace"]
+        assert namespace == ("users", "test-user", "users", "other-user", "secrets")
+
+    def test_get_cross_user_namespace_is_remapped(self, client, mock_store) -> None:
+        """Test that reading from another user's namespace is remapped"""
+        mock_store.aget.return_value = None
+
+        resp = client.get("/store/items?key=secret&namespace=users&namespace=other-user&namespace=data")
+
+        assert resp.status_code == 404
+        call_args = mock_store.aget.call_args
+        namespace = call_args[0][0]
+        assert namespace == ("users", "test-user", "users", "other-user", "data")
+
+    def test_delete_cross_user_namespace_is_remapped(self, client, mock_store) -> None:
+        """Test that deleting from another user's namespace is remapped"""
+        resp = client.request(
+            "DELETE",
+            "/store/items",
+            json={
+                "namespace": ["users", "other-user"],
+                "key": "victim-key",
+            },
+        )
+
+        assert resp.status_code == 204
+        call_args = mock_store.adelete.call_args
+        namespace = call_args[0][0]
+        assert namespace == ("users", "test-user", "users", "other-user")
+
+    def test_search_cross_user_namespace_is_remapped(self, client, mock_store) -> None:
+        """Test that searching another user's namespace is remapped"""
+        mock_store.asearch.return_value = []
+
+        resp = client.post(
+            "/store/items/search",
+            json={
+                "namespace_prefix": ["users", "other-user", "docs"],
+            },
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_store.asearch.call_args
+        namespace_prefix = call_args[0][0]
+        assert namespace_prefix == ("users", "test-user", "users", "other-user", "docs")
+
 
 class TestStoreIntegration:
     """Test complete store workflows"""

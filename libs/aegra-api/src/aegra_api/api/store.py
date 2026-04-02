@@ -234,15 +234,16 @@ async def list_namespaces(
 
 
 def apply_user_namespace_scoping(user_id: str, namespace: list[str]) -> list[str]:
-    """Apply user-based namespace scoping for data isolation"""
+    """Apply user-based namespace scoping for data isolation.
 
+    All store operations are scoped to the authenticated user's namespace.
+    Users can only access namespaces under ["users", <their_user_id>].
+    """
     if not namespace:
-        # Default to user's private namespace
         return ["users", user_id]
 
-    # Allow explicit user namespaces
     if namespace[0] == "users" and len(namespace) >= 2 and namespace[1] == user_id:
         return namespace
 
-    # For development, allow all namespaces (remove this for production)
-    return namespace
+    # Scope any other namespace under the user's prefix
+    return ["users", user_id] + namespace

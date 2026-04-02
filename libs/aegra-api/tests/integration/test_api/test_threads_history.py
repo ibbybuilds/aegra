@@ -220,10 +220,10 @@ class TestBeforeParameterFormats:
             def __init__(self) -> None:
                 super().__init__(snapshots=[])
 
-            async def aget_state_history(self, config: dict, **kwargs: dict) -> None:
+            async def aget_state_history(self, config: dict, **kwargs: dict):  # type: ignore[override]
                 captured.append(kwargs.get("before"))
                 return
-                yield  # noqa: RET504 — makes this an async generator
+                yield  # intentional — presence of `yield` makes this an async generator
 
         with patch_langgraph_service(agent=CapturingAgent()):
             yield client, captured

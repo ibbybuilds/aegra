@@ -45,6 +45,7 @@ async def execute_run(job: RunJob) -> None:
     """
     run_id = job.identity.run_id
     thread_id = job.identity.thread_id
+    is_lease_loss = False
 
     try:
         await update_run_status(run_id, "running")
@@ -71,9 +72,9 @@ async def execute_run(job: RunJob) -> None:
     except asyncio.CancelledError:
         if run_id in _lease_loss_cancellations:
             # Lease was lost — the reaper re-enqueued this run for another
-            # worker.  Do NOT finalize or send SSE events; the new worker
-            # owns the run now.
-            _lease_loss_cancellations.discard(run_id)
+            # worker.  Do NOT finalize, signal done, or clean up the broker.
+            # The new worker owns the run now.
+            is_lease_loss = True
             logger.info("Lease-loss cancel, skipping finalize", run_id=run_id)
         else:
             await finalize_run(run_id, thread_id, status="interrupted", thread_status="idle", output={})
@@ -88,10 +89,11 @@ async def execute_run(job: RunJob) -> None:
         status = "interrupted" if final_output.has_interrupt else "success"
         await _best_effort_signal(_signal_end_event, run_id, status)
     finally:
-        _lease_loss_cancellations.discard(run_id)  # safe no-op if not present
-        await streaming_service.cleanup_run(run_id)
+        _lease_loss_cancellations.discard(run_id)
         active_runs.pop(run_id, None)
-        await _signal_run_done(run_id)
+        if not is_lease_loss:
+            await streaming_service.cleanup_run(run_id)
+            await _signal_run_done(run_id)
 
 
 # ------------------------------------------------------------------

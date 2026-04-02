@@ -114,7 +114,8 @@ class EventConverter:
         elif stream_mode == "debug":
             return create_debug_event(payload, event_id)
         elif stream_mode == "end":
-            return create_end_event(event_id)
+            status = payload.get("status", "success") if isinstance(payload, dict) else "success"
+            return create_end_event(event_id, status=status)
         elif stream_mode == "error":
             return create_error_event(payload, event_id)
         else:

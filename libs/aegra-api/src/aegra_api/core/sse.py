@@ -131,12 +131,9 @@ def create_debug_event(debug_data: dict[str, Any], event_id: str | None = None) 
     return format_sse_message("debug", debug_data, event_id)
 
 
-def create_end_event(event_id: str | None = None) -> str:
-    """Create end event - signals completion of stream
-
-    Uses standard status: "success" instead of "completed"
-    """
-    return format_sse_message("end", {"status": "success"}, event_id)
+def create_end_event(event_id: str | None = None, status: str = "success") -> str:
+    """Create end event — signals completion of stream."""
+    return format_sse_message("end", {"status": status}, event_id)
 
 
 def create_error_event(error: str | dict[str, Any], event_id: str | None = None) -> str:

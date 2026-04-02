@@ -368,9 +368,10 @@ async def stream_run(
     # which will replay missed events from the buffer before ending.
     terminal_states = ["success", "error", "interrupted"]
     if run_orm.status in terminal_states and not last_event_id:
+        final_status = "error" if run_orm.status == "error" else run_orm.status
 
         async def generate_final() -> AsyncIterator[str]:
-            yield create_end_event()
+            yield create_end_event(status=final_status)
 
         logger.info(f"[stream_run] starting terminal stream run_id={run_id} status={run_orm.status}")
         return StreamingResponse(

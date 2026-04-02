@@ -507,18 +507,26 @@ class TestExecuteAndRelease:
 
         executor._execute_with_lease = AsyncMock(side_effect=slow_execute)  # type: ignore[method-assign]
 
+        thread_id = "tttttttt-tttt-tttt-tttt-tttttttttttt"
+
         with (
             patch(f"{MODULE}.settings") as mock_settings,
-            patch(f"{MODULE}.update_run_status") as mock_update_status,
+            patch(f"{MODULE}._get_thread_id_for_run", new_callable=AsyncMock, return_value=thread_id),
+            patch(f"{MODULE}.finalize_run", new_callable=AsyncMock) as mock_finalize,
             patch(f"{MODULE}._release_lease") as mock_release,
         ):
             mock_settings.worker.BG_JOB_TIMEOUT_SECS = 0.01  # Very short timeout
-            mock_update_status.return_value = None
             mock_release.return_value = None
 
             await executor._execute_and_release(run_id, "worker-0", semaphore)
 
-        mock_update_status.assert_awaited_once_with(run_id, "error", error="Job exceeded maximum execution time")
+        mock_finalize.assert_awaited_once_with(
+            run_id,
+            thread_id,
+            status="error",
+            thread_status="error",
+            error="Job exceeded maximum execution time",
+        )
         mock_release.assert_awaited_once_with(run_id, "worker-0")
         # Semaphore released even on timeout
         assert not semaphore.locked()

@@ -29,7 +29,7 @@ from aegra_api.models.run_job import RunJob
 from aegra_api.observability.span_enrichment import set_trace_context
 from aegra_api.services.base_executor import BaseExecutor
 from aegra_api.services.run_executor import _DONE_KEY_PREFIX, _lease_loss_cancellations, execute_run
-from aegra_api.services.run_status import update_run_status
+from aegra_api.services.run_status import finalize_run, update_run_status
 from aegra_api.settings import settings
 
 logger = structlog.getLogger(__name__)
@@ -216,7 +216,21 @@ class WorkerExecutor(BaseExecutor):
                 run_id=run_id,
                 timeout_secs=settings.worker.BG_JOB_TIMEOUT_SECS,
             )
-            await update_run_status(run_id, "error", error="Job exceeded maximum execution time")
+            # Look up thread_id so we can set thread status to "error" too.
+            # When wait_for fires, execute_run's CancelledError handler runs first
+            # and sets thread_status="idle" — we must correct that to "error".
+            thread_id = await _get_thread_id_for_run(run_id)
+            if thread_id is not None:
+                await finalize_run(
+                    run_id,
+                    thread_id,
+                    status="error",
+                    thread_status="error",
+                    error="Job exceeded maximum execution time",
+                )
+            else:
+                # Fallback: update run status only (thread_id lookup failed)
+                await update_run_status(run_id, "error", error="Job exceeded maximum execution time")
             await _release_lease(run_id, worker_name)
         except asyncio.CancelledError:
             logger.info("Job task cancelled", worker=worker_name, run_id=run_id)
@@ -305,6 +319,18 @@ class WorkerExecutor(BaseExecutor):
                 .limit(1)
             )
             return run_id
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+
+async def _get_thread_id_for_run(run_id: str) -> str | None:
+    """Look up the thread_id for a run. Returns None if the row is missing."""
+    maker = _get_session_maker()
+    async with maker() as session:
+        return await session.scalar(select(RunORM.thread_id).where(RunORM.run_id == run_id))
 
 
 # ------------------------------------------------------------------

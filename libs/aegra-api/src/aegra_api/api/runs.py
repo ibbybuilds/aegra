@@ -363,9 +363,11 @@ async def stream_run(
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     logger.info(f"[stream_run] status={run_orm.status} user={user.identity} thread_id={thread_id} run_id={run_id}")
-    # If already terminal, emit a final end event
+    # If already terminal and no Last-Event-ID, just emit end.
+    # If Last-Event-ID is present, fall through to stream_run_execution
+    # which will replay missed events from the buffer before ending.
     terminal_states = ["success", "error", "interrupted"]
-    if run_orm.status in terminal_states:
+    if run_orm.status in terminal_states and not last_event_id:
 
         async def generate_final() -> AsyncIterator[str]:
             yield create_end_event()

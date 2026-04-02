@@ -14,7 +14,7 @@ import structlog
 from aegra_api.core.active_runs import active_runs
 from aegra_api.services.base_broker import BaseBrokerManager, BaseRunBroker
 from aegra_api.settings import settings
-from aegra_api.utils import extract_event_sequence
+from aegra_api.utils import generate_event_id
 
 logger = structlog.getLogger(__name__)
 
@@ -94,6 +94,7 @@ class BrokerManager(BaseBrokerManager):
 
     def __init__(self) -> None:
         self._brokers: dict[str, RunBroker] = {}
+        self._event_counters: dict[str, int] = {}
         self._cleanup_task: asyncio.Task[None] | None = None
 
     def get_or_create_broker(self, run_id: str) -> RunBroker:
@@ -114,6 +115,7 @@ class BrokerManager(BaseBrokerManager):
         if run_id in self._brokers:
             self._brokers[run_id].mark_finished()
             del self._brokers[run_id]
+            self._event_counters.pop(run_id, None)
             logger.debug(f"Removed broker for run {run_id}")
 
     async def start(self) -> None:
@@ -143,16 +145,15 @@ class BrokerManager(BaseBrokerManager):
             await broker.put(event_id, ("end", {"status": "interrupted"}))
             self.cleanup_broker(run_id)
 
+    async def allocate_event_id(self, run_id: str) -> str:
+        """Allocate the next event ID using an in-memory counter."""
+        seq = self._event_counters.get(run_id, 0) + 1
+        self._event_counters[run_id] = seq
+        return generate_event_id(run_id, seq)
+
     async def get_event_sequence(self, run_id: str) -> int:
-        """Derive event sequence from the replay buffer length."""
-        broker = self._brokers.get(run_id)
-        if broker and broker._replay_buffer:
-            last_event_id = broker._replay_buffer[-1][0]
-            try:
-                return extract_event_sequence(last_event_id)
-            except ValueError:
-                pass
-        return 0
+        """Return the current event sequence from the in-memory counter."""
+        return self._event_counters.get(run_id, 0)
 
     async def _cleanup_old_brokers(self) -> None:
         """Remove finished brokers older than 1 hour every 5 minutes."""

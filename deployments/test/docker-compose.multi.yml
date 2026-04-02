@@ -33,6 +33,8 @@ services:
     restart: unless-stopped
     env_file:
       - ../../.env
+    ports:
+      - "2027:2026"
     environment:
       - POSTGRES_HOST=postgres
       - PYTHONPATH=/app/src
@@ -64,6 +66,8 @@ services:
     restart: unless-stopped
     env_file:
       - ../../.env
+    ports:
+      - "2028:2026"
     environment:
       - POSTGRES_HOST=postgres
       - PYTHONPATH=/app/src

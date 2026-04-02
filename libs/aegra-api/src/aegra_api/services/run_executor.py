@@ -130,7 +130,6 @@ async def _stream_graph(job: RunJob) -> _GraphResult:
 
     langgraph_service = get_langgraph_service()
     result = _GraphResult()
-    event_counter = 0
 
     async with (
         langgraph_service.get_graph(
@@ -152,8 +151,7 @@ async def _stream_graph(job: RunJob) -> _GraphResult:
             on_checkpoint=lambda _: None,
             on_task_result=lambda _: None,
         ):
-            event_counter += 1
-            event_id = f"{run_id}_event_{event_counter}"
+            event_id = await broker_manager.allocate_event_id(run_id)
             await streaming_service.put_to_broker(run_id, event_id, (event_type, event_data))
 
             if isinstance(event_data, dict) and "__interrupt__" in event_data:

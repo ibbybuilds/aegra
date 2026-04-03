@@ -96,7 +96,23 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     # Initialize Redis broker (if enabled)
     if settings.redis.REDIS_BROKER_ENABLED:
-        await redis_manager.initialize()
+        try:
+            await redis_manager.initialize()
+        except (ConnectionError, OSError) as e:
+            logger.error(
+                "Cannot connect to Redis. "
+                "Set REDIS_BROKER_ENABLED=false for single-instance mode without Redis, "
+                "or ensure Redis is running at REDIS_URL.",
+                redis_url=settings.redis.REDIS_URL,
+                error=str(e),
+            )
+            raise
+    else:
+        logger.warning(
+            "Running without Redis broker. Background runs have no crash recovery "
+            "or horizontal scaling. Set REDIS_BROKER_ENABLED=true and configure "
+            "REDIS_URL for production use.",
+        )
 
     # Start broker manager (cleanup task for in-memory, cancel listener for Redis)
     await broker_manager.start()

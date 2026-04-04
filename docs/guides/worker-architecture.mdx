@@ -9,97 +9,81 @@ In dev mode (`aegra dev`), none of this is needed — runs execute as simple in-
 
 ## System overview
 
+<a href="https://mermaid.live/view#pako:eNqdVV1vmzAU_SsWeWm1ZAnJtKl5mBSnXdcNKbRB2sMyTQZuAgqxMwNtqtL_PtsYhgdJu5GHXHPO_Tq-Nk9WwEKwpshaJ-whiAjPkHe5okg88yQGmn1fWaWBzpaXX9EQffY893xl_ShJDhYEh5EQYZIQGgBXUDMCGgw-Cl71Ms39DSf7CN3QNJMeP2ciRLVAszq0fGbujYI_kTQTtoF9Y3wLPFW4ttHZBB2QPUIBo0HOuch-bvjcAdkDVy4OkBT0C4ODOdtqznJ5pZeNruq6VGN1FV1gFarEgIbHRcBNEXBLBPyCCPjfRcCvEAG_JAI2RMBdYBWqJYJT4kqu1pv2vNxBGIsU7CBqUrZR8G0OOQjkC_NL20Dd3F_mvm5GLIZiZRDmUvdEDrsy0DwilEJSc7r2zr0WfJel2YbD8tYxNc5pKusUf-gNUjKb9XoRBxJKjrbMciIItnsW00wyGquTBS28K0fQF34K_J74cRJnj2ZSTgKQER1CN-tcbP0QuREDGh-EtfActyt-Pc8F0F9S2kIrTI2N7kSVqVDsuAu3-Pu8HMXr_a8dyhz3YpzTQm-oycBHGaWtYCFWGvDYF2Wap_MkRw9v5aFYYpQKfcUZKG6jXZ2Io57lcjgSORyFmpiufo7zqsuspAWEIjjsYw5hBwm_hlRG4jDo2kkjUAen1eNbwcvUwBV68FrtdVH0TGePCTQ-EWgdJ8m0ZxObjKGfZlLqaW-0nrx7P-oHLGF82oOR_HX64__zr68c7T4Obb_hHowmF2P_uLt7XaX1hecfv_EHAqfSynNcZxz7tl97ricXgT02Pa0-snbAdyQOxYf8ycoi2KlPekj41np-_g36aXY9" target="_blank" rel="noopener">View fullscreen ↗</a>
+
 ```mermaid
 flowchart TD
     Client["Client (SDK / HTTP)"]
-    LB["Nginx Load Balancer"]
+    LB["Load Balancer"]
 
     Client --> LB
 
-    subgraph InstanceA["Instance A"]
-        API_A["FastAPI Routes"]
-        Prep_A["_prepare_run()"]
-        WE_A["WorkerExecutor"]
-        W0_A["Worker 0<br/>Semaphore(10)"]
-        W1_A["Worker 1<br/>Semaphore(10)"]
-        W2_A["Worker 2<br/>Semaphore(10)"]
-        Reaper_A["LeaseReaper<br/>(every 15s)"]
-        Broker_A["RedisBrokerManager<br/>(SSE pub/sub)"]
+    subgraph Instance_A["Instance A"]
+        API_A["FastAPI"]
+        Workers_A["Workers (3 x 10 concurrent)"]
+        Reaper_A["Lease Reaper"]
+        Broker_A["SSE Broker"]
 
-        API_A --> Prep_A
-        Prep_A -->|"INSERT run +<br/>exec_params"| PG
-        Prep_A -->|"RPUSH run_id"| Redis
-        WE_A --> W0_A
-        WE_A --> W1_A
-        WE_A --> W2_A
+        API_A --> Workers_A
+        API_A --> Broker_A
     end
 
-    subgraph InstanceB["Instance B"]
-        API_B["FastAPI Routes"]
-        Prep_B["_prepare_run()"]
-        WE_B["WorkerExecutor"]
-        W0_B["Worker 0<br/>Semaphore(10)"]
-        W1_B["Worker 1<br/>Semaphore(10)"]
-        W2_B["Worker 2<br/>Semaphore(10)"]
-        Reaper_B["LeaseReaper<br/>(every 15s)"]
-        Broker_B["RedisBrokerManager<br/>(SSE pub/sub)"]
+    subgraph Instance_B["Instance B"]
+        API_B["FastAPI"]
+        Workers_B["Workers (3 x 10 concurrent)"]
+        Reaper_B["Lease Reaper"]
+        Broker_B["SSE Broker"]
 
-        API_B --> Prep_B
-        Prep_B -->|"INSERT run +<br/>exec_params"| PG
-        Prep_B -->|"RPUSH run_id"| Redis
-        WE_B --> W0_B
-        WE_B --> W1_B
-        WE_B --> W2_B
+        API_B --> Workers_B
+        API_B --> Broker_B
     end
 
     LB --> API_A
     LB --> API_B
 
-    Redis -->|"BLPOP"| W0_A
-    Redis -->|"BLPOP"| W0_B
-
-    subgraph Redis["Redis"]
-        Queue["aegra:jobs<br/>(BLPOP queue)"]
-        PubSub["aegra:run:*<br/>(SSE pub/sub)"]
-        Cancel["aegra:run:cancel<br/>(cancel channel)"]
-        Done["aegra:run:done:*<br/>(completion keys)"]
-        Replay["aegra:run:cache:*<br/>(replay buffer)"]
+    subgraph Redis_Box["Redis"]
+        Queue["Job Queue"]
+        PubSub["SSE Pub/Sub"]
+        Cancel["Cancel Channel"]
     end
 
     subgraph PG["PostgreSQL"]
-        Runs["runs table<br/>• status<br/>• execution_params<br/>• claimed_by<br/>• lease_expires_at"]
-        Threads["threads"]
-        Checkpoints["checkpoints"]
+        Runs["Runs + Leases"]
+        Threads["Threads"]
+        Checkpoints["Checkpoints"]
     end
 
     subgraph OTEL["Observability"]
-        Langfuse["Langfuse / Phoenix / OTLP"]
+        Traces["Langfuse / Phoenix / OTLP"]
     end
 
-    W0_A -->|"events"| PubSub
-    W0_B -->|"events"| PubSub
-    PubSub -->|"subscribe"| Broker_A
-    PubSub -->|"subscribe"| Broker_B
-    Broker_A -->|"SSE"| Client
-    Broker_B -->|"SSE"| Client
+    API_A -->|enqueue| Queue
+    API_B -->|enqueue| Queue
+    Queue -->|BLPOP| Workers_A
+    Queue -->|BLPOP| Workers_B
 
-    W0_A -->|"status updates"| Runs
-    W0_B -->|"status updates"| Runs
-    Reaper_A -->|"scan expired<br/>leases"| Runs
-    Reaper_B -->|"scan expired<br/>leases"| Runs
-    Reaper_A -->|"re-enqueue"| Queue
-    Reaper_B -->|"re-enqueue"| Queue
+    Workers_A -->|events| PubSub
+    Workers_B -->|events| PubSub
+    PubSub -->|subscribe| Broker_A
+    PubSub -->|subscribe| Broker_B
+    Broker_A -->|SSE| Client
+    Broker_B -->|SSE| Client
 
-    W0_A -.->|"traces"| Langfuse
-    W0_B -.->|"traces"| Langfuse
+    Workers_A -->|status + lease| Runs
+    Workers_B -->|status + lease| Runs
+    Reaper_A -->|scan expired| Runs
+    Reaper_B -->|scan expired| Runs
+    Reaper_A -->|re-enqueue| Queue
+    Reaper_B -->|re-enqueue| Queue
 
-    style InstanceA fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
-    style InstanceB fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
-    style Redis fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    Workers_A -.->|traces| Traces
+    Workers_B -.->|traces| Traces
+
+    style Instance_A fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Instance_B fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Redis_Box fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
     style PG fill:#1b2d1e,stroke:#27ae60,color:#e0e0e0
     style OTEL fill:#2d2b1b,stroke:#f39c12,color:#e0e0e0
-    style Client fill:#2b1b2d,stroke:#8e44ad,color:#e0e0e0
-    style LB fill:#1b2b2d,stroke:#2980b9,color:#e0e0e0
 ```
 
 Each instance runs multiple worker loops (default 3), and each worker loop handles up to `N_JOBS_PER_WORKER` concurrent runs (default 10) via an asyncio semaphore. Total capacity per instance is `WORKER_COUNT` x `N_JOBS_PER_WORKER` — 30 concurrent runs by default.
@@ -107,6 +91,8 @@ Each instance runs multiple worker loops (default 3), and each worker loop handl
 ## Job lifecycle
 
 When a client creates a run, the API validates the request, persists the run to PostgreSQL with serialized execution parameters, and pushes the run ID onto a Redis list. A worker on any instance picks it up via `BLPOP`, claims a lease, and executes the graph.
+
+<a href="https://mermaid.live/view#pako:eNqNU9Fum0AQ_JUVTyC5ttNHJEdKHJpaQgkFW36JhI5jY18Nd-TuiGxZ_vcuhrRQWrW8nMTM3M7O7p0drnJ0fHAMvtUoOT4IttOsfJFAX8W0FVxUTFpYAjOwLARKOwbvolUDN8dKGsvoojEpbigx5sKMsW2DbZU-oB6D0WODRsrYncbkW_giW87y0-0tlfQhek7WMLN7jSw3s7PILzNdy64MMYgXPfqwekqCeA0EgYtH5CkVYaWZADm2tVlUKHMhd15fF_sQR5vka6NKRd6Hlj58ns_h3Kp96OSXD3vbVn4fRs8RuFmh-MFALa0o4LvKuioxkbb-4PZt-8tgyaq90jhl_K0WGl3vF960s4ke7tYB8IKJEvM0O02gQGYwxWNFdJMyOxQkQRgs19C0XluhZNf_oGqMxlJNsJpxBK6kxaP96KhQqoLgHfUJbuad7g-OfncB7h5pnBky27VASfVT6mm7UVAekrIcWGt9Y0qY2wbYc_VFaUDG94DvPze0N4Rocx-uaIpXFNwkCbwRp51zx9BYFewEWf36ivp_XZuaczS0UKq2VW0X5-l0ehksQxKsgSG9MJ-68HMl0W_WFRZw84_hLp42Ydj4uqbbZuz9ZWE6kus5E3BK1CUTOT3ys2P3WF6fe870wblcfgAuaUK2" target="_blank" rel="noopener">View fullscreen ↗</a>
 
 ```mermaid
 sequenceDiagram
@@ -157,6 +143,8 @@ Key details:
 
 The full picture — a streaming run shows how the client SSE connection, worker execution, and reaper recovery all interact:
 
+<a href="https://mermaid.live/view#pako:eNqdVE1r4zAQ_SuDTw5tScPSi9kUksbQQEhN7NDLglHsaaNNLLmSvGm29L_vyHK-ncv6ZEYz8-a9edKXl8kcvQA8jR8VigxHnL0rVvwSQF_JlOEZL5kw8LTmKMxlfBCNL4MzzLm-DL9KtUJ1GR8N21qw0ua6E4d-9_hIcAFEL3ECXVUJ3dVG4W5cOqOM0TCA8TQOZwlQBvjaMFPpfoki5-L9FvATs8pwKVKCY4XuHBfXgwcwi-bxsy1PeQ5Gwm-5ANKnwkMuJbuhAojjENwc4G8YNwQDb1LBQkmiC_iHsiyMK3YiHLCGk-glOiCA_6DB8AJlZZrR6kQL6EqDZrCzdpb3PBoNkhDiMIGGNqWKmna2ZtQ0Txfb_qYuuYU1Mo0pfpZcoU6Z6Qu5uflxr-H1OZyFcCqcQxsNT-aQm0xWwvR74NfNgGUfFXXLOy3DxeEkfEou9D_L3PV2aZgSAZ_E6cANLJH8sUBm0rWUpauzf1ZhtYXefdPrmiznfKEPDWNXR0TbVxTNh5MxGcJt0hrCrjxbMiFwfbajY1O4_BYp3rhga_63Zrd3qK6yDLXucmFQqao0mHfpR6rO9U0fbXU6n0xadmrD7aysS3IpEFa4BT9JJtBb7l06lQZBkq7NRQx2Ij_oHWEbPl2tvZGn5mnsB4Pp6FL-n1b-Y1_toDLF9JJYOZ-3ATb0z-_2mRz_N8sJEBeZwoLWCKlCo7ZpbXgKX_HxvrjtJfEV3qFw19w-EExIsySJ3YXseLfgFagKxnN6kr88OivqxzlnauV9f_8DKe3lLA==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
 ```mermaid
 sequenceDiagram
     participant Client
@@ -198,6 +186,8 @@ sequenceDiagram
 
 Every instance runs a `LeaseReaper` background task that scans for runs with expired leases. When a worker crashes (OOM, kill signal, network partition), its heartbeat stops and the lease expires. The reaper resets the run to `pending` and re-enqueues it. The new worker resumes from the last checkpoint.
 
+<a href="https://mermaid.live/view#pako:eNptk09PwkAQxb_K2FOJiCbeGjVpocIBpRZJLyZm3Y6wge7W_aMkxO_uLK2CQE9N9r3fezPtbgKuSgwiCAx-OJQcB4LNNateJNBTM20FFzWTFooYmIFC6SVqiI_Ps6E_z5Sxc43Tp_GxIkdWk5dU7VuoJCSdE8JGUwpzokayVyN5kY2iiC_u7rJhBP0VExVoJyFcITN4K9XX-fWV6ezpijiCdI3cWQSatV70er0DzAgp8g2ZhRDXFmUJW1rnN-9RkVd9UgUP6-fxdAThZPJwuRSrVeeUZkc0VtXmGORjxz4EcF0LjQZIa333X22ztbbhNB2n_WcoRmmeEpJZZ25pbCnkHOLHQdMXboDmD9tC2ZC8DSSCe-Voqiaq9As7OxEyywbx8x--pj0Qvguc4LpJODDlEeTZjJZBwFdRQqjxAiX9WW63uyJphMk4m2St33-VJGpdezJfIuYfjkqCxK_9zO25N-VoXIXwrlUFfIF8WSsh7QHk_yTGcY7GBF0IKtQVEyVdgU1gF1htL0PJ9DL4_v4BvGz9cA==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
 ```mermaid
 sequenceDiagram
     participant WA as Worker A
@@ -232,6 +222,8 @@ The reaper runs on every instance (default every 15 seconds). This is safe — t
 ## Cross-instance cancellation
 
 Cancel requests can arrive at any instance, but the run may be executing on a different one. Aegra uses Redis pub/sub to propagate cancellation across instances.
+
+<a href="https://mermaid.live/view#pako:eNplkUtrwzAQhP_KolMMfYQeBQ3YTmkDhRonueWiWIurJl67eoQW4__edUWbBOs638yOdntRtRqFBOHwMyBVuDSqtqrZEfDrlPWmMp0iDzkoB_nRIPmpmI7iipxXHAHpFChHoERt3FTLrswZzGwgMlSDf0f4aPfJjqIpv10sUgnF23oD99VIHxlug0cN-2-g2tBXEtGU0ZLRbfa6Wr-AQv6U5FwZbWeoeJawLZbp5gm4gA_u0ZBHa0PHqRErGcsk5HFgg86pGsFiheb0x2SR8cod7uKIWXJWLpogacDT_xLHCrmEh_kc-jhfwkWBQdyAaNA2ymi-Ui94Jc3vvbSyBzEMP0THj5M=" target="_blank" rel="noopener">View fullscreen ↗</a>
 
 ```mermaid
 sequenceDiagram

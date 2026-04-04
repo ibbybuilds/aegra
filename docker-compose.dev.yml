@@ -8,7 +8,6 @@ services:
   aegra:
     environment:
       - REDIS_BROKER_ENABLED=false
-      - REDIS_URL=redis://localhost:6379/0
     depends_on:
       postgres:
         condition: service_healthy

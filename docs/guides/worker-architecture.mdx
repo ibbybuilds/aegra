@@ -7,90 +7,92 @@ Aegra uses a worker-based execution model for production deployments. Runs are d
 
 In dev mode (`aegra dev`), none of this is needed — runs execute as simple in-process asyncio tasks.
 
-## System overview
+## Run lifecycle overview
 
-<a href="https://mermaid.live/view#pako:eNqdVV1vmzAU_SsWeWm1ZAnJtKl5mBSnXdcNKbRB2sMyTQZuAgqxMwNtqtL_PtsYhgdJu5GHXHPO_Tq-Nk9WwEKwpshaJ-whiAjPkHe5okg88yQGmn1fWaWBzpaXX9EQffY893xl_ShJDhYEh5EQYZIQGgBXUDMCGgw-Cl71Ms39DSf7CN3QNJMeP2ciRLVAszq0fGbujYI_kTQTtoF9Y3wLPFW4ttHZBB2QPUIBo0HOuch-bvjcAdkDVy4OkBT0C4ODOdtqznJ5pZeNruq6VGN1FV1gFarEgIbHRcBNEXBLBPyCCPjfRcCvEAG_JAI2RMBdYBWqJYJT4kqu1pv2vNxBGIsU7CBqUrZR8G0OOQjkC_NL20Dd3F_mvm5GLIZiZRDmUvdEDrsy0DwilEJSc7r2zr0WfJel2YbD8tYxNc5pKusUf-gNUjKb9XoRBxJKjrbMciIItnsW00wyGquTBS28K0fQF34K_J74cRJnj2ZSTgKQER1CN-tcbP0QuREDGh-EtfActyt-Pc8F0F9S2kIrTI2N7kSVqVDsuAu3-Pu8HMXr_a8dyhz3YpzTQm-oycBHGaWtYCFWGvDYF2Wap_MkRw9v5aFYYpQKfcUZKG6jXZ2Io57lcjgSORyFmpiufo7zqsuspAWEIjjsYw5hBwm_hlRG4jDo2kkjUAen1eNbwcvUwBV68FrtdVH0TGePCTQ-EWgdJ8m0ZxObjKGfZlLqaW-0nrx7P-oHLGF82oOR_HX64__zr68c7T4Obb_hHowmF2P_uLt7XaX1hecfv_EHAqfSynNcZxz7tl97ricXgT02Pa0-snbAdyQOxYf8ycoi2KlPekj41np-_g36aXY9" target="_blank" rel="noopener">View fullscreen ↗</a>
+How a single run flows through the system — from client request to completion:
+
+<a href="https://mermaid.live/view#pako:eNqdU01PwkAQ_SuT5aIRChQE4WAioqCSUCzGg_WwbQdpKK3ubv0C_rvb7lIaAxe6h87He5N5b7Mr4sU-ki6QWRh_eXPKBEz7TgTyuw4DjMSLQ1QAJ3b_AaownE6tU4e8KtCVdScRt5QLGeXVR_QDLuvZH-5jFyYJJpj3n2O2QCYBKsjr1kDWrJiLN4b2ZLSrJ66duPlAmVZlnrd7LFbjbPtGJ1mvqAMqlcu1Q-oGWGN7ClWWRNwh61RArkRjTAPekfGACzgDjD7U6mulqiBQwxsG9EbW2EohWk9BpAY1DQiRckwnfqOXiDSaBRENg99suDXYwzqX2z71Rnf2EPBTisg2VmYUjdHolgE8cbnHAjcbqZ0oWKSBbQNSp7hgSJcpUlm0NYyLnxC3ts2CMOyW6rROTSxLhhzTLbV888LvlL04jFm3hLX0FLmpl3uJtVmj2aodJmr1R3G1xKO46j4V1fTrboHq1Rod0z1M1VdwHHewXdeVzB3PbFP8vy4pA1kiW9LAl-91RcQcl9nL9SlbkM3mD0UxLXM=" target="_blank" rel="noopener">View fullscreen ↗</a>
 
 ```mermaid
 flowchart TD
     Client["Client (SDK / HTTP)"]
-    LB["Load Balancer"]
+    API["FastAPI"]
+    Redis["Redis Job Queue"]
+    Worker["Worker"]
+    PG["PostgreSQL"]
+    PubSub["Redis Pub/Sub"]
+    Broker["SSE Broker"]
 
-    Client --> LB
+    Client -->|"1. POST /runs"| API
+    API -->|"2. persist + enqueue"| Redis
+    Redis -->|"3. BLPOP"| Worker
+    Worker -->|"4. lease + execute + finalize"| PG
+    Worker -->|"5. PUBLISH events"| PubSub
+    PubSub -->|"6. subscribe"| Broker
+    Broker -->|"7. SSE stream"| Client
 
-    subgraph Instance_A["Instance A"]
-        API_A["FastAPI"]
-        Workers_A["Workers (3 x 10 concurrent)"]
-        Reaper_A["Lease Reaper"]
-        Broker_A["SSE Broker"]
-
-        API_A --> Workers_A
-        API_A --> Broker_A
-    end
-
-    subgraph Instance_B["Instance B"]
-        API_B["FastAPI"]
-        Workers_B["Workers (3 x 10 concurrent)"]
-        Reaper_B["Lease Reaper"]
-        Broker_B["SSE Broker"]
-
-        API_B --> Workers_B
-        API_B --> Broker_B
-    end
-
-    LB --> API_A
-    LB --> API_B
-
-    subgraph Redis_Box["Redis"]
-        Queue["Job Queue"]
-        PubSub["SSE Pub/Sub"]
-        Cancel["Cancel Channel"]
-    end
-
-    subgraph PG["PostgreSQL"]
-        Runs["Runs + Leases"]
-        Threads["Threads"]
-        Checkpoints["Checkpoints"]
-    end
-
-    subgraph OTEL["Observability"]
-        Traces["Langfuse / Phoenix / OTLP"]
-    end
-
-    API_A -->|enqueue| Queue
-    API_B -->|enqueue| Queue
-    Queue -->|BLPOP| Workers_A
-    Queue -->|BLPOP| Workers_B
-
-    Workers_A -->|events| PubSub
-    Workers_B -->|events| PubSub
-    PubSub -->|subscribe| Broker_A
-    PubSub -->|subscribe| Broker_B
-    Broker_A -->|SSE| Client
-    Broker_B -->|SSE| Client
-
-    Workers_A -->|status + lease| Runs
-    Workers_B -->|status + lease| Runs
-    Reaper_A -->|scan expired| Runs
-    Reaper_B -->|scan expired| Runs
-    Reaper_A -->|re-enqueue| Queue
-    Reaper_B -->|re-enqueue| Queue
-
-    Workers_A -.->|traces| Traces
-    Workers_B -.->|traces| Traces
-
-    style Instance_A fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
-    style Instance_B fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
-    style Redis_Box fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    style Client fill:#1a1a2e,stroke:#6d28d9,color:#e0e0e0
+    style API fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Worker fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Broker fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Redis fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    style PubSub fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
     style PG fill:#1b2d1e,stroke:#27ae60,color:#e0e0e0
-    style OTEL fill:#2d2b1b,stroke:#f39c12,color:#e0e0e0
 ```
 
-Each instance runs multiple worker loops (default 3), and each worker loop handles up to `N_JOBS_PER_WORKER` concurrent runs (default 10) via an asyncio semaphore. Total capacity per instance is `WORKER_COUNT` x `N_JOBS_PER_WORKER` — 30 concurrent runs by default.
+The happy path of a single run, step by step:
+
+1. **Client** sends a run request to any instance via the load balancer.
+2. **FastAPI** validates, persists the run to PostgreSQL (with serialized execution params), and pushes the run ID onto the Redis job queue.
+3. **Worker** picks up the job via `BLPOP` (blocking pop — instant delivery, no polling).
+4. **Worker** acquires an exclusive lease in PostgreSQL, executes the graph, heartbeats every 10s, and finalizes the run (status, output, release lease).
+5. **Worker** publishes each event to Redis Pub/Sub for real-time streaming.
+6. **SSE Broker** subscribes to Redis Pub/Sub and relays events.
+7. **Client** receives events over an SSE connection.
+
+Behind the scenes, the **Lease Reaper** scans PostgreSQL every 15 seconds for runs with expired leases (crashed workers) and re-enqueues them. Workers also send **OpenTelemetry traces** to Langfuse, Phoenix, or any OTLP collector.
+
+## Horizontal scaling
+
+Every instance is stateless — add more instances behind a load balancer to increase capacity. All instances share the same Redis and PostgreSQL backends.
+
+<a href="https://mermaid.live/view#pako:eNqdk11PwjAUhv_KSbnRBMIGonExJmwmRLOYAd45L7r18OFGS9ouSAj_3W4wGCpg6C7W8_G05z0nXZFYMCQOkFEqFvGESg1vTyEHs3z3PSS-oAxcmlIeowzJR8g3QZVFY0nnE3jmSudBZZKhSIDt6hpPGYVuGPKrNiyETFAq-ALbgk8RqesDxK0i7r8Qr4q8nkWQs18SXBonxp8rGJoOINt5Dm4aIJvmOcXfXPQiIuhnmCE0Icii5jCLzM7LC0kPwKBnqEAoPZY47PsGHWRcmVwfqcJ8400wTuZiyrX6q1LfhUbj0fSwarkHllfm7uYBD0VWqaQUrZepmQaMpmnq1Gxq0xbWlZYiQadmjdo3t1Y9FqmQTg2t_Kti7mWYdxm2V1LgWlKu5mY8XP88YmM2GFVmfJIunQ50jp9bzG9bUovZUaWk2Grft6LjaNArpUSG3HOtO4onG7edwkn6vApSBzJDOaNTZp7siugJzorHy6hMyHr9DXZ_Lls=" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+flowchart TD
+    LB["Load Balancer"]
+
+    subgraph Instances[" "]
+        A["Instance A\n(3 workers x 10 jobs)"]
+        B["Instance B\n(3 workers x 10 jobs)"]
+        C["Instance N\n(3 workers x 10 jobs)"]
+    end
+
+    subgraph Backends["Shared Backends"]
+        Redis["Redis\nJob Queue / Pub/Sub / Cancel"]
+        PG["PostgreSQL\nRuns / Leases / Checkpoints"]
+    end
+
+    LB --> A
+    LB --> B
+    LB --> C
+
+    Instances <--> Backends
+
+    style A fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style B fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style C fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Instances fill:transparent,stroke:#0f3460,stroke-dasharray:5 5,color:#e0e0e0
+    style Redis fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    style PG fill:#1b2d1e,stroke:#27ae60,color:#e0e0e0
+    style Backends fill:#1b2d1e,stroke:#27ae60,stroke-dasharray:5 5,color:#e0e0e0
+```
+
+Each instance runs multiple worker loops (default 3), and each worker loop handles up to `N_JOBS_PER_WORKER` concurrent runs (default 10) via an asyncio semaphore. Total capacity per instance is `WORKER_COUNT` x `N_JOBS_PER_WORKER` — 30 concurrent runs by default. A job enqueued by Instance A can be picked up by Instance B — any worker can execute any run.
 
 ## Job lifecycle
 
-When a client creates a run, the API validates the request, persists the run to PostgreSQL with serialized execution parameters, and pushes the run ID onto a Redis list. A worker on any instance picks it up via `BLPOP`, claims a lease, and executes the graph.
+The detailed sequence — every Redis command, database query, and semaphore operation involved in executing a single run:
 
 <a href="https://mermaid.live/view#pako:eNqNU9Fum0AQ_JUVTyC5ttNHJEdKHJpaQgkFW36JhI5jY18Nd-TuiGxZ_vcuhrRQWrW8nMTM3M7O7p0drnJ0fHAMvtUoOT4IttOsfJFAX8W0FVxUTFpYAjOwLARKOwbvolUDN8dKGsvoojEpbigx5sKMsW2DbZU-oB6D0WODRsrYncbkW_giW87y0-0tlfQhek7WMLN7jSw3s7PILzNdy64MMYgXPfqwekqCeA0EgYtH5CkVYaWZADm2tVlUKHMhd15fF_sQR5vka6NKRd6Hlj58ns_h3Kp96OSXD3vbVn4fRs8RuFmh-MFALa0o4LvKuioxkbb-4PZt-8tgyaq90jhl_K0WGl3vF960s4ke7tYB8IKJEvM0O02gQGYwxWNFdJMyOxQkQRgs19C0XluhZNf_oGqMxlJNsJpxBK6kxaP96KhQqoLgHfUJbuad7g-OfncB7h5pnBky27VASfVT6mm7UVAekrIcWGt9Y0qY2wbYc_VFaUDG94DvPze0N4Rocx-uaIpXFNwkCbwRp51zx9BYFewEWf36ivp_XZuaczS0UKq2VW0X5-l0ehksQxKsgSG9MJ-68HMl0W_WFRZw84_hLp42Ydj4uqbbZuz9ZWE6kus5E3BK1CUTOT3ys2P3WF6fe870wblcfgAuaUK2" target="_blank" rel="noopener">View fullscreen ↗</a>
 
@@ -223,16 +225,17 @@ The reaper runs on every instance (default every 15 seconds). This is safe — t
 
 Cancel requests can arrive at any instance, but the run may be executing on a different one. Aegra uses Redis pub/sub to propagate cancellation across instances.
 
-<a href="https://mermaid.live/view#pako:eNplkUtrwzAQhP_KolMMfYQeBQ3YTmkDhRonueWiWIurJl67eoQW4__edUWbBOs638yOdntRtRqFBOHwMyBVuDSqtqrZEfDrlPWmMp0iDzkoB_nRIPmpmI7iipxXHAHpFChHoERt3FTLrswZzGwgMlSDf0f4aPfJjqIpv10sUgnF23oD99VIHxlug0cN-2-g2tBXEtGU0ZLRbfa6Wr-AQv6U5FwZbWeoeJawLZbp5gm4gA_u0ZBHa0PHqRErGcsk5HFgg86pGsFiheb0x2SR8cod7uKIWXJWLpogacDT_xLHCrmEh_kc-jhfwkWBQdyAaNA2ymi-Ui94Jc3vvbSyBzEMP0THj5M=" target="_blank" rel="noopener">View fullscreen ↗</a>
+<a href="https://mermaid.live/view#pako:eNplkc1qwzAQhF9l0SmG_oQeBQ1YTkgDhrp2cstFsRZXSSy7khwoxu_edUWbBOs6386MdntWNgoZB-bwq0NT4lLLysp6b4BeK63XpW6l8ZCAdJCcNRo_FeNR3BjnJVlAPAXyEchRaTfVsvUoZo3zlcXiI50S4s5ewMx2xmhTgf9EODaHaG_CUPK4WMQcsvdiC8_lSJ8JbjqPCg7fkIoocDFxOXE7kW6KN5BIf-ZkysPMFcrWHHbZMt6ugNJ951718Wht15JlwHLCBIckpNXonKwQLJaoL3-MCIyX7vQUImbRVblpgkYBXv53PFZIOLzM59CHfA43BQb2AKxGW0ut6Ig9o33Uv-dU0p7YMPwA02SZhQ==" target="_blank" rel="noopener">View fullscreen ↗</a>
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant A as Instance A
     participant R as Redis
+    participant PG as PostgreSQL
     participant B as Instance B (running the job)
 
-    C->>A: POST /cancel (routed by nginx)
+    C->>A: POST /cancel (routed by LB)
     A->>R: PUBLISH aegra:run:cancel
     A->>PG: UPDATE status=interrupted
     R->>B: Cancel message received

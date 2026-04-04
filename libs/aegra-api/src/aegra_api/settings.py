@@ -49,6 +49,7 @@ class AppSettings(EnvBase):
 
     # App logic
     AEGRA_CONFIG: str = "aegra.json"  # Default config file path
+    KEEPALIVE_INTERVAL_SECS: int = 5  # Heartbeat interval for join/wait endpoints
     AUTH_TYPE: LowerStr = "noop"
     ENV_MODE: UpperStr = "LOCAL"
     DEBUG: bool = False

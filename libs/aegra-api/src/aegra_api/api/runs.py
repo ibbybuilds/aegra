@@ -329,7 +329,6 @@ async def wait_for_run(
     )
 
 
-
 @router.get("/threads/{thread_id}/runs/{run_id}/stream", responses={**SSE_RESPONSE, **NOT_FOUND})
 async def stream_run(
     thread_id: str,

@@ -70,6 +70,8 @@ async def heartbeat_wait_body(
             await executor.wait_for_completion(run_id, timeout=timeout)
         except TimeoutError:
             logger.warning("heartbeat_wait timeout", run_id=run_id, timeout=timeout)
+        except Exception:
+            logger.exception("heartbeat_wait error", run_id=run_id)
         finally:
             done.set()
 
@@ -86,6 +88,15 @@ async def heartbeat_wait_body(
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        else:
+            # Surface any exception so asyncio doesn't warn about
+            # "Task exception was never retrieved"
+            if task.exception() is not None:
+                logger.error(
+                    "heartbeat_wait task failed",
+                    run_id=run_id,
+                    exc_info=task.exception(),
+                )
 
     output = await read_run_output(run_id, thread_id, user_id)
     yield encode_output(output)

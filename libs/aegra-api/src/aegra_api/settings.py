@@ -40,6 +40,12 @@ class AppSettings(EnvBase):
     SERVER_URL: str | None = None
 
     @model_validator(mode="after")
+    def _validate_keepalive_interval(self) -> "AppSettings":
+        if self.KEEPALIVE_INTERVAL_SECS <= 0:
+            raise ValueError(f"KEEPALIVE_INTERVAL_SECS must be greater than 0, got {self.KEEPALIVE_INTERVAL_SECS}")
+        return self
+
+    @model_validator(mode="after")
     def _derive_server_url(self) -> "AppSettings":
         """Derive SERVER_URL from HOST/PORT when not explicitly set."""
         if self.SERVER_URL is None:
@@ -49,7 +55,7 @@ class AppSettings(EnvBase):
 
     # App logic
     AEGRA_CONFIG: str = "aegra.json"  # Default config file path
-    KEEPALIVE_INTERVAL_SECS: int = 5  # Heartbeat interval for join/wait endpoints
+    KEEPALIVE_INTERVAL_SECS: float = 5  # Heartbeat interval for join/wait endpoints
     AUTH_TYPE: LowerStr = "noop"
     ENV_MODE: UpperStr = "LOCAL"
     DEBUG: bool = False

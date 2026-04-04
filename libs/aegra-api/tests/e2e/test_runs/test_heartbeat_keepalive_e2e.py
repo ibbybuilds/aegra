@@ -254,3 +254,72 @@ async def test_stateless_wait_returns_chunked_json() -> None:
 
     assert isinstance(output, dict)
     assert output != {}
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat wire-level proof — slow agent
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_heartbeat_bytes_visible_with_slow_agent() -> None:
+    """Prove heartbeat newlines are actually sent on the wire.
+
+    Uses the stress_test graph (no LLM, deterministic delay) with a 15s total
+    run time. With a 5s keepalive interval, at least 2 heartbeat chunks must
+    appear before the final JSON chunk.
+    """
+    sdk = get_e2e_client()
+
+    assistant = await sdk.assistants.create(
+        graph_id="stress_test",
+        config={"tags": ["heartbeat-proof"]},
+        if_exists="do_nothing",
+    )
+    assistant_id = assistant["assistant_id"]
+    thread = await sdk.threads.create()
+    thread_id = thread["thread_id"]
+
+    async with (
+        AsyncClient(base_url=settings.app.SERVER_URL, timeout=120.0) as http,
+        http.stream(
+            "POST",
+            f"/threads/{thread_id}/runs/wait",
+            json={
+                "assistant_id": assistant_id,
+                "input": {
+                    "messages": [{"role": "user", "content": json.dumps({"delay": 3.0, "steps": 5})}],
+                },
+            },
+        ) as resp,
+    ):
+        assert resp.status_code == 200
+
+        chunks: list[bytes] = []
+        async for chunk in resp.aiter_bytes():
+            chunks.append(chunk)
+
+    heartbeats = [c for c in chunks if c == b"\n"]
+    json_chunks = [c for c in chunks if c != b"\n"]
+
+    elog(
+        "Heartbeat proof",
+        {
+            "total_chunks": len(chunks),
+            "heartbeats": len(heartbeats),
+            "json_chunks": len(json_chunks),
+        },
+    )
+
+    assert len(heartbeats) >= 2, f"Expected at least 2 heartbeat newlines for a 15s run, got {len(heartbeats)}"
+    assert len(json_chunks) >= 1, "Expected at least 1 JSON chunk"
+
+    full_body = b"".join(chunks)
+    output = json.loads(full_body)
+    assert isinstance(output, dict)
+
+    # Verify the stress_test graph completed correctly
+    ai_content = json.loads(output["messages"][-1]["content"])
+    assert ai_content["steps_completed"] == 5
+    assert ai_content["status"] == "completed"

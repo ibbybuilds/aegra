@@ -1,4 +1,8 @@
-"""Event broker for managing run-specific event queues"""
+"""Event broker for managing run-specific event queues.
+
+The broker handles both live event broadcast (via queue) and replay storage
+(via replay buffer) for SSE reconnection support.
+"""
 
 import asyncio
 import contextlib
@@ -7,25 +11,35 @@ from typing import Any
 
 import structlog
 
+from aegra_api.core.active_runs import active_runs
 from aegra_api.services.base_broker import BaseBrokerManager, BaseRunBroker
+from aegra_api.settings import settings
+from aegra_api.utils import generate_event_id
 
 logger = structlog.getLogger(__name__)
 
 
 class RunBroker(BaseRunBroker):
-    """Manages event queuing and distribution for a specific run"""
+    """In-memory broker backed by asyncio.Queue + replay buffer.
 
-    def __init__(self, run_id: str):
+    The queue delivers events to live subscribers.
+    The replay buffer keeps a copy of resumable events for replay on reconnect.
+    """
+
+    def __init__(self, run_id: str) -> None:
         self.run_id = run_id
         self.queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         self.finished = asyncio.Event()
-        self._created_at = asyncio.get_event_loop().time()
+        self._replay_buffer: list[tuple[str, Any]] = []
+        self._created_at = asyncio.get_running_loop().time()
 
-    async def put(self, event_id: str, payload: Any) -> None:
-        """Put an event into the broker queue"""
+    async def put(self, event_id: str, payload: Any, *, resumable: bool = True) -> None:
         if self.finished.is_set():
             logger.warning(f"Attempted to put event {event_id} into finished broker for run {self.run_id}")
             return
+
+        if resumable:
+            self._replay_buffer.append((event_id, payload))
 
         await self.queue.put((event_id, payload))
 
@@ -34,108 +48,147 @@ class RunBroker(BaseRunBroker):
             self.mark_finished()
 
     async def aiter(self) -> AsyncIterator[tuple[str, Any]]:
-        """Async iterator yielding (event_id, payload) pairs"""
         while True:
             try:
-                # Use timeout to check if run is finished
                 event_id, payload = await asyncio.wait_for(self.queue.get(), timeout=0.1)
                 yield event_id, payload
 
-                # Check if this is an end event
                 if isinstance(payload, tuple) and len(payload) >= 1 and payload[0] == "end":
                     break
-
             except TimeoutError:
-                # Check if run is finished and queue is empty
                 if self.finished.is_set() and self.queue.empty():
                     break
                 continue
 
+    async def replay(self, last_event_id: str | None) -> list[tuple[str, Any]]:
+        if not self._replay_buffer:
+            return []
+
+        if last_event_id is None:
+            return list(self._replay_buffer)
+
+        # Find the index after last_event_id
+        for i, (eid, _) in enumerate(self._replay_buffer):
+            if eid == last_event_id:
+                return list(self._replay_buffer[i + 1 :])
+
+        # last_event_id not found — return all
+        return list(self._replay_buffer)
+
     def mark_finished(self) -> None:
-        """Mark this broker as finished"""
         self.finished.set()
         logger.debug(f"Broker for run {self.run_id} marked as finished")
 
     def is_finished(self) -> bool:
-        """Check if this broker is finished"""
         return self.finished.is_set()
 
     def is_empty(self) -> bool:
-        """Check if the queue is empty"""
         return self.queue.empty()
 
     def get_age(self) -> float:
-        """Get the age of this broker in seconds"""
-        return asyncio.get_event_loop().time() - self._created_at
+        return asyncio.get_running_loop().time() - self._created_at
 
 
 class BrokerManager(BaseBrokerManager):
-    """Manages multiple RunBroker instances"""
+    """Manages multiple RunBroker instances with periodic cleanup."""
 
     def __init__(self) -> None:
         self._brokers: dict[str, RunBroker] = {}
-        self._cleanup_task: asyncio.Task | None = None
+        self._event_counters: dict[str, int] = {}
+        self._cleanup_task: asyncio.Task[None] | None = None
 
     def get_or_create_broker(self, run_id: str) -> RunBroker:
-        """Get or create a broker for a run"""
         if run_id not in self._brokers:
             self._brokers[run_id] = RunBroker(run_id)
             logger.debug(f"Created new broker for run {run_id}")
         return self._brokers[run_id]
 
     def get_broker(self, run_id: str) -> RunBroker | None:
-        """Get an existing broker or None"""
         return self._brokers.get(run_id)
 
     def cleanup_broker(self, run_id: str) -> None:
-        """Clean up a broker for a run"""
         if run_id in self._brokers:
             self._brokers[run_id].mark_finished()
-            # Don't immediately delete in case there are still consumers
             logger.debug(f"Marked broker for run {run_id} for cleanup")
 
     def remove_broker(self, run_id: str) -> None:
-        """Remove a broker completely"""
         if run_id in self._brokers:
             self._brokers[run_id].mark_finished()
             del self._brokers[run_id]
+            self._event_counters.pop(run_id, None)
             logger.debug(f"Removed broker for run {run_id}")
 
-    async def start_cleanup_task(self) -> None:
-        """Start background cleanup task for old brokers"""
+    async def start(self) -> None:
+        """Start the periodic cleanup task."""
         if self._cleanup_task is None or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(self._cleanup_old_brokers())
 
-    async def stop_cleanup_task(self) -> None:
-        """Stop background cleanup task"""
+    async def stop(self) -> None:
+        """Stop the periodic cleanup task."""
         if self._cleanup_task and not self._cleanup_task.done():
             self._cleanup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
 
+    async def request_cancel(self, run_id: str, action: str = "cancel") -> None:
+        """Cancel a run locally by cancelling its asyncio task."""
+        task = active_runs.get(run_id)
+        if task is None or task.done():
+            return
+
+        logger.info(f"Executing {action} for run {run_id} (local task)")
+        task.cancel()
+
+        broker = self.get_or_create_broker(run_id)
+        if not broker.is_finished():
+            event_id = await self.allocate_event_id(run_id)
+            await broker.put(event_id, ("end", {"status": "interrupted"}))
+            self.cleanup_broker(run_id)
+
+    async def allocate_event_id(self, run_id: str) -> str:
+        """Allocate the next event ID using an in-memory counter."""
+        seq = self._event_counters.get(run_id, 0) + 1
+        self._event_counters[run_id] = seq
+        return generate_event_id(run_id, seq)
+
+    async def get_event_sequence(self, run_id: str) -> int:
+        """Return the current event sequence from the in-memory counter."""
+        return self._event_counters.get(run_id, 0)
+
     async def _cleanup_old_brokers(self) -> None:
-        """Background task to clean up old finished brokers"""
+        """Remove finished brokers older than 1 hour every 5 minutes."""
         while True:
             try:
-                await asyncio.sleep(300)  # Check every 5 minutes
-
-                asyncio.get_event_loop().time()
-                to_remove = []
-
-                for run_id, broker in self._brokers.items():
-                    # Remove brokers that are finished and older than 1 hour
-                    if broker.is_finished() and broker.is_empty() and broker.get_age() > 3600:
-                        to_remove.append(run_id)
-
+                await asyncio.sleep(300)
+                to_remove = [
+                    run_id
+                    for run_id, broker in self._brokers.items()
+                    if broker.is_finished() and broker.is_empty() and broker.get_age() > 3600
+                ]
                 for run_id in to_remove:
                     self.remove_broker(run_id)
                     logger.info(f"Cleaned up old broker for run {run_id}")
-
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"Error in broker cleanup task: {e}")
+            except Exception:
+                logger.exception("Error in broker cleanup task")
+
+
+def _create_broker_manager() -> BaseBrokerManager:
+    """Select broker backend based on settings.
+
+    Returns RedisBrokerManager when REDIS_BROKER_ENABLED=true,
+    otherwise the default in-memory BrokerManager.
+    """
+    if settings.redis.REDIS_BROKER_ENABLED:
+        # Conditional import: redis is only required when the Redis broker is enabled
+        from aegra_api.services.redis_broker import RedisBrokerManager
+
+        logger.info("Using Redis broker for SSE streaming")
+        return RedisBrokerManager()
+    logger.info("Using in-memory broker for SSE streaming")
+    return BrokerManager()
 
 
 # Global broker manager instance
-broker_manager = BrokerManager()
+broker_manager: BaseBrokerManager = _create_broker_manager()

@@ -97,8 +97,9 @@ async for chunk in client.runs.stream(
 ## ✨ Features
 
 - **[Agent Protocol](https://github.com/langchain-ai/agent-protocol) compliant** - Works with Agent Chat UI, LangGraph Studio, CopilotKit
+- **[Worker architecture](https://docs.aegra.dev/guides/worker-architecture)** - Redis job queue with 30 concurrent runs per instance, lease-based crash recovery, and horizontal scaling across multiple instances
 - **[Human-in-the-loop](https://docs.aegra.dev/guides/human-in-the-loop)** - Approval gates and user intervention points
-- **[Streaming](https://docs.aegra.dev/guides/streaming)** - Real-time responses with network resilience
+- **[Streaming](https://docs.aegra.dev/guides/streaming)** - Real-time SSE streaming with cross-instance pub/sub and automatic reconnection with event replay
 - **[Persistent state](https://docs.aegra.dev/guides/threads-and-state)** - PostgreSQL checkpoints via LangGraph
 - **[Configurable auth](https://docs.aegra.dev/guides/authentication)** - JWT, OAuth, Firebase, or none
 - **[Unified Observability](https://docs.aegra.dev/guides/observability)** - Fan-out tracing support via OpenTelemetry
@@ -128,6 +129,7 @@ aegra version           # Show version info
 | [Quickstart](https://docs.aegra.dev/quickstart) | Get a running server in under 5 minutes |
 | [Configuration](https://docs.aegra.dev/reference/configuration) | aegra.json format and all options |
 | [Authentication](https://docs.aegra.dev/guides/authentication) | JWT, OAuth, Firebase, or custom auth handlers |
+| [Worker Architecture](https://docs.aegra.dev/guides/worker-architecture) | Redis job queue, crash recovery, horizontal scaling |
 | [Streaming](https://docs.aegra.dev/guides/streaming) | 8 SSE stream modes with reconnection |
 | [Store](https://docs.aegra.dev/guides/store) | Key-value and semantic search storage |
 | [Observability](https://docs.aegra.dev/guides/observability) | Fan-out tracing to Langfuse, Phoenix, or any OTLP backend |
@@ -145,6 +147,7 @@ aegra version           # Show version info
 - [FastAPI](https://fastapi.tiangolo.com/) - HTTP layer
 - [LangGraph](https://github.com/langchain-ai/langgraph) - State management & graph execution
 - [PostgreSQL](https://www.postgresql.org/) - Persistence & checkpoints
+- [Redis](https://redis.io/) - Job queue, SSE pub/sub, crash recovery
 - [OpenTelemetry](https://opentelemetry.io/) - Observability standard
 - [pgvector](https://github.com/pgvector/pgvector) - Vector embeddings
 

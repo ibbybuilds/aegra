@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from aegra_api.api.runs import active_runs
+from aegra_api.core.active_runs import active_runs
 from aegra_api.services.broker import RunBroker, broker_manager
 from aegra_api.services.streaming_service import streaming_service
 
@@ -25,60 +25,18 @@ class TestCancelRun:
     def run_id(self) -> str:
         return str(uuid4())
 
-    async def test_cancel_already_completed_run_returns_true(self, run_id: str):
+    async def test_cancel_already_completed_run_returns_true(self, run_id: str) -> None:
         """Test that cancelling an already completed run doesn't error"""
         # No task registered for this run_id
         result = await streaming_service.cancel_run(run_id)
         # Should return True even if no task to cancel
         assert result is True
 
-    async def test_cancel_background_task_returns_false_for_missing_task(self, run_id: str):
-        """Test that _cancel_background_task returns False when no task exists"""
-        result = streaming_service._cancel_background_task(run_id)
-        assert result is False
-
-    async def test_cancel_background_task_returns_false_for_completed_task(self, run_id: str):
-        """Test that _cancel_background_task returns False for completed task"""
-
-        # Create a completed task
-        async def quick_task():
-            return "done"
-
-        task = asyncio.create_task(quick_task())
-        await task  # Wait for completion
-
-        active_runs[run_id] = task
-
-        result = streaming_service._cancel_background_task(run_id)
-        assert result is False
-
-        active_runs.pop(run_id, None)
-
-    async def test_cancel_background_task_returns_true_for_running_task(self, run_id: str):
-        """Test that _cancel_background_task returns True for running task"""
-
-        # Create a long-running task
-        async def slow_task():
-            await asyncio.sleep(10)
-
-        task = asyncio.create_task(slow_task())
-        active_runs[run_id] = task
-
-        result = streaming_service._cancel_background_task(run_id)
-        assert result is True
-        assert task.cancelled() or task.cancelling()
-
-        # Cleanup
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-        active_runs.pop(run_id, None)
-
-    async def test_cancel_run_calls_cancel_background_task(self, run_id: str):
-        """Test that cancel_run actually tries to cancel the asyncio task"""
-        # Track if cancel was called
+    async def test_cancel_run_cancels_running_task(self, run_id: str) -> None:
+        """Test that cancel_run actually cancels the asyncio task"""
         task_was_cancelled = False
 
-        async def cancellable_task():
+        async def cancellable_task() -> None:
             nonlocal task_was_cancelled
             try:
                 await asyncio.sleep(10)
@@ -109,11 +67,11 @@ class TestCancelRun:
         active_runs.pop(run_id, None)
         broker_manager._brokers.pop(run_id, None)
 
-    async def test_interrupt_run_calls_cancel_background_task(self, run_id: str):
-        """Test that interrupt_run actually tries to cancel the asyncio task"""
+    async def test_interrupt_run_cancels_running_task(self, run_id: str) -> None:
+        """Test that interrupt_run actually cancels the asyncio task"""
         task_was_cancelled = False
 
-        async def cancellable_task():
+        async def cancellable_task() -> None:
             nonlocal task_was_cancelled
             try:
                 await asyncio.sleep(10)
@@ -156,12 +114,12 @@ class TestCancelRunStatusNotOverwritten:
     def run_id(self) -> str:
         return str(uuid4())
 
-    async def test_cancelled_task_raises_cancelled_error(self, run_id: str):
+    async def test_cancelled_task_raises_cancelled_error(self, run_id: str) -> None:
         """Verify that cancelled task properly raises CancelledError"""
         completed_normally = False
         was_cancelled = False
 
-        async def task_with_completion_check():
+        async def task_with_completion_check() -> None:
             nonlocal completed_normally, was_cancelled
             try:
                 await asyncio.sleep(10)
@@ -173,11 +131,16 @@ class TestCancelRunStatusNotOverwritten:
         task = asyncio.create_task(task_with_completion_check())
         active_runs[run_id] = task
 
+        broker = RunBroker(run_id)
+        if not hasattr(broker_manager, "_brokers"):
+            broker_manager._brokers = {}
+        broker_manager._brokers[run_id] = broker
+
         # Let it start
         await asyncio.sleep(0.1)
 
-        # Cancel using our method
-        streaming_service._cancel_background_task(run_id)
+        # Cancel using broker_manager
+        await broker_manager.request_cancel(run_id, "cancel")
 
         # Wait for cancellation to propagate
         with pytest.raises(asyncio.CancelledError):
@@ -187,3 +150,4 @@ class TestCancelRunStatusNotOverwritten:
         assert not completed_normally, "Task should NOT have completed normally"
 
         active_runs.pop(run_id, None)
+        broker_manager._brokers.pop(run_id, None)

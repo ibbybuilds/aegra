@@ -1,6 +1,6 @@
-"""Unit tests for _extract_thread_name helper in runs.py."""
+"""Unit tests for _extract_thread_name helper in run_preparation.py."""
 
-from aegra_api.api.runs import _extract_thread_name
+from aegra_api.services.run_preparation import _extract_thread_name
 
 
 class TestExtractThreadName:

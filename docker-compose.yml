@@ -28,8 +28,14 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - PYTHONPATH=/app/src
+      - REDIS_BROKER_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_COUNT=3
+      - N_JOBS_PER_WORKER=10
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./aegra.json:/app/aegra.json:ro
@@ -45,15 +51,19 @@ services:
         uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-2026} --reload
       "
 
-  # Redis (optional - for advanced queuing in future phases)
+  # Redis - enables multi-instance SSE streaming with pub/sub + replay
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    profiles:
-      - redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

@@ -18,17 +18,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegra_api.api.runs import (
-    active_runs,
     create_and_stream_run,
     create_run,
     wait_for_run,
 )
+from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.core.orm import _get_session_maker, get_session
 from aegra_api.models import Run, RunCreate, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
+from aegra_api.services.executor import executor
 from aegra_api.services.streaming_service import streaming_service
 
 router = APIRouter(tags=["Stateless Runs"], dependencies=auth_dependency)
@@ -85,15 +86,17 @@ async def _delete_thread_by_id(thread_id: str, user_id: str) -> None:
 
 
 async def _cleanup_after_background_run(run_id: str, thread_id: str, user_id: str) -> None:
-    """Wait for a background run task to finish, then delete the ephemeral thread."""
-    task = active_runs.get(run_id)
-    if task:
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.exception("Error awaiting background run task", run_id=run_id)
+    """Wait for a background run to finish, then delete the ephemeral thread.
+
+    Uses executor.wait_for_completion which works both in-process (dev)
+    and cross-instance (prod with Redis workers).
+    """
+    try:
+        await executor.wait_for_completion(run_id, timeout=3600.0)
+    except (asyncio.CancelledError, TimeoutError):
+        pass
+    except Exception:
+        logger.exception("Error waiting for background run", run_id=run_id)
 
     try:
         await _delete_thread_by_id(thread_id, user_id)

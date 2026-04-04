@@ -3,8 +3,6 @@ Unit tests for human-in-the-loop functionality in streaming services.
 Tests interrupt processing and event conversion.
 """
 
-from unittest.mock import Mock
-
 import pytest
 
 from aegra_api.services.event_converter import EventConverter
@@ -18,11 +16,11 @@ class TestEventConverter:
     """Test event converter for SSE formatting."""
 
     @pytest.fixture
-    def event_converter(self):
+    def event_converter(self) -> EventConverter:
         """Create event converter instance."""
         return EventConverter()
 
-    def test_convert_interrupt_values_event(self, event_converter):
+    def test_convert_interrupt_values_event(self, event_converter: EventConverter) -> None:
         """Test converting values event with interrupt to SSE."""
         event_id = "test-123"
         raw_event = (
@@ -37,35 +35,19 @@ class TestEventConverter:
         assert "data: " in sse_event
         assert "__interrupt__" in sse_event
 
-    def test_convert_stored_interrupt_event(self, event_converter):
-        """Test converting stored values event with interrupt to SSE."""
-        # Mock stored event object (stored as values, not updates)
-        stored_event = Mock()
-        stored_event.event = "values"
-        stored_event.data = {"chunk": {"__interrupt__": [{"value": "test", "id": "123"}]}}
-        stored_event.id = "event-456"
+    def test_convert_updates_event(self, event_converter: EventConverter) -> None:
+        """Test converting updates event to SSE preserves stream mode."""
+        event_id = "test-456"
+        raw_event = ("updates", {"status": "waiting"})
 
-        sse_event = event_converter.convert_stored_to_sse(stored_event, "run-123")
+        sse_event = event_converter.convert_raw_to_sse(event_id, raw_event)
 
         assert sse_event is not None
-        # Should create values event
-        assert "event: values" in sse_event
+        assert "event: updates" in sse_event
+        assert "data: " in sse_event
+        assert "waiting" in sse_event
 
-    def test_convert_non_interrupt_updates_event(self, event_converter):
-        """Test converting stored values event without interrupt to SSE."""
-        # Mock stored event without interrupt (stored as values)
-        stored_event = Mock()
-        stored_event.event = "values"
-        stored_event.data = {"chunk": {"messages": [{"role": "ai", "content": "test"}]}}
-        stored_event.id = "event-789"
-
-        sse_event = event_converter.convert_stored_to_sse(stored_event, "run-123")
-
-        assert sse_event is not None
-        # Should create values event
-        assert "event: values" in sse_event
-
-    def test_parse_raw_event_tuple_formats(self, event_converter):
+    def test_parse_raw_event_tuple_formats(self, event_converter: EventConverter) -> None:
         """Test parsing different tuple formats."""
         # Test 2-tuple format
         raw_event = ("values", {"test": "data"})

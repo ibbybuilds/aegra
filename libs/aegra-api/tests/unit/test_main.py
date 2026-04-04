@@ -41,7 +41,6 @@ async def test_lifespan_registers_otel_provider(monkeypatch):
         patch("aegra_api.main.run_migrations_async", new_callable=AsyncMock),
         patch("aegra_api.main.db_manager") as mock_db_manager,
         patch("aegra_api.main.get_langgraph_service") as mock_get_langgraph_service,
-        patch("aegra_api.main.event_store") as mock_event_store,
     ):
         mock_db_manager.initialize = AsyncMock()
         mock_db_manager.close = AsyncMock()
@@ -49,9 +48,6 @@ async def test_lifespan_registers_otel_provider(monkeypatch):
         mock_langgraph_service = MagicMock()
         mock_langgraph_service.initialize = AsyncMock()
         mock_get_langgraph_service.return_value = mock_langgraph_service
-
-        mock_event_store.start_cleanup_task = AsyncMock()
-        mock_event_store.stop_cleanup_task = AsyncMock()
 
         # Clear the manager
         manager = get_observability_manager()
@@ -81,8 +77,6 @@ async def test_lifespan_calls_required_initialization():
         patch("aegra_api.main.run_migrations_async", new_callable=AsyncMock) as mock_migrations,
         patch("aegra_api.main.db_manager") as mock_db_manager,
         patch("aegra_api.main.get_langgraph_service") as mock_get_langgraph_service,
-        patch("aegra_api.main.event_store") as mock_event_store,
-        # Patch the new setup_observability function directly
         patch("aegra_api.main.setup_observability") as mock_setup_observability,
     ):
         # Setup mocks
@@ -92,9 +86,6 @@ async def test_lifespan_calls_required_initialization():
         mock_langgraph_service = MagicMock()
         mock_langgraph_service.initialize = AsyncMock()
         mock_get_langgraph_service.return_value = mock_langgraph_service
-
-        mock_event_store.start_cleanup_task = AsyncMock()
-        mock_event_store.stop_cleanup_task = AsyncMock()
 
         mock_app = MagicMock()
 
@@ -106,11 +97,9 @@ async def test_lifespan_calls_required_initialization():
         mock_migrations.assert_called_once()
         mock_db_manager.initialize.assert_called_once()
         mock_langgraph_service.initialize.assert_called_once()
-        mock_event_store.start_cleanup_task.assert_called_once()
 
         # Verify observability setup was called
         mock_setup_observability.assert_called_once()
 
         # Verify cleanup
-        mock_event_store.stop_cleanup_task.assert_called_once()
         mock_db_manager.close.assert_called_once()

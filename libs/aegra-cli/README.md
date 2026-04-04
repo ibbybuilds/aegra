@@ -279,7 +279,7 @@ AEGRA_CONFIG=aegra.json
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - Docker (for `aegra up` and `aegra down` commands)
 - PostgreSQL (or use Docker)
 

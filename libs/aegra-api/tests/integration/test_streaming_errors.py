@@ -4,16 +4,18 @@ Tests verify that errors during graph execution are properly caught,
 sent to frontend via SSE, and stored for replay.
 """
 
-import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from aegra_api.api.runs import execute_run_async
 from aegra_api.models import User
-from aegra_api.services.broker import RunBroker
+from aegra_api.models.run_job import RunExecution, RunIdentity, RunJob
+from aegra_api.services import streaming_service as streaming_service_module
+from aegra_api.services.broker import BrokerManager, RunBroker
+from aegra_api.services.run_executor import execute_run as execute_run_async
 
 
 @pytest.mark.asyncio
@@ -22,7 +24,7 @@ class TestStreamingErrorHandling:
 
     @pytest.fixture
     def mock_user(self) -> User:
-        return User(identity="test-user", scopes=[])
+        return User(identity="test-user")
 
     @pytest.fixture
     def run_id(self) -> str:
@@ -32,57 +34,59 @@ class TestStreamingErrorHandling:
     def thread_id(self) -> str:
         return str(uuid4())
 
-    async def test_error_during_event_processing_sent_to_frontend(self, mock_user: User, run_id: str, thread_id: str):
+    @pytest.fixture
+    def local_broker_manager(self, monkeypatch: pytest.MonkeyPatch) -> BrokerManager:
+        """Provide a fresh BrokerManager for each test, patched into the modules under test."""
+        manager = BrokerManager()
+        monkeypatch.setattr(streaming_service_module, "broker_manager", manager)
+        return manager
+
+    async def test_error_during_event_processing_sent_to_frontend(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
         """Test that errors during event processing are caught and sent immediately"""
         graph_id = "test-graph"
 
         # Create a broker to capture events
         broker = RunBroker(run_id)
-        from aegra_api.services.broker import broker_manager
-
-        # Store broker directly for testing
-        if not hasattr(broker_manager, "_brokers"):
-            broker_manager._brokers = {}
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         # Mock graph that yields events, then fails during processing
         mock_graph = MagicMock()
         mock_graph.__aenter__ = AsyncMock(return_value=mock_graph)
         mock_graph.__aexit__ = AsyncMock(return_value=None)
 
-        async def failing_stream() -> AsyncIterator:
+        async def failing_stream() -> AsyncGenerator[tuple[str, Any], None]:
             """Stream that yields one event then raises error"""
             yield ("values", {"step": 1})
             # Simulate error during event processing
             raise ValueError("Graph execution failed")
 
         with (
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_executor.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.stream_graph_events",
+                "aegra_api.services.run_executor.stream_graph_events",
                 return_value=failing_stream(),
             ),
-            patch("aegra_api.api.runs.update_run_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs._get_session_maker") as mock_session_maker,
+            patch("aegra_api.services.run_executor.update_run_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_executor.finalize_run", new_callable=AsyncMock),
         ):
             mock_lg_service.return_value.get_graph.return_value.__aenter__ = AsyncMock(return_value=mock_graph)
             mock_lg_service.return_value.get_graph.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session = AsyncMock()
-            mock_session_maker.return_value = lambda: mock_session
+            job = RunJob(
+                identity=RunIdentity(run_id=run_id, thread_id=thread_id, graph_id=graph_id),
+                user=mock_user,
+                execution=RunExecution(
+                    input_data={},
+                    config={},
+                    context={},
+                    stream_mode=["values"],
+                ),
+            )
 
             # Execute run - error is handled internally (no re-raise from background tasks)
-            await execute_run_async(
-                run_id=run_id,
-                thread_id=thread_id,
-                graph_id=graph_id,
-                input_data={},
-                user=mock_user,
-                config={},
-                context={},
-                stream_mode=["values"],
-            )
+            await execute_run_async(job)
 
             # Verify error event was sent to broker
             events_received = []
@@ -109,98 +113,78 @@ class TestStreamingErrorHandling:
             assert error_event[0] == "error"
             assert "error" in error_event[1]
             assert "message" in error_event[1]
-            assert "Graph execution failed" in str(error_event[1]["message"])
+            assert error_event[1]["message"] == "ValueError: execution failed"
 
-    async def test_error_stored_for_replay(self, mock_user: User, run_id: str, thread_id: str):
-        """Test that error events are stored for replay support"""
+    async def test_error_stored_for_replay(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
+        """Test that error events are stored in the broker's replay buffer"""
         graph_id = "test-graph"
 
-        async def failing_stream() -> AsyncIterator:
+        async def failing_stream() -> AsyncGenerator[tuple[str, Any], None]:
             yield ("values", {"step": 1})
             raise RuntimeError("Storage test error")
 
-        # Mock store_sse_event to capture calls
-        stored_error_events = []
-
-        async def mock_store_sse_event(run_id_param, event_id, event_type, data):
-            if event_type == "error":
-                stored_error_events.append(
-                    {
-                        "run_id": run_id_param,
-                        "event_id": event_id,
-                        "event_type": event_type,
-                        "data": data,
-                    }
-                )
+        broker = RunBroker(run_id)
+        local_broker_manager._brokers[run_id] = broker
 
         with (
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_executor.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.stream_graph_events",
+                "aegra_api.services.run_executor.stream_graph_events",
                 return_value=failing_stream(),
             ),
-            patch("aegra_api.api.runs.update_run_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs._get_session_maker") as mock_session_maker,
-            patch(
-                "aegra_api.services.streaming_service.store_sse_event",
-                side_effect=mock_store_sse_event,
-            ),
+            patch("aegra_api.services.run_executor.update_run_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_executor.finalize_run", new_callable=AsyncMock),
         ):
             mock_graph = MagicMock()
             mock_lg_service.return_value.get_graph.return_value.__aenter__ = AsyncMock(return_value=mock_graph)
             mock_lg_service.return_value.get_graph.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session = AsyncMock()
-            mock_session_maker.return_value = lambda: mock_session
-
-            # Execute run - error is handled internally (no re-raise from background tasks)
-            await execute_run_async(
-                run_id=run_id,
-                thread_id=thread_id,
-                graph_id=graph_id,
-                input_data={},
+            job = RunJob(
+                identity=RunIdentity(run_id=run_id, thread_id=thread_id, graph_id=graph_id),
                 user=mock_user,
-                config={},
-                context={},
-                stream_mode=["values"],
+                execution=RunExecution(
+                    input_data={},
+                    config={},
+                    context={},
+                    stream_mode=["values"],
+                ),
             )
 
-            # Wait a bit for async operations to complete
-            await asyncio.sleep(0.2)
+            await execute_run_async(job)
 
-            # Verify error was stored
-            assert len(stored_error_events) > 0, "Error event should be stored for replay"
-            error_event = stored_error_events[0]
-            assert error_event["event_type"] == "error"
-            assert error_event["data"]["error"] == "RuntimeError"
-            assert "Storage test error" in error_event["data"]["message"]
+            # Verify error was stored in replay buffer
+            replay_events = await broker.replay(None)
+            error_events = [
+                (eid, payload) for eid, payload in replay_events if isinstance(payload, tuple) and payload[0] == "error"
+            ]
+            assert len(error_events) > 0, "Error event should be stored in replay buffer"
+            error_payload = error_events[0][1]
+            assert error_payload[1]["error"] == "RuntimeError"
+            assert error_payload[1]["message"] == "RuntimeError: execution failed"
 
-    async def test_error_type_preserved(self, mock_user: User, run_id: str, thread_id: str):
+    async def test_error_type_preserved(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
         """Test that error type is correctly preserved and sent"""
         graph_id = "test-graph"
 
-        async def failing_stream():
+        async def failing_stream() -> AsyncGenerator[tuple[str, Any], None]:
             """Async generator that raises ValueError"""
             raise ValueError("Type preservation test")
             yield  # This will never be reached but makes it an async generator
 
         broker = RunBroker(run_id)
-        from aegra_api.services.broker import broker_manager
-
-        # Store broker directly for testing
-        if not hasattr(broker_manager, "_brokers"):
-            broker_manager._brokers = {}
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         with (
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_executor.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.stream_graph_events",
+                "aegra_api.services.run_executor.stream_graph_events",
             ) as mock_stream_graph,
-            patch("aegra_api.api.runs.update_run_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs._get_session_maker") as mock_session_maker,
+            patch("aegra_api.services.run_executor.update_run_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_executor.finalize_run", new_callable=AsyncMock),
         ):
             # Set up the mock to return the async generator
             mock_stream_graph.return_value = failing_stream()
@@ -209,20 +193,19 @@ class TestStreamingErrorHandling:
             mock_lg_service.return_value.get_graph.return_value.__aenter__ = AsyncMock(return_value=mock_graph)
             mock_lg_service.return_value.get_graph.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session = AsyncMock()
-            mock_session_maker.return_value = lambda: mock_session
+            job = RunJob(
+                identity=RunIdentity(run_id=run_id, thread_id=thread_id, graph_id=graph_id),
+                user=mock_user,
+                execution=RunExecution(
+                    input_data={},
+                    config={},
+                    context={},
+                    stream_mode=["values"],
+                ),
+            )
 
             # Error is handled internally (no re-raise from background tasks)
-            await execute_run_async(
-                run_id=run_id,
-                thread_id=thread_id,
-                graph_id=graph_id,
-                input_data={},
-                user=mock_user,
-                config={},
-                context={},
-                stream_mode=["values"],
-            )
+            await execute_run_async(job)
 
             # Check error event has correct type
             events_received = []
@@ -239,52 +222,47 @@ class TestStreamingErrorHandling:
 
             error_event = error_events[0]
             assert error_event[1]["error"] == "ValueError"
-            assert error_event[1]["message"] == "Type preservation test"
+            assert error_event[1]["message"] == "ValueError: execution failed"
 
-    async def test_multiple_errors_only_send_once(self, mock_user: User, run_id: str, thread_id: str):
+    async def test_multiple_errors_only_send_once(
+        self, mock_user: User, run_id: str, thread_id: str, local_broker_manager: BrokerManager
+    ) -> None:
         """Test that if error is caught in inner handler, outer handler doesn't duplicate"""
         graph_id = "test-graph"
 
-        async def failing_stream() -> AsyncIterator:
+        async def failing_stream() -> AsyncGenerator[tuple[str, Any], None]:
             yield ("values", {"step": 1})
             raise KeyError("Single error test")
 
         broker = RunBroker(run_id)
-        from aegra_api.services.broker import broker_manager
-
-        # Store broker directly for testing
-        if not hasattr(broker_manager, "_brokers"):
-            broker_manager._brokers = {}
-        broker_manager._brokers[run_id] = broker
+        local_broker_manager._brokers[run_id] = broker
 
         with (
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_lg_service,
+            patch("aegra_api.services.run_executor.get_langgraph_service") as mock_lg_service,
             patch(
-                "aegra_api.api.runs.stream_graph_events",
+                "aegra_api.services.run_executor.stream_graph_events",
                 return_value=failing_stream(),
             ),
-            patch("aegra_api.api.runs.update_run_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs.set_thread_status", new_callable=AsyncMock),
-            patch("aegra_api.api.runs._get_session_maker") as mock_session_maker,
+            patch("aegra_api.services.run_executor.update_run_status", new_callable=AsyncMock),
+            patch("aegra_api.services.run_executor.finalize_run", new_callable=AsyncMock),
         ):
             mock_graph = MagicMock()
             mock_lg_service.return_value.get_graph.return_value.__aenter__ = AsyncMock(return_value=mock_graph)
             mock_lg_service.return_value.get_graph.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session = AsyncMock()
-            mock_session_maker.return_value = lambda: mock_session
+            job = RunJob(
+                identity=RunIdentity(run_id=run_id, thread_id=thread_id, graph_id=graph_id),
+                user=mock_user,
+                execution=RunExecution(
+                    input_data={},
+                    config={},
+                    context={},
+                    stream_mode=["values"],
+                ),
+            )
 
             # Error is handled internally (no re-raise from background tasks)
-            await execute_run_async(
-                run_id=run_id,
-                thread_id=thread_id,
-                graph_id=graph_id,
-                input_data={},
-                user=mock_user,
-                config={},
-                context={},
-                stream_mode=["values"],
-            )
+            await execute_run_async(job)
 
             # Count error events - should only be one
             events_received = []

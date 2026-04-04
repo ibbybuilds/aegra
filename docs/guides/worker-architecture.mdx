@@ -11,7 +11,7 @@ In dev mode (`aegra dev`), none of this is needed — runs execute as simple in-
 
 How a single run flows through the system — from client request to completion:
 
-<a href="https://mermaid.live/view#pako:eNqdU01PwkAQ_SuT5aIRChQE4WAioqCSUCzGg_WwbQdpKK3ubv0C_rvb7lIaAxe6h87He5N5b7Mr4sU-ki6QWRh_eXPKBEz7TgTyuw4DjMSLQ1QAJ3b_AaownE6tU4e8KtCVdScRt5QLGeXVR_QDLuvZH-5jFyYJJpj3n2O2QCYBKsjr1kDWrJiLN4b2ZLSrJ66duPlAmVZlnrd7LFbjbPtGJ1mvqAMqlcu1Q-oGWGN7ClWWRNwh61RArkRjTAPekfGACzgDjD7U6mulqiBQwxsG9EbW2EohWk9BpAY1DQiRckwnfqOXiDSaBRENg99suDXYwzqX2z71Rnf2EPBTisg2VmYUjdHolgE8cbnHAjcbqZ0oWKSBbQNSp7hgSJcpUlm0NYyLnxC3ts2CMOyW6rROTSxLhhzTLbV888LvlL04jFm3hLX0FLmpl3uJtVmj2aodJmr1R3G1xKO46j4V1fTrboHq1Rod0z1M1VdwHHewXdeVzB3PbFP8vy4pA1kiW9LAl-91RcQcl9nL9SlbkM3mD0UxLXM=" target="_blank" rel="noopener">View fullscreen ↗</a>
+<a href="https://mermaid.live/view#pako:eNqdk1tPwjAUx79KU140QhjDoOzBREQBJaG4GR_Eh3Y7k4ZdtO28Mb673YWxqLywPexc_v-T8-vSNXZjD7CFsB_EH-6SCoWc4SJC-rkKOETqaYGLAB3ZwzvURmPHIccL_FyILslEK26oVDqqqvfgcanr-RfdxgzNE0ig6j_GYgVCC4qgqpORrpFYqhcB9ny6qyfMTlg1UKdtnVftgYiLcbZ9XSZ5r86BWq2LlMxsB7VFEsk027xCyJuvICSXCp0giN6yddOCo4aU6wZTMiNpyVDnybsBUAnZjE9wE5VFPo9owL_1ODL6IycPg-nEHiN41zvqrQrSOnUukwmTruBMDyn5auC5IkOXSgAN05J4yy_VVwDbU_B5EFiNDu1QE5par_1Wo-eZ516_6cZBLKwGGNlb92Yn9K_R8LunPWO_sQQ9yFuyHeQtflZhNb0Oq1ldo9s32X5reeiHeUfbdZl27nzmGYXf6-ImwiGIkHJPX781VksI84voUbHCm80P8HgjAQ==" target="_blank" rel="noopener">View fullscreen ↗</a>
 
 ```mermaid
 flowchart TD
@@ -23,13 +23,13 @@ flowchart TD
     PubSub["Redis Pub/Sub"]
     Broker["SSE Broker"]
 
-    Client -->|"1. POST /runs"| API
-    API -->|"2. persist + enqueue"| Redis
-    Redis -->|"3. BLPOP"| Worker
-    Worker -->|"4. lease + execute + finalize"| PG
-    Worker -->|"5. PUBLISH events"| PubSub
-    PubSub -->|"6. subscribe"| Broker
-    Broker -->|"7. SSE stream"| Client
+    Client -->|POST /runs| API
+    API -->|persist + enqueue| Redis
+    Redis -->|BLPOP| Worker
+    Worker -->|lease + execute + finalize| PG
+    Worker -->|PUBLISH events| PubSub
+    PubSub -->|subscribe| Broker
+    Broker -->|SSE stream| Client
 
     style Client fill:#1a1a2e,stroke:#6d28d9,color:#e0e0e0
     style API fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
@@ -56,21 +56,21 @@ Behind the scenes, the **Lease Reaper** scans PostgreSQL every 15 seconds for ru
 
 Every instance is stateless — add more instances behind a load balancer to increase capacity. All instances share the same Redis and PostgreSQL backends.
 
-<a href="https://mermaid.live/view#pako:eNqdk11PwjAUhv_KSbnRBMIGonExJmwmRLOYAd45L7r18OFGS9ouSAj_3W4wGCpg6C7W8_G05z0nXZFYMCQOkFEqFvGESg1vTyEHs3z3PSS-oAxcmlIeowzJR8g3QZVFY0nnE3jmSudBZZKhSIDt6hpPGYVuGPKrNiyETFAq-ALbgk8RqesDxK0i7r8Qr4q8nkWQs18SXBonxp8rGJoOINt5Dm4aIJvmOcXfXPQiIuhnmCE0Icii5jCLzM7LC0kPwKBnqEAoPZY47PsGHWRcmVwfqcJ8400wTuZiyrX6q1LfhUbj0fSwarkHllfm7uYBD0VWqaQUrZepmQaMpmnq1Gxq0xbWlZYiQadmjdo3t1Y9FqmQTg2t_Kti7mWYdxm2V1LgWlKu5mY8XP88YmM2GFVmfJIunQ50jp9bzG9bUovZUaWk2Grft6LjaNArpUSG3HOtO4onG7edwkn6vApSBzJDOaNTZp7siugJzorHy6hMyHr9DXZ_Lls=" target="_blank" rel="noopener">View fullscreen ↗</a>
+<a href="https://mermaid.live/view#pako:eNqdU1FrwjAQ_itH-qrQ1rmxMgamAxmU0c29rT5cm2jFmkiSMUT870trW9ttOjB5CHfffXff3ZE9ySTjJACyKORXlqMy8P6UCLAnoh8JiSQyoFigyLhKyDwRR1B_pkuF2xyehTYlqG0wVAFQn4n1NChMehDtQrQHhV3opYW4YL9KU8zW1l9WnlnlnLWeXsY3zlZlTPX2kHhq3bHUZqn47DX6q1hEYTh8tPK7Fu1ZYRPbjgIeqqhGTKPb7Ao7CFisiiJwPPTQ5wNtlFzzwHEXo5tbd5DJQqrA4W55uzR6HS28jnbqpKIbhUJv7YSF-ZniaA4ZarsBhbtgDOPzeasV1JJ85qUdSZk7uvfT89R42rSSWuaJ598hvzi4egsX2f93QQZANlxtcMXsb9kTk_NN9W8YqjU5HL4B_SQCkw==" target="_blank" rel="noopener">View fullscreen ↗</a>
 
 ```mermaid
 flowchart TD
     LB["Load Balancer"]
 
     subgraph Instances[" "]
-        A["Instance A\n(3 workers x 10 jobs)"]
-        B["Instance B\n(3 workers x 10 jobs)"]
-        C["Instance N\n(3 workers x 10 jobs)"]
+        A["Instance A"]
+        B["Instance B"]
+        C["Instance N"]
     end
 
     subgraph Backends["Shared Backends"]
-        Redis["Redis\nJob Queue / Pub/Sub / Cancel"]
-        PG["PostgreSQL\nRuns / Leases / Checkpoints"]
+        Redis["Redis"]
+        PG["PostgreSQL"]
     end
 
     LB --> A

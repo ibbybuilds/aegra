@@ -202,6 +202,21 @@ class TestDockerGenerators:
         assert "COPY src/" in dockerfile
         assert "EXPOSE 2026" in dockerfile
 
+    def test_dockerfile_copies_src_in_final_stage(self: TestDockerGenerators) -> None:
+        """src/ must be copied in the runtime stage, not just the builder.
+
+        Without this, cloud deployments (Railway, Render, Fly.io) fail because
+        aegra.json file-path references (graphs, http.app, auth.path) resolve
+        against the filesystem.  Volume mounts in docker-compose mask this
+        during local dev.  See #255.
+        """
+        dockerfile = get_dockerfile()
+        # Split at the final stage marker — fail fast if marker is missing
+        parts = dockerfile.split("FROM base AS final")
+        assert len(parts) == 2, "Expected exactly one 'FROM base AS final' stage marker"
+        final_stage = parts[1]
+        assert "COPY src/ ./src/" in final_stage
+
     def test_dockerfile_security_and_best_practices(self: TestDockerGenerators) -> None:
         dockerfile = get_dockerfile()
         # Non-root user

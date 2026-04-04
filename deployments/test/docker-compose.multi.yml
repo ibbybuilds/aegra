@@ -54,9 +54,7 @@ services:
       - ../../examples:/app/examples:ro
       - ../../libs/aegra-api/src:/app/src:ro
       - ../../libs/aegra-api/alembic:/app/alembic:ro
-      - ../../.env:/app/.env:ro
-    command: >
-      sh -c "alembic upgrade head && uvicorn aegra_api.main:app --host 0.0.0.0 --port 2026"
+    command: ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "2026"]
 
   # Instance B — workers + API (separate container, same code)
   aegra-b:
@@ -89,7 +87,6 @@ services:
       - ../../examples:/app/examples:ro
       - ../../libs/aegra-api/src:/app/src:ro
       - ../../libs/aegra-api/alembic:/app/alembic:ro
-      - ../../.env:/app/.env:ro
     command: >
       sh -c "sleep 5 && uvicorn aegra_api.main:app --host 0.0.0.0 --port 2026"
 

@@ -232,6 +232,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${{PORT:-2026}}/health || exit 1"]
       interval: 30s
+      timeout: 10s
+      retries: 3
       start_period: 10s
     volumes:
       - ./src:/app/src:ro
@@ -294,6 +296,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 
 COPY --from=builder /app/.venv /app/.venv
 COPY aegra.json .
+COPY src/ ./src/
 
 ENV PATH="/app/.venv/bin:$PATH"
 

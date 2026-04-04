@@ -8,7 +8,6 @@ explicitly sets ``on_completion="keep"``).
 
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Any
 from uuid import uuid4
 
 import structlog
@@ -113,28 +112,65 @@ async def _cleanup_after_background_run(run_id: str, thread_id: str, user_id: st
 async def stateless_wait_for_run(
     request: RunCreate,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> StreamingResponse:
     """Create a stateless run and wait for completion.
 
     Generates an ephemeral thread, delegates to the threaded ``wait_for_run``
-    endpoint, and deletes the thread on completion (unless
-    ``on_completion="keep"``).
+    endpoint, and deletes the thread after the response finishes streaming
+    (unless ``on_completion="keep"``).
     """
     thread_id = str(uuid4())
     should_delete = request.on_completion != "keep"
 
     try:
-        result = await wait_for_run(thread_id, request, user)
-        return result
-    finally:
+        response = await wait_for_run(thread_id, request, user)
+    except Exception:
         if should_delete:
             try:
                 await _delete_thread_by_id(thread_id, user.identity)
             except Exception:
                 logger.exception(
-                    "Failed to delete ephemeral thread after wait",
+                    "Failed to delete ephemeral thread after wait error",
                     thread_id=thread_id,
                 )
+        raise
+
+    if not should_delete:
+        return response
+
+    # Wrap the body_iterator so cleanup happens after the stream ends
+    original_iterator = response.body_iterator
+
+    async def _wrapped_iterator() -> AsyncIterator[bytes]:
+        completed = False
+        try:
+            async for chunk in original_iterator:
+                yield chunk
+            completed = True
+        finally:
+            aclose = getattr(original_iterator, "aclose", None)
+            if aclose is not None:
+                await aclose()
+            if completed:
+                try:
+                    await _delete_thread_by_id(thread_id, user.identity)
+                except Exception:
+                    logger.exception(
+                        "Failed to delete ephemeral thread after wait",
+                        thread_id=thread_id,
+                    )
+            else:
+                logger.info(
+                    "Client disconnected before stream completed, keeping ephemeral thread",
+                    thread_id=thread_id,
+                )
+
+    return StreamingResponse(
+        _wrapped_iterator(),
+        status_code=response.status_code,
+        media_type=response.media_type,
+        headers=dict(response.headers),
+    )
 
 
 @router.post("/runs/stream", responses={**SSE_RESPONSE, **NOT_FOUND, **CONFLICT})

@@ -291,7 +291,9 @@ class TestRunsEndpoints:
 
     @pytest.mark.asyncio
     async def test_join_run_terminal_state(self, mock_user: User, mock_session: AsyncMock) -> None:
-        """Test joining a completed run returns output immediately."""
+        """Test joining a completed run returns output immediately via StreamingResponse."""
+        import json
+
         run_orm = RunORM(
             run_id="run-1",
             thread_id="thread-1",
@@ -310,13 +312,20 @@ class TestRunsEndpoints:
         mock_maker = MagicMock(return_value=ctx)
 
         with patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker):
-            result = await join_run("thread-1", "run-1", mock_user)
+            response = await join_run("thread-1", "run-1", mock_user)
 
-        assert result == {"result": "done"}
+        # join_run now returns StreamingResponse; consume body to get JSON
+        assert response.media_type == "application/json"
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk if isinstance(chunk, bytes) else chunk.encode()
+        assert json.loads(body) == {"result": "done"}
 
     @pytest.mark.asyncio
     async def test_join_run_active_state(self, mock_user: User, mock_session: AsyncMock) -> None:
-        """Test joining an active run waits for completion."""
+        """Test joining an active run returns a StreamingResponse with heartbeat."""
+        from fastapi.responses import StreamingResponse
+
         # Setup run initially in running state
         run_orm_running = RunORM(
             run_id="run-1",
@@ -328,44 +337,29 @@ class TestRunsEndpoints:
             updated_at=datetime.now(UTC),
         )
 
-        # Then state after re-fetch (success)
-        run_orm_done = RunORM(
-            run_id="run-1",
-            thread_id="thread-1",
-            user_id=mock_user.identity,
-            status="success",
-            input={},
-            output={"result": "waited"},
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
-        )
+        mock_session.scalar.return_value = run_orm_running
 
-        # Two separate sessions: first returns running, second returns done
-        mock_session_1 = AsyncMock()
-        mock_session_1.scalar.return_value = run_orm_running
-        mock_session_2 = AsyncMock()
-        mock_session_2.scalar.return_value = run_orm_done
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=ctx)
 
-        sessions_iter = iter([mock_session_1, mock_session_2])
-
-        def _make_ctx() -> MagicMock:
-            ctx = MagicMock()
-            ctx.__aenter__ = AsyncMock(side_effect=lambda: next(sessions_iter))
-            ctx.__aexit__ = AsyncMock(return_value=False)
-            return ctx
-
-        mock_maker = MagicMock(side_effect=lambda: _make_ctx())
-
-        # Mock executor.wait_for_completion
+        # Mock executor and settings for the heartbeat body
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs.executor") as mock_executor,
+            patch("aegra_api.services.run_waiters._get_session_maker", return_value=mock_maker),
+            patch("aegra_api.services.run_waiters.executor") as mock_executor,
+            patch("aegra_api.services.run_waiters.settings") as mock_settings,
         ):
             mock_executor.wait_for_completion = AsyncMock()
-            result = await join_run("thread-1", "run-1", mock_user)
+            mock_settings.app.KEEPALIVE_INTERVAL_SECS = 5
+            mock_settings.worker.BG_JOB_TIMEOUT_SECS = 3600
 
-            mock_executor.wait_for_completion.assert_called_once()  # Should wait via executor
-            assert result == {"result": "waited"}
+            response = await join_run("thread-1", "run-1", mock_user)
+
+        assert isinstance(response, StreamingResponse)
+        assert response.media_type == "application/json"
+        assert "Location" in response.headers
 
 
 # Note: _resolve_context was removed from runs.py during the worker architecture

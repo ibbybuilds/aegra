@@ -34,6 +34,7 @@ from aegra_api.settings import settings
 
 logger = structlog.getLogger(__name__)
 
+# Terminal run states (kept local to avoid circular import with run_waiters -> executor)
 _TERMINAL_STATUSES = frozenset({"success", "error", "interrupted"})
 _RUN_ID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 

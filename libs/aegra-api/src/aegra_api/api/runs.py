@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -20,9 +19,10 @@ from aegra_api.core.orm import _get_session_maker, get_session
 from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
-from aegra_api.services.executor import executor
 from aegra_api.services.run_preparation import _prepare_run
+from aegra_api.services.run_waiters import TERMINAL_STATES, encode_output, heartbeat_wait_body
 from aegra_api.services.streaming_service import streaming_service
+from aegra_api.settings import settings
 from aegra_api.utils.status_compat import validate_run_status
 
 router = APIRouter(tags=["Thread Runs"], dependencies=auth_dependency)
@@ -241,15 +241,20 @@ async def join_run(
     thread_id: str,
     run_id: str,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> StreamingResponse:
     """Wait for a run to complete and return its output.
 
-    If the run is already in a terminal state (success, error, interrupted),
-    the output is returned immediately. Otherwise the server waits up to 30
-    seconds for the background task to finish.
+    Returns a chunked ``application/json`` response. While the run is still
+    executing, the server sends periodic ``\\n`` heartbeat bytes to keep the
+    connection alive through proxies and load balancers (AWS ALB, Cloudflare,
+    etc.). The final chunk is the JSON result. Leading whitespace is ignored
+    by JSON parsers, so clients can parse the concatenated body normally.
 
-    Sessions are managed manually (not via Depends) to avoid holding a pool
-    connection during the long wait, which would starve background tasks.
+    If the run is already in a terminal state, the output is returned
+    immediately with no heartbeat overhead.
+
+    Sessions are managed manually (not via ``Depends``) to avoid holding a
+    pool connection during the long wait.
     """
     maker = _get_session_maker()
 
@@ -265,26 +270,25 @@ async def join_run(
         if not run_orm:
             raise HTTPException(404, f"Run '{run_id}' not found")
 
-        terminal_states = ["success", "error", "interrupted"]
-        if run_orm.status in terminal_states:
-            return getattr(run_orm, "output", None) or {}
-
-    # No pool connection held during the wait.
-    with contextlib.suppress(TimeoutError, asyncio.CancelledError):
-        await executor.wait_for_completion(run_id, timeout=30.0)
-
-    # Short-lived session: read final output
-    async with maker() as session:
-        run_orm = await session.scalar(
-            select(RunORM).where(
-                RunORM.run_id == run_id,
-                RunORM.thread_id == thread_id,
-                RunORM.user_id == user.identity,
+        if run_orm.status in TERMINAL_STATES:
+            return StreamingResponse(
+                iter([encode_output(run_orm.output or {})]),
+                media_type="application/json",
             )
-        )
-        if not run_orm:
-            raise HTTPException(404, f"Run '{run_id}' not found")
-        return run_orm.output or {}
+
+    return StreamingResponse(
+        heartbeat_wait_body(
+            run_id,
+            thread_id,
+            user.identity,
+            timeout=settings.worker.BG_JOB_TIMEOUT_SECS,
+        ),
+        media_type="application/json",
+        headers={
+            "Location": f"/threads/{thread_id}/runs/{run_id}/join",
+            "Content-Location": f"/threads/{thread_id}/runs/{run_id}",
+        },
+    )
 
 
 @router.post("/threads/{thread_id}/runs/wait", responses={**NOT_FOUND, **CONFLICT})
@@ -292,49 +296,39 @@ async def wait_for_run(
     thread_id: str,
     request: RunCreate,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> StreamingResponse:
     """Create a run, execute it, and wait for completion.
 
-    Combines run creation and execution with synchronous waiting. Returns the
-    final output directly (not the Run object). The server waits up to 5
-    minutes for the run to finish. If the run times out, the current output
-    (which may be empty) is returned.
+    Returns a chunked ``application/json`` response with periodic ``\\n``
+    heartbeat bytes to keep the connection alive. The final chunk is the
+    JSON result. Uses ``BG_JOB_TIMEOUT_SECS`` (default 1 hour) as the
+    safety-net timeout.
 
-    Sessions are managed manually (not via Depends) to avoid holding a pool
-    connection during the long wait, which would starve background tasks.
+    Sessions are managed manually (not via ``Depends``) to avoid holding a
+    pool connection during the long wait.
     """
     maker = _get_session_maker()
 
-    # Session block 1: all pre-execution DB work (validate, create run, submit)
+    # Session block: all pre-execution DB work (validate, create run, submit)
     async with maker() as session:
         run_id, _run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
     # No pool connection held from here — safe for long waits
-
-    try:
-        await executor.wait_for_completion(run_id, timeout=300.0)
-    except TimeoutError:
-        logger.warning(f"[wait_for_run] timeout waiting for run_id={run_id}")
-
-    # Session block 2: read final output
-    async with maker() as session:
-        run_orm = await session.scalar(
-            select(RunORM).where(
-                RunORM.run_id == run_id,
-                RunORM.thread_id == thread_id,
-                RunORM.user_id == user.identity,
-            )
-        )
-        if not run_orm:
-            raise HTTPException(500, f"Run '{run_id}' disappeared during execution")
-
-        if run_orm.status == "error":
-            logger.error(f"[wait_for_run] run failed run_id={run_id} error={run_orm.error_message}")
-
-        return run_orm.output or {}
+    return StreamingResponse(
+        heartbeat_wait_body(
+            run_id,
+            thread_id,
+            user.identity,
+            timeout=settings.worker.BG_JOB_TIMEOUT_SECS,
+        ),
+        media_type="application/json",
+        headers={
+            "Location": f"/threads/{thread_id}/runs/{run_id}/join",
+            "Content-Location": f"/threads/{thread_id}/runs/{run_id}",
+        },
+    )
 
 
-# TODO: check if this method is actually required because the implementation doesn't seem correct.
 @router.get("/threads/{thread_id}/runs/{run_id}/stream", responses={**SSE_RESPONSE, **NOT_FOUND})
 async def stream_run(
     thread_id: str,
@@ -366,8 +360,7 @@ async def stream_run(
     # If already terminal and no Last-Event-ID, just emit end.
     # If Last-Event-ID is present, fall through to stream_run_execution
     # which will replay missed events from the buffer before ending.
-    terminal_states = ["success", "error", "interrupted"]
-    if run_orm.status in terminal_states and not last_event_id:
+    if run_orm.status in TERMINAL_STATES and not last_event_id:
         final_status = "error" if run_orm.status == "error" else run_orm.status
 
         async def generate_final() -> AsyncIterator[str]:
@@ -461,12 +454,11 @@ async def cancel_run_endpoint(
         # Poll DB until the run reaches a terminal state (or 10s timeout).
         # This is simpler and more reliable than pub/sub for cancel-with-wait
         # since the cancel has already been issued and the status update committed.
-        terminal = {"success", "error", "interrupted"}
         for _ in range(20):
             await asyncio.sleep(0.5)
             session.expire_all()  # sync method, clears cache
             fresh = await session.scalar(select(RunORM).where(RunORM.run_id == run_id))
-            if fresh and fresh.status in terminal:
+            if fresh and fresh.status in TERMINAL_STATES:
                 break
 
     # Reload and return updated Run (do NOT delete here; deletion is a separate endpoint)

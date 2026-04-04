@@ -110,14 +110,16 @@ OTEL_TARGETS=LANGFUSE,PHOENIX
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/assistants` | POST | Create assistant from graph_id |
-| `/assistants` | GET | List user's assistants |
-| `/assistants/{id}` | GET | Get assistant details |
+| `/assistants/search` | POST | Search assistants |
+| `/assistants/{assistant_id}` | GET | Get assistant details |
 | `/threads` | POST | Create conversation thread |
-| `/threads/{id}/state` | GET | Get thread state |
-| `/threads/{id}/runs` | POST | Execute graph (streaming/background) |
-| `/runs/{id}/stream` | POST | Stream run events |
-| `/store` | PUT | Save to vector store |
-| `/store/search` | POST | Semantic search |
+| `/threads/{thread_id}/state` | GET | Get thread state |
+| `/threads/{thread_id}/runs` | POST | Execute graph (background) |
+| `/threads/{thread_id}/runs/stream` | POST | Execute graph (streaming) |
+| `/threads/{thread_id}/runs/{run_id}/cancel` | POST | Cancel a run |
+| `/store/items` | PUT | Save to vector store |
+| `/store/items/search` | POST | Semantic search |
+| `/store/namespaces` | POST | List store namespaces |
 | `/health` | GET | Health check |
 
 ## Creating Graphs

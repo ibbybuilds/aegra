@@ -211,8 +211,10 @@ class TestDockerGenerators:
         during local dev.  See #255.
         """
         dockerfile = get_dockerfile()
-        # Split at the final stage marker
-        final_stage = dockerfile.split("FROM base AS final")[-1]
+        # Split at the final stage marker — fail fast if marker is missing
+        parts = dockerfile.split("FROM base AS final")
+        assert len(parts) == 2, "Expected exactly one 'FROM base AS final' stage marker"
+        final_stage = parts[1]
         assert "COPY src/ ./src/" in final_stage
 
     def test_dockerfile_security_and_best_practices(self: TestDockerGenerators) -> None:

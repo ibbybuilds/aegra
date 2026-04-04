@@ -286,6 +286,8 @@ All worker settings are configured via environment variables. See the [environme
 | `WORKER_COUNT` | `3` | Worker loops per instance |
 | `N_JOBS_PER_WORKER` | `10` | Concurrent runs per worker loop |
 | `BG_JOB_TIMEOUT_SECS` | `3600` | Max execution time per run (1 hour) |
+| `BG_JOB_MAX_RETRIES` | `3` | Max retry attempts before a crashed run is permanently failed |
+| `STUCK_PENDING_THRESHOLD_SECONDS` | `120` | How long a pending run can sit before the reaper re-enqueues it |
 | `LEASE_DURATION_SECONDS` | `30` | Lease TTL before reaper reclaims |
 | `HEARTBEAT_INTERVAL_SECONDS` | `10` | Lease extension frequency |
 | `REAPER_INTERVAL_SECONDS` | `15` | Expired lease scan frequency |

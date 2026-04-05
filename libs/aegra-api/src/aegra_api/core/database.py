@@ -40,6 +40,7 @@ class DatabaseManager:
             max_overflow=settings.pool.SQLALCHEMY_MAX_OVERFLOW,
             pool_pre_ping=True,
             echo=settings.db.DB_ECHO_LOG,
+            connect_args={"statement_cache_size": 0},  # PgBouncer compatibility
         )
 
         lg_max = settings.pool.LANGGRAPH_MAX_POOL_SIZE

@@ -264,9 +264,18 @@ async def graph(runtime: ServerRuntime):
     return builder.compile()
 ```
 
-The `runtime.user` object has the same fields as your `@auth.authenticate` handler
-returns: `identity`, `display_name`, `permissions`, and any custom fields (accessible
-via `user["role"]`, `user["team_id"]`, etc.).
+The `runtime.user` object is the full `User` model with all fields from your
+`@auth.authenticate` handler. Standard fields (`identity`, `display_name`,
+`permissions`) and custom fields (`role`, `team_id`, etc.) are all accessible
+as attributes or via dict-style access:
+
+```python
+user = runtime.user
+user.identity          # "alice"
+user.role              # "admin" (custom field, attribute access)
+user["team_id"]        # "team42" (custom field, dict-style access)
+user.to_dict()         # full dict including all custom fields
+```
 
 <Note>
   Factory graphs get user data in **two places**:

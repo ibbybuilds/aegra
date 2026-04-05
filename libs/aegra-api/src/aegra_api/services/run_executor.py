@@ -20,6 +20,7 @@ from aegra_api.services.graph_streaming import stream_graph_events
 from aegra_api.services.langgraph_service import create_run_config, get_langgraph_service
 from aegra_api.services.run_status import finalize_run, update_run_status
 from aegra_api.services.streaming_service import streaming_service
+from aegra_api.settings import settings
 from aegra_api.utils.run_utils import map_command_to_langgraph
 
 logger = structlog.getLogger(__name__)
@@ -223,7 +224,6 @@ async def _signal_end_event(run_id: str, status: str) -> None:
 # Done signal (Redis key for fast completion polling)
 # ------------------------------------------------------------------
 
-_DONE_KEY_PREFIX = "aegra:run:done:"
 _DONE_KEY_TTL_SECONDS = 3600
 
 
@@ -236,6 +236,7 @@ async def _signal_run_done(run_id: str) -> None:
     """
     try:
         client = redis_manager.get_client()
-        await client.set(f"{_DONE_KEY_PREFIX}{run_id}", "1", ex=_DONE_KEY_TTL_SECONDS)
+        done_key = f"{settings.redis.REDIS_CHANNEL_PREFIX}done:{run_id}"
+        await client.set(done_key, "1", ex=_DONE_KEY_TTL_SECONDS)
     except Exception:
         logger.debug("Redis done-key set failed (non-critical)", run_id=run_id)

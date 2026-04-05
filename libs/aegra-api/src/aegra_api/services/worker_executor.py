@@ -28,7 +28,7 @@ from aegra_api.core.redis_manager import redis_manager
 from aegra_api.models.run_job import RunJob
 from aegra_api.observability.span_enrichment import set_trace_context
 from aegra_api.services.base_executor import BaseExecutor
-from aegra_api.services.run_executor import _DONE_KEY_PREFIX, _lease_loss_cancellations, execute_run
+from aegra_api.services.run_executor import _lease_loss_cancellations, execute_run
 from aegra_api.services.run_status import finalize_run, update_run_status
 from aegra_api.settings import settings
 
@@ -72,7 +72,7 @@ class WorkerExecutor(BaseExecutor):
 
     async def wait_for_completion(self, run_id: str, *, timeout: float = 300.0) -> None:
         """Wait for a run to finish by polling a Redis done-key with DB fallback."""
-        done_key = f"{_DONE_KEY_PREFIX}{run_id}"
+        done_key = f"{settings.redis.REDIS_CHANNEL_PREFIX}done:{run_id}"
         client = redis_manager.get_client()
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout

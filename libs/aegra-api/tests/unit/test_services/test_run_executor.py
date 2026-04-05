@@ -202,6 +202,25 @@ class TestSignalRunDone:
         assert call_args.args[1] == "1"
 
     @pytest.mark.asyncio
+    async def test_uses_configured_channel_prefix(self) -> None:
+        """Regression: done-key must derive from REDIS_CHANNEL_PREFIX, not a hardcoded string."""
+        mock_client = AsyncMock()
+
+        with (
+            patch("aegra_api.services.run_executor.redis_manager") as mock_rm,
+            patch("aegra_api.services.run_executor.settings") as mock_settings,
+        ):
+            mock_rm.get_client.return_value = mock_client
+            mock_settings.redis.REDIS_CHANNEL_PREFIX = "aegra:agent-foo:run:"
+
+            from aegra_api.services.run_executor import _signal_run_done
+
+            await _signal_run_done("run-1")
+
+        key = mock_client.set.await_args.args[0]
+        assert key == "aegra:agent-foo:run:done:run-1"
+
+    @pytest.mark.asyncio
     async def test_logs_debug_on_redis_failure(self) -> None:
         with patch("aegra_api.services.run_executor.redis_manager") as mock_rm:
             mock_rm.get_client.side_effect = Exception("connection refused")

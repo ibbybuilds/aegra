@@ -218,9 +218,12 @@ This works with **all** graph types: custom `StateGraph` graphs, `create_react_a
 
 ### From graph nodes
 
+Graph nodes can accept a `config: RunnableConfig` parameter. Aegra injects
+the authenticated user into `config["configurable"]["langgraph_auth_user"]`
+before the graph executes:
+
 ```python
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph
 
 async def my_node(state: State, config: RunnableConfig) -> dict:
     """Graph node that accesses the authenticated user."""
@@ -235,6 +238,42 @@ async def my_node(state: State, config: RunnableConfig) -> dict:
   The `Runtime` object (from `get_runtime()`) does **not** include `config`.
   To access config from nodes, add a `config: RunnableConfig` parameter to
   your node function. In tools, use `InjectedToolArg` or `ToolRuntime` instead.
+</Note>
+
+### From factory graphs
+
+[Factory graphs](/reference/configuration#graph-factories) receive a `ServerRuntime`
+object that includes `runtime.user` with the authenticated user's data. This is
+available at **factory time** (when deciding graph structure) before the graph executes:
+
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+async def graph(runtime: ServerRuntime):
+    """Factory graph that adapts structure based on the authenticated user."""
+    user = runtime.user  # The authenticated user (or None)
+
+    tools = [search_tool]
+
+    # Grant admin-only tools based on auth
+    if user and "admin" in user.permissions:
+        tools.append(admin_delete_tool)
+
+    builder = StateGraph(State)
+    # ... build graph with user-appropriate tools
+    return builder.compile()
+```
+
+The `runtime.user` object has the same fields as your `@auth.authenticate` handler
+returns: `identity`, `display_name`, `permissions`, and any custom fields (accessible
+via `user["role"]`, `user["team_id"]`, etc.).
+
+<Note>
+  Factory graphs get user data in **two places**:
+  - **Factory time** (`runtime.user` on `ServerRuntime`): for structural decisions
+    like which tools to include, which nodes to add, or which model to use.
+  - **Execution time** (`config["configurable"]["langgraph_auth_user"]`): available
+    inside nodes and tools during the actual graph run (same as static graphs).
 </Note>
 
 ### Available fields

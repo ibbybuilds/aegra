@@ -186,7 +186,7 @@ This works with **all** graph types: custom `StateGraph` graphs, `create_react_a
         user_id = auth_user["identity"]
         permissions = auth_user.get("permissions", [])
 
-        if "write" not in permissions:
+        if not any(p == "write" or p.endswith(":write") for p in permissions):
             return {"error": "Insufficient permissions"}
 
         return {"user_id": user_id, "result": f"Data for {query}"}

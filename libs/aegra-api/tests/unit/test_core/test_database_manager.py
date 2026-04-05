@@ -101,7 +101,7 @@ class TestDatabaseManager:
 
         # Verify pool options inside kwargs
         inner_kwargs = lg_kwargs["kwargs"]
-        assert inner_kwargs["prepare_threshold"] == 0
+        assert inner_kwargs["prepare_threshold"] is None
         assert inner_kwargs["autocommit"] is True
 
         # Verify explicit open was awaited

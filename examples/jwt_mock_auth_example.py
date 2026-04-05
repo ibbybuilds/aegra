@@ -89,7 +89,7 @@ async def authenticate(headers: dict) -> dict:
 # Global fallback handler - runs for all resources/actions that don't have specific handlers
 # This provides default filtering behavior (e.g., user-scoped access)
 @auth.on
-async def authorize(_ctx, _value):
+async def authorize(ctx, value):
     """Global authorization handler - fallback for all requests.
 
     This handler runs for any resource/action that doesn't have a more specific
@@ -124,7 +124,7 @@ async def allow_thread_create(ctx, value):
 
 
 @auth.on.threads.search
-async def filter_threads_by_team(ctx, _value):
+async def filter_threads_by_team(ctx, value):
     """Filter thread searches by team_id.
 
     This handler ensures users only see threads from their team,
@@ -140,7 +140,7 @@ async def filter_threads_by_team(ctx, _value):
 
 
 @auth.on.assistants.delete
-async def restrict_assistant_deletion(ctx, _value):
+async def restrict_assistant_deletion(ctx, value):
     """Only admins can delete assistants.
 
     This demonstrates role-based authorization - only users with

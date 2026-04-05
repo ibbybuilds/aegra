@@ -398,6 +398,31 @@ class TestWorkerExecutorSubmit:
 
 
 # ------------------------------------------------------------------
+# WorkerExecutor.wait_for_completion
+# ------------------------------------------------------------------
+
+
+class TestWorkerExecutorWaitForCompletion:
+    @pytest.mark.asyncio
+    async def test_done_key_uses_configured_channel_prefix(self) -> None:
+        """Regression: done-key must derive from REDIS_CHANNEL_PREFIX, not a hardcoded string."""
+        mock_client = AsyncMock()
+        mock_client.exists = AsyncMock(return_value=True)
+
+        with (
+            patch(f"{MODULE}.redis_manager") as mock_redis,
+            patch(f"{MODULE}.settings") as mock_settings,
+        ):
+            mock_redis.get_client.return_value = mock_client
+            mock_settings.redis.REDIS_CHANNEL_PREFIX = "aegra:agent-foo:run:"
+
+            executor = WorkerExecutor()
+            await executor.wait_for_completion("run-1")
+
+        mock_client.exists.assert_awaited_once_with("aegra:agent-foo:run:done:run-1")
+
+
+# ------------------------------------------------------------------
 # WorkerExecutor.start / stop
 # ------------------------------------------------------------------
 

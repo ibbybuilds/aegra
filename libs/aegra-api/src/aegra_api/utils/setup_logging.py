@@ -49,28 +49,19 @@ def get_logging_config() -> dict[str, Any]:
         structlog.processors.StackInfoRenderer(),
     ]
 
-    # format_exc_info converts exc_info into a traceback string. JSONRenderer
-    # needs this because it cannot render exceptions on its own. ConsoleRenderer
-    # handles exc_info internally via its exception_formatter (RichTracebackFormatter),
-    # so including format_exc_info in dev mode would kill pretty tracebacks.
-    is_production = env_mode not in ("LOCAL", "DEVELOPMENT")
-    if is_production:
-        shared_processors.append(structlog.processors.format_exc_info)
-
-    shared_processors.extend(
-        [
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.UnicodeDecoder(),
-        ]
-    )
-
-    # Determine the final renderer based on the environment
-    # Use a colorful console renderer for local development, and JSON for production.
+    # Branch on environment for exception handling and renderer.
+    #
+    # - Production: format_exc_info converts exc_info into a traceback string
+    #   because JSONRenderer cannot render exceptions on its own.
+    # - Dev: ConsoleRenderer handles exc_info internally via its
+    #   exception_formatter, so format_exc_info must be excluded (it would
+    #   convert exceptions to plain strings before ConsoleRenderer sees them,
+    #   killing pretty traceback rendering).
     final_renderer: structlog.typing.Processor
-    if not is_production:
+    if env_mode in ("LOCAL", "DEVELOPMENT"):
         # RichTracebackFormatter uses Unicode box-drawing characters that
-        # Windows cp1252 console encoding cannot render, causing
-        # UnicodeEncodeError through colorama. Use plain_traceback on Windows.
+        # Windows cp1252 console encoding cannot render. Use plain_traceback
+        # on Windows to avoid UnicodeEncodeError through colorama.
         if sys.platform == "win32":
             exception_formatter = structlog.dev.plain_traceback
         else:
@@ -84,7 +75,15 @@ def get_logging_config() -> dict[str, Any]:
             exception_formatter=exception_formatter,
         )
     else:
+        shared_processors.append(structlog.processors.format_exc_info)
         final_renderer = structlog.processors.JSONRenderer()
+
+    shared_processors.extend(
+        [
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.UnicodeDecoder(),
+        ]
+    )
 
     return {
         "version": 1,

@@ -1,5 +1,6 @@
 import logging
 import logging.config
+import sys
 from typing import Any
 
 import structlog
@@ -67,13 +68,20 @@ def get_logging_config() -> dict[str, Any]:
     # Use a colorful console renderer for local development, and JSON for production.
     final_renderer: structlog.typing.Processor
     if not is_production:
+        # RichTracebackFormatter uses Unicode box-drawing characters that
+        # Windows cp1252 console encoding cannot render, causing
+        # UnicodeEncodeError through colorama. Use plain_traceback on Windows.
+        if sys.platform == "win32":
+            exception_formatter = structlog.dev.plain_traceback
+        else:
+            exception_formatter = structlog.dev.RichTracebackFormatter(
+                show_locals=False,
+                max_frames=10,
+            )
         final_renderer = structlog.dev.ConsoleRenderer(
             colors=True,
             pad_level=True,
-            exception_formatter=structlog.dev.RichTracebackFormatter(
-                show_locals=False,
-                max_frames=10,
-            ),
+            exception_formatter=exception_formatter,
         )
     else:
         final_renderer = structlog.processors.JSONRenderer()

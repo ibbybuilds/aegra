@@ -22,9 +22,21 @@ def get_logging_config() -> dict[str, Any]:
 
     # These processors will be used by BOTH structlog and standard logging
     # to ensure consistent output for all logs.
+    #
+    # Ordering rationale:
+    #   1. merge_contextvars    — must be FIRST so request-scoped context
+    #      (request_id, run_id, etc.) is available to all subsequent processors
+    #   2. Enrichment           — add_log_level, add_logger_name, ExtraAdder,
+    #      CallsiteParameterAdder, TimeStamper
+    #   3. Exception rendering  — StackInfoRenderer, then format_exc_info
+    #      (production only; ConsoleRenderer handles exc_info internally)
+    #   4. Positional args      — PositionalArgumentsFormatter
+    #   5. Safety               — UnicodeDecoder (handles byte strings from libs)
     shared_processors: list[Any] = [
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
+        structlog.stdlib.ExtraAdder(),
         structlog.processors.CallsiteParameterAdder(
             {
                 structlog.processors.CallsiteParameter.FILENAME,
@@ -33,15 +45,26 @@ def get_logging_config() -> dict[str, Any]:
             }
         ),
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.format_exc_info,
-        # This processor must be last in the shared chain to format positional args.
-        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.StackInfoRenderer(),
     ]
+
+    # format_exc_info converts exc_info into a traceback string. JSONRenderer
+    # needs this because it cannot render exceptions on its own. ConsoleRenderer
+    # handles exc_info internally via its exception_formatter (RichTracebackFormatter),
+    # so including format_exc_info in dev mode would kill pretty tracebacks.
+    is_production = env_mode not in ("LOCAL", "DEVELOPMENT")
+    if is_production:
+        shared_processors.append(structlog.processors.format_exc_info)
+
+    shared_processors.extend([
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.UnicodeDecoder(),
+    ])
 
     # Determine the final renderer based on the environment
     # Use a colorful console renderer for local development, and JSON for production.
     final_renderer: structlog.typing.Processor
-    if env_mode in ("LOCAL", "DEVELOPMENT"):
+    if not is_production:
         final_renderer = structlog.dev.ConsoleRenderer(
             colors=True,
             pad_level=True,
@@ -60,8 +83,12 @@ def get_logging_config() -> dict[str, Any]:
             "default": {
                 # Use structlog's formatter as the bridge
                 "()": "structlog.stdlib.ProcessorFormatter",
-                # The final processor is the renderer.
-                "processor": final_renderer,
+                # These processors run on ALL records after pre-chain processing.
+                # remove_processors_meta strips internal keys before rendering.
+                "processors": [
+                    structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                    final_renderer,
+                ],
                 # These processors are run on ANY log record, including those from Uvicorn.
                 "foreign_pre_chain": shared_processors,
             },

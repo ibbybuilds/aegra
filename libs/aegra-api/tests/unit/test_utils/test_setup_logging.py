@@ -5,6 +5,8 @@ Ensures the shared processor chain includes all required processors
 in the correct order for both dev and production modes.
 """
 
+import json
+import logging
 from unittest.mock import patch
 
 import structlog
@@ -186,3 +188,101 @@ class TestProcessorOrdering:
         assert stack_idx < exc_idx, "StackInfoRenderer must come before format_exc_info"
         assert exc_idx < pos_idx, "format_exc_info should come before PositionalArgumentsFormatter (convention)"
         assert pos_idx < unicode_idx, "PositionalArgumentsFormatter must come before UnicodeDecoder"
+
+
+class TestRuntimeOutput:
+    """End-to-end tests that exercise the full processor pipeline and verify
+    actual rendered output, not just processor chain configuration."""
+
+    def test_production_json_contains_traceback(self) -> None:
+        """Regression test for #295: JSONRenderer must include the full
+        traceback text in the rendered output, not just 'exc_info: true'."""
+        config = _get_config(env_mode="PRODUCTION")
+        formatter = structlog.stdlib.ProcessorFormatter(
+            processors=config["formatters"]["default"]["processors"],
+            foreign_pre_chain=config["formatters"]["default"]["foreign_pre_chain"],
+        )
+
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+
+        test_logger = logging.getLogger("test.runtime.production")
+        test_logger.handlers = [handler]
+        test_logger.setLevel(logging.DEBUG)
+        test_logger.propagate = False
+
+        # Capture the formatted output via the handler
+        records: list[str] = []
+        original_emit = handler.emit
+
+        def capturing_emit(record: logging.LogRecord) -> None:
+            records.append(formatter.format(record))
+
+        handler.emit = capturing_emit  # type: ignore[assignment]
+
+        try:
+            raise ValueError("test error for regression #295")
+        except ValueError:
+            test_logger.exception("Something failed")
+
+        handler.emit = original_emit  # type: ignore[assignment]
+
+        assert len(records) == 1
+        parsed = json.loads(records[0])
+        assert "exception" in parsed, "JSON output must contain 'exception' field"
+        assert "Traceback" in parsed["exception"]
+        assert "ValueError" in parsed["exception"]
+        assert "test error for regression #295" in parsed["exception"]
+
+    def test_production_json_contains_context_vars(self) -> None:
+        """merge_contextvars must propagate bound context into JSON output."""
+        config = _get_config(env_mode="PRODUCTION")
+
+        # Configure structlog with the production pipeline
+        structlog.configure(
+            processors=[
+                structlog.stdlib.filter_by_level,
+                *config["formatters"]["default"]["foreign_pre_chain"],
+                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+            ],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=False,
+        )
+
+        formatter = structlog.stdlib.ProcessorFormatter(
+            processors=config["formatters"]["default"]["processors"],
+            foreign_pre_chain=config["formatters"]["default"]["foreign_pre_chain"],
+        )
+
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+
+        # Attach to the underlying stdlib logger that structlog will use
+        stdlib_logger = logging.getLogger("test.runtime.contextvars")
+        stdlib_logger.handlers = [handler]
+        stdlib_logger.setLevel(logging.DEBUG)
+        stdlib_logger.propagate = False
+
+        records: list[str] = []
+        original_emit = handler.emit
+
+        def capturing_emit(record: logging.LogRecord) -> None:
+            records.append(formatter.format(record))
+
+        handler.emit = capturing_emit  # type: ignore[assignment]
+
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id="test-req-123", user_id="alice")
+
+        logger = structlog.stdlib.get_logger("test.runtime.contextvars")
+        logger.info("request processed", status_code=200)
+
+        structlog.contextvars.clear_contextvars()
+        handler.emit = original_emit  # type: ignore[assignment]
+
+        assert len(records) == 1
+        parsed = json.loads(records[0])
+        assert parsed["request_id"] == "test-req-123"
+        assert parsed["user_id"] == "alice"
+        assert parsed["status_code"] == 200

@@ -60,8 +60,9 @@ def test_get_logging_config_and_setup(monkeypatch):
     from aegra_api.utils.setup_logging import get_logging_config, setup_logging
 
     cfg = get_logging_config()
-    processor = cfg["formatters"]["default"]["processor"]
-    assert "ConsoleRenderer" in processor.__class__.__name__
+    # The renderer is the last entry in the "processors" list
+    renderer = cfg["formatters"]["default"]["processors"][-1]
+    assert "ConsoleRenderer" in renderer.__class__.__name__
 
     # --- 2. TEST PRODUCTION MODE ---
     monkeypatch.setenv("ENV_MODE", "PRODUCTION")
@@ -72,8 +73,8 @@ def test_get_logging_config_and_setup(monkeypatch):
     from aegra_api.utils.setup_logging import get_logging_config
 
     cfg2 = get_logging_config()
-    processor2 = cfg2["formatters"]["default"]["processor"]
-    assert "JSONRenderer" in processor2.__class__.__name__
+    renderer2 = cfg2["formatters"]["default"]["processors"][-1]
+    assert "JSONRenderer" in renderer2.__class__.__name__
 
     setup_logging()
     assert hasattr(structlog, "get_logger")

@@ -42,7 +42,12 @@ class TestProcessorChainProduction:
         assert isinstance(processors[-1], structlog.processors.JSONRenderer)
 
     def test_format_exc_info_before_positional_args(self) -> None:
-        """format_exc_info must run before PositionalArgumentsFormatter."""
+        """format_exc_info should appear before PositionalArgumentsFormatter.
+
+        There is no strict dependency between them (they operate on different
+        event dict keys), but this ordering reflects the intended declaration
+        order in setup_logging.py.
+        """
         pre_chain = _get_pre_chain(_get_config(env_mode="PRODUCTION"))
 
         exc_info_idx = pre_chain.index(structlog.processors.format_exc_info)
@@ -179,5 +184,5 @@ class TestProcessorOrdering:
         # merge_contextvars < enrichment < stack_info < format_exc_info < pos_args < unicode
         assert merge_idx < level_idx, "merge_contextvars must come before enrichment"
         assert stack_idx < exc_idx, "StackInfoRenderer must come before format_exc_info"
-        assert exc_idx < pos_idx, "format_exc_info must come before PositionalArgumentsFormatter"
+        assert exc_idx < pos_idx, "format_exc_info should come before PositionalArgumentsFormatter (convention)"
         assert pos_idx < unicode_idx, "PositionalArgumentsFormatter must come before UnicodeDecoder"

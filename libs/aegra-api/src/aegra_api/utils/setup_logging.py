@@ -33,6 +33,7 @@ def get_logging_config() -> dict[str, Any]:
             }
         ),
         structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.format_exc_info,
         # This processor must be last in the shared chain to format positional args.
         structlog.stdlib.PositionalArgumentsFormatter(),
     ]

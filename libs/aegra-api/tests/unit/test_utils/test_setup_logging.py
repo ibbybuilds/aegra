@@ -47,9 +47,7 @@ class TestProcessorChainProduction:
 
         exc_info_idx = pre_chain.index(structlog.processors.format_exc_info)
         pos_args_idx = next(
-            i
-            for i, p in enumerate(pre_chain)
-            if isinstance(p, structlog.stdlib.PositionalArgumentsFormatter)
+            i for i, p in enumerate(pre_chain) if isinstance(p, structlog.stdlib.PositionalArgumentsFormatter)
         )
         assert exc_info_idx < pos_args_idx
 
@@ -92,48 +90,43 @@ class TestSharedProcessorsCommon:
         calls actually renders the stack trace."""
         for env_mode in ("LOCAL", "PRODUCTION"):
             pre_chain = _get_pre_chain(_get_config(env_mode=env_mode))
-            assert any(
-                isinstance(p, structlog.processors.StackInfoRenderer)
-                for p in pre_chain
-            ), f"StackInfoRenderer missing in {env_mode} mode"
+            assert any(isinstance(p, structlog.processors.StackInfoRenderer) for p in pre_chain), (
+                f"StackInfoRenderer missing in {env_mode} mode"
+            )
 
     def test_unicode_decoder_present(self) -> None:
         """UnicodeDecoder must be present to handle byte strings from
         third-party libraries."""
         for env_mode in ("LOCAL", "PRODUCTION"):
             pre_chain = _get_pre_chain(_get_config(env_mode=env_mode))
-            assert any(
-                isinstance(p, structlog.processors.UnicodeDecoder)
-                for p in pre_chain
-            ), f"UnicodeDecoder missing in {env_mode} mode"
+            assert any(isinstance(p, structlog.processors.UnicodeDecoder) for p in pre_chain), (
+                f"UnicodeDecoder missing in {env_mode} mode"
+            )
 
     def test_extra_adder_present(self) -> None:
         """ExtraAdder must be present so stdlib extra={} kwargs are
         captured in structured output."""
         for env_mode in ("LOCAL", "PRODUCTION"):
             pre_chain = _get_pre_chain(_get_config(env_mode=env_mode))
-            assert any(
-                isinstance(p, structlog.stdlib.ExtraAdder)
-                for p in pre_chain
-            ), f"ExtraAdder missing in {env_mode} mode"
+            assert any(isinstance(p, structlog.stdlib.ExtraAdder) for p in pre_chain), (
+                f"ExtraAdder missing in {env_mode} mode"
+            )
 
     def test_timestamper_present(self) -> None:
         """TimeStamper must be present for ISO timestamps."""
         for env_mode in ("LOCAL", "PRODUCTION"):
             pre_chain = _get_pre_chain(_get_config(env_mode=env_mode))
-            assert any(
-                isinstance(p, structlog.processors.TimeStamper)
-                for p in pre_chain
-            ), f"TimeStamper missing in {env_mode} mode"
+            assert any(isinstance(p, structlog.processors.TimeStamper) for p in pre_chain), (
+                f"TimeStamper missing in {env_mode} mode"
+            )
 
     def test_callsite_parameter_adder_present(self) -> None:
         """CallsiteParameterAdder must be present for filename, func, lineno."""
         for env_mode in ("LOCAL", "PRODUCTION"):
             pre_chain = _get_pre_chain(_get_config(env_mode=env_mode))
-            assert any(
-                isinstance(p, structlog.processors.CallsiteParameterAdder)
-                for p in pre_chain
-            ), f"CallsiteParameterAdder missing in {env_mode} mode"
+            assert any(isinstance(p, structlog.processors.CallsiteParameterAdder) for p in pre_chain), (
+                f"CallsiteParameterAdder missing in {env_mode} mode"
+            )
 
 
 class TestProcessorFormatterConfig:
@@ -144,9 +137,7 @@ class TestProcessorFormatterConfig:
         not the legacy 'processor' (singular) parameter."""
         config = _get_config(env_mode="PRODUCTION")
         formatter_config = config["formatters"]["default"]
-        assert "processors" in formatter_config, (
-            "Should use 'processors' (plural), not legacy 'processor' (singular)"
-        )
+        assert "processors" in formatter_config, "Should use 'processors' (plural), not legacy 'processor' (singular)"
         assert "processor" not in formatter_config
 
     def test_remove_processors_meta_before_renderer(self) -> None:

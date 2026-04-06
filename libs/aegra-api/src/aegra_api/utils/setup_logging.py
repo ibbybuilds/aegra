@@ -56,10 +56,12 @@ def get_logging_config() -> dict[str, Any]:
     if is_production:
         shared_processors.append(structlog.processors.format_exc_info)
 
-    shared_processors.extend([
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.UnicodeDecoder(),
-    ])
+    shared_processors.extend(
+        [
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.UnicodeDecoder(),
+        ]
+    )
 
     # Determine the final renderer based on the environment
     # Use a colorful console renderer for local development, and JSON for production.

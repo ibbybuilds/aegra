@@ -6,6 +6,7 @@ import prometheus_client
 import pytest
 from fastapi import FastAPI
 
+from aegra_api.observability import metrics as metrics_module
 from aegra_api.observability.metrics import setup_prometheus_metrics
 
 
@@ -21,10 +22,7 @@ def fresh_registry() -> prometheus_client.CollectorRegistry:
 
 def test_noop_when_disabled(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that no instrumentation is attached when metrics are disabled."""
-    monkeypatch.setattr(
-        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
-        False,
-    )
+    monkeypatch.setattr(metrics_module.settings.observability, "ENABLE_PROMETHEUS_METRICS", False)
     setup_prometheus_metrics(app)
 
     paths = {route.path for route in app.routes if hasattr(route, "path")}
@@ -37,10 +35,7 @@ def test_exposes_metrics_endpoint_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that /metrics endpoint is added when metrics are enabled."""
-    monkeypatch.setattr(
-        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
-        True,
-    )
+    monkeypatch.setattr(metrics_module.settings.observability, "ENABLE_PROMETHEUS_METRICS", True)
     setup_prometheus_metrics(app, registry=fresh_registry)
 
     paths = {route.path for route in app.routes if hasattr(route, "path")}
@@ -52,15 +47,12 @@ def test_excludes_health_and_docs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that the instrumentator excludes health and docs endpoints."""
-    monkeypatch.setattr(
-        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
-        True,
-    )
+    monkeypatch.setattr(metrics_module.settings.observability, "ENABLE_PROMETHEUS_METRICS", True)
     mock_cls = MagicMock()
     mock_instance = MagicMock()
     mock_cls.return_value = mock_instance
     mock_instance.instrument.return_value = mock_instance
-    monkeypatch.setattr("aegra_api.observability.metrics.Instrumentator", mock_cls)
+    monkeypatch.setattr(metrics_module, "Instrumentator", mock_cls)
 
     setup_prometheus_metrics(app)
 
@@ -93,12 +85,9 @@ def test_logs_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that a log message is emitted when metrics are enabled."""
-    monkeypatch.setattr(
-        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
-        True,
-    )
+    monkeypatch.setattr(metrics_module.settings.observability, "ENABLE_PROMETHEUS_METRICS", True)
     mock_logger = MagicMock()
-    monkeypatch.setattr("aegra_api.observability.metrics.logger", mock_logger)
+    monkeypatch.setattr(metrics_module, "logger", mock_logger)
 
     setup_prometheus_metrics(app, registry=fresh_registry)
 

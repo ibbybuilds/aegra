@@ -5,6 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from aegra_api.observability import metrics as metrics_module
 from aegra_api.observability.metrics import setup_prometheus_metrics
 
 
@@ -25,10 +26,7 @@ def _make_app(
     def hello() -> dict[str, str]:
         return {"msg": "world"}
 
-    monkeypatch.setattr(
-        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
-        True,
-    )
+    monkeypatch.setattr(metrics_module.settings.observability, "ENABLE_PROMETHEUS_METRICS", True)
     setup_prometheus_metrics(app, registry=registry)
     return app
 
@@ -65,10 +63,7 @@ def test_metrics_endpoint_not_exposed_when_disabled(
     def hello() -> dict[str, str]:
         return {"msg": "world"}
 
-    monkeypatch.setattr(
-        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
-        False,
-    )
+    monkeypatch.setattr(metrics_module.settings.observability, "ENABLE_PROMETHEUS_METRICS", False)
     setup_prometheus_metrics(app)
 
     client = TestClient(app)

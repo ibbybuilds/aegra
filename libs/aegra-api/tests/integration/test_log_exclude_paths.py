@@ -1,0 +1,79 @@
+"""Integration tests for LOG_EXCLUDE_PATHS middleware behaviour.
+
+Tests verify that the full FastAPI app (with StructLogMiddleware) respects
+LOG_EXCLUDE_PATHS by suppressing access logs for matched prefixes while
+still logging errors on those paths.
+"""
+
+import importlib
+import sys
+from collections.abc import Callable
+
+from starlette.testclient import TestClient
+
+
+def _reload_settings_and_middleware() -> None:
+    """Reload settings and middleware so they pick up env var changes."""
+    importlib.reload(sys.modules["aegra_api.settings"])
+    if "aegra_api.middleware.logger_middleware" in sys.modules:
+        importlib.reload(sys.modules["aegra_api.middleware.logger_middleware"])
+
+
+def _make_capture_log(logged_calls: list[str]) -> Callable[[str], Callable[..., None]]:
+    """Create a log capture factory bound to the given list."""
+
+    def capture_log(method_name: str) -> Callable[..., None]:
+        def _log(msg: str, *args: object, **kwargs: object) -> None:
+            logged_calls.append(method_name)
+
+        return _log
+
+    return capture_log
+
+
+def test_excluded_path_suppresses_access_log(monkeypatch) -> None:
+    """GET /info with LOG_EXCLUDE_PATHS=/info should not produce an access log entry."""
+    monkeypatch.setenv("LOG_EXCLUDE_PATHS", "/info")
+    _reload_settings_and_middleware()
+
+    from aegra_api.main import app
+    from aegra_api.middleware.logger_middleware import access_logger
+
+    logged_calls: list[str] = []
+    capture_log = _make_capture_log(logged_calls)
+
+    monkeypatch.setattr(access_logger, "info", capture_log("info"))
+    monkeypatch.setattr(access_logger, "warning", capture_log("warning"))
+    monkeypatch.setattr(access_logger, "error", capture_log("error"))
+
+    client = TestClient(app)
+
+    # /info returns 200 without DB — should be excluded from access log
+    logged_calls.clear()
+    resp = client.get("/info")
+    assert resp.status_code == 200
+    assert "info" not in logged_calls, "Expected /info access log to be suppressed"
+
+
+def test_non_excluded_path_still_logged(monkeypatch) -> None:
+    """Endpoints not in LOG_EXCLUDE_PATHS should still produce access log entries."""
+    monkeypatch.setenv("LOG_EXCLUDE_PATHS", "/info")
+    _reload_settings_and_middleware()
+
+    from aegra_api.main import app
+    from aegra_api.middleware.logger_middleware import access_logger
+
+    logged_calls: list[str] = []
+    capture_log = _make_capture_log(logged_calls)
+
+    monkeypatch.setattr(access_logger, "info", capture_log("info"))
+    monkeypatch.setattr(access_logger, "warning", capture_log("warning"))
+    monkeypatch.setattr(access_logger, "error", capture_log("error"))
+
+    client = TestClient(app)
+
+    # /nonexistent will 404 — should still be logged (4xx is never excluded)
+    logged_calls.clear()
+    resp = client.get("/nonexistent")
+    assert resp.status_code in (404, 405)
+    assert len(logged_calls) == 1, "Expected non-excluded error path to be logged"

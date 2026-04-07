@@ -1,11 +1,12 @@
 import importlib
 import json
 import sys
+from collections.abc import Callable
 
 from starlette.testclient import TestClient
 
 
-def reload_logging_modules():
+def reload_logging_modules() -> None:
     """
     Helper to reload settings and logging setup modules safely.
     Uses sys.modules lookup to avoid ImportError if alias is stale.
@@ -60,8 +61,8 @@ def test_log_exclude_paths_skips_access_log_for_successful_responses(monkeypatch
 
     logged_calls: list[str] = []
 
-    def capture_log(method_name: str):
-        def _log(msg: str, *args, **kwargs) -> None:
+    def capture_log(method_name: str) -> Callable[..., None]:
+        def _log(msg: str, *args: object, **kwargs: object) -> None:
             logged_calls.append(method_name)
 
         return _log
@@ -104,8 +105,8 @@ def test_log_exclude_paths_still_logs_errors_for_excluded_paths(monkeypatch):
 
     logged_calls: list[str] = []
 
-    def capture_log(method_name: str):
-        def _log(msg: str, *args, **kwargs) -> None:
+    def capture_log(method_name: str) -> Callable[..., None]:
+        def _log(msg: str, *args: object, **kwargs: object) -> None:
             logged_calls.append(method_name)
 
         return _log

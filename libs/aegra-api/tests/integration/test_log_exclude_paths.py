@@ -14,9 +14,10 @@ from starlette.testclient import TestClient
 
 def _reload_settings_and_middleware() -> None:
     """Reload settings and middleware so they pick up env var changes."""
-    importlib.reload(sys.modules["aegra_api.settings"])
-    if "aegra_api.middleware.logger_middleware" in sys.modules:
-        importlib.reload(sys.modules["aegra_api.middleware.logger_middleware"])
+    importlib.reload(importlib.import_module("aegra_api.settings"))
+    importlib.reload(importlib.import_module("aegra_api.middleware.logger_middleware"))
+    if "aegra_api.main" in sys.modules:
+        importlib.reload(sys.modules["aegra_api.main"])
 
 
 def _make_capture_log(logged_calls: list[str]) -> Callable[[str], Callable[..., None]]:
@@ -76,4 +77,4 @@ def test_non_excluded_path_still_logged(monkeypatch) -> None:
     logged_calls.clear()
     resp = client.get("/nonexistent")
     assert resp.status_code in (404, 405)
-    assert len(logged_calls) == 1, "Expected non-excluded error path to be logged"
+    assert logged_calls == ["warning"], "Expected 4xx path to be logged at warning level"

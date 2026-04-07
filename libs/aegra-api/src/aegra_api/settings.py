@@ -116,6 +116,9 @@ class DatabaseSettings(EnvBase):
         for spec in hostlist.split(","):
             if spec.startswith("["):
                 # IPv6 literal: [::1]:5432 or [::1]
+                if "]" not in spec:
+                    msg = f"Malformed IPv6 in DATABASE_URL: `{spec}` — missing closing bracket"
+                    raise ValueError(msg)
                 bracket_end = spec.index("]")
                 host = spec[: bracket_end + 1]
                 rest = spec[bracket_end + 1 :]

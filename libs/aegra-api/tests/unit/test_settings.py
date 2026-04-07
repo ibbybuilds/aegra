@@ -196,23 +196,70 @@ class TestMultiHostDatabaseURL:
         assert "target_session_attrs=read-write" in url
         assert "sslmode=require" in url
 
-    def test_multihost_defaults_port_when_omitted(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Hosts without explicit port default to 5432."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@h1,h2/db")
+    @pytest.mark.parametrize(
+        ("env_url", "expected_hosts", "expected_ports"),
+        [
+            pytest.param(
+                "postgresql://user:pass@h1,h2/db",
+                "host=h1,h2",
+                "port=5432,5432",
+                id="defaults_port_when_omitted",
+            ),
+            pytest.param(
+                "postgresql://user:pass@h1:5432,h2/db",
+                "host=h1,h2",
+                "port=5432,5432",
+                id="mixed_ports",
+            ),
+            pytest.param(
+                "postgresql://u:p@h1:5432,h2:5432,h3:5432/db",
+                "host=h1,h2,h3",
+                "port=5432,5432,5432",
+                id="three_hosts",
+            ),
+            pytest.param(
+                "postgresql://u:p@h1:,h2:5433/db",
+                "host=h1,h2",
+                "port=5432,5433",
+                id="trailing_colon_defaults_port",
+            ),
+            pytest.param(
+                "postgresql://u:p@[::1]:5432,[::2]:5433/db",
+                "host=[::1],[::2]",
+                "port=5432,5433",
+                id="ipv6_hosts",
+            ),
+            pytest.param(
+                "postgresql://u:p@[::1],[::2]/db",
+                "host=[::1],[::2]",
+                "port=5432,5432",
+                id="ipv6_without_port",
+            ),
+        ],
+    )
+    def test_multihost_host_port_matrix(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        env_url: str,
+        expected_hosts: str,
+        expected_ports: str,
+    ) -> None:
+        """Multi-host URLs are parsed into correct host/port query params."""
+        monkeypatch.setenv("DATABASE_URL", env_url)
 
         db = DatabaseSettings(_env_file=None)
 
-        assert "host=h1,h2" in db.database_url
-        assert "port=5432,5432" in db.database_url
+        assert expected_hosts in db.database_url
+        assert expected_ports in db.database_url
 
-    def test_multihost_mixed_ports(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Hosts with mixed port specifications are handled correctly."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@h1:5432,h2/db")
+    def test_malformed_ipv6_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Malformed bracketed IPv6 (missing closing bracket) raises at startup."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@[::1:5432,[::2]:5433/db")
 
         db = DatabaseSettings(_env_file=None)
 
-        assert "host=h1,h2" in db.database_url
-        assert "port=5432,5432" in db.database_url
+        with pytest.raises(ValueError, match="missing closing bracket"):
+            _ = db.database_url
 
     def test_single_host_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Single-host URL is not rewritten."""
@@ -229,42 +276,6 @@ class TestMultiHostDatabaseURL:
         db = DatabaseSettings(_env_file=None)
 
         assert db.database_url == "postgresql+asyncpg:///db?host=h1,h2&port=5432,5432"
-
-    def test_three_hosts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Three-host URL is converted correctly."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h1:5432,h2:5432,h3:5432/db")
-
-        db = DatabaseSettings(_env_file=None)
-
-        assert "host=h1,h2,h3" in db.database_url
-        assert "port=5432,5432,5432" in db.database_url
-
-    def test_trailing_colon_defaults_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Host with trailing colon but no port defaults to 5432."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h1:,h2:5433/db")
-
-        db = DatabaseSettings(_env_file=None)
-
-        assert "host=h1,h2" in db.database_url
-        assert "port=5432,5433" in db.database_url
-
-    def test_ipv6_hosts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """IPv6 literal addresses are parsed correctly."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@[::1]:5432,[::2]:5433/db")
-
-        db = DatabaseSettings(_env_file=None)
-
-        assert "host=[::1],[::2]" in db.database_url
-        assert "port=5432,5433" in db.database_url
-
-    def test_ipv6_without_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """IPv6 literal without port defaults to 5432."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@[::1],[::2]/db")
-
-        db = DatabaseSettings(_env_file=None)
-
-        assert "host=[::1],[::2]" in db.database_url
-        assert "port=5432,5432" in db.database_url
 
 
 class TestWorkerSettingsLeaseValidation:

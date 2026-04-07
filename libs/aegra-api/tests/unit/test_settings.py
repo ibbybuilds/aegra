@@ -239,6 +239,33 @@ class TestMultiHostDatabaseURL:
         assert "host=h1,h2,h3" in db.database_url
         assert "port=5432,5432,5432" in db.database_url
 
+    def test_trailing_colon_defaults_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Host with trailing colon but no port defaults to 5432."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h1:,h2:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "host=h1,h2" in db.database_url
+        assert "port=5432,5433" in db.database_url
+
+    def test_ipv6_hosts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """IPv6 literal addresses are parsed correctly."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@[::1]:5432,[::2]:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "host=[::1],[::2]" in db.database_url
+        assert "port=5432,5433" in db.database_url
+
+    def test_ipv6_without_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """IPv6 literal without port defaults to 5432."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@[::1],[::2]/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "host=[::1],[::2]" in db.database_url
+        assert "port=5432,5432" in db.database_url
+
 
 class TestWorkerSettingsLeaseValidation:
     """Test that lease timing invariants are enforced at startup."""

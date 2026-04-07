@@ -114,12 +114,19 @@ class DatabaseSettings(EnvBase):
         hosts: list[str] = []
         ports: list[str] = []
         for spec in hostlist.split(","):
-            host, _, port = spec.rpartition(":")
-            if host:
+            if spec.startswith("["):
+                # IPv6 literal: [::1]:5432 or [::1]
+                bracket_end = spec.index("]")
+                host = spec[: bracket_end + 1]
+                rest = spec[bracket_end + 1 :]
+                port = rest[1:] if rest.startswith(":") else ""
+            else:
+                host, _, port = spec.rpartition(":")
+            if host and port:
                 hosts.append(host)
                 ports.append(port)
             else:
-                hosts.append(spec)
+                hosts.append(host if host else spec)
                 ports.append("5432")
 
         auth = f"{userinfo}@" if userinfo else ""

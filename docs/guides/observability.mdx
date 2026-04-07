@@ -107,3 +107,15 @@ The main variables you'll need:
 | `OTEL_CONSOLE_EXPORT` | Log traces to console (`true`/`false`) |
 
 Each provider has its own set of variables (endpoints, API keys). See the [environment variables reference](/reference/environment-variables) for the full list including all Langfuse, Phoenix, and generic OTLP variables.
+
+## Prometheus metrics
+
+For infrastructure-level monitoring (request rates, latency, error rates), Aegra supports an optional Prometheus metrics endpoint alongside OpenTelemetry tracing.
+
+```bash
+ENABLE_PROMETHEUS_METRICS=true
+```
+
+This exposes a `/metrics` endpoint with standard HTTP request metrics in Prometheus exposition format. Scrape it with any Prometheus-compatible collector and visualize with Grafana.
+
+See the [environment variables reference](/reference/environment-variables#prometheus-metrics) for details.

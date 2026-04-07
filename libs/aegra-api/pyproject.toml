@@ -41,6 +41,9 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.39.1",
     "openinference-instrumentation-langchain>=0.1.58",
 
+    # Metrics
+    "prometheus-fastapi-instrumentator>=7.1.0",
+
     # Utils
     "structlog>=25.4.0",
     "asgi-correlation-id>=4.3.4",

@@ -30,6 +30,7 @@ from aegra_api.core.route_merger import (
 )
 from aegra_api.middleware import ContentTypeFixMiddleware, StructLogMiddleware
 from aegra_api.models.errors import AgentProtocolError, get_error_type
+from aegra_api.observability.metrics import setup_prometheus_metrics
 from aegra_api.observability.setup import setup_observability
 from aegra_api.services.broker import broker_manager
 from aegra_api.services.executor import executor
@@ -355,6 +356,8 @@ def create_app() -> FastAPI:
             application.exception_handler(exc_type)(handler)
 
         application.get("/")(root_handler)
+
+    setup_prometheus_metrics(application)
 
     return application
 

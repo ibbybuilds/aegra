@@ -1,8 +1,5 @@
 """Integration tests for the Prometheus /metrics endpoint."""
 
-import contextlib
-from unittest.mock import patch
-
 import prometheus_client
 import pytest
 from fastapi import FastAPI
@@ -11,21 +8,16 @@ from fastapi.testclient import TestClient
 from aegra_api.observability.metrics import setup_prometheus_metrics
 
 
-@pytest.fixture(autouse=True)
-def _reset_prometheus_registry() -> None:
-    """Reset the default Prometheus registry between tests.
-
-    prometheus-fastapi-instrumentator registers collectors on the default
-    global registry. Without a reset, the second test that calls
-    ``setup_prometheus_metrics`` raises ``ValueError: Duplicated ...``.
-    """
-    collectors = list(prometheus_client.REGISTRY._names_to_collectors.values())
-    for collector in collectors:
-        with contextlib.suppress(Exception):
-            prometheus_client.REGISTRY.unregister(collector)
+@pytest.fixture
+def fresh_registry() -> prometheus_client.CollectorRegistry:
+    """Return an isolated Prometheus registry to avoid global state leaks."""
+    return prometheus_client.CollectorRegistry()
 
 
-def _make_app() -> FastAPI:
+def _make_app(
+    monkeypatch: pytest.MonkeyPatch,
+    registry: prometheus_client.CollectorRegistry,
+) -> FastAPI:
     """Create a minimal FastAPI app with Prometheus metrics enabled."""
     app = FastAPI()
 
@@ -33,16 +25,20 @@ def _make_app() -> FastAPI:
     def hello() -> dict[str, str]:
         return {"msg": "world"}
 
-    with patch("aegra_api.observability.metrics.settings") as mock_settings:
-        mock_settings.observability.ENABLE_PROMETHEUS_METRICS = True
-        setup_prometheus_metrics(app)
-
+    monkeypatch.setattr(
+        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
+        True,
+    )
+    setup_prometheus_metrics(app, registry=registry)
     return app
 
 
-def test_metrics_endpoint_returns_prometheus_format() -> None:
+def test_metrics_endpoint_returns_prometheus_format(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
     """Test that /metrics returns text in Prometheus exposition format."""
-    app = _make_app()
+    app = _make_app(monkeypatch, fresh_registry)
     client = TestClient(app)
 
     # Make a request so there's something to report
@@ -59,7 +55,9 @@ def test_metrics_endpoint_returns_prometheus_format() -> None:
     assert "http_request_duration" in body or "http_requests" in body
 
 
-def test_metrics_endpoint_not_exposed_when_disabled() -> None:
+def test_metrics_endpoint_not_exposed_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that /metrics is not available when metrics are disabled."""
     app = FastAPI()
 
@@ -67,9 +65,11 @@ def test_metrics_endpoint_not_exposed_when_disabled() -> None:
     def hello() -> dict[str, str]:
         return {"msg": "world"}
 
-    with patch("aegra_api.observability.metrics.settings") as mock_settings:
-        mock_settings.observability.ENABLE_PROMETHEUS_METRICS = False
-        setup_prometheus_metrics(app)
+    monkeypatch.setattr(
+        "aegra_api.observability.metrics.settings.observability.ENABLE_PROMETHEUS_METRICS",
+        False,
+    )
+    setup_prometheus_metrics(app)
 
     client = TestClient(app)
     response = client.get("/metrics")

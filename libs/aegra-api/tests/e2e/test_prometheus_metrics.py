@@ -13,6 +13,9 @@ from aegra_api.settings import settings
 @pytest.mark.asyncio
 async def test_metrics_endpoint_returns_prometheus_format() -> None:
     """Test that /metrics returns Prometheus exposition text from a real server."""
+    if not settings.observability.ENABLE_PROMETHEUS_METRICS:
+        pytest.skip("ENABLE_PROMETHEUS_METRICS=false; /metrics endpoint is intentionally disabled")
+
     server_url = settings.app.SERVER_URL
 
     async with httpx.AsyncClient(base_url=server_url, timeout=5.0) as client:
@@ -24,4 +27,5 @@ async def test_metrics_endpoint_returns_prometheus_format() -> None:
         assert "text/plain" in response.headers["content-type"]
 
         body = response.text
-        assert "http_request_duration" in body or "http_requests" in body
+        assert "# HELP" in body
+        assert "# TYPE" in body

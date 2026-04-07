@@ -11,6 +11,9 @@ from collections.abc import Callable
 
 from starlette.testclient import TestClient
 
+import aegra_api.main as aegra_main
+import aegra_api.middleware.logger_middleware as logger_middleware
+
 
 def _reload_settings_and_middleware() -> None:
     """Reload settings and middleware so they pick up env var changes."""
@@ -37,8 +40,8 @@ def test_excluded_path_suppresses_access_log(monkeypatch) -> None:
     monkeypatch.setenv("LOG_EXCLUDE_PATHS", "/info")
     _reload_settings_and_middleware()
 
-    from aegra_api.main import app
-    from aegra_api.middleware.logger_middleware import access_logger
+    app = aegra_main.app
+    access_logger = logger_middleware.access_logger
 
     logged_calls: list[str] = []
     capture_log = _make_capture_log(logged_calls)
@@ -53,7 +56,7 @@ def test_excluded_path_suppresses_access_log(monkeypatch) -> None:
     logged_calls.clear()
     resp = client.get("/info")
     assert resp.status_code == 200
-    assert "info" not in logged_calls, "Expected /info access log to be suppressed"
+    assert logged_calls == [], "Expected /info access log to be fully suppressed"
 
 
 def test_non_excluded_path_still_logged(monkeypatch) -> None:
@@ -61,8 +64,8 @@ def test_non_excluded_path_still_logged(monkeypatch) -> None:
     monkeypatch.setenv("LOG_EXCLUDE_PATHS", "/info")
     _reload_settings_and_middleware()
 
-    from aegra_api.main import app
-    from aegra_api.middleware.logger_middleware import access_logger
+    app = aegra_main.app
+    access_logger = logger_middleware.access_logger
 
     logged_calls: list[str] = []
     capture_log = _make_capture_log(logged_calls)

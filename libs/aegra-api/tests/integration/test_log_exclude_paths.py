@@ -7,20 +7,28 @@ still logging errors on those paths.
 
 import importlib
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 
+import pytest
 from starlette.testclient import TestClient
 
 import aegra_api.main as aegra_main
 import aegra_api.middleware.logger_middleware as logger_middleware
 
 
-def _reload_settings_and_middleware() -> None:
-    """Reload settings and middleware so they pick up env var changes."""
+def _reload_modules() -> None:
+    """Reload settings, middleware, and app so they pick up env var changes."""
     importlib.reload(importlib.import_module("aegra_api.settings"))
     importlib.reload(importlib.import_module("aegra_api.middleware.logger_middleware"))
     if "aegra_api.main" in sys.modules:
         importlib.reload(sys.modules["aegra_api.main"])
+
+
+@pytest.fixture(autouse=True)
+def _isolate_module_state() -> Generator[None, None, None]:
+    """Reload modules before and after each test to prevent cross-test leakage."""
+    yield
+    _reload_modules()
 
 
 def _make_capture_log(logged_calls: list[str]) -> Callable[[str], Callable[..., None]]:
@@ -38,7 +46,7 @@ def _make_capture_log(logged_calls: list[str]) -> Callable[[str], Callable[..., 
 def test_excluded_path_suppresses_access_log(monkeypatch) -> None:
     """GET /info with LOG_EXCLUDE_PATHS=/info should not produce an access log entry."""
     monkeypatch.setenv("LOG_EXCLUDE_PATHS", "/info")
-    _reload_settings_and_middleware()
+    _reload_modules()
 
     app = aegra_main.app
     access_logger = logger_middleware.access_logger
@@ -62,7 +70,7 @@ def test_excluded_path_suppresses_access_log(monkeypatch) -> None:
 def test_non_excluded_path_still_logged(monkeypatch) -> None:
     """Endpoints not in LOG_EXCLUDE_PATHS should still produce access log entries."""
     monkeypatch.setenv("LOG_EXCLUDE_PATHS", "/info")
-    _reload_settings_and_middleware()
+    _reload_modules()
 
     app = aegra_main.app
     access_logger = logger_middleware.access_logger

@@ -260,6 +260,192 @@ class TestDevCommand:
                 assert result.exit_code == 0
                 assert "Loaded environment from" in result.output
 
+    def test_dev_with_debug_port_wraps_debugpy(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that providing --debug-port wraps uvicorn with debugpy listen."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with (
+                patch("importlib.util.find_spec", return_value=object()),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--debug-port", "5678"])
+
+                assert result.exit_code == 0
+                mock_popen.assert_called_once()
+                call_args = mock_popen.call_args[0][0]
+                # Ensure debugpy is used and listening on given port bound to loopback
+                assert "debugpy" in call_args
+                assert "--listen" in call_args
+                assert "5678" in " ".join(map(str, call_args))
+                # Ensure uvicorn still present
+                assert "uvicorn" in call_args
+                assert "--reload" in call_args
+
+    def test_dev_with_ipv6_debug_host_formats_listen(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that providing an IPv6 debug host (::1) is accepted and bracketed."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with (
+                patch("importlib.util.find_spec", return_value=object()),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(
+                    cli, ["dev", "--no-db-check", "--debug-port", "5678", "--debug-host", "::1"]
+                )
+
+                assert result.exit_code == 0
+                mock_popen.assert_called_once()
+                call_args = mock_popen.call_args[0][0]
+                # Ensure debugpy listen uses bracketed IPv6 literal
+                assert "--listen" in call_args
+                joined = " ".join(map(str, call_args))
+                assert "[::1]:5678" in joined
+
+    def test_dev_with_localhost_debug_host_formats_listen(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that providing a localhost debug host is accepted and formatted correctly."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with (
+                patch("importlib.util.find_spec", return_value=object()),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(
+                    cli,
+                    ["dev", "--no-db-check", "--debug-port", "5678", "--debug-host", "localhost"],
+                )
+
+                assert result.exit_code == 0
+                mock_popen.assert_called_once()
+                call_args = mock_popen.call_args[0][0]
+                # Ensure debugpy listen uses bracketed IPv6 literal
+                assert "--listen" in call_args
+                joined = " ".join(map(str, call_args))
+                assert "localhost:5678" in joined
+
+    def test_dev_with_invalid_debug_host_warns_and_falls_back_to_loopback(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that an invalid debug host prints a warning and keeps loopback binding."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with (
+                patch("importlib.util.find_spec", return_value=object()),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(
+                    cli,
+                    [
+                        "dev",
+                        "--no-db-check",
+                        "--debug-port",
+                        "5678",
+                        "--debug-host",
+                        "not-a-valid-host",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "Invalid debug host specified" in result.output
+                mock_popen.assert_called_once()
+                call_args = mock_popen.call_args[0][0]
+                listen_idx = call_args.index("--listen")
+                assert call_args[listen_idx + 1] == 5678
+                assert "not-a-valid-host:5678" not in " ".join(map(str, call_args))
+
+    def test_dev_debug_host_non_loopback_warns(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that using a non-loopback --debug-host prints a warning panel."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with (
+                patch("importlib.util.find_spec", return_value=object()),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(
+                    cli,
+                    [
+                        "dev",
+                        "--no-db-check",
+                        "--debug-port",
+                        "5678",
+                        "--debug-host",
+                        "0.0.0.0",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "Debug Exposure Warning" in result.output
+
+    def test_dev_with_wait_for_client_adds_flag(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that --wait-for-client adds the debugpy wait flag."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with (
+                patch("importlib.util.find_spec", return_value=object()),
+                patch("aegra_cli.cli.subprocess.Popen") as mock_popen,
+            ):
+                mock_popen.return_value = create_mock_popen(0)
+                result = cli_runner.invoke(
+                    cli, ["dev", "--no-db-check", "--debug-port", "5678", "--wait-for-client"]
+                )
+
+                assert result.exit_code == 0
+                call_args = mock_popen.call_args[0][0]
+                assert "--wait-for-client" in call_args
+
+    def test_dev_debugpy_not_installed_shows_error(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that missing debugpy yields an instructive error message."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            with patch("importlib.util.find_spec", return_value=None):
+                result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--debug-port", "5678"])
+
+                assert result.exit_code == 1
+                assert "debugpy is not installed" in result.output
+
+    def test_dev_wait_for_client_without_debug_port_errors(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that using --wait-for-client without --debug-port errors fast with UsageError."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--wait-for-client"])
+
+            assert result.exit_code != 0
+            assert "--wait-for-client requires --debug-port" in result.output
+
+    def test_dev_debug_host_without_debug_port_errors(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that using --debug-host without --debug-port errors fast with UsageError."""
+        with cli_runner.isolated_filesystem(temp_dir=tmp_path):
+            Path("aegra.json").write_text('{"graphs": {}}')
+
+            result = cli_runner.invoke(cli, ["dev", "--no-db-check", "--debug-host", "0.0.0.0"])
+
+            assert result.exit_code != 0
+            assert "--debug-host requires --debug-port" in result.output
+
 
 class TestUpCommand:
     """Tests for the up command."""

@@ -11,6 +11,7 @@ import asyncio
 import copy
 import importlib
 import importlib.util
+import inspect
 import json
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -187,17 +188,6 @@ class LangGraphService:
                     f"collide after sanitisation (both map to {mod_name})"
                 )
             seen_modules[mod_name] = graph_id
-
-        for graph_id, graph_path in graphs_config.items():
-            # Parse path format: "./graphs/weather_agent.py:graph"
-            if ":" not in graph_path:
-                raise ValueError(f"Invalid graph path format: {graph_path}")
-
-            file_path, export_name = graph_path.split(":", 1)
-            self._graph_registry[graph_id] = {
-                "file_path": file_path,
-                "export_name": export_name,
-            }
 
     async def _load_all_graph_modules(self) -> None:
         """Eagerly load all graph modules, classifying factories without calling them.
@@ -587,31 +577,26 @@ class LangGraphService:
                 if not callable(loader):
                     continue
 
-                call_patterns: list[tuple[Any, ...]] = [
-                    (str(file_path), export_name),
-                    (str(file_path),),
+                sig = inspect.signature(loader)
+
+                call_patterns: list[tuple[tuple[Any, ...], dict[str, Any]]] = [
+                    ((str(file_path), export_name), {}),
+                    ((str(file_path),), {}),
+                    ((str(file_path),), {"export_name": export_name}),
                 ]
 
-                for args in call_patterns:
+                for args, kwargs in call_patterns:
                     try:
-                        result = loader(*args)
+                        sig.bind(*args, **kwargs)
                     except TypeError:
                         continue
+
+                    result = loader(*args, **kwargs)
 
                     if asyncio.iscoroutine(result):
                         result = await result
 
                     return result
-
-                try:
-                    result = loader(str(file_path), export_name=export_name)
-                except TypeError:
-                    continue
-
-                if asyncio.iscoroutine(result):
-                    result = await result
-
-                return result
 
         import_summary = "; ".join(import_errors) if import_errors else "No compatible JS loader entrypoint found"
         raise ValueError(

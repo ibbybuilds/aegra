@@ -260,6 +260,8 @@ class TestJSGraphWrapperCheckpoint:
         checkpoint = call_args[1]
         assert checkpoint["channel_values"] == state
         assert checkpoint["v"] == 1
+        assert checkpoint["id"] != ""
+        assert checkpoint["ts"] != ""
 
     async def test_save_checkpoint_exception_no_raise(self, wrapper):
         """Exceptions during checkpoint saving don't propagate."""

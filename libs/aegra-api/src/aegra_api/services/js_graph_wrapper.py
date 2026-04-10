@@ -11,7 +11,9 @@ bridge process and only adapts the interface.
 from __future__ import annotations
 
 import copy
+import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -272,8 +274,8 @@ class JSGraphWrapper:
         try:
             checkpoint = {
                 "v": 1,
-                "ts": "",
-                "id": "",
+                "ts": datetime.now(UTC).isoformat(),
+                "id": str(uuid.uuid4()),
                 "channel_values": state,
                 "channel_versions": {},
                 "versions_seen": {},

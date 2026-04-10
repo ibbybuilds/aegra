@@ -110,18 +110,41 @@ def _write_file(path: Path, content: str, force: bool) -> bool:
     return True
 
 
+def _resolve_template_by_name(
+    query: str, templates: Sequence[Mapping[str, str]]
+) -> int:
+    """Match a template by id or name substring.
+
+    Returns:
+        1-based template index, or -1 if no match found.
+    """
+    q = query.lower()
+    for i, t in enumerate(templates, 1):
+        if q == t["id"].lower():
+            return i
+    # Fallback: substring match on id or name
+    for i, t in enumerate(templates, 1):
+        if q in t["id"].lower() or q in t["name"].lower():
+            return i
+    console.print(
+        f"[bold red]Error:[/bold red] Unknown template '{query}'. "
+        f"Available: {', '.join(t['id'] for t in templates)}"
+    )
+    return -1
+
+
 @click.command()
 @click.argument("path", default=".", required=False)
 @click.option(
     "--template",
     "-t",
-    type=int,
+    type=str,
     default=None,
-    help=f"Template number (1-{len(get_template_choices())}).",
+    help="Template number or name (e.g. 1, langgraphjs, react).",
 )
 @click.option("--name", "-n", default=None, help="Project name (defaults to directory name).")
 @click.option("--force", is_flag=True, help="Overwrite existing files.")
-def init(path: str, template: int | None, name: str | None, force: bool) -> None:
+def init(path: str, template: str | None, name: str | None, force: bool) -> None:
     """Initialize a new Aegra project.
 
     Creates a complete project structure from a template, including:
@@ -145,7 +168,8 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
         aegra init                           # Interactive mode
         aegra init ./my-agent                # Create at path
         aegra init ./my-agent -t 1           # New Aegra Project
-        aegra init ./my-agent -t 2           # ReAct Agent
+        aegra init ./my-agent -t react       # ReAct Agent (by name)
+        aegra init ./my-agent -t langgraphjs # LangGraph.js Chatbot
         aegra init ./my-agent -t 1 -n "My Agent"
     """
     templates = get_template_choices()
@@ -166,7 +190,11 @@ def init(path: str, template: int | None, name: str | None, force: bool) -> None
             # Non-interactive: default to template 1
             choice = 1
     else:
-        choice = template
+        # Try numeric index first, then match by id/name substring
+        try:
+            choice = int(template)
+        except ValueError:
+            choice = _resolve_template_by_name(template, templates)
 
     if choice < 1 or choice > len(templates):
         console.print(f"[bold red]Error:[/bold red] Invalid template number: {choice}")

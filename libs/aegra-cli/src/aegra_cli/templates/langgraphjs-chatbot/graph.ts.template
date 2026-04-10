@@ -27,5 +27,10 @@ const builder = new StateGraph(ChatState)
   .addEdge("__start__", "chatbot")
   .addEdge("chatbot", "__end__");
 
-/** Compiled graph — loaded by Aegra at startup. */
+/** Compiled graph — loaded by Aegra at startup.
+ *
+ * Checkpointing is managed by the Aegra Python server (PostgreSQL).
+ * Do NOT add a MemorySaver or other checkpointer here — the bridge
+ * must stay stateless so Aegra can handle persistence consistently.
+ */
 export const graph = builder.compile({ checkpointSaver: undefined });

@@ -34,4 +34,7 @@ const builder = new StateGraph(ChatState)
  *   }
  * }
  */
+// Checkpointing is managed by the Aegra Python server (PostgreSQL).
+// Do NOT add a MemorySaver or other checkpointer here — the bridge
+// must stay stateless so Aegra can handle persistence consistently.
 export const graph = builder.compile({ checkpointSaver: undefined });

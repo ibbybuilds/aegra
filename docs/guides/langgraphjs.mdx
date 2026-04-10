@@ -18,7 +18,7 @@ Aegra supports running [LangGraph.js](https://github.com/langchain-ai/langgraphj
 ### 1. Create a LangGraph.js project
 
 ```bash
-aegra init my-js-agent -t 3   # LangGraph.js Chatbot template
+aegra init my-js-agent -t langgraphjs   # LangGraph.js Chatbot template
 cd my-js-agent
 ```
 
@@ -64,6 +64,8 @@ const builder = new StateGraph(ChatState)
   .addEdge("chatbot", "__end__");
 
 export const graph = builder.compile({ checkpointSaver: undefined });
+// ⬆ Do NOT add a MemorySaver or other checkpointer here.
+// Aegra manages state persistence on the Python side (PostgreSQL).
 ```
 
 ### 3. Add a `package.json`
@@ -74,9 +76,9 @@ export const graph = builder.compile({ checkpointSaver: undefined });
   "private": true,
   "type": "module",
   "dependencies": {
-    "@langchain/langgraph": "^0.2.0",
-    "@langchain/core": "^0.3.0",
-    "@langchain/openai": "^0.3.0"
+    "@langchain/langgraph": "^1.2.0",
+    "@langchain/core": "^1.1.36",
+    "@langchain/openai": "^1.3.0"
   }
 }
 ```
@@ -158,6 +160,10 @@ This means:
 - **Same PostgreSQL** database for all state
 - **Same authentication** and middleware applies
 
+<Note>
+**Why `checkpointSaver: undefined`?** Aegra handles all checkpointing on the Python side using PostgreSQL. If you add your own `MemorySaver` or other checkpointer inside the JS graph, state will be saved twice (inconsistently) and the Aegra thread history will diverge from the graph's internal state. Always leave `checkpointSaver` unset and let Aegra manage persistence.
+</Note>
+
 ## Streaming
 
 JS graphs support the same streaming modes as Python graphs:
@@ -202,7 +208,7 @@ Run `npm install` manually in your graph's directory to see detailed error messa
 
 Check that:
 1. Node.js 18+ is installed: `node --version`
-2. The bridge package dependencies are installed: `cd libs/aegra-js-bridge && npm install`
+2. Run `aegra dev` again — it automatically installs bridge dependencies on startup
 3. No port conflicts or permission issues
 
 ### Graph file not found

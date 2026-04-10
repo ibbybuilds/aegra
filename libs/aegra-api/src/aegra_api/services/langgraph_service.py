@@ -621,7 +621,6 @@ class LangGraphService:
         )
 
     async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Any:
-    async def _load_graph_from_file(self, graph_id: str, graph_info: dict[str, str]) -> Pregel | StateGraph | None:
         """Load graph from filesystem.
 
         Paths are resolved relative to the config file's directory.

@@ -175,9 +175,7 @@ def _ensure_js_dependencies(config_path: Path) -> None:
         with config_path.open(encoding="utf-8") as f:
             config = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        console.print(
-            f"[yellow]Warning:[/yellow] Could not read {config_path}: {exc}"
-        )
+        console.print(f"[yellow]Warning:[/yellow] Could not read {config_path}: {exc}")
         return
 
     if not isinstance(config, dict):
@@ -231,9 +229,7 @@ def _ensure_js_dependencies(config_path: Path) -> None:
             return
         console.print(f"[dim]Node.js {version_str} detected for LangGraph.js graphs[/dim]")
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        console.print(
-            f"[yellow]Warning:[/yellow] Could not determine Node.js version: {exc}"
-        )
+        console.print(f"[yellow]Warning:[/yellow] Could not determine Node.js version: {exc}")
         return
 
     # Install npm dependencies for each JS graph's directory

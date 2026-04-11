@@ -29,6 +29,7 @@ from langgraph.pregel.debug import CheckpointPayload, TaskResultPayload
 from pydantic import ValidationError
 from pydantic.v1 import ValidationError as ValidationErrorLegacy
 
+from aegra_api.services.js_graph_wrapper import JSGraphWrapper
 from aegra_api.utils.run_utils import _filter_context_by_schema
 
 logger = structlog.getLogger(__name__)
@@ -114,12 +115,7 @@ async def stream_graph_events(
         stream_modes_set.add("debug")
 
     # Check if graph is a remote (JavaScript) implementation
-    try:
-        from aegra_api.services.js_graph_wrapper import JSGraphWrapper
-
-        is_js_graph = isinstance(graph, JSGraphWrapper)
-    except ImportError:
-        is_js_graph = False
+    is_js_graph = isinstance(graph, JSGraphWrapper)
 
     # Also check for external bridge (BaseRemotePregel)
     if not is_js_graph:

@@ -110,9 +110,7 @@ def _write_file(path: Path, content: str, force: bool) -> bool:
     return True
 
 
-def _resolve_template_by_name(
-    query: str, templates: Sequence[Mapping[str, str]]
-) -> int:
+def _resolve_template_by_name(query: str, templates: Sequence[Mapping[str, str]]) -> int:
     """Match a template by id or name substring.
 
     Returns:

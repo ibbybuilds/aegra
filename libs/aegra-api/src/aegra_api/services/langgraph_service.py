@@ -41,6 +41,8 @@ from aegra_api.services.graph_factory import (
     invoke_factory,
     is_factory,
 )
+from aegra_api.services.js_bridge import JSBridgeError, get_js_bridge
+from aegra_api.services.js_graph_wrapper import JSGraphWrapper
 
 State = TypeVar("State")
 logger = structlog.get_logger(__name__)
@@ -526,8 +528,6 @@ class LangGraphService:
         not available (e.g. when using the official LangGraph API server
         bridge package).
         """
-        from aegra_api.services.js_bridge import JSBridgeError, get_js_bridge
-        from aegra_api.services.js_graph_wrapper import JSGraphWrapper
 
         raw_path = graph_info["file_path"]
         export_name = graph_info["export_name"]

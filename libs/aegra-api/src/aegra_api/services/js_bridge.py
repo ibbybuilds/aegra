@@ -22,6 +22,7 @@ import contextlib
 import json
 import os
 import shutil
+import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -157,7 +158,7 @@ class JSBridge:
                     }
                 )
                 await asyncio.wait_for(self._process.wait(), timeout=5)
-            except (TimeoutError, Exception):
+            except (TimeoutError, OSError, JSBridgeError):
                 # Force kill
                 try:
                     self._process.kill()
@@ -260,10 +261,8 @@ class JSBridge:
                     # Drain any remaining events
                     while not queue.empty():
                         yield queue.get_nowait()
-                    # Check for errors in the final response
-                    result = future.result()
-                    if isinstance(result, Exception):
-                        raise result
+                    # Raises if the bridge reported an error
+                    future.result()
                     break
 
                 try:
@@ -447,8 +446,6 @@ def _find_node() -> str:
         )
 
     try:
-        import subprocess
-
         result = subprocess.run(
             [node, "--version"],
             capture_output=True,
@@ -459,8 +456,7 @@ def _find_node() -> str:
         major = int(version_str.split(".")[0])
         if major < 18:
             raise JSBridgeError(
-                f"Node.js {version_str} detected but LangGraph.js requires 18+.\n"
-                "Download from: https://nodejs.org/"
+                f"Node.js {version_str} detected but LangGraph.js requires 18+.\nDownload from: https://nodejs.org/"
             )
     except JSBridgeError:
         raise

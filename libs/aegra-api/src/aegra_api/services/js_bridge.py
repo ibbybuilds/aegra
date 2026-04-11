@@ -22,7 +22,6 @@ import contextlib
 import json
 import os
 import shutil
-import subprocess
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -66,8 +65,9 @@ class JSBridge:
     def __init__(self) -> None:
         self._process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
-        self._pending: dict[str | int, asyncio.Future] = {}
-        self._notification_queues: dict[str | int, asyncio.Queue] = {}
+        self._stderr_task: asyncio.Task | None = None
+        self._pending: dict[str | int, asyncio.Future[Any]] = {}
+        self._notification_queues: dict[str | int, asyncio.Queue[dict[str, Any]]] = {}
         self._started = asyncio.Event()
         self._lock = asyncio.Lock()
         self._closed = False
@@ -82,7 +82,7 @@ class JSBridge:
             if self._process is not None and self._process.returncode is None:
                 return  # already running
 
-            _find_node()  # Verify Node.js is installed
+            await _find_node()  # Verify Node.js is installed
             npx_bin = _find_npx()
 
             if not _BRIDGE_ENTRY.exists():
@@ -127,7 +127,7 @@ class JSBridge:
             self._reader_task = asyncio.create_task(self._read_loop())
 
             # Start stderr reader
-            asyncio.create_task(self._stderr_loop())
+            self._stderr_task = asyncio.create_task(self._stderr_loop())
 
             # Wait for ready notification
             try:
@@ -172,6 +172,12 @@ class JSBridge:
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._reader_task
 
+            # Cancel stderr task
+            if self._stderr_task and not self._stderr_task.done():
+                self._stderr_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._stderr_task
+
             # Fail all pending requests
             for fut in self._pending.values():
                 if not fut.done():
@@ -181,6 +187,7 @@ class JSBridge:
             self._notification_queues.clear()
             self._process = None
             self._reader_task = None
+            self._stderr_task = None
 
             await logger.ainfo("JS bridge stopped")
 
@@ -325,7 +332,7 @@ class JSBridge:
 
         return result
 
-    async def _send_raw(self, message: dict) -> None:
+    async def _send_raw(self, message: dict[str, Any]) -> None:
         """Write a JSON-RPC message to the subprocess stdin."""
         if self._process is None or self._process.stdin is None:
             raise JSBridgeError("JS bridge process not available")
@@ -383,7 +390,7 @@ class JSBridge:
         except (OSError, UnicodeDecodeError) as exc:
             await logger.awarning("JS bridge stderr reader failed", exc_info=exc)
 
-    async def _dispatch(self, msg: dict) -> None:
+    async def _dispatch(self, msg: dict[str, Any]) -> None:
         """Route an incoming JSON-RPC message to the right handler."""
         # Notification (no "id" field)
         if "id" not in msg:
@@ -437,7 +444,7 @@ class JSBridge:
 # ------------------------------------------------------------------
 
 
-def _find_node() -> str:
+async def _find_node() -> str:
     """Find the Node.js binary and verify version >= 18."""
     node = shutil.which("node")
     if not node:
@@ -446,13 +453,14 @@ def _find_node() -> str:
         )
 
     try:
-        result = subprocess.run(
-            [node, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
+        proc = await asyncio.create_subprocess_exec(
+            node,
+            "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        version_str = result.stdout.strip().lstrip("v")
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        version_str = stdout.decode().strip().lstrip("v")
         major = int(version_str.split(".")[0])
         if major < 18:
             raise JSBridgeError(
@@ -460,7 +468,7 @@ def _find_node() -> str:
             )
     except JSBridgeError:
         raise
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (TimeoutError, OSError, ValueError) as exc:
         logger.warning("Could not determine Node.js version", exc_info=exc)
 
     return node

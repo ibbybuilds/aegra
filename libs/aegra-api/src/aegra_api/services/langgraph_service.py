@@ -181,8 +181,12 @@ class LangGraphService:
             self._graph_registry[graph_id] = self._parse_graph_entry(graph_id, graph_entry)
         # Detect graph_ids that collide after sanitisation (e.g. "a.b" and
         # "a_b" both map to aegra_graphs.a_b in sys.modules).
+        # Only applies to Python graphs — JS graphs are not loaded as modules.
         seen_modules: dict[str, str] = {}
         for graph_id in graphs_config:
+            entry = self._graph_registry[graph_id]
+            if entry.get("runtime") == "langgraphjs":
+                continue
             mod_name = _module_name_for(graph_id)
             if mod_name in seen_modules:
                 raise ValueError(

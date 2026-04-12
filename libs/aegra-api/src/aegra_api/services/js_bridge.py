@@ -31,8 +31,18 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Path to the JS bridge entry point (relative to this package)
-_BRIDGE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "aegra-js-bridge"
+# Path to the JS bridge entry point.
+# Resolution order:
+# 1. AEGRA_JS_BRIDGE_DIR env var (Docker / custom deployments)
+# 2. Bundled package data (wheel installs)
+# 3. Source-tree relative path (editable / monorepo dev installs)
+_PACKAGE_BRIDGE_DIR = Path(__file__).resolve().parent.parent / "_js_bridge"
+_SOURCE_BRIDGE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "aegra-js-bridge"
+
+_BRIDGE_DIR = Path(
+    os.environ.get("AEGRA_JS_BRIDGE_DIR")
+    or (str(_PACKAGE_BRIDGE_DIR) if _PACKAGE_BRIDGE_DIR.exists() else str(_SOURCE_BRIDGE_DIR))
+)
 _BRIDGE_ENTRY = _BRIDGE_DIR / "src" / "index.ts"
 
 # Timeout for individual RPC calls (seconds)
@@ -133,7 +143,26 @@ class JSBridge:
             try:
                 await asyncio.wait_for(self._started.wait(), timeout=STARTUP_TIMEOUT)
             except TimeoutError:
-                await self.stop()
+                # Clean up inline — calling self.stop() would deadlock
+                # because we already hold self._lock.
+                self._closed = True
+                if self._process:
+                    try:
+                        self._process.kill()
+                        await self._process.wait()
+                    except ProcessLookupError:
+                        pass
+                if self._reader_task and not self._reader_task.done():
+                    self._reader_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await self._reader_task
+                if self._stderr_task and not self._stderr_task.done():
+                    self._stderr_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await self._stderr_task
+                self._process = None
+                self._reader_task = None
+                self._stderr_task = None
                 raise JSBridgeError(
                     f"JS bridge did not send ready signal within {STARTUP_TIMEOUT}s. Check Node.js installation."
                 )

@@ -388,7 +388,8 @@ COPY --from=builder /app/libs/aegra-js-bridge ./libs/aegra-js-bridge
 COPY aegra.json .
 COPY src/ ./src/
 
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \\
+    AEGRA_JS_BRIDGE_DIR="/app/libs/aegra-js-bridge"
 
 EXPOSE 2026
 

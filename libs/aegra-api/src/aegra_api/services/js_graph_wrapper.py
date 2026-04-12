@@ -47,10 +47,15 @@ class JSGraphWrapper:
         bridge: JSBridge,
         graph_id: str,
         graph_info: dict[str, Any],
+        *,
+        file_path: str = "",
+        export_name: str = "graph",
     ) -> None:
         self._bridge = bridge
         self._graph_id = graph_id
         self._graph_info = graph_info
+        self._file_path = file_path
+        self._export_name = export_name
 
         # Checkpointer/store are injected via copy() — stored here
         # so the run machinery can inspect them.
@@ -90,6 +95,28 @@ class JSGraphWrapper:
     # Execution methods
     # ------------------------------------------------------------------
 
+    async def _ensure_bridge(self) -> None:
+        """Re-start the bridge and re-load the graph if the process died.
+
+        After a Node.js subprocess crash the bridge's ``is_running`` flag
+        turns ``False``.  Calling :meth:`start` spawns a fresh process but
+        the new process has an empty graph cache.  This helper transparently
+        re-loads the graph so callers don't need to care about restarts.
+        """
+        if self._bridge.is_running:
+            return
+        await self._bridge.start()
+        if self._file_path:
+            await self._bridge.load_graph(
+                self._file_path,
+                self._export_name,
+                self._graph_id,
+            )
+            await logger.ainfo(
+                "Re-loaded JS graph after bridge restart",
+                graph_id=self._graph_id,
+            )
+
     async def ainvoke(
         self,
         input_data: Any,
@@ -103,6 +130,7 @@ class JSGraphWrapper:
         Handles checkpoint loading/saving on the Python side so the JS
         bridge stays stateless.
         """
+        await self._ensure_bridge()
         merged_config = self._merge_config(config)
 
         # Load existing checkpoint if we have a checkpointer + thread_id
@@ -141,6 +169,7 @@ class JSGraphWrapper:
         Yields ``(mode, data)`` tuples compatible with the streaming
         service's ``_process_stream_event`` function.
         """
+        await self._ensure_bridge()
         merged_config = self._merge_config(config)
         modes = [stream_mode] if isinstance(stream_mode, str) else list(stream_mode)
 
@@ -221,6 +250,8 @@ class JSGraphWrapper:
             bridge=self._bridge,
             graph_id=self._graph_id,
             graph_info=self._graph_info,
+            file_path=self._file_path,
+            export_name=self._export_name,
         )
         clone.config = copy.deepcopy(self.config)
         clone.checkpointer = self.checkpointer

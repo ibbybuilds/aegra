@@ -271,7 +271,7 @@ def init(path: str, template: str | None, name: str | None, force: bool) -> None
 
     # --- Docker files ---
     _write("docker-compose.yml", get_docker_compose(slug))
-    _write("Dockerfile", get_dockerfile())
+    _write("Dockerfile", get_dockerfile(runtime="langgraphjs" if is_js_template else "python"))
 
     # --- Summary ---
     click.echo()

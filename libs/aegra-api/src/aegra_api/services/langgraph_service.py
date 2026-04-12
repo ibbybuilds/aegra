@@ -552,7 +552,13 @@ class LangGraphService:
                 graph_id=graph_id,
                 file_path=str(file_path),
             )
-            return JSGraphWrapper(bridge, graph_id, graph_info_result)
+            return JSGraphWrapper(
+                bridge,
+                graph_id,
+                graph_info_result,
+                file_path=str(file_path),
+                export_name=export_name,
+            )
 
         except JSBridgeError as bridge_exc:
             logger.warning(

@@ -86,7 +86,13 @@ namespaces = await client.store.list_namespaces(
 
 ### Namespace scoping
 
-When authentication is enabled, all store operations are automatically scoped to the authenticated user's namespace. This means users can't access each other's data.
+All store operations are automatically scoped to the authenticated user's namespace under `["users", <user_id>]`. This means:
+
+- An empty namespace defaults to `["users", <user_id>]`
+- A namespace already under your user prefix (e.g. `["users", "alice", "docs"]`) passes through unchanged
+- Any other namespace (e.g. `["configs"]`) is automatically prefixed to `["users", <user_id>, "configs"]`
+
+This ensures users can never access each other's data, even if they craft a request with another user's namespace.
 
 ## Semantic search
 

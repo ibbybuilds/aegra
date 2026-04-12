@@ -1,5 +1,6 @@
 import logging
 import logging.config
+import sys
 from typing import Any
 
 import structlog
@@ -9,22 +10,56 @@ from aegra_api.settings import settings
 
 
 def get_logging_config() -> dict[str, Any]:
-    """
-    Returns a unified logging configuration dictionary that uses structlog
-    for consistent, structured logging across the application and Uvicorn.
+    """Return a unified logging config dict for structlog + stdlib integration.
 
-    This configuration solves the multiprocessing "pickling" error on Windows
-    by using string references for streams (e.g., "ext://sys.stdout").
+    Uses string references for streams (e.g., "ext://sys.stdout") to avoid
+    the multiprocessing pickling error on Windows.
     """
-    # Determine log level from environment or set a default
     env_mode = settings.app.ENV_MODE
     log_level = settings.app.LOG_LEVEL
 
-    # These processors will be used by BOTH structlog and standard logging
-    # to ensure consistent output for all logs.
+    # Determine mode-specific processors and renderer.
+    #
+    # Production: format_exc_info converts exc_info into a traceback string
+    # because JSONRenderer cannot render exceptions on its own.
+    #
+    # Dev: ConsoleRenderer handles exc_info internally via its
+    # exception_formatter, so format_exc_info must be excluded (it would
+    # convert exceptions to plain strings before ConsoleRenderer sees them,
+    # killing pretty traceback rendering).
+    final_renderer: structlog.typing.Processor
+    if env_mode in ("LOCAL", "DEVELOPMENT"):
+        # RichTracebackFormatter uses Unicode box-drawing characters that
+        # Windows cp1252 console encoding cannot render. Use plain_traceback
+        # on Windows to avoid UnicodeEncodeError through colorama.
+        if sys.platform == "win32":
+            exception_formatter = structlog.dev.plain_traceback
+        else:
+            exception_formatter = structlog.dev.RichTracebackFormatter(
+                show_locals=False,
+                max_frames=10,
+            )
+        final_renderer = structlog.dev.ConsoleRenderer(
+            colors=True,
+            pad_level=True,
+            exception_formatter=exception_formatter,
+        )
+        mode_processors: list[Any] = []
+    else:
+        final_renderer = structlog.processors.JSONRenderer()
+        mode_processors = [structlog.processors.format_exc_info]
+
+    # Shared processors used by BOTH structlog and stdlib (via foreign_pre_chain).
+    #
+    # Ordering constraints:
+    #   - merge_contextvars must be FIRST so request-scoped context
+    #     (request_id, run_id, etc.) is visible to all subsequent processors
+    #   - format_exc_info (production only) must come after StackInfoRenderer
     shared_processors: list[Any] = [
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
+        structlog.stdlib.ExtraAdder(),
         structlog.processors.CallsiteParameterAdder(
             {
                 structlog.processors.CallsiteParameter.FILENAME,
@@ -33,35 +68,24 @@ def get_logging_config() -> dict[str, Any]:
             }
         ),
         structlog.processors.TimeStamper(fmt="iso"),
-        # This processor must be last in the shared chain to format positional args.
+        structlog.processors.StackInfoRenderer(),
+        *mode_processors,
         structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.UnicodeDecoder(),
     ]
-
-    # Determine the final renderer based on the environment
-    # Use a colorful console renderer for local development, and JSON for production.
-    final_renderer: structlog.typing.Processor
-    if env_mode in ("LOCAL", "DEVELOPMENT"):
-        final_renderer = structlog.dev.ConsoleRenderer(
-            colors=True,
-            pad_level=True,
-            exception_formatter=structlog.dev.RichTracebackFormatter(
-                show_locals=False,
-                max_frames=10,
-            ),
-        )
-    else:
-        final_renderer = structlog.processors.JSONRenderer()
 
     return {
         "version": 1,
-        "disable_existing_loggers": False,  # Important for library logging
+        # Keep library loggers (uvicorn, httpx, etc.) alive
+        "disable_existing_loggers": False,
         "formatters": {
             "default": {
-                # Use structlog's formatter as the bridge
                 "()": "structlog.stdlib.ProcessorFormatter",
-                # The final processor is the renderer.
-                "processor": final_renderer,
-                # These processors are run on ANY log record, including those from Uvicorn.
+                # remove_processors_meta strips internal keys before rendering
+                "processors": [
+                    structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                    final_renderer,
+                ],
                 "foreign_pre_chain": shared_processors,
             },
         },
@@ -70,22 +94,17 @@ def get_logging_config() -> dict[str, Any]:
                 "level": log_level,
                 "class": "logging.StreamHandler",
                 "formatter": "default",
-                # IMPORTANT: Use the string reference to avoid the pickling error.
-                # This defers the lookup of sys.stdout until the config is loaded
-                # in the child process.
+                # String reference defers sys.stdout lookup until the config
+                # is loaded in the child process (avoids pickling error).
                 "stream": "ext://sys.stdout",
             },
         },
         "loggers": {
-            # Configure the root logger to catch everything
             "": {
                 "handlers": ["default"],
                 "level": log_level,
-                "propagate": False,  # Don't pass to other handlers
+                "propagate": False,
             },
-            # Uvicorn's loggers will now inherit the root logger's settings,
-            # ensuring they use the same handler and formatter.
-            # We explicitly set their level here.
             "uvicorn.error": {
                 "level": "INFO",
             },
@@ -97,32 +116,26 @@ def get_logging_config() -> dict[str, Any]:
 
 
 def setup_logging() -> None:
-    """
-    Configures both standard logging and structlog based on the
-    dictionary from get_logging_config(). This should be called
-    once at application startup.
-    """
+    """Configure both standard logging and structlog. Call once at startup."""
     config = get_logging_config()
 
-    # Configure the standard logging module
     logging.config.dictConfig(config)
-    # Propagate uvicorn logs instead of letting uvicorn configure the format
+
+    # Uvicorn installs its own handlers on startup; clear them so all logs
+    # go through our structlog formatter instead.
     for name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
         logging.getLogger(name).handlers.clear()
         logging.getLogger(name).propagate = True
 
-    # Reconfigure log levels for some overly chatty libraries
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # Silence overly chatty libraries
     logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
-    # Configure structlog to route its logs through the standard logging
-    # system that we just configured.
+    # Route structlog through the stdlib logging system we just configured.
+    shared_processors = config["formatters"]["default"]["foreign_pre_chain"]
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
-            # Add shared processors to structlog's pipeline
-            *config["formatters"]["default"]["foreign_pre_chain"],
-            # Prepare the log record for the standard library's formatter
+            *shared_processors,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),

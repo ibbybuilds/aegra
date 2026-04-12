@@ -1,0 +1,314 @@
+---
+title: "Worker architecture"
+description: "How Aegra dispatches, executes, and recovers agent runs at scale."
+---
+
+Aegra uses a worker-based execution model for production deployments. Runs are dispatched through a Redis job queue and executed by concurrent asyncio workers across any number of instances. Lease-based crash recovery ensures no run is lost, even if an instance dies mid-execution.
+
+In dev mode (`aegra dev`), none of this is needed — runs execute as simple in-process asyncio tasks.
+
+## Run lifecycle overview
+
+How a single run flows through the system — from client request to completion:
+
+<a href="https://mermaid.live/view#pako:eNqdk1tPwjAUx79KU140QhjDoOzBREQBJaG4GR_Eh3Y7k4ZdtO28Mb673YWxqLywPexc_v-T8-vSNXZjD7CFsB_EH-6SCoWc4SJC-rkKOETqaYGLAB3ZwzvURmPHIccL_FyILslEK26oVDqqqvfgcanr-RfdxgzNE0ig6j_GYgVCC4qgqpORrpFYqhcB9ny6qyfMTlg1UKdtnVftgYiLcbZ9XSZ5r86BWq2LlMxsB7VFEsk027xCyJuvICSXCp0giN6yddOCo4aU6wZTMiNpyVDnybsBUAnZjE9wE5VFPo9owL_1ODL6IycPg-nEHiN41zvqrQrSOnUukwmTruBMDyn5auC5IkOXSgAN05J4yy_VVwDbU_B5EFiNDu1QE5par_1Wo-eZ516_6cZBLKwGGNlb92Yn9K_R8LunPWO_sQQ9yFuyHeQtflZhNb0Oq1ldo9s32X5reeiHeUfbdZl27nzmGYXf6-ImwiGIkHJPX781VksI84voUbHCm80P8HgjAQ==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+flowchart TD
+    Client["Client (SDK / HTTP)"]
+    API["FastAPI"]
+    Redis["Redis Job Queue"]
+    Worker["Worker"]
+    PG["PostgreSQL"]
+    PubSub["Redis Pub/Sub"]
+    Broker["SSE Broker"]
+
+    Client -->|POST /runs| API
+    API -->|persist + enqueue| Redis
+    Redis -->|BLPOP| Worker
+    Worker -->|lease + execute + finalize| PG
+    Worker -->|PUBLISH events| PubSub
+    PubSub -->|subscribe| Broker
+    Broker -->|SSE stream| Client
+
+    style Client fill:#1a1a2e,stroke:#6d28d9,color:#e0e0e0
+    style API fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Worker fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Broker fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Redis fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    style PubSub fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    style PG fill:#1b2d1e,stroke:#27ae60,color:#e0e0e0
+```
+
+The happy path of a single run, step by step:
+
+1. **Client** sends a run request to any instance via the load balancer.
+2. **FastAPI** validates, persists the run to PostgreSQL (with serialized execution params), and pushes the run ID onto the Redis job queue.
+3. **Worker** picks up the job via `BLPOP` (blocking pop — instant delivery, no polling).
+4. **Worker** acquires an exclusive lease in PostgreSQL, executes the graph, heartbeats every 10s, and finalizes the run (status, output, release lease).
+5. **Worker** publishes each event to Redis Pub/Sub for real-time streaming.
+6. **SSE Broker** subscribes to Redis Pub/Sub and relays events.
+7. **Client** receives events over an SSE connection.
+
+Behind the scenes, the **Lease Reaper** scans PostgreSQL every 15 seconds for runs with expired leases (crashed workers) and re-enqueues them. Workers also send **OpenTelemetry traces** to Langfuse, Phoenix, or any OTLP collector.
+
+## Horizontal scaling
+
+Every instance is stateless — add more instances behind a load balancer to increase capacity. All instances share the same Redis and PostgreSQL backends.
+
+<a href="https://mermaid.live/view#pako:eNqdU1FrwjAQ_itH-qrQ1rmxMgamAxmU0c29rT5cm2jFmkiSMUT870trW9ttOjB5CHfffXff3ZE9ySTjJACyKORXlqMy8P6UCLAnoh8JiSQyoFigyLhKyDwRR1B_pkuF2xyehTYlqG0wVAFQn4n1NChMehDtQrQHhV3opYW4YL9KU8zW1l9WnlnlnLWeXsY3zlZlTPX2kHhq3bHUZqn47DX6q1hEYTh8tPK7Fu1ZYRPbjgIeqqhGTKPb7Ao7CFisiiJwPPTQ5wNtlFzzwHEXo5tbd5DJQqrA4W55uzR6HS28jnbqpKIbhUJv7YSF-ZniaA4ZarsBhbtgDOPzeasV1JJ85qUdSZk7uvfT89R42rSSWuaJ598hvzi4egsX2f93QQZANlxtcMXsb9kTk_NN9W8YqjU5HL4B_SQCkw==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+flowchart TD
+    LB["Load Balancer"]
+
+    subgraph Instances[" "]
+        A["Instance A"]
+        B["Instance B"]
+        C["Instance N"]
+    end
+
+    subgraph Backends["Shared Backends"]
+        Redis["Redis"]
+        PG["PostgreSQL"]
+    end
+
+    LB --> A
+    LB --> B
+    LB --> C
+
+    Instances <--> Backends
+
+    style A fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style B fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style C fill:#1a1a2e,stroke:#0f3460,color:#e0e0e0
+    style Instances fill:transparent,stroke:#0f3460,stroke-dasharray:5 5,color:#e0e0e0
+    style Redis fill:#2d1b2e,stroke:#c0392b,color:#e0e0e0
+    style PG fill:#1b2d1e,stroke:#27ae60,color:#e0e0e0
+    style Backends fill:#1b2d1e,stroke:#27ae60,stroke-dasharray:5 5,color:#e0e0e0
+```
+
+Each instance runs multiple worker loops (default 3), and each worker loop handles up to `N_JOBS_PER_WORKER` concurrent runs (default 10) via an asyncio semaphore. Total capacity per instance is `WORKER_COUNT` x `N_JOBS_PER_WORKER` — 30 concurrent runs by default. A job enqueued by Instance A can be picked up by Instance B — any worker can execute any run.
+
+## Job lifecycle
+
+The detailed sequence — every Redis command, database query, and semaphore operation involved in executing a single run:
+
+<a href="https://mermaid.live/view#pako:eNqNU9Fum0AQ_JUVTyC5ttNHJEdKHJpaQgkFW36JhI5jY18Nd-TuiGxZ_vcuhrRQWrW8nMTM3M7O7p0drnJ0fHAMvtUoOT4IttOsfJFAX8W0FVxUTFpYAjOwLARKOwbvolUDN8dKGsvoojEpbigx5sKMsW2DbZU-oB6D0WODRsrYncbkW_giW87y0-0tlfQhek7WMLN7jSw3s7PILzNdy64MMYgXPfqwekqCeA0EgYtH5CkVYaWZADm2tVlUKHMhd15fF_sQR5vka6NKRd6Hlj58ns_h3Kp96OSXD3vbVn4fRs8RuFmh-MFALa0o4LvKuioxkbb-4PZt-8tgyaq90jhl_K0WGl3vF960s4ke7tYB8IKJEvM0O02gQGYwxWNFdJMyOxQkQRgs19C0XluhZNf_oGqMxlJNsJpxBK6kxaP96KhQqoLgHfUJbuad7g-OfncB7h5pnBky27VASfVT6mm7UVAekrIcWGt9Y0qY2wbYc_VFaUDG94DvPze0N4Rocx-uaIpXFNwkCbwRp51zx9BYFewEWf36ivp_XZuaczS0UKq2VW0X5-l0ehksQxKsgSG9MJ-68HMl0W_WFRZw84_hLp42Ydj4uqbbZuz9ZWE6kus5E3BK1CUTOT3ys2P3WF6fe870wblcfgAuaUK2" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as API Instance
+    participant R as Redis
+    participant W as Worker
+    participant PG as PostgreSQL
+
+    C->>API: POST /threads/{id}/runs
+    API->>PG: INSERT run (exec_params, status=pending)
+    API->>R: RPUSH run_id
+    API->>C: 200 {status: pending}
+
+    W->>R: BLPOP (blocks until job)
+    R->>W: run_id
+    W->>W: semaphore.acquire()
+    W->>PG: UPDATE claimed_by, lease_expires_at
+    W->>PG: SELECT execution_params
+    W->>W: Restore trace context
+
+    loop Every 10s
+        W->>PG: UPDATE lease_expires_at (heartbeat)
+    end
+
+    W->>PG: UPDATE status=running
+    W->>W: execute_run(job)
+
+    loop For each event
+        W->>R: PUBLISH event (SSE)
+        W->>R: RPUSH event (replay buffer)
+    end
+
+    W->>PG: UPDATE status=success, output={...}
+    W->>R: SET aegra:run:done:{id} = 1
+    W->>PG: UPDATE claimed_by=NULL (release lease)
+    W->>W: semaphore.release()
+```
+
+Key details:
+
+1. **Execution params** are stored in PostgreSQL alongside the run, so any worker can reconstruct the full job context (user identity, config, trace metadata, interrupt settings, etc.).
+2. **Lease acquisition** is atomic — `UPDATE ... WHERE claimed_by IS NULL` ensures only one worker wins the race.
+3. **Heartbeats** extend the lease every 10 seconds. If a worker crashes, the lease expires and the run becomes eligible for recovery.
+4. **OpenTelemetry trace context** propagates across the Redis queue boundary, so traces span the full request lifecycle.
+
+### Streaming run with crash recovery
+
+The full picture — a streaming run shows how the client SSE connection, worker execution, and reaper recovery all interact:
+
+<a href="https://mermaid.live/view#pako:eNqdVE1r4zAQ_SuDTw5tScPSi9kUksbQQEhN7NDLglHsaaNNLLmSvGm29L_vyHK-ncv6ZEYz8-a9edKXl8kcvQA8jR8VigxHnL0rVvwSQF_JlOEZL5kw8LTmKMxlfBCNL4MzzLm-DL9KtUJ1GR8N21qw0ua6E4d-9_hIcAFEL3ECXVUJ3dVG4W5cOqOM0TCA8TQOZwlQBvjaMFPpfoki5-L9FvATs8pwKVKCY4XuHBfXgwcwi-bxsy1PeQ5Gwm-5ANKnwkMuJbuhAojjENwc4G8YNwQDb1LBQkmiC_iHsiyMK3YiHLCGk-glOiCA_6DB8AJlZZrR6kQL6EqDZrCzdpb3PBoNkhDiMIGGNqWKmna2ZtQ0Txfb_qYuuYU1Mo0pfpZcoU6Z6Qu5uflxr-H1OZyFcCqcQxsNT-aQm0xWwvR74NfNgGUfFXXLOy3DxeEkfEou9D_L3PV2aZgSAZ_E6cANLJH8sUBm0rWUpauzf1ZhtYXefdPrmiznfKEPDWNXR0TbVxTNh5MxGcJt0hrCrjxbMiFwfbajY1O4_BYp3rhga_63Zrd3qK6yDLXucmFQqao0mHfpR6rO9U0fbXU6n0xadmrD7aysS3IpEFa4BT9JJtBb7l06lQZBkq7NRQx2Ij_oHWEbPl2tvZGn5mnsB4Pp6FL-n1b-Y1_toDLF9JJYOZ-3ATb0z-_2mRz_N8sJEBeZwoLWCKlCo7ZpbXgKX_HxvrjtJfEV3qFw19w-EExIsySJ3YXseLfgFagKxnN6kr88OivqxzlnauV9f_8DKe3lLA==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Redis
+    participant Worker
+    participant DB
+    participant Reaper
+
+    Client->>API: POST /runs/stream
+    API->>DB: INSERT run (status=pending, execution_params)
+    API->>Redis: RPUSH run_id to job queue
+    API-->>Client: SSE stream (waiting for broker events)
+
+    Worker->>Redis: BLPOP job queue (5s timeout)
+    Redis-->>Worker: run_id
+    Worker->>DB: UPDATE SET status=running, claimed_by=worker, lease_expires_at=now+30s WHERE status=pending
+    DB-->>Worker: rowcount=1 (lease acquired)
+    Worker->>DB: SELECT execution_params
+    Worker->>Worker: execute_run(job) + heartbeat_loop
+    loop every 10s
+        Worker->>DB: UPDATE lease_expires_at = now+30s
+    end
+    Worker->>Redis: PUBLISH events to SSE channel
+    Redis-->>Client: SSE events
+    Worker->>DB: finalize_run (status=success/interrupted/error)
+    Worker->>DB: UPDATE claimed_by=NULL, lease_expires_at=NULL
+    Worker->>Redis: SET done key (TTL 1h)
+
+    Note over Reaper: every 15s
+    Reaper->>DB: SELECT runs WHERE status=running AND lease_expires_at < now
+    DB-->>Reaper: crashed_run_ids
+    Reaper->>DB: UPDATE status=pending, claimed_by=NULL WHERE status=running AND lease_expires_at < now
+    Reaper->>DB: increment _retry_count in execution_params
+    Reaper->>Redis: RPUSH run_id (re-enqueue for another worker)
+```
+
+## Crash recovery
+
+Every instance runs a `LeaseReaper` background task that scans for runs with expired leases. When a worker crashes (OOM, kill signal, network partition), its heartbeat stops and the lease expires. The reaper resets the run to `pending` and re-enqueues it. The new worker resumes from the last checkpoint.
+
+<a href="https://mermaid.live/view#pako:eNptk09PwkAQxb_K2FOJiCbeGjVpocIBpRZJLyZm3Y6wge7W_aMkxO_uLK2CQE9N9r3fezPtbgKuSgwiCAx-OJQcB4LNNateJNBTM20FFzWTFooYmIFC6SVqiI_Ps6E_z5Sxc43Tp_GxIkdWk5dU7VuoJCSdE8JGUwpzokayVyN5kY2iiC_u7rJhBP0VExVoJyFcITN4K9XX-fWV6ezpijiCdI3cWQSatV70er0DzAgp8g2ZhRDXFmUJW1rnN-9RkVd9UgUP6-fxdAThZPJwuRSrVeeUZkc0VtXmGORjxz4EcF0LjQZIa333X22ztbbhNB2n_WcoRmmeEpJZZ25pbCnkHOLHQdMXboDmD9tC2ZC8DSSCe-Voqiaq9As7OxEyywbx8x--pj0Qvguc4LpJODDlEeTZjJZBwFdRQqjxAiX9WW63uyJphMk4m2St33-VJGpdezJfIuYfjkqCxK_9zO25N-VoXIXwrlUFfIF8WSsh7QHk_yTGcY7GBF0IKtQVEyVdgU1gF1htL0PJ9DL4_v4BvGz9cA==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+sequenceDiagram
+    participant WA as Worker A
+    participant PG as PostgreSQL
+    participant Reaper as Reaper (on B)
+    participant R as Redis
+    participant WB as Worker B
+
+    WA->>PG: Claim run (lease=now+30s)
+    WA->>WA: Execute graph...
+    WA->>PG: Heartbeat (extend lease)
+
+    Note over WA: CRASH (OOM/kill)
+    Note over WA: Heartbeat stops
+
+    Note over PG: Lease expires at t+30s
+
+    Reaper->>PG: SELECT WHERE status=running AND lease < now()
+    PG->>Reaper: Found expired run!
+    Reaper->>PG: UPDATE status=pending, clear lease
+    Reaper->>R: RPUSH run_id (re-enqueue)
+
+    WB->>R: BLPOP
+    R->>WB: run_id
+    WB->>PG: Acquire new lease
+    WB->>WB: Resume from checkpoint
+    WB->>PG: UPDATE status=success
+```
+
+The reaper runs on every instance (default every 15 seconds). This is safe — the atomic lease acquisition prevents duplicate execution.
+
+## Cross-instance cancellation
+
+Cancel requests can arrive at any instance, but the run may be executing on a different one. Aegra uses Redis pub/sub to propagate cancellation across instances.
+
+<a href="https://mermaid.live/view#pako:eNplkc1qwzAQhF9l0SmG_oQeBQ1YTkgDhrp2cstFsRZXSSy7khwoxu_edUWbBOs6386MdntWNgoZB-bwq0NT4lLLysp6b4BeK63XpW6l8ZCAdJCcNRo_FeNR3BjnJVlAPAXyEchRaTfVsvUoZo3zlcXiI50S4s5ewMx2xmhTgf9EODaHaG_CUPK4WMQcsvdiC8_lSJ8JbjqPCg7fkIoocDFxOXE7kW6KN5BIf-ZkysPMFcrWHHbZMt6ugNJ951718Wht15JlwHLCBIckpNXonKwQLJaoL3-MCIyX7vQUImbRVblpgkYBXv53PFZIOLzM59CHfA43BQb2AKxGW0ut6Ig9o33Uv-dU0p7YMPwA02SZhQ==" target="_blank" rel="noopener">View fullscreen ↗</a>
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Instance A
+    participant R as Redis
+    participant PG as PostgreSQL
+    participant B as Instance B (running the job)
+
+    C->>A: POST /cancel (routed by LB)
+    A->>R: PUBLISH aegra:run:cancel
+    A->>PG: UPDATE status=interrupted
+    R->>B: Cancel message received
+    B->>B: task.cancel()
+    B->>R: PUBLISH end event
+    A->>C: 200 {status: interrupted}
+```
+
+## Dev vs production mode
+
+| | Dev (`aegra dev`) | Production (`aegra up` / `aegra serve`) |
+|---|---|---|
+| Executor | `LocalExecutor` — `asyncio.create_task()` | `WorkerExecutor` — BLPOP + semaphore + lease |
+| Redis required | No | Yes |
+| Crash recovery | No (single process) | Yes (lease reaper) |
+| Cross-instance cancel | N/A | Yes (Redis pub/sub) |
+| SSE broker | In-memory queue + list | Redis pub/sub + replay buffer |
+| Scaling | Single instance | Horizontal (shared Redis + PostgreSQL) |
+
+<Tip>
+  `aegra dev` is designed for fast iteration — no Redis, no workers, no leases. Just start coding and your runs execute immediately in-process.
+</Tip>
+
+## Redis data layout
+
+| Key | Purpose | Written by | Read by |
+|:----|:--------|:-----------|:--------|
+| `aegra:jobs` | Job queue (BLPOP) | API (RPUSH) | Worker (BLPOP) |
+| `aegra:run:{run_id}` | SSE live events | Worker (PUBLISH) | API (SUBSCRIBE) |
+| `aegra:run:cache:{run_id}` | SSE replay buffer | Worker (RPUSH) | API (LRANGE) |
+| `aegra:run:counter:{run_id}` | Event sequence counter | Worker (INCR) | API (GET) |
+| `aegra:run:cancel` | Cancel commands | API (PUBLISH) | Worker (SUBSCRIBE) |
+| `aegra:run:done:{run_id}` | Completion signal (TTL 1h) | Worker (SET) | API (EXISTS) |
+
+## Configuration
+
+All worker settings are configured via environment variables. See the [environment variables reference](/reference/environment-variables) for the full list.
+
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `REDIS_BROKER_ENABLED` | `false` | Enable Redis workers and broker |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `WORKER_COUNT` | `3` | Worker loops per instance |
+| `N_JOBS_PER_WORKER` | `10` | Concurrent runs per worker loop |
+| `BG_JOB_TIMEOUT_SECS` | `3600` | Max execution time per run (1 hour) |
+| `BG_JOB_MAX_RETRIES` | `3` | Max retry attempts before a crashed run is permanently failed |
+| `STUCK_PENDING_THRESHOLD_SECONDS` | `120` | How long a pending run can sit before the reaper re-enqueues it |
+| `LEASE_DURATION_SECONDS` | `30` | Lease TTL before reaper reclaims |
+| `HEARTBEAT_INTERVAL_SECONDS` | `10` | Lease extension frequency |
+| `REAPER_INTERVAL_SECONDS` | `15` | Expired lease scan frequency |
+| `POSTGRES_POLL_INTERVAL_SECONDS` | `5` | Fallback poll interval when Redis is unavailable |
+| `WORKER_DRAIN_TIMEOUT` | `30.0` | Graceful shutdown wait time (seconds) |
+
+<Note>
+  When Redis is unavailable, workers fall back to polling PostgreSQL for pending runs at `POSTGRES_POLL_INTERVAL_SECONDS` intervals. This keeps the system functional during Redis outages, though with higher latency.
+</Note>
+
+## File map
+
+| File | Purpose |
+|:-----|:--------|
+| `services/executor.py` | Factory — selects `LocalExecutor` or `WorkerExecutor` |
+| `services/base_executor.py` | Abstract interface: submit, wait, start, stop |
+| `services/local_executor.py` | Dev mode: `asyncio.create_task` |
+| `services/worker_executor.py` | Production mode: BLPOP + semaphore + lease + heartbeat |
+| `services/run_executor.py` | Shared execution logic (used by both executors) |
+| `services/run_status.py` | Database status updates |
+| `services/run_preparation.py` | Run creation (validate, persist, submit) |
+| `services/lease_reaper.py` | Background task recovering crashed worker runs |
+| `services/broker.py` | In-memory broker + factory |
+| `services/redis_broker.py` | Redis pub/sub broker for SSE |
+| `services/streaming_service.py` | SSE orchestration (replay + live) |
+| `models/run_job.py` | `RunJob` Pydantic model (serialized execution params) |
+| `core/orm.py` | Run table with `execution_params`, `claimed_by`, `lease_expires_at` |
+| `core/active_runs.py` | In-memory task registry (dev mode only) |
+| `core/redis_manager.py` | Redis connection pool singleton |

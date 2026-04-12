@@ -273,16 +273,24 @@ class TestStatelessWaitForRun:
 
     @pytest.mark.asyncio
     async def test_delegates_and_deletes_thread(self, mock_user: User) -> None:
-        """Delegates to wait_for_run and deletes ephemeral thread."""
+        """Delegates to wait_for_run and deletes ephemeral thread after stream."""
+        import json
+
         expected_output = {"result": "done"}
         request = RunCreate(assistant_id="agent", input={"msg": "hi"})
+
+        # wait_for_run now returns a StreamingResponse, so mock it accordingly
+        mock_response = StreamingResponse(
+            iter([json.dumps(expected_output).encode()]),
+            media_type="application/json",
+        )
 
         with (
             patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-1"),
             patch(
                 "aegra_api.api.stateless_runs.wait_for_run",
                 new_callable=AsyncMock,
-                return_value=expected_output,
+                return_value=mock_response,
             ) as mock_wait,
             patch(
                 "aegra_api.api.stateless_runs._delete_thread_by_id",
@@ -291,29 +299,44 @@ class TestStatelessWaitForRun:
         ):
             result = await stateless_wait_for_run(request, mock_user)
 
-        assert result == expected_output
-        mock_wait.assert_called_once_with("eph-thread-1", request, mock_user)
-        mock_delete.assert_called_once_with("eph-thread-1", mock_user.identity)
+            # Result is a StreamingResponse; consume to trigger cleanup
+            assert isinstance(result, StreamingResponse)
+            body = b""
+            async for chunk in result.body_iterator:
+                body += chunk if isinstance(chunk, bytes) else chunk.encode()
+
+            assert json.loads(body) == expected_output
+            mock_wait.assert_called_once_with("eph-thread-1", request, mock_user)
+            mock_delete.assert_called_once_with("eph-thread-1", mock_user.identity)
 
     @pytest.mark.asyncio
     async def test_keeps_thread_when_requested(self, mock_user: User) -> None:
         """Thread is preserved when on_completion='keep'."""
+        import json
+
         request = RunCreate(assistant_id="agent", input={"msg": "hi"}, on_completion="keep")
+
+        mock_response = StreamingResponse(
+            iter([json.dumps({}).encode()]),
+            media_type="application/json",
+        )
 
         with (
             patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-2"),
             patch(
                 "aegra_api.api.stateless_runs.wait_for_run",
                 new_callable=AsyncMock,
-                return_value={},
+                return_value=mock_response,
             ),
             patch(
                 "aegra_api.api.stateless_runs._delete_thread_by_id",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
-            await stateless_wait_for_run(request, mock_user)
+            result = await stateless_wait_for_run(request, mock_user)
 
+        # Returns original response unchanged (no wrapper)
+        assert result is mock_response
         mock_delete.assert_not_called()
 
     @pytest.mark.asyncio

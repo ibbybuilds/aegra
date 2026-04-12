@@ -62,10 +62,10 @@ Aegra uses two connection pools: one for SQLAlchemy (metadata) and one for LangG
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SQLALCHEMY_POOL_SIZE` | `2` | SQLAlchemy connection pool size |
-| `SQLALCHEMY_MAX_OVERFLOW` | `0` | Max overflow connections for SQLAlchemy |
-| `LANGGRAPH_MIN_POOL_SIZE` | `1` | Minimum connections for LangGraph pool |
-| `LANGGRAPH_MAX_POOL_SIZE` | `6` | Maximum connections for LangGraph pool |
+| `SQLALCHEMY_POOL_SIZE` | `10` | SQLAlchemy connection pool size |
+| `SQLALCHEMY_MAX_OVERFLOW` | `20` | Max overflow connections for SQLAlchemy |
+| `LANGGRAPH_MIN_POOL_SIZE` | `5` | Minimum connections for LangGraph pool |
+| `LANGGRAPH_MAX_POOL_SIZE` | `20` | Maximum connections for LangGraph pool |
 
 ## Server
 
@@ -96,6 +96,44 @@ Aegra uses two connection pools: one for SQLAlchemy (metadata) and one for LangG
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `TOGETHER_API_KEY` | Together AI API key |
+
+## Redis
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_BROKER_ENABLED` | `false` | Enable Redis for multi-instance SSE streaming and worker job dispatch |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `REDIS_CHANNEL_PREFIX` | `aegra:run:` | Prefix for Redis pub/sub channels |
+| `REDIS_MAX_CONNECTIONS` | `250` | Maximum Redis connection pool size |
+
+## Workers
+
+When `REDIS_BROKER_ENABLED=true`, runs are dispatched via a Redis job queue (BLPOP) and executed by concurrent asyncio worker tasks. Each instance runs multiple worker loops, each with a semaphore limiting concurrent jobs. Workers use lease-based crash recovery with heartbeats and a reaper process. See the [worker architecture guide](/guides/worker-architecture) for the full design.
+
+In dev mode (`REDIS_BROKER_ENABLED=false`), runs execute as in-process asyncio tasks with no Redis required.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKER_COUNT` | `3` | Number of worker loops per instance |
+| `N_JOBS_PER_WORKER` | `10` | Maximum concurrent runs per worker loop |
+| `BG_JOB_TIMEOUT_SECS` | `3600` | Maximum execution time per run (seconds) |
+| `BG_JOB_MAX_RETRIES` | `3` | Maximum retry attempts before a crashed run is permanently failed |
+| `STUCK_PENDING_THRESHOLD_SECONDS` | `120` | How long a pending run can sit before the reaper re-enqueues it |
+| `LEASE_DURATION_SECONDS` | `30` | Lease TTL before a crashed run is reclaimed |
+| `HEARTBEAT_INTERVAL_SECONDS` | `10` | How often workers extend their lease |
+| `REAPER_INTERVAL_SECONDS` | `15` | How often the reaper scans for expired leases |
+| `POSTGRES_POLL_INTERVAL_SECONDS` | `5` | Fallback poll interval when Redis is unavailable |
+| `WORKER_DRAIN_TIMEOUT` | `30.0` | Graceful shutdown wait time (seconds) |
+
+Total capacity per instance = `WORKER_COUNT` x `N_JOBS_PER_WORKER` (default: 30 concurrent runs).
+
+## Prometheus metrics
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_PROMETHEUS_METRICS` | `false` | Expose `/metrics` endpoint with HTTP request metrics in Prometheus format |
+
+When enabled, a `/metrics` endpoint serves standard HTTP request metrics (request count, latency histograms, in-progress requests) using [prometheus-fastapi-instrumentator](https://github.com/trallnag/prometheus-fastapi-instrumentator). Compatible with any Prometheus/Grafana stack.
 
 ## Observability (OpenTelemetry)
 

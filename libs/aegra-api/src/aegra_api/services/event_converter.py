@@ -3,7 +3,6 @@
 from typing import Any
 
 from aegra_api.core.sse import (
-    SSEEvent,
     create_debug_event,
     create_end_event,
     create_error_event,
@@ -15,7 +14,7 @@ from aegra_api.core.sse import (
 class EventConverter:
     """Converts events to SSE format"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize event converter"""
         self.subgraphs: bool = False
 
@@ -27,52 +26,6 @@ class EventConverter:
         """Convert raw event to SSE format"""
         stream_mode, payload, namespace = self._parse_raw_event(raw_event)
         return self._create_sse_event(stream_mode, payload, event_id, namespace)
-
-    def convert_stored_to_sse(self, stored_event: SSEEvent, _run_id: str | None = None) -> str | None:
-        """Convert stored event to SSE format"""
-        event_type = stored_event.event
-        data = stored_event.data
-        event_id = stored_event.id
-
-        # Handle special cases with custom logic
-        if event_type == "messages":
-            message_chunk = data.get("message_chunk")
-            metadata = data.get("metadata")
-            if message_chunk is None:
-                return None
-            message_data = (message_chunk, metadata) if metadata is not None else message_chunk
-            return create_messages_event(message_data, event_id=event_id)
-        elif event_type == "metadata":
-            # Use the stored payload directly so the replayed event is faithful
-            # to what LangGraph originally emitted (run_id, attempt, etc.)
-            return format_sse_message(event_type, data, event_id)
-        elif event_type == "debug":
-            debug_payload = data.get("debug")
-            if debug_payload is None:
-                return
-            return create_debug_event(debug_payload, event_id)
-        elif event_type in ("messages/partial", "messages/complete"):
-            messages = data.get("messages")
-            if messages is None:
-                return
-            return format_sse_message(event_type, messages, event_id)
-        elif event_type == "messages/metadata":
-            metadata = data.get("metadata")
-            if metadata is None:
-                return
-            return format_sse_message(event_type, metadata, event_id)
-        elif event_type in ("updates", "custom"):
-            payload = data["chunk"] if isinstance(data, dict) and "chunk" in data else data
-            return format_sse_message(event_type, payload, event_id)
-        elif event_type == "end":
-            return create_end_event(event_id)
-        elif event_type == "error":
-            return create_error_event(data.get("error"), event_id)
-        else:
-            # Handle all other event types generically (values, state, logs, tasks, etc.)
-            # Extract payload - try common patterns
-            payload = data.get(event_type) or data.get("chunk") or data
-            return format_sse_message(event_type, payload, event_id)
 
     def _parse_raw_event(self, raw_event: Any) -> tuple[str, Any, list[str] | None]:
         """
@@ -161,7 +114,8 @@ class EventConverter:
         elif stream_mode == "debug":
             return create_debug_event(payload, event_id)
         elif stream_mode == "end":
-            return create_end_event(event_id)
+            status = payload.get("status", "success") if isinstance(payload, dict) else "success"
+            return create_end_event(event_id, status=status)
         elif stream_mode == "error":
             return create_error_event(payload, event_id)
         else:

@@ -4,242 +4,36 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any, cast
-from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from langgraph.types import Command, Send
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aegra_api.core.auth_ctx import with_auth_ctx
+from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
-from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.core.orm import Run as RunORM
-from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.core.orm import _get_session_maker, get_session
-from aegra_api.core.serializers import GeneralSerializer
 from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
-from aegra_api.observability.span_enrichment import make_run_trace_context
-from aegra_api.services.broker import broker_manager
-from aegra_api.services.graph_streaming import stream_graph_events
-from aegra_api.services.langgraph_service import create_run_config, get_langgraph_service
+from aegra_api.services.run_preparation import _prepare_run
+from aegra_api.services.run_waiters import TERMINAL_STATES, encode_output, heartbeat_wait_body
 from aegra_api.services.streaming_service import streaming_service
-from aegra_api.utils.assistants import resolve_assistant_id
-from aegra_api.utils.run_utils import (
-    _merge_jsonb,
-)
+from aegra_api.settings import settings
 from aegra_api.utils.status_compat import validate_run_status
 
 router = APIRouter(tags=["Thread Runs"], dependencies=auth_dependency)
 
 logger = structlog.getLogger(__name__)
-serializer = GeneralSerializer()
 
 
-# NOTE: We keep only an in-memory task registry for asyncio.Task handles.
-# All run metadata/state is persisted via ORM.
-active_runs: dict[str, asyncio.Task] = {}
+# active_runs is imported from aegra_api.core.active_runs (dependency-free module)
 
 # Default stream modes for background run execution
 DEFAULT_STREAM_MODES = ["values"]
-
-
-def map_command_to_langgraph(cmd: dict[str, Any]) -> Command:
-    """Convert API command to LangGraph Command"""
-    goto = cmd.get("goto")
-    if goto is not None and not isinstance(goto, list):
-        goto = [goto]
-
-    update = cmd.get("update")
-    if isinstance(update, (tuple, list)) and all(
-        isinstance(t, (tuple, list)) and len(t) == 2 and isinstance(t[0], str) for t in update
-    ):
-        update = [tuple(t) for t in update]
-
-    return Command(
-        update=update,
-        goto=([it if isinstance(it, str) else Send(it["node"], it["input"]) for it in goto] if goto else None),
-        resume=cmd.get("resume"),
-    )
-
-
-def _resolve_context(
-    config: dict[str, Any],
-    context: dict[str, Any],
-) -> dict[str, Any]:
-    """Derive context from configurable if not explicitly provided.
-
-    When the caller provides context, it is used as-is. Otherwise,
-    context is derived from config.configurable for backward compat.
-    Raises HTTPException(422) if configurable is not a mapping.
-    """
-    configurable = config.get("configurable", {})
-    if not isinstance(configurable, dict):
-        raise HTTPException(status_code=422, detail="`config.configurable` must be a mapping")
-    if not context:
-        return configurable.copy()
-    return context
-
-
-async def set_thread_status(session: AsyncSession, thread_id: str, status: str) -> None:
-    """Update the status column of a thread.
-
-    Status is validated to ensure it conforms to API specification.
-    """
-    # Validate status conforms to API specification
-    from aegra_api.utils.status_compat import validate_thread_status
-
-    validated_status = validate_thread_status(status)
-    result = cast(
-        CursorResult,
-        await session.execute(
-            update(ThreadORM)
-            .where(ThreadORM.thread_id == thread_id)
-            .values(status=validated_status, updated_at=datetime.now(UTC))
-        ),
-    )
-    await session.commit()
-
-    # Verify thread was updated (matching row exists)
-    if result.rowcount == 0:
-        raise HTTPException(404, f"Thread '{thread_id}' not found")
-
-
-_THREAD_NAME_MAX_LENGTH = 100
-
-
-def _resolve_content_text(content: Any) -> str:
-    """Extract plain text from a message content field.
-
-    Handles both plain strings and list-of-blocks format used by some SDKs::
-
-        [{"type": "text", "text": "Hello world"}]
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                text = block.get("text", "")
-                if isinstance(text, str):
-                    parts.append(text)
-        return " ".join(parts)
-    return ""
-
-
-def _extract_thread_name(input_data: dict[str, Any]) -> str:
-    """Derive a thread name from the first human message in the run input.
-
-    Supports the common ``{"messages": [{"role": "human", "content": "..."}]}``
-    shape emitted by agent-chat-ui, LangGraph Studio, and the JS/Python SDKs.
-    Also handles list-of-blocks content from OpenAI-compatible APIs.
-    Returns an empty string when no suitable message is found.
-    """
-    messages = input_data.get("messages")
-    if not isinstance(messages, list) or not messages:
-        return ""
-    _HUMAN_ROLES = {"human", "user"}
-    for msg in messages:
-        raw_content: Any = None
-        role: str | None = None
-        if isinstance(msg, dict):
-            role_val = msg.get("role")
-            role = role_val if isinstance(role_val, str) else None
-            if role is None:
-                type_val = msg.get("type")
-                role = type_val if isinstance(type_val, str) else None
-            raw_content = msg.get("content")
-        elif hasattr(msg, "content"):
-            raw_content = getattr(msg, "content", None)
-            # langchain BaseMessage uses .type for the role
-            msg_type = getattr(msg, "type", None)
-            role = msg_type if isinstance(msg_type, str) else None
-        if role not in _HUMAN_ROLES:
-            continue
-        text = _resolve_content_text(raw_content)
-        if text.strip():
-            name = text.strip()
-            if len(name) > _THREAD_NAME_MAX_LENGTH:
-                return name[:_THREAD_NAME_MAX_LENGTH].rsplit(" ", 1)[0] + "..."
-            return name
-    return ""
-
-
-async def update_thread_metadata(
-    session: AsyncSession,
-    thread_id: str,
-    assistant_id: str,
-    graph_id: str,
-    *,
-    user_id: str | None = None,
-    input_data: dict[str, Any] | None = None,
-) -> None:
-    """Update thread metadata with assistant and graph information (dialect agnostic).
-
-    If thread doesn't exist, auto-creates it.
-    When *input_data* is provided and the thread has no name yet, the first
-    human message content is used as ``thread_name``.
-    """
-    # Read-modify-write to avoid DB-specific JSON concat operators
-    thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
-
-    thread_name = _extract_thread_name(input_data or {})
-
-    if not thread:
-        # Auto-create thread if it doesn't exist
-        if not user_id:
-            raise HTTPException(400, "Cannot auto-create thread: user_id is required")
-
-        metadata = {
-            "owner": user_id,
-            "assistant_id": str(assistant_id),
-            "graph_id": graph_id,
-            "thread_name": thread_name,
-        }
-
-        thread_orm = ThreadORM(
-            thread_id=thread_id,
-            status="idle",
-            metadata_json=metadata,
-            user_id=user_id,
-        )
-        session.add(thread_orm)
-        await session.commit()
-        return
-
-    md = dict(getattr(thread, "metadata_json", {}) or {})
-    md.update(
-        {
-            "assistant_id": str(assistant_id),
-            "graph_id": graph_id,
-        }
-    )
-    # Only set thread_name if empty and we have a name from the input
-    if thread_name and not md.get("thread_name"):
-        md["thread_name"] = thread_name
-    await session.execute(
-        update(ThreadORM).where(ThreadORM.thread_id == thread_id).values(metadata_json=md, updated_at=datetime.now(UTC))
-    )
-    await session.commit()
-
-
-async def _validate_resume_command(session: AsyncSession, thread_id: str, command: dict[str, Any] | None) -> None:
-    """Validate resume command requirements."""
-    if command and command.get("resume") is not None:
-        # Check if thread exists and is in interrupted state
-        thread_stmt = select(ThreadORM).where(ThreadORM.thread_id == thread_id)
-        thread = await session.scalar(thread_stmt)
-        if not thread:
-            raise HTTPException(404, f"Thread '{thread_id}' not found")
-        if thread.status != "interrupted":
-            raise HTTPException(400, "Cannot resume: thread is not in interrupted state")
 
 
 @router.post("/threads/{thread_id}/runs", response_model=Run, responses={**NOT_FOUND, **CONFLICT})
@@ -276,93 +70,7 @@ async def create_run(
         if isinstance(value_context, dict):
             request.context = {**(request.context or {}), **value_context}
 
-    # Validate resume command requirements early
-    await _validate_resume_command(session, thread_id, request.command)
-
-    run_id = str(uuid4())
-
-    # Get LangGraph service
-    langgraph_service = get_langgraph_service()
-    logger.info(f"[create_run] scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}")
-
-    # Validate assistant exists and get its graph_id. If a graph_id was provided
-    # instead of an assistant UUID, map it deterministically and fall back to the
-    # default assistant created at startup.
-    requested_id = str(request.assistant_id)
-    available_graphs = langgraph_service.list_graphs()
-    resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
-
-    config = request.config or {}
-    context = _resolve_context(config, request.context or {})
-
-    assistant_stmt = select(AssistantORM).where(
-        AssistantORM.assistant_id == resolved_assistant_id,
-    )
-    assistant = await session.scalar(assistant_stmt)
-    if not assistant:
-        raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
-
-    config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
-
-    # Validate the assistant's graph exists
-    available_graphs = langgraph_service.list_graphs()
-    if assistant.graph_id not in available_graphs:
-        raise HTTPException(404, f"Graph '{assistant.graph_id}' not found for assistant")
-
-    # Mark thread as busy and update metadata with assistant/graph info
-    # update_thread_metadata will auto-create thread if it doesn't exist
-    await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user_id=user.identity, input_data=request.input
-    )
-    await set_thread_status(session, thread_id, "busy")
-
-    # Persist run record via ORM model in core.orm (Run table)
-    now = datetime.now(UTC)
-    run_orm = RunORM(
-        run_id=run_id,  # explicitly set (DB can also default-generate if omitted)
-        thread_id=thread_id,
-        assistant_id=resolved_assistant_id,
-        status="pending",
-        input=request.input or {},
-        config=config,
-        context=context,
-        user_id=user.identity,
-        created_at=now,
-        updated_at=now,
-        output=None,
-        error_message=None,
-    )
-    session.add(run_orm)
-    await session.commit()
-
-    # Build response from ORM -> Pydantic
-    run = Run.model_validate(run_orm)
-
-    # Start execution asynchronously.
-    # Don't pass the session to avoid transaction conflicts.
-    task = asyncio.create_task(
-        execute_run_async(
-            run_id,
-            thread_id,
-            assistant.graph_id,
-            request.input or {},
-            user,
-            config,
-            context,
-            request.stream_mode,
-            None,  # Don't pass session to avoid conflicts
-            request.checkpoint,
-            request.command,
-            request.interrupt_before,
-            request.interrupt_after,
-            request.multitask_strategy,
-            request.stream_subgraphs,
-        ),
-        context=make_run_trace_context(run_id, thread_id, assistant.graph_id, user.identity),
-    )
-    logger.info(f"[create_run] background task created task_id={id(task)} for run_id={run_id}")
-    active_runs[run_id] = task
+    _run_id, run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
     return run
 
@@ -384,103 +92,8 @@ async def create_and_stream_run(
     after the client disconnects (default is `"cancel"`). Use `stream_mode`
     to control which event types are emitted.
     """
+    run_id, run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
-    # Validate resume command requirements early
-    await _validate_resume_command(session, thread_id, request.command)
-
-    run_id = str(uuid4())
-
-    # Get LangGraph service
-    langgraph_service = get_langgraph_service()
-    logger.info(
-        f"[create_and_stream_run] scheduling background task run_id={run_id} thread_id={thread_id} user={user.identity}"
-    )
-
-    # Validate assistant exists and get its graph_id. Allow passing a graph_id
-    # by mapping it to a deterministic assistant ID.
-    requested_id = str(request.assistant_id)
-    available_graphs = langgraph_service.list_graphs()
-
-    resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
-
-    config = request.config or {}
-    context = _resolve_context(config, request.context or {})
-
-    assistant_stmt = select(AssistantORM).where(
-        AssistantORM.assistant_id == resolved_assistant_id,
-    )
-    assistant = await session.scalar(assistant_stmt)
-    if not assistant:
-        raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
-
-    config = _merge_jsonb(assistant.config, config)
-    context = _merge_jsonb(assistant.context, context)
-
-    # Validate the assistant's graph exists
-    available_graphs = langgraph_service.list_graphs()
-    if assistant.graph_id not in available_graphs:
-        raise HTTPException(404, f"Graph '{assistant.graph_id}' not found for assistant")
-
-    # Mark thread as busy and update metadata with assistant/graph info
-    # update_thread_metadata will auto-create thread if it doesn't exist
-    await update_thread_metadata(
-        session, thread_id, assistant.assistant_id, assistant.graph_id, user_id=user.identity, input_data=request.input
-    )
-    await set_thread_status(session, thread_id, "busy")
-
-    # Persist run record
-    now = datetime.now(UTC)
-    run_orm = RunORM(
-        run_id=run_id,
-        thread_id=thread_id,
-        assistant_id=resolved_assistant_id,
-        status="running",
-        input=request.input or {},
-        config=config,
-        context=context,
-        user_id=user.identity,
-        created_at=now,
-        updated_at=now,
-        output=None,
-        error_message=None,
-    )
-    session.add(run_orm)
-    await session.commit()
-
-    # Build response model for stream context
-    run = Run.model_validate(run_orm)
-
-    # Start background execution that will populate the broker.
-    # Don't pass the session to avoid transaction conflicts.
-    task = asyncio.create_task(
-        execute_run_async(
-            run_id,
-            thread_id,
-            assistant.graph_id,
-            request.input or {},
-            user,
-            config,
-            context,
-            request.stream_mode,
-            None,  # Don't pass session to avoid conflicts
-            request.checkpoint,
-            request.command,
-            request.interrupt_before,
-            request.interrupt_after,
-            request.multitask_strategy,
-            request.stream_subgraphs,
-        ),
-        context=make_run_trace_context(run_id, thread_id, assistant.graph_id, user.identity),
-    )
-    logger.info(f"[create_and_stream_run] background task created task_id={id(task)} for run_id={run_id}")
-    active_runs[run_id] = task
-
-    # Extract requested stream mode(s)
-    stream_mode = request.stream_mode
-    if not stream_mode and config and "stream_mode" in config:
-        stream_mode = config["stream_mode"]
-
-    # Stream immediately from broker (which will also include replay of any early events)
     # Default to cancel on disconnect - this matches user expectation that clicking
     # "Cancel" in the frontend will stop the backend task. Users can explicitly
     # set on_disconnect="continue" if they want the task to continue.
@@ -628,15 +241,20 @@ async def join_run(
     thread_id: str,
     run_id: str,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> StreamingResponse:
     """Wait for a run to complete and return its output.
 
-    If the run is already in a terminal state (success, error, interrupted),
-    the output is returned immediately. Otherwise the server waits up to 30
-    seconds for the background task to finish.
+    Returns a chunked ``application/json`` response. While the run is still
+    executing, the server sends periodic ``\\n`` heartbeat bytes to keep the
+    connection alive through proxies and load balancers (AWS ALB, Cloudflare,
+    etc.). The final chunk is the JSON result. Leading whitespace is ignored
+    by JSON parsers, so clients can parse the concatenated body normally.
 
-    Sessions are managed manually (not via Depends) to avoid holding a pool
-    connection during the long wait, which would starve background tasks.
+    If the run is already in a terminal state, the output is returned
+    immediately with no heartbeat overhead.
+
+    Sessions are managed manually (not via ``Depends``) to avoid holding a
+    pool connection during the long wait.
     """
     maker = _get_session_maker()
 
@@ -652,33 +270,25 @@ async def join_run(
         if not run_orm:
             raise HTTPException(404, f"Run '{run_id}' not found")
 
-        terminal_states = ["success", "error", "interrupted"]
-        if run_orm.status in terminal_states:
-            return getattr(run_orm, "output", None) or {}
-
-    # No pool connection held during the wait.
-    # asyncio.shield prevents wait_for from cancelling the background task on timeout.
-    task = active_runs.get(run_id)
-    if task:
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=30.0)
-        except TimeoutError:
-            pass
-        except asyncio.CancelledError:
-            pass
-
-    # Short-lived session: read final output
-    async with maker() as session:
-        run_orm = await session.scalar(
-            select(RunORM).where(
-                RunORM.run_id == run_id,
-                RunORM.thread_id == thread_id,
-                RunORM.user_id == user.identity,
+        if run_orm.status in TERMINAL_STATES:
+            return StreamingResponse(
+                iter([encode_output(run_orm.output or {})]),
+                media_type="application/json",
             )
-        )
-        if not run_orm:
-            raise HTTPException(404, f"Run '{run_id}' not found")
-        return run_orm.output or {}
+
+    return StreamingResponse(
+        heartbeat_wait_body(
+            run_id,
+            thread_id,
+            user.identity,
+            timeout=settings.worker.BG_JOB_TIMEOUT_SECS,
+        ),
+        media_type="application/json",
+        headers={
+            "Location": f"/threads/{thread_id}/runs/{run_id}/join",
+            "Content-Location": f"/threads/{thread_id}/runs/{run_id}",
+        },
+    )
 
 
 @router.post("/threads/{thread_id}/runs/wait", responses={**NOT_FOUND, **CONFLICT})
@@ -686,142 +296,39 @@ async def wait_for_run(
     thread_id: str,
     request: RunCreate,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> StreamingResponse:
     """Create a run, execute it, and wait for completion.
 
-    Combines run creation and execution with synchronous waiting. Returns the
-    final output directly (not the Run object). The server waits up to 5
-    minutes for the run to finish. If the run times out, the current output
-    (which may be empty) is returned.
+    Returns a chunked ``application/json`` response with periodic ``\\n``
+    heartbeat bytes to keep the connection alive. The final chunk is the
+    JSON result. Uses ``BG_JOB_TIMEOUT_SECS`` (default 1 hour) as the
+    safety-net timeout.
 
-    Sessions are managed manually (not via Depends) to avoid holding a pool
-    connection during the long wait, which would starve background tasks.
+    Sessions are managed manually (not via ``Depends``) to avoid holding a
+    pool connection during the long wait.
     """
     maker = _get_session_maker()
 
-    # Session block 1: all pre-execution DB work (validate, create run, commit)
+    # Session block: all pre-execution DB work (validate, create run, submit)
     async with maker() as session:
-        # Validate resume command requirements early
-        await _validate_resume_command(session, thread_id, request.command)
-
-        run_id = str(uuid4())
-
-        # Get LangGraph service
-        langgraph_service = get_langgraph_service()
-        logger.info(f"[wait_for_run] creating run run_id={run_id} thread_id={thread_id} user={user.identity}")
-
-        # Validate assistant exists and get its graph_id
-        requested_id = str(request.assistant_id)
-        available_graphs = langgraph_service.list_graphs()
-        resolved_assistant_id = resolve_assistant_id(requested_id, available_graphs)
-
-        config = request.config or {}
-        context = _resolve_context(config, request.context or {})
-
-        assistant_stmt = select(AssistantORM).where(
-            AssistantORM.assistant_id == resolved_assistant_id,
-        )
-        assistant = await session.scalar(assistant_stmt)
-        if not assistant:
-            raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
-
-        config = _merge_jsonb(assistant.config, config)
-        context = _merge_jsonb(assistant.context, context)
-
-        # Validate the assistant's graph exists
-        available_graphs = langgraph_service.list_graphs()
-        if assistant.graph_id not in available_graphs:
-            raise HTTPException(404, f"Graph '{assistant.graph_id}' not found for assistant")
-
-        # Mark thread as busy and update metadata with assistant/graph info
-        # update_thread_metadata will auto-create thread if it doesn't exist
-        await update_thread_metadata(
-            session,
-            thread_id,
-            assistant.assistant_id,
-            assistant.graph_id,
-            user_id=user.identity,
-            input_data=request.input,
-        )
-        await set_thread_status(session, thread_id, "busy")
-
-        # Persist run record
-        now = datetime.now(UTC)
-        run_orm = RunORM(
-            run_id=run_id,
-            thread_id=thread_id,
-            assistant_id=resolved_assistant_id,
-            status="pending",
-            input=request.input or {},
-            config=config,
-            context=context,
-            user_id=user.identity,
-            created_at=now,
-            updated_at=now,
-            output=None,
-            error_message=None,
-        )
-        session.add(run_orm)
-        await session.commit()
-
-        # Capture values needed after session closes
-        graph_id = assistant.graph_id
+        run_id, _run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
     # No pool connection held from here — safe for long waits
-
-    # Start execution asynchronously.
-    task = asyncio.create_task(
-        execute_run_async(
+    return StreamingResponse(
+        heartbeat_wait_body(
             run_id,
             thread_id,
-            graph_id,
-            request.input or {},
-            user,
-            config,
-            context,
-            request.stream_mode,
-            None,  # Don't pass session to avoid conflicts
-            request.checkpoint,
-            request.command,
-            request.interrupt_before,
-            request.interrupt_after,
-            request.multitask_strategy,
-            request.stream_subgraphs,
+            user.identity,
+            timeout=settings.worker.BG_JOB_TIMEOUT_SECS,
         ),
-        context=make_run_trace_context(run_id, thread_id, graph_id, user.identity),
+        media_type="application/json",
+        headers={
+            "Location": f"/threads/{thread_id}/runs/{run_id}/join",
+            "Content-Location": f"/threads/{thread_id}/runs/{run_id}",
+        },
     )
-    logger.info(f"[wait_for_run] background task created task_id={id(task)} for run_id={run_id}")
-    active_runs[run_id] = task
-
-    # Wait for task to complete with timeout
-    try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=300.0)  # 5 minute timeout
-    except TimeoutError:
-        logger.warning(f"[wait_for_run] timeout waiting for run_id={run_id}")
-    except asyncio.CancelledError:
-        logger.info(f"[wait_for_run] cancelled run_id={run_id}")
-    except Exception:
-        logger.exception(f"[wait_for_run] unexpected exception in run_id={run_id}")
-
-    # Session block 2: read final output
-    async with maker() as session:
-        run_orm = await session.scalar(
-            select(RunORM).where(
-                RunORM.run_id == run_id,
-                RunORM.thread_id == thread_id,
-                RunORM.user_id == user.identity,
-            )
-        )
-        if not run_orm:
-            raise HTTPException(500, f"Run '{run_id}' disappeared during execution")
-
-        if run_orm.status == "error":
-            logger.error(f"[wait_for_run] run failed run_id={run_id} error={run_orm.error_message}")
-
-        return run_orm.output or {}
 
 
-# TODO: check if this method is actually required because the implementation doesn't seem correct.
 @router.get("/threads/{thread_id}/runs/{run_id}/stream", responses={**SSE_RESPONSE, **NOT_FOUND})
 async def stream_run(
     thread_id: str,
@@ -850,12 +357,14 @@ async def stream_run(
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     logger.info(f"[stream_run] status={run_orm.status} user={user.identity} thread_id={thread_id} run_id={run_id}")
-    # If already terminal, emit a final end event
-    terminal_states = ["success", "error", "interrupted"]
-    if run_orm.status in terminal_states:
+    # If already terminal and no Last-Event-ID, just emit end.
+    # If Last-Event-ID is present, fall through to stream_run_execution
+    # which will replay missed events from the buffer before ending.
+    if run_orm.status in TERMINAL_STATES and not last_event_id:
+        final_status = "error" if run_orm.status == "error" else run_orm.status
 
         async def generate_final() -> AsyncIterator[str]:
-            yield create_end_event()
+            yield create_end_event(status=final_status)
 
         logger.info(f"[stream_run] starting terminal stream run_id={run_id} status={run_orm.status}")
         return StreamingResponse(
@@ -940,12 +449,17 @@ async def cancel_run_endpoint(
         )
         await session.commit()
 
-    # Optionally wait for background task
+    # Optionally wait for the run to settle
     if wait:
-        task = active_runs.get(run_id)
-        if task:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+        # Poll DB until the run reaches a terminal state (or 10s timeout).
+        # This is simpler and more reliable than pub/sub for cancel-with-wait
+        # since the cancel has already been issued and the status update committed.
+        for _ in range(20):
+            await asyncio.sleep(0.5)
+            session.expire_all()  # sync method, clears cache
+            fresh = await session.scalar(select(RunORM).where(RunORM.run_id == run_id))
+            if fresh and fresh.status in TERMINAL_STATES:
+                break
 
     # Reload and return updated Run (do NOT delete here; deletion is a separate endpoint)
     run_orm = await session.scalar(
@@ -958,228 +472,6 @@ async def cancel_run_endpoint(
     if not run_orm:
         raise HTTPException(404, f"Run '{run_id}' not found after cancellation")
     return Run.model_validate(run_orm)
-
-
-async def execute_run_async(
-    run_id: str,
-    thread_id: str,
-    graph_id: str,
-    input_data: dict,
-    user: User,
-    config: dict | None = None,
-    context: dict | None = None,
-    stream_mode: str | list[str] | None = None,
-    session: AsyncSession | None = None,
-    checkpoint: dict | None = None,
-    command: dict[str, Any] | None = None,
-    interrupt_before: str | list[str] | None = None,
-    interrupt_after: str | list[str] | None = None,
-    _multitask_strategy: str | None = None,
-    subgraphs: bool | None = False,
-) -> None:
-    """Execute run asynchronously in background using streaming to capture all events."""
-    owns_session = session is None
-    if session is None:
-        maker = _get_session_maker()
-        session = maker()
-
-    try:
-        # Update status
-        await update_run_status(run_id, "running", session=session)
-
-        # Get graph and execute
-        langgraph_service = get_langgraph_service()
-
-        run_config = create_run_config(
-            run_id,
-            thread_id,
-            user,
-            additional_config=config or {},
-            checkpoint=checkpoint,
-        )
-
-        # Handle human-in-the-loop fields
-        if interrupt_before is not None:
-            run_config["interrupt_before"] = (
-                interrupt_before if isinstance(interrupt_before, list) else [interrupt_before]
-            )
-        if interrupt_after is not None:
-            run_config["interrupt_after"] = interrupt_after if isinstance(interrupt_after, list) else [interrupt_after]
-
-        # Note: multitask_strategy is handled at the run creation level, not execution level
-        # It controls concurrent run behavior, not graph execution behavior
-
-        # Determine input for execution (either input_data or command)
-        if command is not None:
-            # When command is provided, it replaces input entirely
-            execution_input = map_command_to_langgraph(command)
-        else:
-            # No command, use regular input
-            execution_input = input_data
-
-        # Execute using streaming to capture events for later replay
-        event_counter = 0
-        final_output = None
-        has_interrupt = False
-
-        # Prepare stream modes for execution
-        if stream_mode is None:
-            stream_mode_list = DEFAULT_STREAM_MODES.copy()
-        elif isinstance(stream_mode, str):
-            stream_mode_list = [stream_mode]
-        else:
-            stream_mode_list = stream_mode.copy()
-
-        async with (
-            langgraph_service.get_graph(
-                graph_id,
-                config=run_config,
-                access_context="threads.create_run",
-                user=user,
-                context=context,
-            ) as graph,
-            with_auth_ctx(user, []),
-        ):
-            # Stream events using the graph_streaming service
-            try:
-                async for event_type, event_data in stream_graph_events(
-                    graph=graph,
-                    input_data=execution_input,
-                    config=run_config,
-                    stream_mode=stream_mode_list,
-                    context=context,
-                    subgraphs=subgraphs,
-                    on_checkpoint=lambda _: None,  # Can add checkpoint handling if needed
-                    on_task_result=lambda _: None,  # Can add task result handling if needed
-                ):
-                    try:
-                        # Increment event counter
-                        event_counter += 1
-                        event_id = f"{run_id}_event_{event_counter}"
-
-                        # Create event tuple for broker/storage
-                        event_tuple = (event_type, event_data)
-
-                        # Forward to broker for live consumers (already filtered by graph_streaming)
-                        await streaming_service.put_to_broker(run_id, event_id, event_tuple)
-
-                        # Store for replay (already filtered by graph_streaming)
-                        await streaming_service.store_event_from_raw(run_id, event_id, event_tuple)
-
-                        # Check for interrupt
-                        if isinstance(event_data, dict) and "__interrupt__" in event_data:
-                            has_interrupt = True
-
-                        # Track final output from values events (handles both "values" and "values|namespace")
-                        if event_type.startswith("values"):
-                            final_output = event_data
-
-                    except Exception as event_error:
-                        # Error processing individual event - send error to frontend immediately
-                        logger.error(f"[execute_run_async] error processing event for run_id={run_id}: {event_error}")
-                        error_type = type(event_error).__name__
-                        await streaming_service.signal_run_error(run_id, str(event_error), error_type)
-                        raise
-
-            except Exception as stream_error:
-                # Error during streaming (e.g., graph execution error)
-                # Send error to frontend before re-raising
-                logger.error(f"[execute_run_async] streaming error for run_id={run_id}: {stream_error}")
-                error_type = type(stream_error).__name__
-                await streaming_service.signal_run_error(run_id, str(stream_error), error_type)
-                raise
-
-        if has_interrupt:
-            await update_run_status(run_id, "interrupted", output=final_output or {}, session=session)
-            if not session:
-                raise RuntimeError(f"No database session available to update thread {thread_id} status")
-            await set_thread_status(session, thread_id, "interrupted")
-
-        else:
-            # Update with results - use standard status
-            await update_run_status(run_id, "success", output=final_output or {}, session=session)
-            # Mark thread back to idle
-            if not session:
-                raise RuntimeError(f"No database session available to update thread {thread_id} status")
-            await set_thread_status(session, thread_id, "idle")
-
-    except asyncio.CancelledError:
-        # Store empty output to avoid JSON serialization issues - use standard status
-        await update_run_status(run_id, "interrupted", output={}, session=session)
-        if not session:
-            raise RuntimeError(f"No database session available to update thread {thread_id} status") from None
-        await set_thread_status(session, thread_id, "idle")
-        # Signal cancellation to broker
-        await streaming_service.signal_run_cancelled(run_id)
-        raise
-    except Exception as e:
-        # Log with full traceback so bugs are visible in logs
-        logger.exception(f"[execute_run_async] run failed run_id={run_id}")
-        # Store empty output to avoid JSON serialization issues - use standard status
-        await update_run_status(run_id, "error", output={}, error=str(e), session=session)
-        if not session:
-            raise RuntimeError(f"No database session available to update thread {thread_id} status") from None
-        # Set thread status to "error" when run fails (matches API specification)
-        await set_thread_status(session, thread_id, "error")
-        # Note: Error event already sent to broker in inner exception handler
-        # Only signal if broker still exists (cleanup not yet called)
-        broker = broker_manager.get_broker(run_id)
-        if broker and not broker.is_finished():
-            error_type = type(e).__name__
-            await streaming_service.signal_run_error(run_id, str(e), error_type)
-        # Don't re-raise: this runs as a background task (asyncio.create_task),
-        # so re-raising causes "Task exception was never retrieved" warnings.
-        # The error is already fully handled (run status, thread status, broker).
-    finally:
-        # Clean up broker
-        await streaming_service.cleanup_run(run_id)
-        active_runs.pop(run_id, None)
-        if owns_session:
-            await session.close()
-
-
-async def update_run_status(
-    run_id: str,
-    status: str,
-    output: Any = None,
-    error: str | None = None,
-    session: AsyncSession | None = None,
-) -> None:
-    """Update run status in database (persisted). If session not provided, opens a short-lived session.
-
-    Status is validated to ensure it conforms to API specification.
-    """
-    # Validate status conforms to API specification
-    validated_status = validate_run_status(status)
-
-    owns_session = False
-    if session is None:
-        maker = _get_session_maker()
-        session = maker()  # type: ignore[assignment]
-        owns_session = True
-    try:
-        values = {"status": validated_status, "updated_at": datetime.now(UTC)}
-        if output is not None:
-            # Serialize output to ensure JSON compatibility
-            try:
-                serialized_output = serializer.serialize(output)
-                values["output"] = serialized_output
-            except Exception as e:
-                logger.warning(f"Failed to serialize output for run {run_id}: {e}")
-                values["output"] = {
-                    "error": "Output serialization failed",
-                    "original_type": str(type(output)),
-                }
-        if error is not None:
-            values["error_message"] = error
-        logger.info(f"[update_run_status] updating DB run_id={run_id} status={validated_status}")
-        await session.execute(update(RunORM).where(RunORM.run_id == str(run_id)).values(**values))  # type: ignore[arg-type]
-        await session.commit()
-        logger.info(f"[update_run_status] commit done run_id={run_id}")
-    finally:
-        # Close only if we created it here
-        if owns_session:
-            await session.close()  # type: ignore[func-returns-value]
 
 
 @router.delete(

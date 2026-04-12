@@ -71,7 +71,8 @@
               "guides/dependencies",
               "guides/langgraphjs",
               "guides/observability",
-              "guides/deployment"
+              "guides/deployment",
+              "guides/worker-architecture"
             ]
           },
           {

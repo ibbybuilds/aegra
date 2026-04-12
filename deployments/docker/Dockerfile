@@ -19,7 +19,7 @@ RUN addgroup --system app && adduser --system --ingroup app app
 FROM base AS builder
 
 # Retrieve the uv binary directly from the official image.
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/uv
 
 # Install system build dependencies required for compiling Python extensions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -53,6 +53,7 @@ FROM base AS final
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from the builder stage.

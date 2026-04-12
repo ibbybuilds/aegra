@@ -279,6 +279,11 @@ def _ensure_js_dependencies(config_path: Path) -> None:
                             console.print(
                                 f"  [red]✗[/red] npm install failed: {exc.stderr.decode()[:200]}"
                             )
+                        except subprocess.TimeoutExpired:
+                            console.print(
+                                "  [red]✗[/red] npm install timed out after 120 s. "
+                                "Run 'npm install' manually in the graph directory."
+                            )
                         except FileNotFoundError:
                             console.print(
                                 "[bold yellow]Warning:[/bold yellow] npm not found. "

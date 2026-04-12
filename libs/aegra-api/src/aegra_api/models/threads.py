@@ -146,7 +146,8 @@ class ThreadHistoryRequest(BaseModel):
 
     limit: int | None = Field(10, ge=1, le=1000, description="Number of states to return")
     before: dict[str, Any] | str | None = Field(
-        None, description="Return states before this checkpoint (checkpoint dict or checkpoint ID string)"
+        None,
+        description="Return states before this checkpoint (checkpoint ID string, raw checkpoint dict, or RunnableConfig with 'configurable' key)",
     )
     metadata: dict[str, Any] | None = Field(None, description="Filter by metadata")
     checkpoint: dict[str, Any] | None = Field(None, description="Checkpoint for subgraph filtering")

@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Instance A — workers + API
+  aegra-a:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    ports:
+      - "2027:2026"
+    environment:
+      - POSTGRES_HOST=postgres
+      - PYTHONPATH=/app/src
+      - REDIS_BROKER_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_COUNT=3
+      - LEASE_DURATION_SECONDS=10
+      - HEARTBEAT_INTERVAL_SECONDS=3
+      - REAPER_INTERVAL_SECONDS=5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../../aegra.json:/app/aegra.json:ro
+      - ../../examples:/app/examples:ro
+      - ../../libs/aegra-api/src:/app/src:ro
+      - ../../libs/aegra-api/alembic:/app/alembic:ro
+    command: ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "2026"]
+
+  # Instance B — workers + API (separate container, same code)
+  aegra-b:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    ports:
+      - "2028:2026"
+    environment:
+      - POSTGRES_HOST=postgres
+      - PYTHONPATH=/app/src
+      - REDIS_BROKER_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_COUNT=3
+      - LEASE_DURATION_SECONDS=10
+      - HEARTBEAT_INTERVAL_SECONDS=3
+      - REAPER_INTERVAL_SECONDS=5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      aegra-a:
+        condition: service_started
+    volumes:
+      - ../../aegra.json:/app/aegra.json:ro
+      - ../../examples:/app/examples:ro
+      - ../../libs/aegra-api/src:/app/src:ro
+      - ../../libs/aegra-api/alembic:/app/alembic:ro
+    command: >
+      sh -c "sleep 5 && uvicorn aegra_api.main:app --host 0.0.0.0 --port 2026"
+
+  # Nginx round-robin load balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "2026:2026"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - aegra-a
+      - aegra-b
+
+volumes:
+  postgres_data:

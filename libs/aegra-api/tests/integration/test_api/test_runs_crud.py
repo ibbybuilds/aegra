@@ -760,7 +760,12 @@ class TestCreateRunValidation:
 
 
 class TestWaitForRunTimeouts:
-    """Test wait_for_run timeout behavior."""
+    """Test wait_for_run timeout behavior.
+
+    wait_for_run now returns a StreamingResponse wrapping heartbeat_wait_body.
+    On timeout, the heartbeat generator reads the run's current output from DB
+    and yields it as the final JSON chunk.
+    """
 
     def test_wait_for_run_timeout(self):
         """Test that wait_for_run returns current state on timeout."""
@@ -797,16 +802,19 @@ class TestWaitForRunTimeouts:
 
         mock_maker = _make_session_maker(Session())
 
+        # Mock executor so wait_for_completion raises TimeoutError immediately
+        mock_executor = MagicMock()
+        mock_executor.wait_for_completion = AsyncMock(side_effect=TimeoutError)
+        mock_executor.submit = AsyncMock(return_value=None)
+
         override_session_dependency(app, Session)
         client = make_client(app)
 
-        # Mock asyncio.wait_for to raise TimeoutError
         with (
             patch("aegra_api.api.runs._get_session_maker", return_value=mock_maker),
-            patch("aegra_api.api.runs.asyncio.shield", side_effect=lambda t: t),
-            patch("asyncio.wait_for", side_effect=TimeoutError),
-            patch("aegra_api.api.runs.get_langgraph_service") as mock_service,
-            patch("aegra_api.api.runs.execute_run_async"),
+            patch("aegra_api.services.run_waiters._get_session_maker", return_value=mock_maker),
+            patch("aegra_api.services.run_waiters.executor", mock_executor),
+            patch("aegra_api.services.run_preparation.get_langgraph_service") as mock_service,
         ):
             mock_service.return_value.list_graphs.return_value = ["test-graph"]
 
@@ -819,5 +827,5 @@ class TestWaitForRunTimeouts:
             )
 
             assert resp.status_code == 200
-            # Should return output even if timed out (running state)
+            # StreamingResponse: body is heartbeat newlines + final JSON
             assert resp.json() == {"partial": "data"}

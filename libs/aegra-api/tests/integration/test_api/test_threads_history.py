@@ -200,3 +200,89 @@ def test_history_invalid_limit(client: TestClient, mock_langgraph):
     # GET invalid metadata JSON
     resp = client.get(f"/threads/{thread_id}/history", params={"metadata": "{not-json"})
     assert resp.status_code == 422
+
+
+# ------------------------------------------------------------------
+# Regression: `before` parameter must not double-wrap RunnableConfig
+# See: https://github.com/ibbybuilds/aegra/issues/274
+# ------------------------------------------------------------------
+
+
+class TestBeforeParameterFormats:
+    """Verify that different `before` formats are normalized correctly."""
+
+    @pytest.fixture()
+    def capturing_client(self, client: TestClient) -> tuple[TestClient, list[dict]]:
+        """Client with a FakeAgent that captures the `before` kwarg."""
+        captured: list[dict] = []
+
+        class CapturingAgent(FakeAgent):
+            def __init__(self) -> None:
+                super().__init__(snapshots=[])
+
+            async def aget_state_history(self, config: dict, **kwargs: dict):  # type: ignore[override]
+                captured.append(kwargs.get("before"))
+                return
+                yield  # intentional — presence of `yield` makes this an async generator
+
+        with patch_langgraph_service(agent=CapturingAgent()):
+            yield client, captured
+
+    def test_before_as_string(self, capturing_client: tuple) -> None:
+        """String checkpoint ID should be wrapped in configurable."""
+        client, captured = capturing_client
+        thread_id = _ensure_thread(client)
+
+        resp = client.post(
+            f"/threads/{thread_id}/history",
+            json={"before": "cp_abc123"},
+        )
+        assert resp.status_code == 200
+
+        assert len(captured) == 1
+        assert captured[0] == {"configurable": {"checkpoint_id": "cp_abc123"}}
+
+    def test_before_as_runnable_config(self, capturing_client: tuple) -> None:
+        """RunnableConfig dict (with 'configurable' key) must pass through as-is."""
+        client, captured = capturing_client
+        thread_id = _ensure_thread(client)
+
+        before = {"configurable": {"checkpoint_id": "cp_xyz789"}}
+        resp = client.post(
+            f"/threads/{thread_id}/history",
+            json={"before": before},
+        )
+        assert resp.status_code == 200
+
+        assert len(captured) == 1
+        # Must NOT be double-wrapped as {"configurable": {"configurable": {...}}}
+        assert captured[0] == {"configurable": {"checkpoint_id": "cp_xyz789"}}
+
+    def test_before_as_raw_checkpoint_dict(self, capturing_client: tuple) -> None:
+        """Raw checkpoint dict (no 'configurable' key) should be wrapped."""
+        client, captured = capturing_client
+        thread_id = _ensure_thread(client)
+
+        before = {"checkpoint_id": "cp_raw", "thread_id": "t1"}
+        resp = client.post(
+            f"/threads/{thread_id}/history",
+            json={"before": before},
+        )
+        assert resp.status_code == 200
+
+        assert len(captured) == 1
+        assert captured[0] == {"configurable": {"checkpoint_id": "cp_raw", "thread_id": "t1"}}
+
+    def test_before_none(self, capturing_client: tuple) -> None:
+        """None before should pass through as None."""
+        client, captured = capturing_client
+        thread_id = _ensure_thread(client)
+
+        resp = client.post(
+            f"/threads/{thread_id}/history",
+            json={"before": None},
+        )
+        assert resp.status_code == 200
+
+        assert len(captured) == 1
+        assert captured[0] is None

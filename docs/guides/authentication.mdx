@@ -158,6 +158,156 @@ The `ctx` parameter provides:
 | `dict` | Allow with filters (e.g., `{"metadata": {"team_id": "123"}}`) |
 | Modified `value` | Allow with modified request data |
 
+## Accessing user data in your graph
+
+When auth is enabled, Aegra automatically injects the authenticated user's data into
+`config["configurable"]["langgraph_auth_user"]` before graph execution. This happens
+server-side, so the client cannot tamper with it.
+
+This works with **all** graph types: custom `StateGraph` graphs, `create_react_agent`,
+`create_agent`, or any compiled graph.
+
+### From tools
+
+<Tabs>
+  <Tab title="InjectedToolArg (recommended)">
+    ```python
+    from typing import Annotated
+    from langchain_core.runnables import RunnableConfig
+    from langchain_core.tools import tool, InjectedToolArg
+
+    @tool
+    async def get_user_data(
+        query: str,
+        config: Annotated[RunnableConfig, InjectedToolArg],
+    ) -> dict:
+        """Tool that accesses the authenticated user."""
+        auth_user = config["configurable"]["langgraph_auth_user"]
+        user_id = auth_user["identity"]
+        permissions = auth_user.get("permissions", [])
+
+        if not any(p == "write" or p.endswith(":write") for p in permissions):
+            return {"error": "Insufficient permissions"}
+
+        return {"user_id": user_id, "result": f"Data for {query}"}
+    ```
+
+    `InjectedToolArg` tells the LLM to ignore this parameter (it won't try to fill it).
+    Aegra injects the config automatically at runtime.
+  </Tab>
+  <Tab title="ToolRuntime">
+    ```python
+    from langchain_core.tools import tool
+    from langgraph.prebuilt import ToolRuntime
+
+    @tool
+    async def get_user_data(
+        query: str,
+        tool_runtime: ToolRuntime,
+    ) -> dict:
+        """Tool that accesses the authenticated user via ToolRuntime."""
+        auth_user = tool_runtime.config["configurable"]["langgraph_auth_user"]
+        user_id = auth_user["identity"]
+        return {"user_id": user_id, "result": f"Data for {query}"}
+    ```
+
+    `ToolRuntime` is a subclass of `Runtime` that includes `config`, `state`,
+    and `tool_call_id`. It is only available inside tools (not graph nodes).
+  </Tab>
+</Tabs>
+
+### From graph nodes
+
+Graph nodes can accept a `config: RunnableConfig` parameter. Aegra injects
+the authenticated user into `config["configurable"]["langgraph_auth_user"]`
+before the graph executes:
+
+```python
+from langchain_core.runnables import RunnableConfig
+
+async def my_node(state: State, config: RunnableConfig) -> dict:
+    """Graph node that accesses the authenticated user."""
+    auth_user = config["configurable"]["langgraph_auth_user"]
+    user_id = auth_user["identity"]
+    role = auth_user.get("role")
+    # Use user_id and role for RBAC, personalization, etc.
+    return {"response": f"Hello {user_id}"}
+```
+
+<Note>
+  The `Runtime` object (from `get_runtime()`) does **not** include `config`.
+  To access config from nodes, add a `config: RunnableConfig` parameter to
+  your node function. In tools, use `InjectedToolArg` or `ToolRuntime` instead.
+</Note>
+
+### From factory graphs
+
+[Factory graphs](/reference/configuration#graph-factories) receive a `ServerRuntime`
+object that includes `runtime.user` with the authenticated user's data. This is
+available at **factory time** (when deciding graph structure) before the graph executes:
+
+```python
+from langgraph_sdk.runtime import ServerRuntime
+
+async def graph(runtime: ServerRuntime):
+    """Factory graph that adapts structure based on the authenticated user."""
+    user = runtime.user  # The authenticated user (or None)
+
+    tools = [search_tool]
+
+    # Grant admin-only tools based on auth
+    if user and "admin" in user.permissions:
+        tools.append(admin_delete_tool)
+
+    builder = StateGraph(State)
+    # ... build graph with user-appropriate tools
+    return builder.compile()
+```
+
+The `runtime.user` object is the full `User` model with all fields from your
+`@auth.authenticate` handler. Standard fields (`identity`, `display_name`,
+`permissions`) and custom fields (`role`, `team_id`, etc.) are all accessible
+as attributes or via dict-style access:
+
+```python
+user = runtime.user
+user.identity          # "alice"
+user.role              # "admin" (custom field, attribute access)
+user["team_id"]        # "team42" (custom field, dict-style access)
+user.to_dict()         # full dict including all custom fields
+```
+
+<Note>
+  Factory graphs get user data in **two places**:
+  - **Factory time** (`runtime.user` on `ServerRuntime`): for structural decisions
+    like which tools to include, which nodes to add, or which model to use.
+  - **Execution time** (`config["configurable"]["langgraph_auth_user"]`): available
+    inside nodes and tools during the actual graph run (same as static graphs).
+</Note>
+
+### Available fields
+
+The `langgraph_auth_user` dict contains everything your `@auth.authenticate`
+handler returns, including any custom fields:
+
+```python
+auth_user = config["configurable"]["langgraph_auth_user"]
+# Standard fields
+auth_user["identity"]        # str - unique user ID
+auth_user["display_name"]    # str - display name
+auth_user["permissions"]     # list[str] - permission strings
+auth_user["is_authenticated"]  # bool
+
+# Custom fields from your auth handler
+auth_user["role"]            # any custom field you returned
+auth_user["team_id"]         # any custom field you returned
+```
+
+Convenience shortcuts are also available directly on `config["configurable"]`:
+
+- `config["configurable"]["user_id"]` -- the user's identity
+- `config["configurable"]["user_display_name"]` -- the user's display name
+
 ## Provider examples
 
 <Tabs>

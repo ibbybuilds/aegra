@@ -28,32 +28,41 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - PYTHONPATH=/app/src
+      - REDIS_BROKER_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_COUNT=3
+      - N_JOBS_PER_WORKER=10
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:$${PORT:-2026}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     volumes:
       - ./aegra.json:/app/aegra.json:ro
       - ./examples:/app/examples:ro
       - ./libs/aegra-api/src:/app/src:ro  # Mount full src for PYTHONPATH to work
       - ./libs/aegra-api/alembic:/app/alembic:ro # for migrations
-      - ./.env:/app/.env:ro
-    command: >
-      sh -c "
-        echo 'Running database migrations...' &&
-        alembic upgrade head &&
-        echo 'Starting Aegra server...' &&
-        uvicorn aegra_api.main:app --host 0.0.0.0 --port $${PORT:-2026} --reload
-      "
+    command: ["uvicorn", "aegra_api.main:app", "--host", "0.0.0.0", "--port", "${PORT:-2026}", "--reload"]
 
-  # Redis (optional - for advanced queuing in future phases)
+  # Redis - enables multi-instance SSE streaming with pub/sub + replay
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    profiles:
-      - redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

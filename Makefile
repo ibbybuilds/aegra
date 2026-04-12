@@ -1,4 +1,4 @@
-.PHONY: help install dev-install setup-hooks format lint type-check security test test-api test-cli test-cov clean run ci-check openapi
+.PHONY: help install dev-install setup-hooks format lint type-check security test test-api test-cli test-cov clean run ci-check openapi e2e-dev e2e-prod e2e-both
 
 help:
 	@echo "Available commands:"
@@ -15,6 +15,9 @@ help:
 	@echo "  make test-cov      - Run tests with coverage"
 	@echo "  make openapi       - Regenerate docs/openapi.json from code"
 	@echo "  make ci-check      - Run all CI checks locally"
+	@echo "  make e2e-dev       - Run E2E tests in dev mode (no Redis)"
+	@echo "  make e2e-prod      - Run E2E tests in prod mode (Redis workers)"
+	@echo "  make e2e-both      - Run E2E tests in both modes"
 	@echo "  make clean         - Clean cache files"
 	@echo "  make run           - Run the server"
 
@@ -68,6 +71,40 @@ ci-check: format lint
 	$(MAKE) test
 	@echo ""
 	@echo "All CI checks completed! (ty and bandit are non-blocking)"
+
+E2E_IGNORE := --ignore=libs/aegra-api/tests/e2e/manual_auth_tests --ignore=libs/aegra-api/tests/e2e/multi_instance
+
+e2e-dev:
+	@echo "Starting dev mode (LocalExecutor, no Redis)..."
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+	@echo "Waiting for server..."; \
+	ready=0; \
+	for i in $$(seq 1 30); do \
+		if curl -s http://localhost:2026/health > /dev/null 2>&1; then ready=1; break; fi; \
+		sleep 2; \
+	done; \
+	if [ "$$ready" = "0" ]; then echo "Server failed to start within 60s"; docker compose -f docker-compose.yml -f docker-compose.dev.yml down; exit 1; fi
+	@rc=0; \
+	uv run --package aegra-api pytest libs/aegra-api/tests/e2e/ -m "not prod_only" $(E2E_IGNORE) -v --tb=short || rc=$$?; \
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml down; \
+	exit $$rc
+
+e2e-prod:
+	@echo "Starting prod mode (WorkerExecutor + Redis)..."
+	@docker compose up -d
+	@echo "Waiting for server..."; \
+	ready=0; \
+	for i in $$(seq 1 30); do \
+		if curl -s http://localhost:2026/health > /dev/null 2>&1; then ready=1; break; fi; \
+		sleep 2; \
+	done; \
+	if [ "$$ready" = "0" ]; then echo "Server failed to start within 60s"; docker compose down; exit 1; fi
+	@rc=0; \
+	uv run --package aegra-api pytest libs/aegra-api/tests/e2e/ $(E2E_IGNORE) -v --tb=short || rc=$$?; \
+	docker compose down; \
+	exit $$rc
+
+e2e-both: e2e-dev e2e-prod
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

@@ -222,10 +222,14 @@ await client.runs.cancel(
 
 ## SSE reconnection
 
-Aegra stores streaming events in the database for replay. If your connection drops:
+Aegra stores streaming events in a replay buffer (Redis Lists when `REDIS_BROKER_ENABLED=true`, in-memory list in dev mode) for replay. If your connection drops:
 
 1. Track the last event ID you received
 2. Reconnect to `GET /threads/{thread_id}/runs/{run_id}/stream` with `Last-Event-ID` header
 3. You'll receive all events from where you left off
 
 Events are retained for 1 hour after the run completes.
+
+<Note>
+  In production deployments, SSE events are delivered via Redis pub/sub from workers — the client's SSE connection and the worker executing the run can be on different instances. See the [worker architecture guide](/guides/worker-architecture) for details on how this works.
+</Note>

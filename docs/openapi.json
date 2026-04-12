@@ -3,7 +3,7 @@
   "info": {
     "title": "Aegra",
     "description": "Production-ready Agent Protocol server",
-    "version": "0.8.4"
+    "version": "0.9.2"
   },
   "paths": {
     "/info": {
@@ -2025,7 +2025,7 @@
           "Thread Runs"
         ],
         "summary": "Join Run",
-        "description": "Wait for a run to complete and return its output.\n\nIf the run is already in a terminal state (success, error, interrupted),\nthe output is returned immediately. Otherwise the server waits up to 30\nseconds for the background task to finish.\n\nSessions are managed manually (not via Depends) to avoid holding a pool\nconnection during the long wait, which would starve background tasks.",
+        "description": "Wait for a run to complete and return its output.\n\nReturns a chunked ``application/json`` response. While the run is still\nexecuting, the server sends periodic ``\\n`` heartbeat bytes to keep the\nconnection alive through proxies and load balancers (AWS ALB, Cloudflare,\netc.). The final chunk is the JSON result. Leading whitespace is ignored\nby JSON parsers, so clients can parse the concatenated body normally.\n\nIf the run is already in a terminal state, the output is returned\nimmediately with no heartbeat overhead.\n\nSessions are managed manually (not via ``Depends``) to avoid holding a\npool connection during the long wait.",
         "operationId": "join_run_threads__thread_id__runs__run_id__join_get",
         "parameters": [
           {
@@ -2052,11 +2052,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Join Run Threads  Thread Id  Runs  Run Id  Join Get"
-                }
+                "schema": {}
               }
             }
           },
@@ -2089,7 +2085,7 @@
           "Thread Runs"
         ],
         "summary": "Wait For Run",
-        "description": "Create a run, execute it, and wait for completion.\n\nCombines run creation and execution with synchronous waiting. Returns the\nfinal output directly (not the Run object). The server waits up to 5\nminutes for the run to finish. If the run times out, the current output\n(which may be empty) is returned.\n\nSessions are managed manually (not via Depends) to avoid holding a pool\nconnection during the long wait, which would starve background tasks.",
+        "description": "Create a run, execute it, and wait for completion.\n\nReturns a chunked ``application/json`` response with periodic ``\\n``\nheartbeat bytes to keep the connection alive. The final chunk is the\nJSON result. Uses ``BG_JOB_TIMEOUT_SECS`` (default 1 hour) as the\nsafety-net timeout.\n\nSessions are managed manually (not via ``Depends``) to avoid holding a\npool connection during the long wait.",
         "operationId": "wait_for_run_threads__thread_id__runs_wait_post",
         "parameters": [
           {
@@ -2117,11 +2113,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Wait For Run Threads  Thread Id  Runs Wait Post"
-                }
+                "schema": {}
               }
             }
           },
@@ -2352,7 +2344,7 @@
           "Stateless Runs"
         ],
         "summary": "Stateless Wait For Run",
-        "description": "Create a stateless run and wait for completion.\n\nGenerates an ephemeral thread, delegates to the threaded ``wait_for_run``\nendpoint, and deletes the thread on completion (unless\n``on_completion=\"keep\"``).",
+        "description": "Create a stateless run and wait for completion.\n\nGenerates an ephemeral thread, delegates to the threaded ``wait_for_run``\nendpoint, and deletes the thread after the response finishes streaming\n(unless ``on_completion=\"keep\"``).",
         "operationId": "stateless_wait_for_run_runs_wait_post",
         "requestBody": {
           "content": {
@@ -2369,11 +2361,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Stateless Wait For Run Runs Wait Post"
-                }
+                "schema": {}
               }
             }
           },
@@ -4231,7 +4219,7 @@
               }
             ],
             "title": "Before",
-            "description": "Return states before this checkpoint (checkpoint dict or checkpoint ID string)"
+            "description": "Return states before this checkpoint (checkpoint ID string, raw checkpoint dict, or RunnableConfig with 'configurable' key)"
           },
           "metadata": {
             "anyOf": [

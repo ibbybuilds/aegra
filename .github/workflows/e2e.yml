@@ -7,7 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-tests:
+  e2e-dev-mode:
+    name: E2E (Dev Mode — LocalExecutor)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,7 +53,7 @@ jobs:
           POSTGRES_DB: "aegra"
         run: uv run alembic upgrade head
 
-      - name: Start Aegra server in background
+      - name: Start Aegra server (dev mode — no Redis)
         env:
           AEGRA_CONFIG: ${{ github.workspace }}/aegra.json
           POSTGRES_USER: "user"
@@ -64,7 +65,119 @@ jobs:
           AUTH_TYPE: noop
           HOST: "0.0.0.0"
           PORT: "2026"
-          # Add examples to Python path for graph imports
+          REDIS_BROKER_ENABLED: "false"
+          PYTHONPATH: ${{ github.workspace }}/examples
+        working-directory: libs/aegra-api
+        run: |
+          uv run uvicorn aegra_api.main:app --host 0.0.0.0 --port 2026 > server.log 2>&1 &
+          echo $! > server.pid
+          echo "Waiting for server to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:2026/health > /dev/null 2>&1; then
+              echo "Server is ready!"
+              exit 0
+            fi
+            echo "Attempt $i/30: Server not ready yet..."
+            sleep 2
+          done
+          echo "Server failed to start. Logs:"
+          cat server.log
+          exit 1
+
+      - name: Run E2E tests (skip prod-only tests)
+        working-directory: libs/aegra-api
+        env:
+          SERVER_URL: http://localhost:2026
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest tests/e2e -v --tb=short -m "not prod_only" --ignore=tests/e2e/manual_auth_tests --ignore=tests/e2e/multi_instance
+
+      - name: Show server logs on failure
+        if: failure()
+        working-directory: libs/aegra-api
+        run: |
+          echo "=== Server Logs ==="
+          cat server.log || echo "No server logs found"
+
+      - name: Stop server
+        if: always()
+        working-directory: libs/aegra-api
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+
+  e2e-prod-mode:
+    name: E2E (Prod Mode — WorkerExecutor + Redis)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: aegra
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install aegra-api dependencies
+        working-directory: libs/aegra-api
+        run: uv sync
+
+      - name: Run database migrations
+        working-directory: libs/aegra-api
+        env:
+          POSTGRES_USER: "user"
+          POSTGRES_PASSWORD: "password"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: "5432"
+          POSTGRES_DB: "aegra"
+        run: uv run alembic upgrade head
+
+      - name: Start Aegra server (prod mode — Redis workers)
+        env:
+          AEGRA_CONFIG: ${{ github.workspace }}/aegra.json
+          POSTGRES_USER: "user"
+          POSTGRES_PASSWORD: "password"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: "5432"
+          POSTGRES_DB: "aegra"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AUTH_TYPE: noop
+          HOST: "0.0.0.0"
+          PORT: "2026"
+          REDIS_BROKER_ENABLED: "true"
+          REDIS_URL: "redis://localhost:6379/0"
+          WORKER_COUNT: "3"
+          N_JOBS_PER_WORKER: "10"
           PYTHONPATH: ${{ github.workspace }}/examples
         working-directory: libs/aegra-api
         run: |
@@ -88,7 +201,7 @@ jobs:
         env:
           SERVER_URL: http://localhost:2026
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: uv run pytest tests/e2e -v --tb=short --ignore=tests/e2e/manual_auth_tests
+        run: uv run pytest tests/e2e -v --tb=short --ignore=tests/e2e/manual_auth_tests --ignore=tests/e2e/multi_instance
 
       - name: Show server logs on failure
         if: failure()

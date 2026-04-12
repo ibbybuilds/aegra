@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from aegra_api.api.runs import set_thread_status
+from aegra_api.services.run_status import set_thread_status
 
 
 class TestSetThreadStatus:
@@ -15,10 +15,10 @@ class TestSetThreadStatus:
         """Test that set_thread_status validates status before updating."""
         session = AsyncMock()
 
-        # Valid status should work
+        # Valid status should work — does not commit (caller controls tx)
         await set_thread_status(session, "thread-123", "busy")
         session.execute.assert_called_once()
-        session.commit.assert_called_once()
+        session.commit.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_thread_status_rejects_invalid_status(self):
@@ -28,9 +28,8 @@ class TestSetThreadStatus:
         with pytest.raises(ValueError, match="Invalid thread status"):
             await set_thread_status(session, "thread-123", "invalid_status")
 
-        # Should not execute or commit with invalid status
+        # Should not execute with invalid status
         session.execute.assert_not_called()
-        session.commit.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_thread_status_all_valid_statuses(self):
@@ -45,15 +44,15 @@ class TestSetThreadStatus:
             await set_thread_status(session, "thread-123", status)
 
             session.execute.assert_called_once()
-            session.commit.assert_called_once()
+            session.commit.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_set_thread_status_imports_validation(self):
         """Test that set_thread_status imports and uses validation."""
         session = AsyncMock()
 
-        # Patch validate_thread_status in the utils module to verify it's called
-        with patch("aegra_api.utils.status_compat.validate_thread_status") as mock_validate:
+        # Patch validate_thread_status where it's used (in run_status module)
+        with patch("aegra_api.services.run_status.validate_thread_status") as mock_validate:
             mock_validate.return_value = "busy"
             await set_thread_status(session, "thread-123", "busy")
             mock_validate.assert_called_once_with("busy")

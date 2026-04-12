@@ -5,11 +5,11 @@ description: "Deploy Aegra to Docker, PaaS platforms, or Kubernetes."
 
 Aegra provides three CLI commands for different deployment scenarios:
 
-| Command | Starts PostgreSQL? | Starts app? | Best for |
-|---------|-------------------|-------------|----------|
-| `aegra dev` | Yes (Docker) | Yes (host, hot reload) | Local development |
-| `aegra up` | Yes (Docker) | Yes (Docker) | Self-hosted production |
-| `aegra serve` | No | Yes (host) | PaaS, containers, bare metal |
+| Command | Starts PostgreSQL? | Starts Redis? | Starts app? | Best for |
+|---------|-------------------|--------------|-------------|----------|
+| `aegra dev` | Yes (Docker) | No | Yes (host, hot reload) | Local development |
+| `aegra up` | Yes (Docker) | Yes (Docker) | Yes (Docker) | Self-hosted production |
+| `aegra serve` | No | No | Yes (host) | PaaS, containers, bare metal |
 
 ## Local development
 
@@ -17,12 +17,12 @@ Aegra provides three CLI commands for different deployment scenarios:
 aegra dev
 ```
 
-This starts a PostgreSQL container via Docker Compose and runs the app on your host with hot reload.
+This starts a PostgreSQL container via Docker Compose and runs the app on your host with hot reload. No Redis is required -- runs execute as in-process asyncio tasks.
 
 What it does:
 1. Finds or generates `docker-compose.yml` with PostgreSQL
 2. Starts the PostgreSQL container
-3. Loads your `.env` file
+3. Loads your `.env` file (with `REDIS_BROKER_ENABLED=false` by default)
 4. Runs uvicorn with `--reload` for hot reloading
 5. Applies database migrations automatically on startup
 
@@ -43,17 +43,19 @@ What it does:
 aegra up
 ```
 
-Starts the entire stack (PostgreSQL + app) in Docker containers. This is the recommended production deployment for your own infrastructure.
+Starts the entire stack (PostgreSQL + Redis + app) in Docker containers. This is the recommended production deployment for your own infrastructure.
 
 What it does:
-1. Finds or generates `docker-compose.yml` with PostgreSQL + app service
+1. Finds or generates `docker-compose.yml` with PostgreSQL, Redis, and app service
 2. Builds the Docker image from your `Dockerfile`
 3. Starts all containers
-4. The app container runs `aegra serve` internally
+4. The app container runs `aegra serve` internally with `REDIS_BROKER_ENABLED=true`
 5. Migrations apply automatically on startup
+6. Workers start automatically and begin processing runs from the Redis job queue — see the [worker architecture guide](/guides/worker-architecture) for details on job dispatch, concurrency, and crash recovery
 
 The generated `docker-compose.yml` includes:
 - PostgreSQL with pgvector
+- Redis for job dispatch, SSE pub/sub, and crash recovery
 - Your app container built from `Dockerfile`
 - Health checks on both PostgreSQL and the API
 - `restart: unless-stopped` on all services — containers automatically restart on crashes or failed health checks, but respect manual `docker compose stop`
@@ -82,15 +84,20 @@ For platforms like Railway, Render, or Fly.io — use `aegra serve`:
 aegra serve
 ```
 
-This runs uvicorn directly without starting PostgreSQL. You provide a running database via environment variables.
+This runs uvicorn directly without starting PostgreSQL. You provide a running database instance via environment variables. Redis is only required when `REDIS_BROKER_ENABLED=true` (recommended for multi-instance production deployments). Without Redis, runs execute as in-process asyncio tasks — suitable for single-instance deployments.
 
 <Steps>
   <Step title="Create a PostgreSQL addon on your platform">
     Most PaaS platforms offer managed PostgreSQL. Create one and get the connection URL.
   </Step>
+  <Step title="Create a Redis addon">
+    For production workloads, add a managed Redis instance. This enables the worker job queue, cross-instance SSE streaming, and crash recovery. Without Redis (`REDIS_BROKER_ENABLED=false`), runs execute as in-process asyncio tasks (suitable for single-instance deployments).
+  </Step>
   <Step title="Set environment variables">
     ```bash
     DATABASE_URL=postgresql://user:password@host:5432/mydb
+    REDIS_BROKER_ENABLED=true
+    REDIS_URL=redis://your-redis-host:6379/0
     OPENAI_API_KEY=sk-...
     AUTH_TYPE=noop  # or custom
     ```
@@ -130,6 +137,13 @@ containers:
           secretKeyRef:
             name: aegra-secrets
             key: database-url
+      - name: REDIS_BROKER_ENABLED
+        value: "true"
+      - name: REDIS_URL
+        valueFrom:
+          secretKeyRef:
+            name: aegra-secrets
+            key: redis-url
     ports:
       - containerPort: 2026
     readinessProbe:
@@ -142,7 +156,7 @@ containers:
         port: 2026
 ```
 
-PostgreSQL should be a managed service (CloudSQL, RDS, etc.) or a StatefulSet with persistent volumes.
+PostgreSQL should be a managed service (CloudSQL, RDS, etc.) or a StatefulSet with persistent volumes. Redis should be a managed service (ElastiCache, Memorystore, etc.) or a separate Deployment.
 
 ## Database configuration
 

@@ -1,6 +1,6 @@
 [project]
 name = "aegra-api"
-version = "0.8.5"
+version = "0.9.3"
 description = "Aegra core API - Self-hosted Agent Protocol server"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -41,9 +41,15 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.39.1",
     "openinference-instrumentation-langchain>=0.1.58",
 
+    # Metrics
+    "prometheus-fastapi-instrumentator>=7.1.0",
+
     # Utils
     "structlog>=25.4.0",
     "asgi-correlation-id>=4.3.4",
+
+    # Redis (optional broker backend for multi-instance streaming)
+    "redis[hiredis]>=5.0.0",
 ]
 
 [project.urls]
@@ -98,6 +104,7 @@ testpaths = ["tests"]
 markers = [
     "unit: unit tests",
     "e2e: end-to-end tests requiring a running server",
+    "prod_only: tests that require Redis workers (skipped in dev mode)",
 ]
 
 [dependency-groups]

@@ -40,5 +40,5 @@ Aegra is a production-ready server for running LangGraph agents with full persis
 ## Optional
 
 - [API reference](openapi.json): OpenAPI specification for all endpoints.
-- [GitHub](https://github.com/ibbybuilds/aegra): Source code, issues, and contributions.
+- [GitHub](https://github.com/aegra/aegra): Source code, issues, and contributions.
 - [Discord](https://discord.com/invite/D5M3ZPS25e): Community support and discussion.

@@ -53,10 +53,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ibbybuilds/aegra"
-Documentation = "https://github.com/ibbybuilds/aegra#readme"
-Repository = "https://github.com/ibbybuilds/aegra"
-Issues = "https://github.com/ibbybuilds/aegra/issues"
+Homepage = "https://github.com/aegra/aegra"
+Documentation = "https://github.com/aegra/aegra#readme"
+Repository = "https://github.com/aegra/aegra"
+Issues = "https://github.com/aegra/aegra/issues"
 
 [build-system]
 requires = ["hatchling"]

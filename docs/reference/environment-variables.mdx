@@ -127,6 +127,14 @@ In dev mode (`REDIS_BROKER_ENABLED=false`), runs execute as in-process asyncio t
 
 Total capacity per instance = `WORKER_COUNT` x `N_JOBS_PER_WORKER` (default: 30 concurrent runs).
 
+## Prometheus metrics
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_PROMETHEUS_METRICS` | `false` | Expose `/metrics` endpoint with HTTP request metrics in Prometheus format |
+
+When enabled, a `/metrics` endpoint serves standard HTTP request metrics (request count, latency histograms, in-progress requests) using [prometheus-fastapi-instrumentator](https://github.com/trallnag/prometheus-fastapi-instrumentator). Compatible with any Prometheus/Grafana stack.
+
 ## Observability (OpenTelemetry)
 
 | Variable | Default | Description |

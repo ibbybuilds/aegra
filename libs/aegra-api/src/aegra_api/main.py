@@ -17,7 +17,7 @@ from aegra_api.api.runs import router as runs_router
 from aegra_api.api.stateless_runs import router as stateless_runs_router
 from aegra_api.api.store import router as store_router
 from aegra_api.api.threads import router as threads_router
-from aegra_api.config import HttpConfig, get_config_dir, load_http_config
+from aegra_api.config import CorsConfig, HttpConfig, get_config_dir, load_http_config
 from aegra_api.core.app_loader import load_custom_app
 from aegra_api.core.auth_deps import auth_dependency
 from aegra_api.core.database import db_manager
@@ -30,6 +30,7 @@ from aegra_api.core.route_merger import (
 )
 from aegra_api.middleware import ContentTypeFixMiddleware, StructLogMiddleware
 from aegra_api.models.errors import AgentProtocolError, get_error_type
+from aegra_api.observability.metrics import setup_prometheus_metrics
 from aegra_api.observability.setup import setup_observability
 from aegra_api.services.broker import broker_manager
 from aegra_api.services.executor import executor
@@ -215,7 +216,7 @@ def _apply_auth_to_routes(app: FastAPI, auth_deps: list[Any]) -> None:
     logger.info("Applied authentication dependency to custom routes")
 
 
-def _add_cors_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> None:
+def _add_cors_middleware(app: FastAPI, cors_config: CorsConfig | None) -> None:
     """Add CORS middleware with config or defaults.
 
     When ``allow_origins`` is ``["*"]`` (the default), ``allow_credentials``
@@ -253,7 +254,7 @@ def _add_cors_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> No
         )
 
 
-def _add_common_middleware(app: FastAPI, cors_config: dict[str, Any] | None) -> None:
+def _add_common_middleware(app: FastAPI, cors_config: CorsConfig | None) -> None:
     """Add common middleware stack in correct order.
 
     Middleware runs in reverse registration order, so we register:
@@ -301,7 +302,7 @@ def create_app() -> FastAPI:
         Configured FastAPI application instance
     """
     http_config: HttpConfig | None = load_http_config()
-    cors_config = http_config.get("cors") if http_config else None
+    cors_config: CorsConfig | None = http_config.get("cors") if http_config else None
 
     # Try to load custom app if configured
     user_app = None
@@ -355,6 +356,8 @@ def create_app() -> FastAPI:
             application.exception_handler(exc_type)(handler)
 
         application.get("/")(root_handler)
+
+    setup_prometheus_metrics(application)
 
     return application
 

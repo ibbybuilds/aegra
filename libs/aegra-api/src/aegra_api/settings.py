@@ -135,6 +135,9 @@ class ObservabilitySettings(EnvBase):
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
     OTEL_EXPORTER_OTLP_HEADERS: str | None = None
 
+    # --- Prometheus Metrics ---
+    ENABLE_PROMETHEUS_METRICS: bool = False
+
     # --- Langfuse Specifics ---
     LANGFUSE_BASE_URL: str = "http://localhost:3000"
     LANGFUSE_PUBLIC_KEY: str | None = None

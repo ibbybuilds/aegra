@@ -12,11 +12,11 @@
   },
   "dependencies": {
     "@langchain/core": "^1.1.36",
-    "@langchain/langgraph": "^1.2.0"
+    "@langchain/langgraph": "^1.2.0",
+    "tsx": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "tsx": "^4.0.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

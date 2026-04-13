@@ -754,6 +754,7 @@ class TestToMessageChunk:
             name="assistant",
             additional_kwargs={"key": "value"},
             response_metadata={"model": "fake"},
+            usage_metadata={"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
             tool_calls=[{"id": "tc-1", "name": "tool", "args": {}}],
             invalid_tool_calls=[],
         )
@@ -766,6 +767,7 @@ class TestToMessageChunk:
         assert result.name == "assistant"
         assert result.additional_kwargs == {"key": "value"}
         assert result.response_metadata == {"model": "fake"}
+        assert result.usage_metadata == {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
         assert result.tool_calls == [{"id": "tc-1", "name": "tool", "args": {}, "type": "tool_call"}]
         assert result.invalid_tool_calls == []
 

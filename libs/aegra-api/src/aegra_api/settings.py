@@ -126,6 +126,9 @@ class DatabaseSettings(EnvBase):
             else:
                 host, _, port = spec.rpartition(":")
             if host and port:
+                if not port.isdigit():
+                    msg = f"Non-integer port in DATABASE_URL: `{spec}` — port must be a number, got `{port}`"
+                    raise ValueError(msg)
                 hosts.append(host)
                 ports.append(port)
             else:

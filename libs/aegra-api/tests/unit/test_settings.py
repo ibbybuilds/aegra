@@ -261,6 +261,15 @@ class TestMultiHostDatabaseURL:
         with pytest.raises(ValueError, match="missing closing bracket"):
             _ = db.database_url
 
+    def test_non_integer_port_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer port in multi-host URL raises at startup."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h1:abc,h2:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        with pytest.raises(ValueError, match="Non-integer port"):
+            _ = db.database_url
+
     def test_single_host_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Single-host URL is not rewritten."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@h1:5432/db")

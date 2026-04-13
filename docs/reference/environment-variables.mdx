@@ -88,6 +88,7 @@ Aegra uses two connection pools: one for SQLAlchemy (metadata) and one for LangG
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `ENV_MODE` | `LOCAL` | Environment mode: `LOCAL`, `DEVELOPMENT`, `PRODUCTION` (PRODUCTION outputs JSON logs) |
 | `LOG_VERBOSITY` | `standard` | `standard` or `verbose` (verbose includes request-id) |
+| `LOG_EXCLUDE_PATHS` | `""` | Comma-separated path prefixes whose successful (2xx/3xx) access logs are suppressed. Errors (4xx/5xx) are still logged. Example: `/health,/metrics` |
 
 ## LLM providers
 

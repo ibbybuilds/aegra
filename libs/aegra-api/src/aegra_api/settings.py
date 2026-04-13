@@ -199,6 +199,16 @@ class WorkerSettings(EnvBase):
         return self
 
 
+class CronSettings(EnvBase):
+    """Cron scheduler configuration.
+
+    Controls the background scheduler that fires cron jobs.
+    """
+
+    CRON_ENABLED: bool = True
+    CRON_POLL_INTERVAL_SECONDS: int = 60
+
+
 class Settings:
     def __init__(self) -> None:
         self.app = AppSettings()
@@ -207,6 +217,7 @@ class Settings:
         self.observability = ObservabilitySettings()
         self.redis = RedisSettings()
         self.worker = WorkerSettings()
+        self.cron = CronSettings()
 
 
 settings = Settings()

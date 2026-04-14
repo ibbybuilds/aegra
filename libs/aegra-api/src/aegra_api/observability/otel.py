@@ -74,6 +74,15 @@ class OpenTelemetryProvider(ObservabilityProvider):
             self._has_langfuse = True
         self._enabled = True
 
+        if self._tracer_provider is not None:
+            try:
+                exporter = target.get_exporter()
+                if exporter:
+                    self._tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+                    logger.info(f"Observability: Attached target '{target.name}'")
+            except Exception as e:
+                logger.error(f"Observability: Failed to attach target '{target.name}': {e}")
+
     def setup(self) -> None:
         """Initializes the Global Tracer Provider. Runs once."""
         if self._tracer_provider:

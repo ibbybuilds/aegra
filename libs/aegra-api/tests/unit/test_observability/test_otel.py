@@ -97,6 +97,25 @@ class TestOpenTelemetryProviderInit:
             assert provider.is_enabled() is True
             assert mock_target in provider._active_targets
 
+    def test_add_custom_target_attaches_exporter_after_setup(self) -> None:
+        """Test that adding a target after setup() wires its exporter immediately."""
+        with patch("aegra_api.observability.otel.settings") as mock_settings:
+            mock_settings.observability.OTEL_TARGETS = ""
+            mock_settings.observability.OTEL_CONSOLE_EXPORT = True
+
+            provider = OpenTelemetryProvider()
+            provider.setup()
+
+            mock_target = MagicMock(spec=BaseOtelTarget)
+            mock_target.name = "Late"
+            mock_exporter = MagicMock()
+            mock_target.get_exporter.return_value = mock_exporter
+
+            provider.add_custom_target(mock_target)
+
+            mock_target.get_exporter.assert_called_once()
+            assert provider._tracer_provider is not None
+
 
 class TestOpenTelemetryProviderSetup:
     """Tests for the setup() method and tracer configuration."""

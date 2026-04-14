@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aegra_api.core.orm import Cron as CronORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.models import RunCreate, User
-from aegra_api.services.cron_service import _compute_next_run
+from aegra_api.services.cron_service import _compute_next_run, _is_seconds_cron
 from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.settings import settings
 
@@ -152,7 +152,17 @@ class CronScheduler:
                 update(CronORM).where(CronORM.cron_id == cron.cron_id).values(enabled=False, updated_at=now)
             )
         else:
-            next_run = _compute_next_run(cron.schedule, now=now)
+            timezone = (cron.payload or {}).get("timezone")
+            next_run = _compute_next_run(cron.schedule, now=now, timezone=timezone)
+            logger.debug(
+                "Advancing cron schedule",
+                cron_id=cron.cron_id,
+                schedule=repr(cron.schedule),
+                field_count=len(cron.schedule.split()),
+                is_seconds_cron=_is_seconds_cron(cron.schedule),
+                now=now.isoformat(),
+                next_run=next_run.isoformat(),
+            )
             await session.execute(
                 update(CronORM).where(CronORM.cron_id == cron.cron_id).values(next_run_date=next_run, updated_at=now)
             )

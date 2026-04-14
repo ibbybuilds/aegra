@@ -166,6 +166,68 @@ class TestSchedulerTick:
 
 
 # ---------------------------------------------------------------------------
+# _tick (continued — tests added after class TestTick)
+# ---------------------------------------------------------------------------
+
+
+class TestTickTimezone:
+    """Verify _fire_cron passes timezone from payload to _compute_next_run."""
+
+    @pytest.mark.asyncio
+    async def test_fire_cron_passes_timezone_from_payload(self) -> None:
+        """_fire_cron must pass the stored timezone to _compute_next_run."""
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(
+            payload={"input": {"msg": "tz"}, "timezone": "America/New_York"},
+            end_time=None,
+        )
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with (
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+                return_value=("run-1", Mock(), None),
+            ),
+            patch(
+                "aegra_api.services.cron_scheduler._compute_next_run",
+                return_value=datetime.now(UTC) + timedelta(minutes=5),
+            ) as mock_compute,
+        ):
+            await scheduler._fire_cron(mock_session, cron)
+            mock_compute.assert_called_once()
+            _call_kwargs = mock_compute.call_args
+            assert _call_kwargs.kwargs.get("timezone") == "America/New_York"
+
+    @pytest.mark.asyncio
+    async def test_fire_cron_no_timezone_when_absent(self) -> None:
+        """When payload has no timezone, _compute_next_run gets timezone=None."""
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(
+            payload={"input": {"msg": "no-tz"}},
+            end_time=None,
+        )
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with (
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+                return_value=("run-1", Mock(), None),
+            ),
+            patch(
+                "aegra_api.services.cron_scheduler._compute_next_run",
+                return_value=datetime.now(UTC) + timedelta(minutes=5),
+            ) as mock_compute,
+        ):
+            await scheduler._fire_cron(mock_session, cron)
+            _call_kwargs = mock_compute.call_args
+            assert _call_kwargs.kwargs.get("timezone") is None
+
+
+# ---------------------------------------------------------------------------
 # _fire_cron
 # ---------------------------------------------------------------------------
 

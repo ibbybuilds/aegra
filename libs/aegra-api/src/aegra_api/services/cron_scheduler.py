@@ -56,8 +56,8 @@ class CronScheduler:
     async def _loop(self) -> None:
         interval = settings.cron.CRON_POLL_INTERVAL_SECONDS
         while self._running:
-            await asyncio.sleep(interval)
             try:
+                await asyncio.sleep(interval)
                 await self._tick()
             except asyncio.CancelledError:
                 break
@@ -72,6 +72,7 @@ class CronScheduler:
         async with maker() as session:
             due_crons = await self._find_due_crons(session, now)
             if not due_crons:
+                logger.debug("Cron tick: no jobs due")
                 return
 
             logger.info("Cron tick: found due jobs", count=len(due_crons))
@@ -142,6 +143,8 @@ class CronScheduler:
                 status_code=exc.status_code,
                 detail=exc.detail,
             )
+        except Exception:
+            logger.exception("Cron run creation failed unexpectedly", cron_id=cron.cron_id)
 
         # Advance to next occurrence (or disable if past end_time)
         if cron.end_time and now >= cron.end_time:

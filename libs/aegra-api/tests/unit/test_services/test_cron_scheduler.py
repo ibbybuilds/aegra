@@ -270,6 +270,25 @@ class TestFireCron:
             mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_advances_next_run_date_on_non_http_error(self) -> None:
+        """Non-HTTPException from _prepare_run must not skip the schedule advance."""
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(end_time=None)
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with patch(
+            "aegra_api.services.cron_scheduler._prepare_run",
+            new_callable=AsyncMock,
+        ) as mock_prepare:
+            mock_prepare.side_effect = RuntimeError("database connection lost")
+            # Should not raise
+            await scheduler._fire_cron(mock_session, cron)
+            # next_run_date must still be advanced
+            mock_session.execute.assert_awaited_once()
+            mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_builds_run_create_from_payload(self) -> None:
         scheduler = CronScheduler()
         cron = _make_cron_orm(
@@ -342,6 +361,33 @@ class TestSchedulerLoop:
         ):
             mock_settings.cron.CRON_POLL_INTERVAL_SECONDS = 0.01
             # Should exit cleanly
+            await scheduler._loop()
+
+    @pytest.mark.asyncio
+    async def test_loop_handles_cancelled_error_during_sleep(self) -> None:
+        """CancelledError raised during asyncio.sleep must not kill the loop silently."""
+        scheduler = CronScheduler()
+        scheduler._running = True
+
+        call_count = 0
+        original_sleep = asyncio.sleep
+
+        async def cancelling_sleep(delay: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                await original_sleep(delay)
+                return
+            # Second sleep: simulate external cancellation
+            raise asyncio.CancelledError
+
+        with (
+            patch.object(scheduler, "_tick", new_callable=AsyncMock),
+            patch("aegra_api.services.cron_scheduler.settings") as mock_settings,
+            patch("aegra_api.services.cron_scheduler.asyncio.sleep", side_effect=cancelling_sleep),
+        ):
+            mock_settings.cron.CRON_POLL_INTERVAL_SECONDS = 0.01
+            # Should exit cleanly without propagating CancelledError
             await scheduler._loop()
 
     @pytest.mark.asyncio

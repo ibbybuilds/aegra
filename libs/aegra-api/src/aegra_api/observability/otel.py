@@ -70,6 +70,8 @@ class OpenTelemetryProvider(ObservabilityProvider):
     def add_custom_target(self, target: BaseOtelTarget) -> None:
         """Allow registering custom targets dynamically."""
         self._active_targets.append(target)
+        if isinstance(target, LangfuseTarget):
+            self._has_langfuse = True
         self._enabled = True
 
     def setup(self) -> None:

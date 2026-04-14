@@ -261,7 +261,7 @@ class TestOpenTelemetryProviderRuntime:
                 "user_id": "user-789",
             }
 
-    def test_get_metadata_includes_langfuse_keys_when_langfuse_active(self):
+    def test_get_metadata_includes_langfuse_keys_when_langfuse_active(self) -> None:
         """Test that langfuse_* keys are emitted only when Langfuse target is active."""
         with patch("aegra_api.observability.otel.settings") as mock_settings:
             mock_settings.observability.OTEL_TARGETS = "LANGFUSE"
@@ -274,7 +274,20 @@ class TestOpenTelemetryProviderRuntime:
             assert meta["langfuse_session_id"] == "thread-456"
             assert meta["langfuse_user_id"] == "user-789"
 
-    def test_get_metadata_excludes_langfuse_keys_when_langfuse_inactive(self):
+    def test_get_metadata_langfuse_without_user_identity(self) -> None:
+        """Test that langfuse_session_id is present but langfuse_user_id absent when user_identity is None."""
+        with patch("aegra_api.observability.otel.settings") as mock_settings:
+            mock_settings.observability.OTEL_TARGETS = "LANGFUSE"
+            mock_settings.observability.OTEL_CONSOLE_EXPORT = False
+
+            provider = OpenTelemetryProvider()
+
+            meta = provider.get_metadata(run_id="run-123", thread_id="thread-456")
+
+            assert meta["langfuse_session_id"] == "thread-456"
+            assert "langfuse_user_id" not in meta
+
+    def test_get_metadata_excludes_langfuse_keys_when_langfuse_inactive(self) -> None:
         """Test that langfuse_* keys are NOT emitted when only non-Langfuse targets are active."""
         with patch("aegra_api.observability.otel.settings") as mock_settings:
             mock_settings.observability.OTEL_TARGETS = ""

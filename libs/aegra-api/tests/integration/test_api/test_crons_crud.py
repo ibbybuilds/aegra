@@ -497,3 +497,72 @@ class TestSearchCronsExtended:
         assert "next_run_date" in data
         assert "user_id" in data
         assert "enabled" in data
+
+
+# ---------------------------------------------------------------------------
+# timezone field — integration coverage
+# ---------------------------------------------------------------------------
+
+
+class TestTimezoneField:
+    """Integration tests for the timezone field on create/update endpoints."""
+
+    def test_create_accepts_timezone(self, client, mock_cron_service: AsyncMock) -> None:
+        mock_cron_service.create_cron.return_value = AsyncMock()
+
+        resp = client.post(
+            "/runs/crons",
+            json={
+                "assistant_id": "asst-001",
+                "schedule": "0 9 * * *",
+                "timezone": "America/New_York",
+            },
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_cron_service.create_cron.call_args
+        request_obj = call_args.args[0]
+        assert request_obj.timezone == "America/New_York"
+
+    def test_create_for_thread_accepts_timezone(self, client, mock_cron_service: AsyncMock) -> None:
+        mock_cron_service.create_cron.return_value = AsyncMock()
+
+        resp = client.post(
+            "/threads/t-001/runs/crons",
+            json={
+                "assistant_id": "asst-001",
+                "schedule": "0 9 * * *",
+                "timezone": "Europe/London",
+            },
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_cron_service.create_cron.call_args
+        request_obj = call_args.args[0]
+        assert request_obj.timezone == "Europe/London"
+
+    def test_update_accepts_timezone(self, client, mock_cron_service: AsyncMock) -> None:
+        mock_cron_service.update_cron.return_value = _cron_response(payload={"timezone": "Asia/Tokyo"})
+
+        resp = client.patch(
+            "/runs/crons/cron-001",
+            json={"timezone": "Asia/Tokyo"},
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_cron_service.update_cron.call_args
+        request_obj = call_args.args[1]
+        assert request_obj.timezone == "Asia/Tokyo"
+
+    def test_create_without_timezone_is_valid(self, client, mock_cron_service: AsyncMock) -> None:
+        mock_cron_service.create_cron.return_value = AsyncMock()
+
+        resp = client.post(
+            "/runs/crons",
+            json={"assistant_id": "asst-001", "schedule": "*/5 * * * *"},
+        )
+
+        assert resp.status_code == 200
+        call_args = mock_cron_service.create_cron.call_args
+        request_obj = call_args.args[0]
+        assert request_obj.timezone is None

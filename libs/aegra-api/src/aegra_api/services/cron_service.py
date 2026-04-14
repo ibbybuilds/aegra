@@ -7,6 +7,7 @@ to the existing run preparation pipeline.
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import structlog
 from croniter import croniter
@@ -45,6 +46,7 @@ def _build_payload(request: CronCreate | CronUpdate) -> dict[str, Any]:
         "stream_subgraphs",
         "stream_resumable",
         "durability",
+        "timezone",
     ):
         value = getattr(request, field, None)
         if value is not None:
@@ -52,10 +54,47 @@ def _build_payload(request: CronCreate | CronUpdate) -> dict[str, Any]:
     return payload
 
 
-def _compute_next_run(schedule: str, *, now: datetime | None = None) -> datetime:
-    """Compute the next run date from a cron schedule expression (UTC)."""
-    now = now or datetime.now(UTC)
-    return croniter(schedule, now).get_next(datetime)
+def _is_seconds_cron(schedule: str) -> bool:
+    """Return True when schedule uses 6 fields (seconds as first field)."""
+    return len(schedule.split()) == 6
+
+
+def _is_valid_schedule(schedule: str) -> bool:
+    """Validate a cron expression (5-field standard or 6-field seconds-first)."""
+    if _is_seconds_cron(schedule):
+        try:
+            croniter(schedule, datetime.now(UTC), second_at_beginning=True)
+            return True
+        except (ValueError, KeyError):
+            return False
+    return croniter.is_valid(schedule)
+
+
+def _compute_next_run(
+    schedule: str,
+    *,
+    now: datetime | None = None,
+    timezone: str | None = None,
+) -> datetime:
+    """Compute the next run date from a cron schedule expression, returned in UTC.
+
+    When *timezone* is an IANA timezone string (e.g. ``"America/New_York"``),
+    the schedule is evaluated in that timezone so wall-clock expressions like
+    ``0 9 * * *`` fire at 09:00 local time instead of 09:00 UTC.
+
+    Supports both standard 5-field expressions and 6-field seconds-first
+    expressions (e.g. ``*/30 * * * * *`` = every 30 seconds).
+    """
+    base = now or datetime.now(UTC)
+    if timezone:
+        tz = ZoneInfo(timezone)
+        base = base.astimezone(tz)
+    second_at_beginning = _is_seconds_cron(schedule)
+    result = croniter(schedule, base, second_at_beginning=second_at_beginning).get_next(datetime)
+    # Normalise to UTC for storage regardless of what timezone croniter used.
+    if result.tzinfo is None:
+        return result.replace(tzinfo=UTC)
+    return result.astimezone(UTC)
 
 
 def _cron_to_response(row: CronORM) -> CronResponse:
@@ -97,8 +136,15 @@ class CronService:
         the first run and return the ``Run`` response.
         """
         # Validate schedule expression
-        if not croniter.is_valid(request.schedule):
+        if not _is_valid_schedule(request.schedule):
             raise HTTPException(422, f"Invalid cron schedule: {request.schedule}")
+
+        # Validate timezone when provided
+        if request.timezone is not None:
+            try:
+                ZoneInfo(request.timezone)
+            except (ZoneInfoNotFoundError, KeyError):
+                raise HTTPException(422, f"Invalid timezone: {request.timezone}")
 
         # Validate assistant exists
         assistant = await self.session.scalar(
@@ -117,8 +163,8 @@ class CronService:
         # Advance past the immediate first occurrence since _trigger_first_run
         # fires a run right away. We skip to the second occurrence so the
         # scheduler does not fire a duplicate run seconds after creation.
-        first_occ = _compute_next_run(request.schedule, now=now)
-        next_run = _compute_next_run(request.schedule, now=first_occ)
+        first_occ = _compute_next_run(request.schedule, now=now, timezone=request.timezone)
+        next_run = _compute_next_run(request.schedule, now=first_occ, timezone=request.timezone)
 
         cron_orm = CronORM(
             cron_id=str(uuid4()),
@@ -155,10 +201,12 @@ class CronService:
 
         # Schedule
         if request.schedule is not None:
-            if not croniter.is_valid(request.schedule):
+            if not _is_valid_schedule(request.schedule):
                 raise HTTPException(422, f"Invalid cron schedule: {request.schedule}")
+            # Use updated timezone if provided, else fall back to whatever is stored in payload.
+            tz = request.timezone or (cron.payload or {}).get("timezone")
             values["schedule"] = request.schedule
-            values["next_run_date"] = _compute_next_run(request.schedule)
+            values["next_run_date"] = _compute_next_run(request.schedule, timezone=tz)
 
         # Simple scalar fields
         if request.end_time is not None:
@@ -272,7 +320,8 @@ class CronService:
                 update(CronORM).where(CronORM.cron_id == cron.cron_id).values(enabled=False, updated_at=now)
             )
         else:
-            next_run = _compute_next_run(cron.schedule, now=now)
+            timezone = (cron.payload or {}).get("timezone")
+            next_run = _compute_next_run(cron.schedule, now=now, timezone=timezone)
             await self.session.execute(
                 update(CronORM).where(CronORM.cron_id == cron.cron_id).values(next_run_date=next_run, updated_at=now)
             )

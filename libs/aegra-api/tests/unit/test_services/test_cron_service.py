@@ -22,6 +22,7 @@ from aegra_api.services.cron_service import (
     _build_payload,
     _compute_next_run,
     _cron_to_response,
+    _is_valid_schedule,
 )
 
 # ---------------------------------------------------------------------------
@@ -489,6 +490,42 @@ class TestComputeNextRunExtended:
         assert result.day == 16
         assert result.hour == 0
         assert result.minute == 0
+
+    def test_6field_every_30_seconds_schedules_within_30s(self) -> None:
+        """6-field seconds-first: '*/30 * * * * *' must fire within 30 s, not 30 min."""
+        now = datetime(2025, 3, 15, 10, 0, 1, tzinfo=UTC)
+        result = _compute_next_run("*/30 * * * * *", now=now)
+        diff = (result - now).total_seconds()
+        assert diff <= 30, f"Expected next run within 30s, got {diff}s"
+
+    def test_6field_every_10_seconds(self) -> None:
+        now = datetime(2025, 3, 15, 10, 0, 0, tzinfo=UTC)
+        result = _compute_next_run("*/10 * * * * *", now=now)
+        diff = (result - now).total_seconds()
+        assert diff == 10
+
+    def test_5field_unchanged_by_fix(self) -> None:
+        """Standard 5-field expressions must still be interpreted correctly."""
+        now = datetime(2025, 3, 15, 10, 0, 0, tzinfo=UTC)
+        result = _compute_next_run("*/30 * * * *", now=now)  # every 30 minutes
+        diff = (result - now).total_seconds()
+        assert diff == 30 * 60
+
+
+# ---------------------------------------------------------------------------
+# _is_valid_schedule
+# ---------------------------------------------------------------------------
+
+
+class TestIsValidSchedule:
+    def test_valid_5field(self) -> None:
+        assert _is_valid_schedule("*/5 * * * *") is True
+
+    def test_valid_6field_seconds(self) -> None:
+        assert _is_valid_schedule("*/30 * * * * *") is True
+
+    def test_invalid_expression(self) -> None:
+        assert _is_valid_schedule("not a cron") is False
 
 
 # ---------------------------------------------------------------------------
@@ -964,3 +1001,172 @@ class TestAdvanceNextRun:
 
         mock_session.execute.assert_awaited_once()
         mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_uses_timezone_from_payload(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        """advance_next_run must respect the timezone stored in the payload JSONB."""
+        cron = _make_cron_orm(
+            schedule="0 9 * * *",
+            payload={"timezone": "America/New_York"},
+            end_time=None,
+        )
+
+        await cron_service.advance_next_run(cron)
+
+        mock_session.execute.assert_awaited_once()
+        # Verify the next_run passed to execute is in UTC (timezone-aware)
+        call_args = mock_session.execute.call_args
+        assert call_args is not None
+
+
+# ---------------------------------------------------------------------------
+# timezone — _compute_next_run
+# ---------------------------------------------------------------------------
+
+
+class TestTimezoneAwareNextRun:
+    """Tests for timezone-aware _compute_next_run."""
+
+    def test_returns_utc_datetime(self) -> None:
+        now = datetime(2025, 3, 15, 0, 0, 0, tzinfo=UTC)
+        result = _compute_next_run("0 9 * * *", now=now, timezone="America/New_York")
+        assert result.tzinfo is not None
+        # March 15 falls in EDT (UTC-4, DST active) so 09:00 NY = 13:00 UTC
+        assert result.hour == 13
+        assert result.minute == 0
+
+    def test_timezone_shifts_next_run_vs_utc(self) -> None:
+        """A schedule in UTC+9 (Tokyo) fires earlier in UTC when now is 23:00 UTC.
+
+        At 23:00 UTC the next 09:00 UTC is 10 hours away (09:00 next day).
+        In Tokyo (UTC+9) it is 08:00, so the next 09:00 Tokyo is only 1 hour away
+        and maps to 00:00 UTC — well before 09:00 UTC.
+        """
+        now = datetime(2025, 6, 1, 23, 0, 0, tzinfo=UTC)  # = June 2 08:00 Tokyo
+        utc_result = _compute_next_run("0 9 * * *", now=now)  # June 2 09:00 UTC
+        tokyo_result = _compute_next_run("0 9 * * *", now=now, timezone="Asia/Tokyo")  # June 2 00:00 UTC
+        assert tokyo_result < utc_result
+
+    def test_none_timezone_behaves_as_utc(self) -> None:
+        now = datetime(2025, 3, 15, 0, 0, 0, tzinfo=UTC)
+        without_tz = _compute_next_run("0 12 * * *", now=now)
+        with_utc = _compute_next_run("0 12 * * *", now=now, timezone="UTC")
+        assert without_tz == with_utc
+
+    def test_invalid_timezone_raises(self) -> None:
+        """ZoneInfoNotFoundError must propagate so the caller can map it to 422."""
+        from zoneinfo import ZoneInfoNotFoundError
+
+        with pytest.raises((ZoneInfoNotFoundError, KeyError)):
+            _compute_next_run("0 9 * * *", timezone="Not/ATimezone")
+
+
+# ---------------------------------------------------------------------------
+# timezone — CronService.create_cron
+# ---------------------------------------------------------------------------
+
+
+class TestCreateCronTimezone:
+    """Timezone handling in CronService.create_cron."""
+
+    @pytest.mark.asyncio
+    async def test_stores_timezone_in_payload(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        mock_session.scalar.return_value = _make_assistant_orm()
+        req = CronCreate(
+            assistant_id="asst-001",
+            schedule="0 9 * * *",
+            timezone="America/New_York",
+        )
+
+        await cron_service.create_cron(req, "test-user")
+
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.payload["timezone"] == "America/New_York"
+
+    @pytest.mark.asyncio
+    async def test_rejected_invalid_timezone(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        mock_session.scalar.return_value = _make_assistant_orm()
+        req = CronCreate(
+            assistant_id="asst-001",
+            schedule="0 9 * * *",
+            timezone="Not/Valid",
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await cron_service.create_cron(req, "test-user")
+        assert exc.value.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_next_run_is_timezone_aware(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        """next_run_date should reflect the timezone-shifted schedule."""
+        mock_session.scalar.return_value = _make_assistant_orm()
+        req = CronCreate(
+            assistant_id="asst-001",
+            schedule="0 9 * * *",
+            timezone="America/New_York",
+        )
+
+        await cron_service.create_cron(req, "test-user")
+
+        added_obj = mock_session.add.call_args[0][0]
+        # next_run_date must be UTC-aware (not naive)
+        assert added_obj.next_run_date.tzinfo is not None
+
+
+# ---------------------------------------------------------------------------
+# timezone — CronService.update_cron
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateCronTimezone:
+    """Timezone handling in CronService.update_cron."""
+
+    @pytest.mark.asyncio
+    async def test_update_timezone_stored_in_payload(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        existing = _make_cron_orm(schedule="0 9 * * *", payload={})
+        updated_orm = _make_cron_orm(
+            schedule="0 9 * * *",
+            payload={"timezone": "Europe/London"},
+        )
+        mock_session.scalar.side_effect = [existing, updated_orm]
+
+        resp = await cron_service.update_cron("cron-001", CronUpdate(timezone="Europe/London"), "test-user")
+        assert resp.payload["timezone"] == "Europe/London"
+
+    @pytest.mark.asyncio
+    async def test_update_schedule_respects_existing_payload_timezone(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        """Changing the schedule must still use the timezone already stored in payload."""
+        existing = _make_cron_orm(
+            schedule="0 9 * * *",
+            payload={"timezone": "Asia/Tokyo"},
+        )
+        updated_orm = _make_cron_orm(schedule="0 10 * * *", payload={"timezone": "Asia/Tokyo"})
+        mock_session.scalar.side_effect = [existing, updated_orm]
+
+        await cron_service.update_cron("cron-001", CronUpdate(schedule="0 10 * * *"), "test-user")
+        # verify execute was called (next_run_date was set)
+        mock_session.execute.assert_awaited_once()

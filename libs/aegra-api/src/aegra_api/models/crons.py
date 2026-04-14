@@ -27,6 +27,7 @@ class CronCreate(BaseModel):
     stream_subgraphs: bool | None = None
     stream_resumable: bool | None = None
     durability: str | None = None
+    timezone: str | None = None
 
 
 class CronResponse(BaseModel):
@@ -67,6 +68,7 @@ class CronUpdate(BaseModel):
     stream_subgraphs: bool | None = None
     stream_resumable: bool | None = None
     durability: str | None = None
+    timezone: str | None = None
 
 
 class CronSearchRequest(BaseModel):

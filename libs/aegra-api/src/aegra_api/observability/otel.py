@@ -36,6 +36,7 @@ class OpenTelemetryProvider(ObservabilityProvider):
 
         # Defining the list of active targets
         self._active_targets: list[BaseOtelTarget] = self._resolve_targets()
+        self._has_langfuse = any(isinstance(target, LangfuseTarget) for target in self._active_targets)
 
         if self._active_targets or settings.observability.OTEL_CONSOLE_EXPORT:
             self._enabled = True
@@ -122,13 +123,21 @@ class OpenTelemetryProvider(ObservabilityProvider):
         if not self.is_enabled():
             return {}
 
-        meta = {
+        meta: dict[str, Any] = {
             "run_id": run_id,
             "thread_id": thread_id,
             "session_id": thread_id,
         }
         if user_identity:
             meta["user_id"] = user_identity
+
+        if self._has_langfuse:
+            # Langfuse CallbackHandler only promotes langfuse_* prefixed keys
+            # to trace-level fields; plain session_id stays in generic metadata.
+            meta["langfuse_session_id"] = thread_id
+            if user_identity:
+                meta["langfuse_user_id"] = user_identity
+
         return meta
 
 

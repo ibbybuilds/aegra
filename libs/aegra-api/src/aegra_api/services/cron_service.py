@@ -114,7 +114,11 @@ class CronService:
 
         payload = _build_payload(request)
         now = datetime.now(UTC)
-        next_run = _compute_next_run(request.schedule, now=now)
+        # Advance past the immediate first occurrence since _trigger_first_run
+        # fires a run right away. We skip to the second occurrence so the
+        # scheduler does not fire a duplicate run seconds after creation.
+        first_occ = _compute_next_run(request.schedule, now=now)
+        next_run = _compute_next_run(request.schedule, now=first_occ)
 
         cron_orm = CronORM(
             cron_id=str(uuid4()),

@@ -607,11 +607,16 @@ class TestCreateCronExtended:
         assert added_obj.payload["webhook"] == "https://hook.example.com"
 
     @pytest.mark.asyncio
-    async def test_next_run_date_is_future(
+    async def test_next_run_date_skips_first_occurrence(
         self,
         cron_service: CronService,
         mock_session: AsyncMock,
     ) -> None:
+        """next_run_date must skip the first scheduled occurrence.
+
+        _trigger_first_run fires a run immediately on creation; the scheduler
+        should therefore start from the SECOND occurrence to avoid a double-fire.
+        """
         mock_session.scalar.return_value = _make_assistant_orm()
         req = CronCreate(assistant_id="asst-001", schedule="*/5 * * * *")
 
@@ -619,7 +624,9 @@ class TestCreateCronExtended:
         await cron_service.create_cron(req, "test-user")
 
         added_obj = mock_session.add.call_args[0][0]
-        assert added_obj.next_run_date >= before
+        first_occ = _compute_next_run("*/5 * * * *", now=before)
+        # next_run_date must be strictly after the first scheduled occurrence
+        assert added_obj.next_run_date > first_occ
 
     @pytest.mark.asyncio
     async def test_metadata_stored_correctly(

@@ -63,6 +63,15 @@ class AppSettings(EnvBase):
     # Logging
     LOG_LEVEL: UpperStr = "INFO"
     LOG_VERBOSITY: LowerStr = "verbose"
+    LOG_EXCLUDE_PATHS: str = ""  # Comma-separated path prefixes to skip in access logs
+
+    @computed_field
+    @property
+    def log_exclude_paths(self) -> tuple[str, ...]:
+        """Parse LOG_EXCLUDE_PATHS into a tuple of path prefixes."""
+        if not self.LOG_EXCLUDE_PATHS:
+            return ()
+        return tuple(part.strip() for part in self.LOG_EXCLUDE_PATHS.split(",") if part.strip())
 
 
 class DatabaseSettings(EnvBase):

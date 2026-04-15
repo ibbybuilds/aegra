@@ -5,12 +5,20 @@ and event processing logic.
 """
 
 import pytest
-from langchain_core.messages import AIMessageChunk, BaseMessageChunk, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessageChunk,
+    HumanMessage,
+    ToolMessage,
+    ToolMessageChunk,
+)
 
 from aegra_api.services.graph_streaming import (
     _normalize_checkpoint_payload,
     _normalize_checkpoint_task,
     _process_stream_event,
+    _to_message_chunk,
 )
 
 
@@ -717,3 +725,168 @@ class TestStreamGraphEvents:
             # Verify filter called
             mock_filter.assert_called_once()
             assert mock_filter.call_args[0][0] == context
+
+
+class TestToMessageChunk:
+    """Test _to_message_chunk function."""
+
+    def test_preserves_ai_message_chunk(self) -> None:
+        """Test that AIMessageChunk is returned as-is."""
+        chunk = AIMessageChunk(id="1", content="hello")
+
+        result = _to_message_chunk(chunk)
+
+        assert result is chunk
+
+    def test_preserves_tool_message_chunk(self) -> None:
+        """Test that ToolMessageChunk is returned as-is."""
+        chunk = ToolMessageChunk(id="1", content="result", tool_call_id="tc-1")
+
+        result = _to_message_chunk(chunk)
+
+        assert result is chunk
+
+    def test_converts_ai_message_to_chunk(self) -> None:
+        """Test that AIMessage is converted to AIMessageChunk with all fields."""
+        msg = AIMessage(
+            id="msg-1",
+            content="hello",
+            name="assistant",
+            additional_kwargs={"key": "value"},
+            response_metadata={"model": "fake"},
+            usage_metadata={"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+            tool_calls=[{"id": "tc-1", "name": "tool", "args": {}}],
+            invalid_tool_calls=[],
+        )
+
+        result = _to_message_chunk(msg)
+
+        assert isinstance(result, AIMessageChunk)
+        assert result.content == "hello"
+        assert result.id == "msg-1"
+        assert result.name == "assistant"
+        assert result.additional_kwargs == {"key": "value"}
+        assert result.response_metadata == {"model": "fake"}
+        assert result.usage_metadata == {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+        assert result.tool_calls == [{"id": "tc-1", "name": "tool", "args": {}, "type": "tool_call"}]
+        assert result.invalid_tool_calls == []
+
+    def test_converts_tool_message_to_chunk(self) -> None:
+        """Test that ToolMessage is converted to ToolMessageChunk with all fields."""
+        msg = ToolMessage(
+            id="msg-2",
+            content="tool result",
+            name="search",
+            tool_call_id="tc-1",
+            additional_kwargs={"extra": "data"},
+            response_metadata={"status": "ok"},
+        )
+
+        result = _to_message_chunk(msg)
+
+        assert isinstance(result, ToolMessageChunk)
+        assert result.content == "tool result"
+        assert result.id == "msg-2"
+        assert result.name == "search"
+        assert result.tool_call_id == "tc-1"
+        assert result.additional_kwargs == {"extra": "data"}
+        assert result.response_metadata == {"status": "ok"}
+
+    def test_converts_tool_message_error_status_preserved(self) -> None:
+        """Test that status and artifact fields are preserved in ToolMessage conversion."""
+        msg = ToolMessage(
+            id="msg-3",
+            content="error output",
+            tool_call_id="tc-2",
+            status="error",
+            artifact={"raw": "data"},
+        )
+
+        result = _to_message_chunk(msg)
+
+        assert isinstance(result, ToolMessageChunk)
+        assert result.status == "error"
+        assert result.artifact == {"raw": "data"}
+
+    def test_returns_unknown_message_type_unchanged(self) -> None:
+        """Test that unrecognized message types are returned as-is."""
+        msg = HumanMessage(id="h-1", content="hi")
+
+        result = _to_message_chunk(msg)
+
+        assert result is msg
+
+    def test_serialized_type_field_is_ai_message_chunk(self) -> None:
+        """Test that converted AIMessage serializes with type 'AIMessageChunk'."""
+        msg = AIMessage(id="msg-1", content="hello")
+
+        result = _to_message_chunk(msg)
+        serialized = result.model_dump()
+
+        assert serialized["type"] == "AIMessageChunk"
+
+    def test_serialized_type_field_is_tool_message_chunk(self) -> None:
+        """Test that converted ToolMessage serializes with type 'ToolMessageChunk'."""
+        msg = ToolMessage(id="msg-1", content="result", tool_call_id="tc-1")
+
+        result = _to_message_chunk(msg)
+        serialized = result.model_dump()
+
+        assert serialized["type"] == "ToolMessageChunk"
+
+
+class TestProcessStreamEventMessagesTupleNormalization:
+    """Test that messages-tuple mode normalizes message types."""
+
+    def test_list_shaped_messages_tuple_converts_to_chunk(self) -> None:
+        """Test that list-shaped (message, metadata) payloads are normalized.
+
+        JS graphs deliver messages-tuple chunks as JSON-deserialized lists,
+        not Python tuples.
+        """
+        msg = AIMessage(id="msg-1", content="hello")
+        chunk = [msg, {"run_id": "test"}]
+
+        results = _process_stream_event(
+            mode="messages",
+            chunk=chunk,
+            namespace=None,
+            subgraphs=False,
+            stream_mode=["messages-tuple"],
+            messages={},
+            only_interrupt_updates=False,
+            on_checkpoint=lambda _: None,
+            on_task_result=lambda _: None,
+        )
+
+        assert results is not None
+        assert results[0][0] == "messages"
+        converted_msg, _meta = results[0][1]
+        assert isinstance(converted_msg, AIMessageChunk)
+
+    def test_non_streaming_ai_message_serializes_as_chunk(self) -> None:
+        """Test that a non-streaming AIMessage produces 'AIMessageChunk' in wire format.
+
+        Proves the end-to-end fix: a non-streaming LLM emitting AIMessage
+        (type: "ai") is normalized so the serialized SSE payload contains
+        type: "AIMessageChunk", matching what streaming LLMs produce.
+        """
+        msg = AIMessage(id="msg-1", content="non-streaming response")
+        chunk = (msg, {"run_id": "test"})
+
+        results = _process_stream_event(
+            mode="messages",
+            chunk=chunk,
+            namespace=None,
+            subgraphs=False,
+            stream_mode=["messages-tuple"],
+            messages={},
+            only_interrupt_updates=False,
+            on_checkpoint=lambda _: None,
+            on_task_result=lambda _: None,
+        )
+
+        assert results is not None
+        converted_msg, _meta = results[0][1]
+        serialized = converted_msg.model_dump()
+        assert serialized["type"] == "AIMessageChunk"

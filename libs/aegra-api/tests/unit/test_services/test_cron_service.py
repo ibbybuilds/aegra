@@ -6,7 +6,7 @@ Follows the same fixture + class pattern as test_assistant_service.py.
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -245,6 +245,74 @@ class TestCreateCron:
 
         added_obj = mock_session.add.call_args[0][0]
         assert added_obj.thread_id == "t-1"
+
+    @pytest.mark.asyncio
+    async def test_resolves_graph_id_to_default_assistant(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+        mock_langgraph_service: Mock,
+    ) -> None:
+        request = CronCreate(
+            assistant_id="test-graph",
+            schedule="*/5 * * * *",
+            input={"messages": [{"role": "user", "content": "hello"}]},
+        )
+        mock_langgraph_service.list_graphs.return_value = {"test-graph": {}}
+        mock_session.scalar.return_value = _make_assistant_orm(
+            assistant_id="resolved-assistant-id", graph_id="test-graph"
+        )
+
+        with patch(
+            "aegra_api.services.cron_service.resolve_assistant_id",
+            return_value="resolved-assistant-id",
+        ) as mock_resolve:
+            await cron_service.create_cron(request, "test-user")
+
+        mock_resolve.assert_called_once_with("test-graph", {"test-graph": {}})
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.assistant_id == "resolved-assistant-id"
+
+    @pytest.mark.asyncio
+    async def test_search_resolves_graph_id_filter(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        scalars = Mock()
+        scalars.all.return_value = []
+        mock_session.scalars.return_value = scalars
+
+        with patch(
+            "aegra_api.services.cron_service.resolve_assistant_id",
+            return_value="resolved-assistant-id",
+        ) as mock_resolve:
+            await cron_service.search_crons(CronSearchRequest(assistant_id="test-graph"), "test-user")
+
+        mock_resolve.assert_called_once_with("test-graph", cron_service.langgraph_service.list_graphs.return_value)
+        stmt = mock_session.scalars.await_args.args[0]
+        compiled = stmt.compile()
+        assert compiled.params["assistant_id_1"] == "resolved-assistant-id"
+
+    @pytest.mark.asyncio
+    async def test_count_resolves_graph_id_filter(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        mock_session.scalar.return_value = 1
+
+        with patch(
+            "aegra_api.services.cron_service.resolve_assistant_id",
+            return_value="resolved-assistant-id",
+        ) as mock_resolve:
+            result = await cron_service.count_crons(CronCountRequest(assistant_id="test-graph"), "test-user")
+
+        assert result == 1
+        mock_resolve.assert_called_once_with("test-graph", cron_service.langgraph_service.list_graphs.return_value)
+        stmt = mock_session.scalar.await_args.args[0]
+        compiled = stmt.compile()
+        assert compiled.params["assistant_id_1"] == "resolved-assistant-id"
 
 
 # ---------------------------------------------------------------------------

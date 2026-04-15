@@ -23,10 +23,16 @@ from aegra_api.core.orm import Cron as CronORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.models import RunCreate, User
 from aegra_api.services.cron_service import _compute_next_run, _is_seconds_cron
+from aegra_api.services.run_cleanup import delete_thread_by_id, schedule_background_cleanup
 from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.settings import settings
 
 logger = structlog.getLogger(__name__)
+
+
+def _should_delete_stateless_thread(cron: CronORM) -> bool:
+    """Return True when the cron should delete its ephemeral thread after completion."""
+    return cron.thread_id is None and cron.on_run_completed != "keep"
 
 
 class CronScheduler:
@@ -102,6 +108,7 @@ class CronScheduler:
         """Create a run from the cron's payload and advance next_run_date."""
         payload = cron.payload or {}
         now = datetime.now(UTC)
+        should_delete_thread = _should_delete_stateless_thread(cron)
 
         # Build a RunCreate from the stored payload
         run_request = RunCreate(
@@ -136,6 +143,8 @@ class CronScheduler:
                 initial_status="pending",
             )
             logger.info("Cron fired run", cron_id=cron.cron_id, run_id=_run_id, thread_id=thread_id)
+            if should_delete_thread:
+                schedule_background_cleanup(_run_id, thread_id, cron.user_id)
         except HTTPException as exc:
             logger.error(
                 "Cron run creation failed",
@@ -143,8 +152,12 @@ class CronScheduler:
                 status_code=exc.status_code,
                 detail=exc.detail,
             )
+            if should_delete_thread:
+                await CronScheduler._cleanup_failed_stateless_thread(thread_id, cron)
         except Exception:
             logger.exception("Cron run creation failed unexpectedly", cron_id=cron.cron_id)
+            if should_delete_thread:
+                await CronScheduler._cleanup_failed_stateless_thread(thread_id, cron)
 
         # Advance to next occurrence (or disable if past end_time)
         if cron.end_time and now >= cron.end_time:
@@ -167,6 +180,18 @@ class CronScheduler:
                 update(CronORM).where(CronORM.cron_id == cron.cron_id).values(next_run_date=next_run, updated_at=now)
             )
         await session.commit()
+
+    @staticmethod
+    async def _cleanup_failed_stateless_thread(thread_id: str, cron: CronORM) -> None:
+        """Delete a stateless cron thread when run preparation fails mid-flight."""
+        try:
+            await delete_thread_by_id(thread_id, cron.user_id)
+        except Exception:
+            logger.exception(
+                "Failed to delete stateless cron thread after run setup error",
+                thread_id=thread_id,
+                cron_id=cron.cron_id,
+            )
 
 
 # Module-level singleton (matches executor / lease_reaper pattern)

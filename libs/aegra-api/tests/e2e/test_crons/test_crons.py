@@ -7,9 +7,41 @@ Tests run against a live server (CRON_ENABLED is not required; the scheduler
 is only needed for scheduled firing — these tests only verify the CRUD API).
 """
 
+from uuid import uuid4
+
 import pytest
 
 from tests.e2e._utils import elog, get_e2e_client
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_cron_accepts_graph_id_as_assistant_id() -> None:
+    """Create a cron using a graph ID directly and verify default assistant resolution."""
+    client = get_e2e_client()
+    marker = f"cron-via-graph-id-{uuid4()}"
+
+    cron_run = await client.crons.create(
+        "agent",
+        schedule="0 2 * * *",
+        input={"messages": [{"role": "user", "content": marker}]},
+    )
+    elog("Cron.create (graph id)", cron_run)
+
+    assert "run_id" in cron_run
+    assert cron_run["assistant_id"] != "agent"
+
+    crons = await client.crons.search(assistant_id="agent")
+    matching = [
+        cron
+        for cron in crons
+        if cron.get("payload", {}).get("input", {}).get("messages", [{}])[0].get("content") == marker
+    ]
+    assert len(matching) == 1
+    cron_id = matching[0]["cron_id"]
+
+    await client.crons.delete(cron_id)
+    elog("Cron deleted", {"cron_id": cron_id})
 
 
 @pytest.mark.e2e

@@ -30,6 +30,7 @@ from aegra_api.models.crons import (
 )
 from aegra_api.models.errors import NOT_FOUND
 from aegra_api.services.cron_service import CronService, get_cron_service
+from aegra_api.services.run_cleanup import delete_thread_by_id, schedule_background_cleanup
 from aegra_api.services.run_preparation import _prepare_run
 
 router = APIRouter(tags=["Crons"], dependencies=auth_dependency)
@@ -184,6 +185,7 @@ async def _trigger_first_run(
     """Create the initial run for a newly created cron job."""
     payload = cron.payload or {}
     effective_thread_id = thread_id or cron.thread_id or str(uuid4())
+    should_delete_thread = thread_id is None and cron.thread_id is None and cron.on_run_completed != "keep"
 
     run_request = RunCreate(
         assistant_id=cron.assistant_id,
@@ -199,5 +201,27 @@ async def _trigger_first_run(
         metadata=None,
     )
 
-    _run_id, run, _job = await _prepare_run(session, effective_thread_id, run_request, user, initial_status="pending")
+    try:
+        _run_id, run, _job = await _prepare_run(
+            session,
+            effective_thread_id,
+            run_request,
+            user,
+            initial_status="pending",
+        )
+    except Exception:
+        if should_delete_thread:
+            try:
+                await delete_thread_by_id(effective_thread_id, user.identity)
+            except Exception:
+                logger.exception(
+                    "Failed to delete stateless cron thread after initial run setup error",
+                    thread_id=effective_thread_id,
+                    cron_id=cron.cron_id,
+                )
+        raise
+
+    if should_delete_thread:
+        schedule_background_cleanup(_run_id, effective_thread_id, user.identity)
+
     return run

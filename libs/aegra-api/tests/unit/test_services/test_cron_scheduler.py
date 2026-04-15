@@ -27,6 +27,7 @@ def _make_cron_orm(
     schedule: str = "*/5 * * * *",
     payload: dict[str, Any] | None = None,
     enabled: bool = True,
+    on_run_completed: str | None = None,
     end_time: datetime | None = None,
     next_run_date: datetime | None = None,
 ) -> Mock:
@@ -40,6 +41,7 @@ def _make_cron_orm(
     cron.schedule = schedule
     cron.payload = payload if payload is not None else {"input": {"msg": "tick"}}
     cron.enabled = enabled
+    cron.on_run_completed = on_run_completed
     cron.end_time = end_time
     cron.next_run_date = next_run_date or now
     return cron
@@ -256,6 +258,88 @@ class TestFireCron:
             # Should advance next_run_date
             mock_session.execute.assert_awaited_once()
             mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_schedules_cleanup_for_stateless_cron_by_default(self) -> None:
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(thread_id=None, end_time=None)
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with (
+            patch("aegra_api.services.cron_scheduler.uuid4", return_value="eph-thread-1"),
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+                return_value=("run-1", Mock(), None),
+            ),
+            patch("aegra_api.services.cron_scheduler.schedule_background_cleanup") as mock_schedule,
+        ):
+            await scheduler._fire_cron(mock_session, cron)
+
+        mock_schedule.assert_called_once_with("run-1", "eph-thread-1", cron.user_id)
+
+    @pytest.mark.asyncio
+    async def test_skips_cleanup_for_thread_bound_cron(self) -> None:
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(thread_id="thread-bound-1", end_time=None)
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with (
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+                return_value=("run-1", Mock(), None),
+            ),
+            patch("aegra_api.services.cron_scheduler.schedule_background_cleanup") as mock_schedule,
+        ):
+            await scheduler._fire_cron(mock_session, cron)
+
+        mock_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_cleanup_when_on_run_completed_is_keep(self) -> None:
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(thread_id=None, on_run_completed="keep", end_time=None)
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with (
+            patch("aegra_api.services.cron_scheduler.uuid4", return_value="eph-thread-keep"),
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+                return_value=("run-1", Mock(), None),
+            ),
+            patch("aegra_api.services.cron_scheduler.schedule_background_cleanup") as mock_schedule,
+        ):
+            await scheduler._fire_cron(mock_session, cron)
+
+        mock_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deletes_stateless_thread_when_run_setup_fails(self) -> None:
+        scheduler = CronScheduler()
+        cron = _make_cron_orm(thread_id=None, end_time=None)
+        cron.end_time = None
+        mock_session = AsyncMock()
+
+        with (
+            patch("aegra_api.services.cron_scheduler.uuid4", return_value="eph-thread-fail"),
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+            patch(
+                "aegra_api.services.cron_scheduler.delete_thread_by_id",
+                new_callable=AsyncMock,
+            ) as mock_delete,
+        ):
+            await scheduler._fire_cron(mock_session, cron)
+
+        mock_delete.assert_awaited_once_with("eph-thread-fail", cron.user_id)
 
     @pytest.mark.asyncio
     async def test_uses_cron_thread_id_when_set(self) -> None:

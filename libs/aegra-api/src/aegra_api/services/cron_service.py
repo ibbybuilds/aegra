@@ -26,6 +26,7 @@ from aegra_api.models.crons import (
     CronUpdate,
 )
 from aegra_api.services.langgraph_service import LangGraphService, get_langgraph_service
+from aegra_api.utils.assistants import resolve_assistant_id
 
 logger = structlog.getLogger(__name__)
 
@@ -123,6 +124,11 @@ class CronService:
         self.session = session
         self.langgraph_service = langgraph_service
 
+    def _resolve_assistant_identifier(self, requested_id: str) -> str:
+        """Resolve graph IDs to their canonical assistant IDs for cron operations."""
+        available_graphs = self.langgraph_service.list_graphs()
+        return resolve_assistant_id(requested_id, available_graphs)
+
     async def create_cron(
         self,
         request: CronCreate,
@@ -146,15 +152,18 @@ class CronService:
             except (ZoneInfoNotFoundError, KeyError):
                 raise HTTPException(422, f"Invalid timezone: {request.timezone}")
 
+        available_graphs = self.langgraph_service.list_graphs()
+        requested_assistant_id = str(request.assistant_id)
+        resolved_assistant_id = resolve_assistant_id(requested_assistant_id, available_graphs)
+
         # Validate assistant exists
         assistant = await self.session.scalar(
-            select(AssistantORM).where(AssistantORM.assistant_id == str(request.assistant_id))
+            select(AssistantORM).where(AssistantORM.assistant_id == resolved_assistant_id)
         )
         if not assistant:
             raise HTTPException(404, f"Assistant '{request.assistant_id}' not found")
 
         # Validate the assistant's graph exists
-        available_graphs = self.langgraph_service.list_graphs()
         if assistant.graph_id not in available_graphs:
             raise HTTPException(404, f"Graph '{assistant.graph_id}' not found for assistant")
 
@@ -168,7 +177,7 @@ class CronService:
 
         cron_orm = CronORM(
             cron_id=str(uuid4()),
-            assistant_id=str(request.assistant_id),
+            assistant_id=resolved_assistant_id,
             thread_id=thread_id,
             user_id=user_identity,
             schedule=request.schedule,
@@ -253,7 +262,8 @@ class CronService:
         stmt = select(CronORM).where(CronORM.user_id == user_identity)
 
         if request.assistant_id is not None:
-            stmt = stmt.where(CronORM.assistant_id == request.assistant_id)
+            resolved_assistant_id = self._resolve_assistant_identifier(request.assistant_id)
+            stmt = stmt.where(CronORM.assistant_id == resolved_assistant_id)
         if request.thread_id is not None:
             stmt = stmt.where(CronORM.thread_id == request.thread_id)
         if request.enabled is not None:
@@ -285,7 +295,8 @@ class CronService:
         stmt = select(func.count()).select_from(CronORM).where(CronORM.user_id == user_identity)
 
         if request.assistant_id is not None:
-            stmt = stmt.where(CronORM.assistant_id == request.assistant_id)
+            resolved_assistant_id = self._resolve_assistant_identifier(request.assistant_id)
+            stmt = stmt.where(CronORM.assistant_id == resolved_assistant_id)
         if request.thread_id is not None:
             stmt = stmt.where(CronORM.thread_id == request.thread_id)
 

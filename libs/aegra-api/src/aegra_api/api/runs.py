@@ -452,6 +452,9 @@ async def cancel_run_endpoint(
             run_orm = await session.scalar(select(RunORM).where(RunORM.run_id == run_id))
             if run_orm is None:
                 raise HTTPException(404, f"Run '{run_id}' not found")
+            if run_orm.status in TERMINAL_STATES:
+                # Run already completed between CAS and re-fetch
+                return Run.model_validate(run_orm)
             mark_user_cancellation(run_id)
             try:
                 if action == "interrupt":

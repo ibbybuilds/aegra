@@ -274,7 +274,7 @@ class WorkerExecutor(BaseExecutor):
                 return None
             if metrics is not None:
                 metrics.runs_dequeued.inc()
-            return result[1]  # type: ignore[return-value]
+            return result[1]
         except RedisError as exc:
             metrics = get_worker_metrics()
             if metrics is not None:

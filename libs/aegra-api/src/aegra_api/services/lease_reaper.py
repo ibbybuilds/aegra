@@ -161,7 +161,7 @@ class LeaseReaper:
         """Get the number of run_ids in the Redis job queue."""
         try:
             client = redis_manager.get_client()
-            return await client.llen(settings.worker.WORKER_QUEUE_KEY)
+            return await client.llen(settings.worker.WORKER_QUEUE_KEY)  # type: ignore[misc]
         except RedisError:
             return 0
 

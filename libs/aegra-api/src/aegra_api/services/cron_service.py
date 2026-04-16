@@ -4,7 +4,7 @@ Handles CRUD operations on cron records and delegates run creation
 to the existing run preparation pipeline.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -26,6 +26,7 @@ from aegra_api.models.crons import (
     CronUpdate,
 )
 from aegra_api.services.langgraph_service import LangGraphService, get_langgraph_service
+from aegra_api.settings import settings
 from aegra_api.utils.assistants import resolve_assistant_id
 
 logger = structlog.getLogger(__name__)
@@ -214,15 +215,19 @@ class CronService:
         cron = await self._get_cron_or_404(cron_id, user_identity)
 
         values: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+        existing_payload = dict(cron.payload or {})
+
+        if request.timezone is not None:
+            try:
+                ZoneInfo(request.timezone)
+            except (ZoneInfoNotFoundError, KeyError):
+                raise HTTPException(422, f"Invalid timezone: {request.timezone}")
 
         # Schedule
         if request.schedule is not None:
             if not _is_valid_schedule(request.schedule):
                 raise HTTPException(422, f"Invalid cron schedule: {request.schedule}")
-            # Use updated timezone if provided, else fall back to whatever is stored in payload.
-            tz = request.timezone or (cron.payload or {}).get("timezone")
             values["schedule"] = request.schedule
-            values["next_run_date"] = _compute_next_run(request.schedule, timezone=tz)
 
         # Simple scalar fields
         if request.end_time is not None:
@@ -237,11 +242,15 @@ class CronService:
             values["metadata_dict"] = request.metadata
 
         # Merge payload fields into existing payload
-        existing_payload = dict(cron.payload or {})
         new_payload = _build_payload(request)
         if new_payload:
             existing_payload.update(new_payload)
             values["payload"] = existing_payload
+
+        if request.schedule is not None or request.timezone is not None:
+            schedule = request.schedule if request.schedule is not None else cron.schedule
+            timezone = existing_payload.get("timezone")
+            values["next_run_date"] = _compute_next_run(schedule, timezone=timezone)
 
         await self.session.execute(update(CronORM).where(CronORM.cron_id == cron_id).values(**values))
         await self.session.commit()
@@ -311,21 +320,28 @@ class CronService:
         return total or 0
 
     async def get_due_crons(self, now: datetime | None = None) -> list[CronORM]:
-        """Return enabled cron jobs whose ``next_run_date`` is in the past.
+        """Atomically claim enabled cron jobs whose ``next_run_date`` is in the past.
 
-        Used by the scheduler to fire runs.
+        The claim temporarily moves ``next_run_date`` forward by one poll interval
+        so concurrent scheduler instances do not pick the same rows before they are
+        processed. Successful execution overwrites this temporary value with the real
+        next occurrence; failed execution leaves the cron claimable again on a later
+        poll instead of skipping the schedule permanently.
         """
         now = now or datetime.now(UTC)
+        claimed_until = now + timedelta(seconds=settings.cron.CRON_POLL_INTERVAL_SECONDS)
         stmt = (
-            select(CronORM)
+            update(CronORM)
             .where(
                 CronORM.enabled.is_(True),
                 CronORM.next_run_date <= now,
             )
-            .order_by(CronORM.next_run_date.asc())
+            .values(next_run_date=claimed_until, updated_at=now)
+            .returning(CronORM)
         )
-        result = await self.session.scalars(stmt)
-        return list(result.all())
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return list(result.scalars().all())
 
     async def advance_next_run(self, cron: CronORM) -> None:
         """Advance ``next_run_date`` to the next occurrence after *now*.

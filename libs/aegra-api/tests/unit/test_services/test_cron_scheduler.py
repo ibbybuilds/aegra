@@ -422,13 +422,12 @@ class TestFireCron:
             mock_prepare.side_effect = HTTPException(404, "assistant not found")
             # Should not raise
             await scheduler._fire_cron(mock_session, cron)
-            # Should still advance
-            mock_session.execute.assert_awaited_once()
+            mock_session.execute.assert_not_awaited()
             mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_advances_next_run_date_on_non_http_error(self) -> None:
-        """Non-HTTPException from _prepare_run must not skip the schedule advance."""
+    async def test_does_not_advance_next_run_date_on_non_http_error(self) -> None:
+        """Non-HTTPException from _prepare_run must not advance the schedule."""
         scheduler = CronScheduler()
         cron = _make_cron_orm(end_time=None)
         cron.end_time = None
@@ -441,8 +440,7 @@ class TestFireCron:
             mock_prepare.side_effect = RuntimeError("database connection lost")
             # Should not raise
             await scheduler._fire_cron(mock_session, cron)
-            # next_run_date must still be advanced
-            mock_session.execute.assert_awaited_once()
+            mock_session.execute.assert_not_awaited()
             mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio

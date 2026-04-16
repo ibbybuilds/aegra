@@ -104,6 +104,7 @@ class CronScheduler:
         payload = cron.payload or {}
         now = datetime.now(UTC)
         should_delete_thread = _should_delete_stateless_thread(cron)
+        run_created = False
 
         # Build a RunCreate from the stored payload
         run_request = RunCreate(
@@ -137,6 +138,7 @@ class CronScheduler:
                 user,
                 initial_status="pending",
             )
+            run_created = True
             logger.info("Cron fired run", cron_id=cron.cron_id, run_id=_run_id, thread_id=thread_id)
             if should_delete_thread:
                 schedule_background_cleanup(_run_id, thread_id, cron.user_id)
@@ -155,25 +157,28 @@ class CronScheduler:
                 await CronScheduler._cleanup_failed_stateless_thread(thread_id, cron)
 
         # Advance to next occurrence (or disable if past end_time)
-        if cron.end_time and now >= cron.end_time:
-            await session.execute(
-                update(CronORM).where(CronORM.cron_id == cron.cron_id).values(enabled=False, updated_at=now)
-            )
-        else:
-            timezone = (cron.payload or {}).get("timezone")
-            next_run = _compute_next_run(cron.schedule, now=now, timezone=timezone)
-            logger.debug(
-                "Advancing cron schedule",
-                cron_id=cron.cron_id,
-                schedule=repr(cron.schedule),
-                field_count=len(cron.schedule.split()),
-                is_seconds_cron=_is_seconds_cron(cron.schedule),
-                now=now.isoformat(),
-                next_run=next_run.isoformat(),
-            )
-            await session.execute(
-                update(CronORM).where(CronORM.cron_id == cron.cron_id).values(next_run_date=next_run, updated_at=now)
-            )
+        if run_created:
+            if cron.end_time and now >= cron.end_time:
+                await session.execute(
+                    update(CronORM).where(CronORM.cron_id == cron.cron_id).values(enabled=False, updated_at=now)
+                )
+            else:
+                timezone = (cron.payload or {}).get("timezone")
+                next_run = _compute_next_run(cron.schedule, now=now, timezone=timezone)
+                logger.debug(
+                    "Advancing cron schedule",
+                    cron_id=cron.cron_id,
+                    schedule=repr(cron.schedule),
+                    field_count=len(cron.schedule.split()),
+                    is_seconds_cron=_is_seconds_cron(cron.schedule),
+                    now=now.isoformat(),
+                    next_run=next_run.isoformat(),
+                )
+                await session.execute(
+                    update(CronORM)
+                    .where(CronORM.cron_id == cron.cron_id)
+                    .values(next_run_date=next_run, updated_at=now)
+                )
         await session.commit()
 
     @staticmethod

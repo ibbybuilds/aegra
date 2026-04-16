@@ -995,12 +995,14 @@ class TestGetDueCrons:
         mock_session: AsyncMock,
     ) -> None:
         due = [_make_cron_orm(cron_id="c1"), _make_cron_orm(cron_id="c2")]
-        scalars = Mock()
-        scalars.all.return_value = due
-        mock_session.scalars.return_value = scalars
+        result = Mock()
+        result.scalars.return_value.all.return_value = due
+        mock_session.execute.return_value = result
 
         result = await cron_service.get_due_crons()
         assert len(result) == 2
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_none_due(
@@ -1008,12 +1010,14 @@ class TestGetDueCrons:
         cron_service: CronService,
         mock_session: AsyncMock,
     ) -> None:
-        scalars = Mock()
-        scalars.all.return_value = []
-        mock_session.scalars.return_value = scalars
+        result = Mock()
+        result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = result
 
         result = await cron_service.get_due_crons()
         assert result == []
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_accepts_custom_now(
@@ -1021,13 +1025,15 @@ class TestGetDueCrons:
         cron_service: CronService,
         mock_session: AsyncMock,
     ) -> None:
-        scalars = Mock()
-        scalars.all.return_value = []
-        mock_session.scalars.return_value = scalars
+        result = Mock()
+        result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = result
 
         custom_now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
         result = await cron_service.get_due_crons(now=custom_now)
         assert result == []
+        mock_session.execute.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1230,6 +1236,42 @@ class TestUpdateCronTimezone:
 
         resp = await cron_service.update_cron("cron-001", CronUpdate(timezone="Europe/London"), "test-user")
         assert resp.payload["timezone"] == "Europe/London"
+        execute_params = mock_session.execute.await_args_list[0].args[0].compile().params
+        assert execute_params["next_run_date"].tzinfo is not None
+
+    @pytest.mark.asyncio
+    async def test_update_timezone_recomputes_next_run_date_without_schedule_change(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        existing = _make_cron_orm(
+            schedule="0 9 * * *",
+            payload={"timezone": "UTC"},
+        )
+        updated_orm = _make_cron_orm(schedule="0 9 * * *", payload={"timezone": "Asia/Tokyo"})
+        mock_session.scalar.side_effect = [existing, updated_orm]
+
+        await cron_service.update_cron("cron-001", CronUpdate(timezone="Asia/Tokyo"), "test-user")
+
+        execute_params = mock_session.execute.await_args_list[0].args[0].compile().params
+        assert execute_params["payload"]["timezone"] == "Asia/Tokyo"
+        assert execute_params["next_run_date"].tzinfo is not None
+
+    @pytest.mark.asyncio
+    async def test_update_timezone_rejects_invalid_timezone_without_schedule_change(
+        self,
+        cron_service: CronService,
+        mock_session: AsyncMock,
+    ) -> None:
+        existing = _make_cron_orm(schedule="0 9 * * *", payload={"timezone": "UTC"})
+        mock_session.scalar.return_value = existing
+
+        with pytest.raises(HTTPException) as exc:
+            await cron_service.update_cron("cron-001", CronUpdate(timezone="Not/Valid"), "test-user")
+
+        assert exc.value.status_code == 422
+        mock_session.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_update_schedule_respects_existing_payload_timezone(

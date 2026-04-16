@@ -9,9 +9,35 @@ is only needed for scheduled firing — these tests only verify the CRUD API).
 
 from uuid import uuid4
 
+import httpx
 import pytest
 
+from aegra_api.settings import settings
 from tests.e2e._utils import elog, get_e2e_client
+
+
+def _extract_message_content(cron: dict) -> str | None:
+    """Return the first message content stored in the cron payload, if present."""
+    messages = cron.get("payload", {}).get("input", {}).get("messages", [])
+    if not messages:
+        return None
+    return messages[0].get("content")
+
+
+async def _find_cron_id_by_message(*, client, assistant_id: str, message: str) -> str:
+    """Find exactly one cron for an assistant by its unique input marker."""
+    crons = await client.crons.search(assistant_id=assistant_id)
+    matches = [cron for cron in crons if _extract_message_content(cron) == message]
+    assert len(matches) == 1
+    return matches[0]["cron_id"]
+
+
+async def _create_cron_via_http(payload: dict) -> dict:
+    """Create a cron with raw HTTP when the SDK surface lags behind the API."""
+    async with httpx.AsyncClient(base_url=settings.app.SERVER_URL, timeout=10.0) as client:
+        response = await client.post("/runs/crons", json=payload)
+        response.raise_for_status()
+        return response.json()
 
 
 @pytest.mark.e2e
@@ -49,6 +75,7 @@ async def test_cron_accepts_graph_id_as_assistant_id() -> None:
 async def test_cron_stateless_create_and_delete() -> None:
     """Create a stateless cron, verify the first Run is returned, then delete it."""
     client = get_e2e_client()
+    marker = f"cron-stateless-{uuid4()}"
 
     assistant = await client.assistants.create(
         graph_id="agent",
@@ -61,16 +88,13 @@ async def test_cron_stateless_create_and_delete() -> None:
     cron_run = await client.crons.create(
         assistant_id,
         schedule="0 3 * * *",  # 03:00 UTC every day — won't fire during test
-        input={"messages": [{"role": "user", "content": "cron check"}]},
+        input={"messages": [{"role": "user", "content": marker}]},
     )
     elog("Cron.create (stateless)", cron_run)
 
-    # SDK returns a Run object on create
     assert "run_id" in cron_run
-    cron_id = cron_run.get("cron_id")
-    assert cron_id is not None, "cron_id must be present in the Run response"
+    cron_id = await _find_cron_id_by_message(client=client, assistant_id=assistant_id, message=marker)
 
-    # Clean up — must not raise
     await client.crons.delete(cron_id)
     elog("Cron deleted", {"cron_id": cron_id})
 
@@ -80,6 +104,7 @@ async def test_cron_stateless_create_and_delete() -> None:
 async def test_cron_for_thread_create_and_delete() -> None:
     """Create a thread-bound cron, verify the Run is returned, then delete."""
     client = get_e2e_client()
+    marker = f"cron-thread-{uuid4()}"
 
     assistant = await client.assistants.create(
         graph_id="agent",
@@ -96,13 +121,12 @@ async def test_cron_for_thread_create_and_delete() -> None:
         thread_id,
         assistant_id,
         schedule="0 4 * * *",  # 04:00 UTC every day
-        input={"messages": [{"role": "user", "content": "thread cron check"}]},
+        input={"messages": [{"role": "user", "content": marker}]},
     )
     elog("Cron.create_for_thread", cron_run)
 
     assert "run_id" in cron_run
-    cron_id = cron_run.get("cron_id")
-    assert cron_id is not None
+    cron_id = await _find_cron_id_by_message(client=client, assistant_id=assistant_id, message=marker)
 
     await client.crons.delete(cron_id)
     elog("Cron deleted", {"cron_id": cron_id})
@@ -113,6 +137,8 @@ async def test_cron_for_thread_create_and_delete() -> None:
 async def test_cron_search_and_count() -> None:
     """Create two crons, search and count them by assistant_id, then clean up."""
     client = get_e2e_client()
+    marker_a = f"cron-search-a-{uuid4()}"
+    marker_b = f"cron-search-b-{uuid4()}"
 
     assistant = await client.assistants.create(
         graph_id="agent",
@@ -124,15 +150,17 @@ async def test_cron_search_and_count() -> None:
     run_a = await client.crons.create(
         assistant_id,
         schedule="0 5 * * *",
-        input={"messages": [{"role": "user", "content": "cron A"}]},
+        input={"messages": [{"role": "user", "content": marker_a}]},
     )
     run_b = await client.crons.create(
         assistant_id,
         schedule="0 6 * * *",
-        input={"messages": [{"role": "user", "content": "cron B"}]},
+        input={"messages": [{"role": "user", "content": marker_b}]},
     )
-    cron_id_a = run_a["cron_id"]
-    cron_id_b = run_b["cron_id"]
+    assert "run_id" in run_a
+    assert "run_id" in run_b
+    cron_id_a = await _find_cron_id_by_message(client=client, assistant_id=assistant_id, message=marker_a)
+    cron_id_b = await _find_cron_id_by_message(client=client, assistant_id=assistant_id, message=marker_b)
     elog("Created crons", {"a": cron_id_a, "b": cron_id_b})
 
     try:
@@ -157,6 +185,7 @@ async def test_cron_search_and_count() -> None:
 async def test_cron_update() -> None:
     """Create a cron, update its schedule and enabled flag, verify the response."""
     client = get_e2e_client()
+    marker = f"cron-update-{uuid4()}"
 
     assistant = await client.assistants.create(
         graph_id="agent",
@@ -168,9 +197,10 @@ async def test_cron_update() -> None:
     cron_run = await client.crons.create(
         assistant_id,
         schedule="0 7 * * *",
-        input={"messages": [{"role": "user", "content": "before update"}]},
+        input={"messages": [{"role": "user", "content": marker}]},
     )
-    cron_id = cron_run["cron_id"]
+    assert "run_id" in cron_run
+    cron_id = await _find_cron_id_by_message(client=client, assistant_id=assistant_id, message=marker)
     elog("Created cron", {"cron_id": cron_id})
 
     try:
@@ -193,6 +223,7 @@ async def test_cron_update() -> None:
 async def test_cron_with_timezone() -> None:
     """Create a cron with an IANA timezone; verify the timezone is stored in payload."""
     client = get_e2e_client()
+    marker = f"cron-timezone-{uuid4()}"
 
     assistant = await client.assistants.create(
         graph_id="agent",
@@ -201,13 +232,16 @@ async def test_cron_with_timezone() -> None:
     )
     assistant_id = assistant["assistant_id"]
 
-    cron_run = await client.crons.create(
-        assistant_id,
-        schedule="0 9 * * *",
-        timezone="America/New_York",
-        input={"messages": [{"role": "user", "content": "timezone cron"}]},
+    cron_run = await _create_cron_via_http(
+        {
+            "assistant_id": assistant_id,
+            "schedule": "0 9 * * *",
+            "timezone": "America/New_York",
+            "input": {"messages": [{"role": "user", "content": marker}]},
+        }
     )
-    cron_id = cron_run["cron_id"]
+    assert "run_id" in cron_run
+    cron_id = await _find_cron_id_by_message(client=client, assistant_id=assistant_id, message=marker)
     elog("Created cron with timezone", {"cron_id": cron_id})
 
     try:

@@ -16,13 +16,13 @@ from uuid import uuid4
 
 import structlog
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegra_api.core.orm import Cron as CronORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.models import RunCreate, User
-from aegra_api.services.cron_service import _compute_next_run, _is_seconds_cron
+from aegra_api.services.cron_service import CronService, _compute_next_run, _is_seconds_cron
 from aegra_api.services.run_cleanup import delete_thread_by_id, schedule_background_cleanup
 from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.settings import settings
@@ -39,10 +39,12 @@ class CronScheduler:
     """Periodically fires due cron jobs by creating runs."""
 
     def __init__(self) -> None:
+        """Initialize the scheduler state for the background polling loop."""
         self._task: asyncio.Task[None] | None = None
         self._running = False
 
     async def start(self) -> None:
+        """Start the background polling task if the scheduler is enabled."""
         self._running = True
         self._task = asyncio.create_task(self._loop())
         logger.info(
@@ -51,6 +53,7 @@ class CronScheduler:
         )
 
     async def stop(self) -> None:
+        """Stop the background polling task and wait for cancellation to finish."""
         self._running = False
         if self._task is not None:
             self._task.cancel()
@@ -60,6 +63,7 @@ class CronScheduler:
         logger.info("Cron scheduler stopped")
 
     async def _loop(self) -> None:
+        """Sleep for the configured interval and trigger cron polling until stopped."""
         interval = settings.cron.CRON_POLL_INTERVAL_SECONDS
         while self._running:
             try:
@@ -92,16 +96,7 @@ class CronScheduler:
     @staticmethod
     async def _find_due_crons(session: AsyncSession, now: datetime) -> list[CronORM]:
         """Return enabled crons whose next_run_date has passed."""
-        stmt = (
-            select(CronORM)
-            .where(
-                CronORM.enabled.is_(True),
-                CronORM.next_run_date <= now,
-            )
-            .order_by(CronORM.next_run_date.asc())
-        )
-        result = await session.scalars(stmt)
-        return list(result.all())
+        return await CronService(session).get_due_crons(now)
 
     @staticmethod
     async def _fire_cron(session: AsyncSession, cron: CronORM) -> None:

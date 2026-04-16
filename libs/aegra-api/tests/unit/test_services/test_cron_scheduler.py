@@ -90,21 +90,36 @@ class TestSchedulerTick:
     """Test CronScheduler._tick()."""
 
     @pytest.mark.asyncio
+    async def test_find_due_crons_delegates_to_cron_service(self) -> None:
+        scheduler = CronScheduler()
+        mock_session = AsyncMock()
+        due_crons = [_make_cron_orm(cron_id="delegated")]
+
+        with patch("aegra_api.services.cron_scheduler.CronService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.get_due_crons = AsyncMock(return_value=due_crons)
+
+            result = await scheduler._find_due_crons(mock_session, datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC))
+
+        mock_service_cls.assert_called_once_with(mock_session)
+        mock_service.get_due_crons.assert_awaited_once()
+        assert result == due_crons
+
+    @pytest.mark.asyncio
     async def test_tick_no_due_crons(self) -> None:
         scheduler = CronScheduler()
 
         mock_session = AsyncMock()
-        scalars = Mock()
-        scalars.all.return_value = []
-        mock_session.scalars.return_value = scalars
-
         mock_maker = Mock(return_value=mock_session)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch(
-            "aegra_api.services.cron_scheduler._get_session_maker",
-            return_value=mock_maker,
+        with (
+            patch(
+                "aegra_api.services.cron_scheduler._get_session_maker",
+                return_value=mock_maker,
+            ),
+            patch.object(scheduler, "_find_due_crons", new_callable=AsyncMock, return_value=[]),
         ):
             await scheduler._tick()
 
@@ -114,9 +129,6 @@ class TestSchedulerTick:
 
         cron = _make_cron_orm()
         mock_session = AsyncMock()
-        scalars = Mock()
-        scalars.all.return_value = [cron]
-        mock_session.scalars.return_value = scalars
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
@@ -127,6 +139,7 @@ class TestSchedulerTick:
                 "aegra_api.services.cron_scheduler._get_session_maker",
                 return_value=mock_maker,
             ),
+            patch.object(scheduler, "_find_due_crons", new_callable=AsyncMock, return_value=[cron]),
             patch.object(scheduler, "_fire_cron", new_callable=AsyncMock) as mock_fire,
         ):
             await scheduler._tick()
@@ -140,9 +153,6 @@ class TestSchedulerTick:
         cron_ok = _make_cron_orm(cron_id="ok")
         cron_fail = _make_cron_orm(cron_id="fail")
         mock_session = AsyncMock()
-        scalars = Mock()
-        scalars.all.return_value = [cron_fail, cron_ok]
-        mock_session.scalars.return_value = scalars
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
@@ -161,6 +171,7 @@ class TestSchedulerTick:
                 "aegra_api.services.cron_scheduler._get_session_maker",
                 return_value=mock_maker,
             ),
+            patch.object(scheduler, "_find_due_crons", new_callable=AsyncMock, return_value=[cron_fail, cron_ok]),
             patch.object(scheduler, "_fire_cron", side_effect=_side_effect),
         ):
             await scheduler._tick()

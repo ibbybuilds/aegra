@@ -13,10 +13,12 @@ Requires the server to be running:
 
 import asyncio
 
+import httpx
 from langgraph_sdk import get_client
 
 
 async def main() -> None:
+    """Create the example assistant, thread, and cron against a local server."""
     client = get_client(url="http://localhost:2026")
 
     # Create a dedicated thread so history persists across runs
@@ -32,8 +34,6 @@ async def main() -> None:
     # Schedule the agent to run every minute, bound to the thread.
     # Use POST /threads/{thread_id}/runs/crons so every tick reuses the same thread.
     # The response is a Run (the first immediate run), not a Cron record.
-    import httpx
-
     async with httpx.AsyncClient() as http:
         resp = await http.post(
             f"http://localhost:2026/threads/{thread_id}/runs/crons",

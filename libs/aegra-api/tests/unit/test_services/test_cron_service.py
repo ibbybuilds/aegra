@@ -522,9 +522,19 @@ class TestBuildPayloadExtended:
         assert payload["durability"] == "ephemeral"
 
     def test_works_with_cron_update(self) -> None:
-        req = CronUpdate(input={"new": "data"}, config={"cfg": True})
+        req = CronUpdate(
+            input={"new": "data"},
+            config={"cfg": True},
+            checkpoint_during=True,
+            multitask_strategy="enqueue",
+        )
         payload = _build_payload(req)
-        assert payload == {"input": {"new": "data"}, "config": {"cfg": True}}
+        assert payload == {
+            "input": {"new": "data"},
+            "config": {"cfg": True},
+            "checkpoint_during": True,
+            "multitask_strategy": "enqueue",
+        }
 
     def test_cron_update_empty_body(self) -> None:
         req = CronUpdate()

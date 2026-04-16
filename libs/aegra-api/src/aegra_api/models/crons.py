@@ -59,10 +59,12 @@ class CronUpdate(BaseModel):
     metadata: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
     context: dict[str, Any] | None = None
+    checkpoint_during: bool | None = None
     webhook: str | None = None
     interrupt_before: Literal["*"] | list[str] | None = None
     interrupt_after: Literal["*"] | list[str] | None = None
     on_run_completed: str | None = None
+    multitask_strategy: str | None = None
     enabled: bool | None = None
     stream_mode: str | list[str] | None = None
     stream_subgraphs: bool | None = None

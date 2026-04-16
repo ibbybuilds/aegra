@@ -165,8 +165,6 @@ class TestUpdateCron:
         assert data["schedule"] == "*/10 * * * *"
 
     def test_returns_404_when_not_found(self, client, mock_cron_service: AsyncMock) -> None:
-        from fastapi import HTTPException
-
         mock_cron_service.update_cron.side_effect = HTTPException(404, "Cron 'missing' not found")
 
         resp = client.patch(
@@ -191,8 +189,6 @@ class TestDeleteCron:
         assert resp.status_code == 204
 
     def test_returns_404_when_not_found(self, client, mock_cron_service: AsyncMock) -> None:
-        from fastapi import HTTPException
-
         mock_cron_service.delete_cron.side_effect = HTTPException(404, "Cron 'missing' not found")
 
         resp = client.delete("/runs/crons/missing")

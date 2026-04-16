@@ -120,13 +120,20 @@ def _cron_to_response(row: CronORM) -> CronResponse:
 class CronService:
     """CRUD service for cron jobs."""
 
-    def __init__(self, session: AsyncSession, langgraph_service: LangGraphService) -> None:
+    def __init__(self, session: AsyncSession, langgraph_service: LangGraphService | None = None) -> None:
+        """Store the database session and optional LangGraph dependency."""
         self.session = session
         self.langgraph_service = langgraph_service
 
+    def _get_available_graphs(self) -> dict[str, Any]:
+        """Return the configured graphs, requiring LangGraphService when needed."""
+        if self.langgraph_service is None:
+            raise RuntimeError("LangGraphService is required for graph-aware cron operations")
+        return self.langgraph_service.list_graphs()
+
     def _resolve_assistant_identifier(self, requested_id: str) -> str:
         """Resolve graph IDs to their canonical assistant IDs for cron operations."""
-        available_graphs = self.langgraph_service.list_graphs()
+        available_graphs = self._get_available_graphs()
         return resolve_assistant_id(requested_id, available_graphs)
 
     async def create_cron(
@@ -152,7 +159,7 @@ class CronService:
             except (ZoneInfoNotFoundError, KeyError):
                 raise HTTPException(422, f"Invalid timezone: {request.timezone}")
 
-        available_graphs = self.langgraph_service.list_graphs()
+        available_graphs = self._get_available_graphs()
         requested_assistant_id = str(request.assistant_id)
         resolved_assistant_id = resolve_assistant_id(requested_assistant_id, available_graphs)
 
@@ -343,6 +350,7 @@ class CronService:
     # ------------------------------------------------------------------
 
     async def _get_cron_or_404(self, cron_id: str, user_identity: str) -> CronORM:
+        """Return the user's cron row or raise a 404 when it does not exist."""
         cron = await self.session.scalar(
             select(CronORM).where(CronORM.cron_id == cron_id, CronORM.user_id == user_identity)
         )

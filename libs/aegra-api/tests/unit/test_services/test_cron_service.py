@@ -7,6 +7,7 @@ Follows the same fixture + class pattern as test_assistant_service.py.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
+from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
 from fastapi import HTTPException
@@ -1143,8 +1144,6 @@ class TestTimezoneAwareNextRun:
 
     def test_invalid_timezone_raises(self) -> None:
         """ZoneInfoNotFoundError must propagate so the caller can map it to 422."""
-        from zoneinfo import ZoneInfoNotFoundError
-
         with pytest.raises((ZoneInfoNotFoundError, KeyError)):
             _compute_next_run("0 9 * * *", timezone="Not/ATimezone")
 

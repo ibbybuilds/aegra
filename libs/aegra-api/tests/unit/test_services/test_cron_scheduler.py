@@ -452,6 +452,7 @@ class TestFireCron:
                 "config": {"k": "v"},
                 "interrupt_before": ["step1"],
                 "stream_mode": "values",
+                "checkpoint": {"checkpoint_id": "abc", "checkpoint_ns": ""},
             },
             end_time=None,
         )
@@ -471,6 +472,7 @@ class TestFireCron:
             assert run_request.config == {"k": "v"}
             assert run_request.interrupt_before == ["step1"]
             assert run_request.stream_mode == "values"
+            assert run_request.checkpoint == {"checkpoint_id": "abc", "checkpoint_ns": ""}
 
 
 # ---------------------------------------------------------------------------

@@ -59,7 +59,12 @@ def _resolve_sort(request: ThreadSearchRequest) -> tuple[Any, bool]:
     field = _DEFAULT_SORT_FIELD
     asc = _DEFAULT_SORT_ASC
 
-    if request.order_by:
+    if request.sort_by:
+        candidate = request.sort_by.strip().lower()
+        if candidate in _ALLOWED_SORT_FIELDS:
+            field = candidate
+            asc = (request.sort_order or "desc").lower() == "asc"
+    elif request.order_by:
         parts = request.order_by.strip().split()
         if parts and parts[0].lower() in _ALLOWED_SORT_FIELDS:
             field = parts[0].lower()

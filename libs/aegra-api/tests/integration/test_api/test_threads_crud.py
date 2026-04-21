@@ -462,6 +462,31 @@ class TestSearchThreads:
             resp = client.post("/threads/search", json={"order_by": bad})
             assert resp.status_code == 200, f"order_by={bad!r} raised {resp.status_code}"
 
+    def test_search_accepts_sdk_sort_shape(self, client):
+        """SDK-style sort_by/sort_order is accepted."""
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "updated_at", "sort_order": "asc"},
+        )
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_search_sdk_state_updated_at_falls_back(self, client):
+        """sort_by='state_updated_at' (valid SDK literal, no column here) falls back without 500."""
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "state_updated_at", "sort_order": "desc"},
+        )
+        assert resp.status_code == 200
+
+    def test_search_rejects_invalid_sort_order(self, client):
+        """sort_order is a Literal['asc','desc']; other values are rejected by Pydantic."""
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "created_at", "sort_order": "sideways"},
+        )
+        assert resp.status_code == 422
+
 
 class TestThreadGetState:
     """Test GET /threads/{thread_id}/state endpoint"""

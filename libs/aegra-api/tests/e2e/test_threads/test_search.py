@@ -64,6 +64,54 @@ async def test_search_order_by_created_at_desc_e2e() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+async def test_search_sdk_sort_by_asc_e2e() -> None:
+    """SDK-style sort_by='created_at', sort_order='asc' sorts ascending."""
+    tag = f"sdk-asc-{uuid.uuid4().hex[:8]}"
+    created = await _seed_three_threads(tag)
+
+    async with AsyncClient(base_url=settings.app.SERVER_URL, timeout=30.0) as http_client:
+        resp = await http_client.post(
+            "/threads/search",
+            json={
+                "metadata": {"search_test_tag": tag},
+                "sort_by": "created_at",
+                "sort_order": "asc",
+                "limit": 100,
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    returned = [t["thread_id"] for t in resp.json()]
+    elog("SDK ASC result", returned)
+    assert returned == created
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_search_sort_by_takes_precedence_over_order_by_e2e() -> None:
+    """When both sort_by and order_by are sent, sort_by wins."""
+    tag = f"precedence-{uuid.uuid4().hex[:8]}"
+    created = await _seed_three_threads(tag)
+
+    async with AsyncClient(base_url=settings.app.SERVER_URL, timeout=30.0) as http_client:
+        # sort_by without sort_order → defaults to desc. order_by asks for asc.
+        # sort_by precedence means we should get desc order.
+        resp = await http_client.post(
+            "/threads/search",
+            json={
+                "metadata": {"search_test_tag": tag},
+                "sort_by": "created_at",
+                "order_by": "created_at ASC",
+                "limit": 100,
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    returned = [t["thread_id"] for t in resp.json()]
+    elog("Precedence result", returned)
+    assert returned == list(reversed(created)), "sort_by default-desc must beat order_by ASC"
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_search_malformed_order_by_falls_back_e2e() -> None:
     """Unknown/malformed order_by must not 500 — falls back to default ordering."""
     tag = f"sort-bad-{uuid.uuid4().hex[:8]}"

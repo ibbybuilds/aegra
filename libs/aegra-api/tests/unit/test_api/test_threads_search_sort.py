@@ -57,3 +57,48 @@ class TestResolveSortOrderBy:
     def test_returns_real_orm_column(self) -> None:
         column, _ = _resolve_sort(ThreadSearchRequest(order_by="updated_at ASC"))
         assert column is ThreadORM.updated_at
+
+
+class TestResolveSortSdkShape:
+    """_resolve_sort honours the SDK-style sort_by / sort_order fields."""
+
+    def test_sdk_shape_asc(self) -> None:
+        column, asc = _resolve_sort(
+            ThreadSearchRequest(sort_by="updated_at", sort_order="asc")
+        )
+        assert _col_name(column) == "updated_at"
+        assert asc is True
+
+    def test_sdk_shape_desc(self) -> None:
+        column, asc = _resolve_sort(
+            ThreadSearchRequest(sort_by="thread_id", sort_order="desc")
+        )
+        assert _col_name(column) == "thread_id"
+        assert asc is False
+
+    def test_sdk_sort_by_defaults_to_desc(self) -> None:
+        column, asc = _resolve_sort(ThreadSearchRequest(sort_by="updated_at"))
+        assert _col_name(column) == "updated_at"
+        assert asc is False
+
+    def test_sort_by_takes_precedence_over_order_by(self) -> None:
+        column, asc = _resolve_sort(
+            ThreadSearchRequest(sort_by="updated_at", order_by="thread_id ASC")
+        )
+        assert _col_name(column) == "updated_at"
+        assert asc is False
+
+    def test_sdk_state_updated_at_falls_back_silently(self) -> None:
+        """state_updated_at is a valid SDK literal but has no matching column → default."""
+        column, asc = _resolve_sort(
+            ThreadSearchRequest(sort_by="state_updated_at", sort_order="asc")
+        )
+        assert _col_name(column) == "created_at"
+        assert asc is False
+
+    def test_sdk_unknown_sort_by_falls_back(self) -> None:
+        column, asc = _resolve_sort(
+            ThreadSearchRequest(sort_by="password; DROP TABLE", sort_order="asc")
+        )
+        assert _col_name(column) == "created_at"
+        assert asc is False

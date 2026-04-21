@@ -112,6 +112,35 @@ async def test_search_sort_by_takes_precedence_over_order_by_e2e() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+async def test_search_metadata_bool_filter_e2e() -> None:
+    """metadata={'active': True} matches JSON-bool rows written via SDK."""
+    tag = f"bool-{uuid.uuid4().hex[:8]}"
+    client = get_e2e_client()
+
+    active_ids: list[str] = []
+    inactive_ids: list[str] = []
+    for i in range(3):
+        active = i != 1  # indices 0 and 2 are active
+        thread = await client.threads.create(
+            metadata={"search_test_tag": tag, "active": active}
+        )
+        (active_ids if active else inactive_ids).append(thread["thread_id"])
+        await asyncio.sleep(0.02)
+    elog("Seeded bool threads", {"active": active_ids, "inactive": inactive_ids})
+
+    async with AsyncClient(base_url=settings.app.SERVER_URL, timeout=30.0) as http_client:
+        resp = await http_client.post(
+            "/threads/search",
+            json={"metadata": {"search_test_tag": tag, "active": True}, "limit": 100},
+        )
+    assert resp.status_code == 200, resp.text
+    returned = {t["thread_id"] for t in resp.json()}
+    elog("active=True result", sorted(returned))
+    assert returned == set(active_ids), f"expected {active_ids}, got {returned}"
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_search_malformed_order_by_falls_back_e2e() -> None:
     """Unknown/malformed order_by must not 500 — falls back to default ordering."""
     tag = f"sort-bad-{uuid.uuid4().hex[:8]}"

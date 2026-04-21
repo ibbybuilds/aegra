@@ -487,6 +487,12 @@ class TestSearchThreads:
         )
         assert resp.status_code == 422
 
+    def test_search_accepts_bool_metadata_filter(self, client):
+        """metadata={'active': True} is accepted end-to-end (real matching verified in E2E)."""
+        resp = client.post("/threads/search", json={"metadata": {"active": True}})
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
 
 class TestThreadGetState:
     """Test GET /threads/{thread_id}/state endpoint"""

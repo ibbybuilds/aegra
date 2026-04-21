@@ -9,8 +9,10 @@ from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import bindparam, cast, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.types import JSON
 
 from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
@@ -873,7 +875,12 @@ async def search_threads(
 
     if request.metadata:
         for key, value in request.metadata.items():
-            stmt = stmt.where(ThreadORM.metadata_json[key].as_string() == str(value))
+            # Compare as JSONB so Python bools/ints/None match their JSON
+            # counterparts (str(True) == "True" was the previous bug).
+            stmt = stmt.where(
+                ThreadORM.metadata_json[key]
+                == cast(bindparam(None, value=value, type_=JSON), JSONB)
+            )
 
     offset = request.offset or 0
     limit = request.limit or 20

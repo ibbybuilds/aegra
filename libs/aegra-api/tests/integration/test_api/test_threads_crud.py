@@ -450,6 +450,18 @@ class TestSearchThreads:
         data = resp.json()
         assert isinstance(data, list)
 
+    def test_search_accepts_order_by_asc(self, client):
+        """order_by='created_at ASC' is accepted without error."""
+        resp = client.post("/threads/search", json={"order_by": "created_at ASC"})
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_search_malformed_order_by_does_not_500(self, client):
+        """Malformed order_by falls back to default and returns 200."""
+        for bad in ["password; DROP TABLE", "nonexistent_col", ""]:
+            resp = client.post("/threads/search", json={"order_by": bad})
+            assert resp.status_code == 200, f"order_by={bad!r} raised {resp.status_code}"
+
 
 class TestThreadGetState:
     """Test GET /threads/{thread_id}/state endpoint"""

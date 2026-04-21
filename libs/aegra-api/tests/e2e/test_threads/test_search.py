@@ -20,8 +20,9 @@ async def _seed_three_threads(tag: str) -> list[str]:
     for i in range(3):
         thread = await client.threads.create(metadata={"search_test_tag": tag, "seq": str(i)})
         ids.append(thread["thread_id"])
-        # Force distinct created_at timestamps
-        await asyncio.sleep(0.05)
+        # Force distinct created_at timestamps. 100ms leaves headroom for slow CI
+        # runners where 50ms could collide on low-resolution clocks.
+        await asyncio.sleep(0.1)
     elog(f"Seeded threads for tag {tag}", ids)
     return ids
 
@@ -123,7 +124,7 @@ async def test_search_metadata_bool_filter_e2e() -> None:
         active = i != 1  # indices 0 and 2 are active
         thread = await client.threads.create(metadata={"search_test_tag": tag, "active": active})
         (active_ids if active else inactive_ids).append(thread["thread_id"])
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.05)
     elog("Seeded bool threads", {"active": active_ids, "inactive": inactive_ids})
 
     async with AsyncClient(base_url=settings.app.SERVER_URL, timeout=30.0) as http_client:

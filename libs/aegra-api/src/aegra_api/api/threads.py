@@ -877,10 +877,7 @@ async def search_threads(
         for key, value in request.metadata.items():
             # Compare as JSONB so Python bools/ints/None match their JSON
             # counterparts (str(True) == "True" was the previous bug).
-            stmt = stmt.where(
-                ThreadORM.metadata_json[key]
-                == cast(bindparam(None, value=value, type_=JSON), JSONB)
-            )
+            stmt = stmt.where(ThreadORM.metadata_json[key] == cast(bindparam(None, value=value, type_=JSON), JSONB))
 
     offset = request.offset or 0
     limit = request.limit or 20

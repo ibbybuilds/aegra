@@ -121,9 +121,7 @@ async def test_search_metadata_bool_filter_e2e() -> None:
     inactive_ids: list[str] = []
     for i in range(3):
         active = i != 1  # indices 0 and 2 are active
-        thread = await client.threads.create(
-            metadata={"search_test_tag": tag, "active": active}
-        )
+        thread = await client.threads.create(metadata={"search_test_tag": tag, "active": active})
         (active_ids if active else inactive_ids).append(thread["thread_id"])
         await asyncio.sleep(0.02)
     elog("Seeded bool threads", {"active": active_ids, "inactive": inactive_ids})

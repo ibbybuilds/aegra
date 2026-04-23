@@ -253,6 +253,61 @@ class TestRunsStreamingEndpoints:
             assert call_args[0][1] == "evt-1"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "run_status,last_event_id",
+        [
+            ("running", None),  # active branch
+            ("success", None),  # terminal branch
+        ],
+    )
+    async def test_stream_run_never_wires_close_handler(
+        self,
+        mock_user: User,
+        mock_session: AsyncMock,
+        run_status: str,
+        last_event_id: str | None,
+    ) -> None:
+        """``stream_run`` (reconnect) must never wire ``client_close_handler_callable``.
+
+        The endpoint is a reconnect-style join: multiple clients can attach
+        to the same run. A single client disconnecting must NOT cancel the
+        shared run — hence the endpoint deliberately omits the close handler.
+        Covers both the terminal branch (early return with ``end`` event) and
+        the active branch (live streaming via broker).
+        """
+        thread_id = "test-thread"
+        run_id = "run-42"
+
+        run_orm = RunORM(
+            run_id=run_id,
+            thread_id=thread_id,
+            assistant_id="agent",
+            user_id=mock_user.identity,
+            status=run_status,
+            input={},
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        mock_session.scalar.return_value = run_orm
+
+        async def _fake_stream() -> AsyncGenerator:
+            yield "data"
+
+        with patch(
+            "aegra_api.api.runs.streaming_service.stream_run_execution",
+            return_value=_fake_stream(),
+        ):
+            response = await stream_run(
+                thread_id,
+                run_id,
+                last_event_id=last_event_id,
+                user=mock_user,
+                session=mock_session,
+            )
+
+        assert response.client_close_handler_callable is None
+
+    @pytest.mark.asyncio
     async def test_stream_run_not_found(self, mock_user: User, mock_session: AsyncMock) -> None:
         """Test streaming non-existent run."""
         mock_session.scalar.return_value = None

@@ -94,16 +94,18 @@ async def test_keepalive_pings_during_silent_broker(run_id: str, local_broker_ma
         transport = httpx.ASGITransport(app=app)
         async with (
             httpx.AsyncClient(transport=transport, base_url="http://test") as client,
-            client.stream("GET", "/stream", timeout=10.0) as resp,
+            client.stream("GET", "/stream", timeout=12.0) as resp,
         ):
             assert resp.status_code == 200
             async for chunk in resp.aiter_bytes():
                 collected.extend(chunk)
 
     async def _drive_broker() -> None:
-        # Stay silent long enough for at least two ping intervals,
-        # then end the stream so the response finishes cleanly.
-        await asyncio.sleep(2.5)
+        # Stay silent long enough that at least two ping intervals fire even
+        # when ASGI startup eats a noticeable slice at the beginning (CI can
+        # be slow). ping=1, sleep=4.0 → ~3 expected heartbeats, asserting >=2
+        # leaves ~2s of safety margin.
+        await asyncio.sleep(4.0)
         await broker.put("evt-1", ("end", {"status": "success"}))
 
     await asyncio.gather(_collect(), _drive_broker())
@@ -222,13 +224,20 @@ async def test_cancelled_error_no_longer_requests_cancel(
 
     gen = streaming_service_module.streaming_service.stream_run_execution(run)
 
-    # Let the generator get into its live-events loop, then cancel the task
+    # Drive the generator to the exact state we want to cancel in: inside
+    # its live-events loop, blocked on the next broker event. Feeding one
+    # event and waiting for ``_drain`` to consume it guarantees the loop
+    # is running (not a fixed sleep, which could fire before the generator
+    # has even started on a loaded CI machine).
+    entered_loop = asyncio.Event()
+
     async def _drain() -> None:
         async for _ in gen:
-            pass
+            entered_loop.set()
 
     task = asyncio.create_task(_drain())
-    await asyncio.sleep(0.1)
+    await broker.put("evt-1", ("values", {"x": 1}))
+    await asyncio.wait_for(entered_loop.wait(), timeout=2.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

@@ -1,6 +1,7 @@
 """Unit tests for stateless (thread-free) run endpoints."""
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -490,6 +491,48 @@ class TestStatelessStreamRun:
             await stateless_stream_run(request, mock_user, mock_session)
 
         mock_delete.assert_called_once_with("eph-thread-err", mock_user.identity)
+
+    @pytest.mark.asyncio
+    async def test_early_disconnect_keeps_thread(self, mock_user: User, mock_session: AsyncMock) -> None:
+        """Client disconnect before stream completion must NOT delete the thread.
+
+        Regression: deleting the thread here would cancel active runs via
+        ``_delete_thread_by_id`` and break the ``on_disconnect="continue"``
+        contract. The wrapper must mirror ``stateless_wait_for_run`` and only
+        delete on normal completion.
+        """
+        request = RunCreate(assistant_id="agent", input={"msg": "hi"}, on_disconnect="continue")
+
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: metadata\n\n"
+            # Client disconnect — outer EventSourceResponse cancels the iterator
+            raise asyncio.CancelledError
+
+        mock_response = EventSourceResponse(
+            _fake_body(),
+            headers={"Location": "/threads/t/runs/r/stream"},
+        )
+
+        with (
+            patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-disc"),
+            patch(
+                "aegra_api.api.stateless_runs.create_and_stream_run",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs._delete_thread_by_id",
+                new_callable=AsyncMock,
+            ) as mock_delete,
+        ):
+            result = await stateless_stream_run(request, mock_user, mock_session)
+
+            # Drain until CancelledError bubbles up from the iterator
+            with contextlib.suppress(asyncio.CancelledError):
+                async for _chunk in result.body_iterator:
+                    pass
+
+        mock_delete.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_stream_cleanup_failure_is_logged_not_raised(self, mock_user: User, mock_session: AsyncMock) -> None:

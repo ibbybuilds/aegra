@@ -124,10 +124,14 @@ class TestRunsStreamingEndpoints:
         """
         thread_id = "t"
         run_id = str(uuid4())
-        kwargs: dict[str, object] = {"assistant_id": "test-assistant", "input": {}}
-        if on_disconnect is not None:
-            kwargs["on_disconnect"] = on_disconnect
-        request = RunCreate(**kwargs)  # type: ignore[arg-type]
+        if on_disconnect is None:
+            request = RunCreate(assistant_id="test-assistant", input={})
+        else:
+            request = RunCreate(
+                assistant_id="test-assistant",
+                input={},
+                on_disconnect=on_disconnect,
+            )
 
         async def _fake_stream() -> AsyncGenerator:
             yield "data"

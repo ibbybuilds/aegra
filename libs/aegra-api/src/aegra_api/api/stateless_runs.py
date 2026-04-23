@@ -218,18 +218,30 @@ async def stateless_stream_run(
     inner_close_handler = response.client_close_handler_callable
 
     async def _wrapped_iterator() -> AsyncIterator[bytes]:
+        completed = False
         try:
             async for chunk in original_iterator:
                 yield chunk
+            completed = True
         finally:
             aclose = getattr(original_iterator, "aclose", None)
             if aclose is not None:
                 await aclose()
-            try:
-                await _delete_thread_by_id(thread_id, user.identity)
-            except Exception:
-                logger.exception(
-                    "Failed to delete ephemeral thread after stream",
+            if completed:
+                try:
+                    await _delete_thread_by_id(thread_id, user.identity)
+                except Exception:
+                    logger.exception(
+                        "Failed to delete ephemeral thread after stream",
+                        thread_id=thread_id,
+                    )
+            else:
+                # Early client disconnect: deleting the thread here would
+                # cancel the still-running background execution (via
+                # _delete_thread_by_id) and break the on_disconnect="continue"
+                # contract. Mirror stateless_wait_for_run and keep the thread.
+                logger.info(
+                    "Client disconnected before stream completed, keeping ephemeral thread",
                     thread_id=thread_id,
                 )
 

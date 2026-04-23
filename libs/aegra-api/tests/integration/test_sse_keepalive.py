@@ -197,7 +197,11 @@ async def test_client_disconnect_triggers_close_handler(run_id: str, local_broke
 
 
 @pytest.mark.asyncio
-async def test_cancelled_error_no_longer_requests_cancel(run_id: str, local_broker_manager: BrokerManager) -> None:
+async def test_cancelled_error_no_longer_requests_cancel(
+    run_id: str,
+    local_broker_manager: BrokerManager,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``stream_run_execution`` must not call ``request_cancel`` on cancellation.
 
     Pre-fix, a CancelledError inside the generator triggered
@@ -214,7 +218,7 @@ async def test_cancelled_error_no_longer_requests_cancel(run_id: str, local_brok
     async def _record_cancel(rid: str, _action: str) -> None:
         cancel_requests.append(rid)
 
-    local_broker_manager.request_cancel = _record_cancel  # type: ignore[method-assign]
+    monkeypatch.setattr(local_broker_manager, "request_cancel", _record_cancel)
 
     gen = streaming_service_module.streaming_service.stream_run_execution(run)
 

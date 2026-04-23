@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.responses import StreamingResponse
+from sse_starlette import EventSourceResponse
 
 from aegra_api.api.stateless_runs import (
     _cleanup_after_background_run,
@@ -402,13 +403,14 @@ class TestStatelessStreamRun:
         """Delegates to create_and_stream_run and wraps iterator for cleanup."""
         request = RunCreate(assistant_id="agent", input={"msg": "hi"})
 
-        async def _fake_body() -> AsyncIterator[str]:
-            yield "event: data\n\n"
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: data\n\n"
 
-        mock_response = StreamingResponse(
+        inner_close_handler = AsyncMock()
+        mock_response = EventSourceResponse(
             _fake_body(),
-            media_type="text/event-stream",
             headers={"Location": "/threads/t/runs/r/stream"},
+            client_close_handler_callable=inner_close_handler,
         )
 
         with (
@@ -425,12 +427,14 @@ class TestStatelessStreamRun:
         ):
             result = await stateless_stream_run(request, mock_user, mock_session)
 
-            # Should be a StreamingResponse (possibly wrapped)
-            assert isinstance(result, StreamingResponse)
+            assert isinstance(result, EventSourceResponse)
             mock_stream.assert_called_once_with("eph-thread-4", request, mock_user, mock_session)
+            # Outer response must re-expose the inner close handler so real
+            # http.disconnect still cancels the run.
+            assert result.client_close_handler_callable is inner_close_handler
 
             # Consume the iterator to trigger cleanup (must be inside mock context)
-            chunks: list[str] = []
+            chunks: list[bytes] = []
             async for chunk in result.body_iterator:
                 chunks.append(chunk)
 
@@ -442,13 +446,10 @@ class TestStatelessStreamRun:
         """Returns original response unchanged when on_completion='keep'."""
         request = RunCreate(assistant_id="agent", input={"msg": "hi"}, on_completion="keep")
 
-        async def _fake_body() -> AsyncIterator[str]:
-            yield "event: data\n\n"
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: data\n\n"
 
-        mock_response = StreamingResponse(
-            _fake_body(),
-            media_type="text/event-stream",
-        )
+        mock_response = EventSourceResponse(_fake_body())
 
         with (
             patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-5"),
@@ -495,13 +496,10 @@ class TestStatelessStreamRun:
         """If _delete_thread_by_id raises during stream cleanup, it is logged but not propagated."""
         request = RunCreate(assistant_id="agent", input={"msg": "hi"})
 
-        async def _fake_body() -> AsyncIterator[str]:
-            yield "event: data\n\n"
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: data\n\n"
 
-        mock_response = StreamingResponse(
-            _fake_body(),
-            media_type="text/event-stream",
-        )
+        mock_response = EventSourceResponse(_fake_body())
 
         with (
             patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-cleanup"),
@@ -519,7 +517,7 @@ class TestStatelessStreamRun:
             result = await stateless_stream_run(request, mock_user, mock_session)
 
             # Consuming the iterator should not raise despite cleanup failure
-            chunks: list[str] = []
+            chunks: list[bytes] = []
             async for chunk in result.body_iterator:
                 chunks.append(chunk)
 

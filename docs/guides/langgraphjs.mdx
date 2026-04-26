@@ -63,9 +63,9 @@ const builder = new StateGraph(ChatState)
   .addEdge("__start__", "chatbot")
   .addEdge("chatbot", "__end__");
 
-export const graph = builder.compile({ checkpointSaver: undefined });
-// ⬆ Do NOT add a MemorySaver or other checkpointer here.
-// Aegra manages state persistence on the Python side (PostgreSQL).
+// Export the uncompiled StateGraph — the Aegra bridge compiles it with
+// a native PostgresSaver checkpointer for interrupt/resume/time-travel.
+export const graph = builder;
 ```
 
 ### 3. Add a `package.json`
@@ -151,7 +151,7 @@ Aegra uses a **Node.js bridge** architecture:
 1. When a `langgraphjs` graph is configured, Aegra spawns a Node.js subprocess
 2. The subprocess loads your TypeScript graph using `tsx` (no build step needed)
 3. Communication happens via JSON-RPC over stdin/stdout
-4. State persistence (checkpointing) is managed by the Python server using PostgreSQL
+4. The JS bridge compiles the graph with a native `@langchain/langgraph-checkpoint-postgres` checkpointer, using the same PostgreSQL database as Aegra
 5. Streaming events flow through the bridge back to clients via SSE
 
 This means:
@@ -159,9 +159,10 @@ This means:
 - **Same API** for Python and JS graphs
 - **Same PostgreSQL** database for all state
 - **Same authentication** and middleware applies
+- **Full checkpoint support** — interrupts, resume, and time-travel work natively
 
 <Note>
-**Why `checkpointSaver: undefined`?** Aegra handles all checkpointing on the Python side using PostgreSQL. If you add your own `MemorySaver` or other checkpointer inside the JS graph, state will be saved twice (inconsistently) and the Aegra thread history will diverge from the graph's internal state. Always leave `checkpointSaver` unset and let Aegra manage persistence.
+**Export an uncompiled `StateGraph`.** The Aegra bridge compiles your graph with a native `PostgresSaver` checkpointer. If you export a pre-compiled graph (calling `builder.compile()` yourself), the bridge cannot inject the checkpointer and persistence features (interrupt, resume, time-travel) will not work. Always export the uncompiled `StateGraph` and let the bridge handle compilation.
 </Note>
 
 ## Streaming

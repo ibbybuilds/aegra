@@ -9,6 +9,8 @@ This example demonstrates using a LangGraph.js graph with Aegra. The graph is a 
 - Calls OpenAI's GPT-4o-mini model
 - Returns the model's response
 
+Checkpointing is handled natively by the JS bridge using `@langchain/langgraph-checkpoint-postgres`, which enables full interrupt, resume, and time-travel support.
+
 ## Setup
 
 ### Prerequisites
@@ -72,3 +74,9 @@ __start__ → chatbot → __end__
 ```
 
 Single-node graph — the `chatbot` node invokes the LLM with the full message history and returns the response.
+
+## Architecture Notes
+
+- The graph is exported as an **uncompiled** `StateGraph` — the Aegra JS bridge compiles it with a native `PostgresSaver` checkpointer at load time.
+- Do **not** call `builder.compile()` in your graph file — let the bridge handle compilation so checkpointing works correctly.
+- The `DATABASE_URL` environment variable is passed to the JS bridge process, normalised to `postgresql://` scheme.

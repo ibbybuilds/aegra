@@ -21,16 +21,17 @@ async function chatbot(state: ChatStateType): Promise<Partial<ChatStateType>> {
   return { messages: [response] };
 }
 
-// Build and compile the graph
+// Build the graph (uncompiled StateGraph)
 const builder = new StateGraph(ChatState)
   .addNode("chatbot", chatbot)
   .addEdge("__start__", "chatbot")
   .addEdge("chatbot", "__end__");
 
-/** Compiled graph — loaded by Aegra at startup.
+/**
+ * Uncompiled graph — loaded by Aegra at startup.
  *
- * Checkpointing is managed by the Aegra Python server (PostgreSQL).
- * Do NOT add a MemorySaver or other checkpointer here — the bridge
- * must stay stateless so Aegra can handle persistence consistently.
+ * The Aegra JS bridge compiles this with a native PostgresSaver
+ * checkpointer, enabling interrupt, resume, and time-travel support.
+ * Do NOT call builder.compile() here — let the bridge handle it.
  */
-export const graph = builder.compile({ checkpointSaver: undefined });
+export const graph = builder;

@@ -13,6 +13,7 @@
   "dependencies": {
     "@langchain/core": "^1.1.36",
     "@langchain/langgraph": "^1.2.0",
+    "@langchain/langgraph-checkpoint-postgres": "^1.0.1",
     "tsx": "^4.0.0"
   },
   "devDependencies": {

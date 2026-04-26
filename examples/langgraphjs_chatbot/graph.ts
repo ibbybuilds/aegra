@@ -15,14 +15,17 @@ async function chatbot(state: ChatStateType): Promise<Partial<ChatStateType>> {
   return { messages: [response] };
 }
 
-// Build the graph
+// Build the graph (uncompiled StateGraph)
 const builder = new StateGraph(ChatState)
   .addNode("chatbot", chatbot)
   .addEdge("__start__", "chatbot")
   .addEdge("chatbot", "__end__");
 
 /**
- * Compiled graph — exported for Aegra to load.
+ * Uncompiled graph — exported for Aegra to load.
+ *
+ * The Aegra JS bridge compiles this with a native PostgresSaver
+ * checkpointer, enabling interrupt, resume, and time-travel support.
  *
  * Configure in aegra.json:
  * {
@@ -34,7 +37,4 @@ const builder = new StateGraph(ChatState)
  *   }
  * }
  */
-// Checkpointing is managed by the Aegra Python server (PostgreSQL).
-// Do NOT add a MemorySaver or other checkpointer here — the bridge
-// must stay stateless so Aegra can handle persistence consistently.
-export const graph = builder.compile({ checkpointSaver: undefined });
+export const graph = builder;

@@ -1,9 +1,8 @@
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import type { GraphInfo } from "./types.js";
 
-// We keep a loose type alias for compiled graphs so we don't hard-require
-// @langchain/langgraph at import time (it's loaded dynamically).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCompiledGraph = any;
 
@@ -13,9 +12,41 @@ const graphCache = new Map<string, AnyCompiledGraph>();
 /** Cache of schema info keyed by graph_id. */
 const schemaCache = new Map<string, GraphInfo>();
 
+/** Singleton checkpointer — created once, shared across all graphs. */
+let checkpointerInstance: PostgresSaver | null = null;
+let checkpointerSetupPromise: Promise<void> | null = null;
+
 /**
- * Dynamically import a graph definition file, compile (if needed), cache it,
- * and return its schema information.
+ * Get or create the singleton PostgresSaver checkpointer.
+ *
+ * Uses DATABASE_URL from the environment (normalised to postgresql:// by
+ * the parent Python process). The checkpointer's setup() is idempotent
+ * (CREATE TABLE IF NOT EXISTS) so a mixed Python+JS project sharing one
+ * Postgres database is safe.
+ */
+async function getCheckpointer(): Promise<PostgresSaver> {
+  if (checkpointerInstance) {
+    await checkpointerSetupPromise;
+    return checkpointerInstance;
+  }
+
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    throw new Error(
+      "DATABASE_URL environment variable is required for JS graph checkpointing. " +
+        "Set it to a postgresql:// connection string.",
+    );
+  }
+
+  checkpointerInstance = PostgresSaver.fromConnString(dbUrl);
+  checkpointerSetupPromise = checkpointerInstance.setup();
+  await checkpointerSetupPromise;
+  return checkpointerInstance;
+}
+
+/**
+ * Dynamically import a graph definition file, compile with the native
+ * PostgresSaver checkpointer, cache it, and return schema information.
  */
 export async function loadGraph(
   filePath: string,
@@ -37,12 +68,22 @@ export async function loadGraph(
     );
   }
 
-  // If the export has a .compile() method it's an uncompiled StateGraph.
+  const checkpointer = await getCheckpointer();
+
   let compiled: AnyCompiledGraph;
   if (typeof exported.compile === "function") {
-    compiled = exported.compile();
+    // Uncompiled StateGraph — compile with native checkpointer
+    compiled = exported.compile({ checkpointer });
   } else if (typeof exported.invoke === "function") {
-    // Already compiled
+    // Already compiled — cannot inject checkpointer after compilation.
+    // Warn and use as-is; checkpointing features (interrupt, resume,
+    // time-travel) will not work unless the user compiled with their own
+    // checkpointer.
+    process.stderr.write(
+      `[aegra-js-bridge] WARNING: Graph "${graphId}" is already compiled. ` +
+        "Checkpointing cannot be injected. Export an uncompiled StateGraph " +
+        "for full interrupt/resume/time-travel support.\n",
+    );
     compiled = exported;
   } else {
     throw new Error(
@@ -90,6 +131,19 @@ export function getSchema(graphId: string): GraphInfo {
   return info;
 }
 
+/** Clean up the checkpointer connection on shutdown. */
+export async function shutdownCheckpointer(): Promise<void> {
+  if (checkpointerInstance) {
+    try {
+      await checkpointerInstance.end();
+    } catch {
+      // Best-effort cleanup
+    }
+    checkpointerInstance = null;
+    checkpointerSetupPromise = null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -99,8 +153,6 @@ function extractSchema(
   kind: "input" | "output" | "config",
 ): Record<string, unknown> {
   try {
-    // LangGraph compiled graphs expose getInputJsonSchema / getOutputJsonSchema
-    // or similar helpers depending on version.
     if (kind === "input" && typeof graph.getInputJsonSchema === "function") {
       return graph.getInputJsonSchema() as Record<string, unknown>;
     }

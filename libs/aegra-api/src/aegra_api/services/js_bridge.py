@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import shutil
 import uuid
 from collections.abc import AsyncIterator
@@ -80,6 +81,7 @@ class JSBridge:
         self._notification_queues: dict[str | int, asyncio.Queue[dict[str, Any]]] = {}
         self._started = asyncio.Event()
         self._lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
         self._closed = False
 
     # ------------------------------------------------------------------
@@ -118,6 +120,16 @@ class JSBridge:
             # Spawn the bridge subprocess
             cmd = [npx_bin, "tsx", str(_BRIDGE_ENTRY)]
             env = {**os.environ}
+
+            # Normalise DATABASE_URL to postgresql:// for the JS checkpointer.
+            # Python may use postgresql+asyncpg:// or postgres:// but the JS
+            # @langchain/langgraph-checkpoint-postgres package needs the
+            # standard postgresql:// scheme.
+            raw_db_url = env.get("DATABASE_URL", "")
+            if raw_db_url:
+                env["DATABASE_URL"] = re.sub(
+                    r"^postgres(?:ql)?(\+\w+)?://", "postgresql://", raw_db_url
+                )
 
             await logger.ainfo("Starting JS bridge", cmd=cmd)
 
@@ -367,8 +379,9 @@ class JSBridge:
             raise JSBridgeError("JS bridge process not available")
 
         line = json.dumps(message, separators=(",", ":")) + "\n"
-        self._process.stdin.write(line.encode())
-        await self._process.stdin.drain()
+        async with self._write_lock:
+            self._process.stdin.write(line.encode())
+            await self._process.stdin.drain()
 
     async def _read_loop(self) -> None:
         """Background task: read stdout lines and dispatch responses."""
@@ -517,13 +530,15 @@ def _find_npx() -> str:
 # Singleton
 # ------------------------------------------------------------------
 
-_bridge_lock = asyncio.Lock()
+_bridge_lock: asyncio.Lock | None = None
 _bridge_instance: JSBridge | None = None
 
 
 async def get_js_bridge() -> JSBridge:
     """Get or create the singleton JS bridge instance."""
-    global _bridge_instance
+    global _bridge_instance, _bridge_lock
+    if _bridge_lock is None:
+        _bridge_lock = asyncio.Lock()
     async with _bridge_lock:
         if _bridge_instance is None:
             _bridge_instance = JSBridge()
@@ -534,7 +549,9 @@ async def get_js_bridge() -> JSBridge:
 
 async def stop_js_bridge() -> None:
     """Stop the singleton JS bridge if running."""
-    global _bridge_instance
+    global _bridge_instance, _bridge_lock
+    if _bridge_lock is None:
+        _bridge_lock = asyncio.Lock()
     async with _bridge_lock:
         if _bridge_instance is not None:
             await _bridge_instance.stop()

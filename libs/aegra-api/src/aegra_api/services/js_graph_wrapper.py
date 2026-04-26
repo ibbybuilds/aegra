@@ -4,16 +4,15 @@ Wraps a JS graph (loaded via :class:`~aegra_api.services.js_bridge.JSBridge`)
 so the existing Aegra streaming, checkpointing, and run machinery works
 without modification.
 
-The wrapper is intentionally *thin*: it delegates all execution to the
-bridge process and only adapts the interface.
+Checkpointing is handled natively on the JS side by
+``@langchain/langgraph-checkpoint-postgres`` — the wrapper delegates all
+execution to the bridge process and only adapts the interface.
 """
 
 from __future__ import annotations
 
 import copy
-import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -24,6 +23,36 @@ from aegra_api.services.js_bridge import JSBridge
 logger = structlog.get_logger(__name__)
 
 
+def _serialize_input(input_data: Any) -> dict[str, Any]:
+    """Serialize graph input for the JS bridge.
+
+    If *input_data* is a LangGraph ``Command`` (resume, goto, update),
+    it is converted to a wire-format dict that the JS bridge reconstructs
+    into the corresponding JS ``Command`` object.
+
+    Regular dict inputs pass through unchanged.
+    """
+    # Check for LangGraph Command objects (resume/goto/update)
+    try:
+        from langgraph.types import Command
+
+        if isinstance(input_data, Command):
+            cmd: dict[str, Any] = {"__command__": {}}
+            if input_data.resume is not None:
+                cmd["__command__"]["resume"] = input_data.resume
+            if input_data.goto is not None:
+                cmd["__command__"]["goto"] = input_data.goto
+            if input_data.update is not None:
+                cmd["__command__"]["update"] = input_data.update
+            return cmd
+    except ImportError:
+        pass
+
+    if isinstance(input_data, dict):
+        return input_data
+    return {"input": input_data}
+
+
 class JSGraphWrapper:
     """Presents a Pregel-like interface backed by a JS bridge.
 
@@ -31,6 +60,10 @@ class JSGraphWrapper:
     of the public API so that :mod:`aegra_api.services.graph_streaming`,
     :mod:`aegra_api.services.langgraph_service`, and the run endpoints
     can work with it transparently.
+
+    Checkpointing, interrupts, resume, and time-travel are handled by the
+    native ``@langchain/langgraph-checkpoint-postgres`` checkpointer on the
+    JS side. The Python wrapper does **not** touch checkpoints.
 
     Parameters
     ----------
@@ -57,8 +90,10 @@ class JSGraphWrapper:
         self._file_path = file_path
         self._export_name = export_name
 
-        # Checkpointer/store are injected via copy() — stored here
-        # so the run machinery can inspect them.
+        # Checkpointer/store are injected via copy() for interface parity
+        # with Pregel graphs. The actual checkpointing is done natively on
+        # the JS side — these attributes are only inspected by the run
+        # machinery to decide whether persistence is available.
         self.checkpointer: Any = None
         self.store: Any = None
         self.config: dict[str, Any] = {}
@@ -96,13 +131,7 @@ class JSGraphWrapper:
     # ------------------------------------------------------------------
 
     async def _ensure_bridge(self) -> None:
-        """Re-start the bridge and re-load the graph if the process died.
-
-        After a Node.js subprocess crash the bridge's ``is_running`` flag
-        turns ``False``.  Calling :meth:`start` spawns a fresh process but
-        the new process has an empty graph cache.  This helper transparently
-        re-loads the graph so callers don't need to care about restarts.
-        """
+        """Re-start the bridge and re-load the graph if the process died."""
         if self._bridge.is_running:
             return
         await self._bridge.start()
@@ -127,32 +156,20 @@ class JSGraphWrapper:
     ) -> dict[str, Any]:
         """Invoke the graph and return the final state.
 
-        Handles checkpoint loading/saving on the Python side so the JS
-        bridge stays stateless.
+        Checkpointing is handled by the JS-side PostgresSaver — the
+        ``thread_id`` in config is forwarded to the bridge.
         """
         await self._ensure_bridge()
         merged_config = self._merge_config(config)
-
-        # Load existing checkpoint if we have a checkpointer + thread_id
-        checkpoint_state = await self._load_checkpoint(merged_config)
-
-        # Build input with checkpoint state if available
-        invoke_input = input_data
-        if checkpoint_state:
-            invoke_input = {**(checkpoint_state or {}), **(input_data or {})}
+        serialized_input = _serialize_input(input_data)
 
         result = await self._bridge.invoke(
             self._graph_id,
-            invoke_input,
+            serialized_input,
             merged_config,
         )
 
-        final_state = result.get("state", result)
-
-        # Save checkpoint
-        await self._save_checkpoint(merged_config, final_state)
-
-        return final_state
+        return result.get("state", result)
 
     async def astream(
         self,
@@ -172,32 +189,17 @@ class JSGraphWrapper:
         await self._ensure_bridge()
         merged_config = self._merge_config(config)
         modes = [stream_mode] if isinstance(stream_mode, str) else list(stream_mode)
-
-        # Load existing checkpoint
-        checkpoint_state = await self._load_checkpoint(merged_config)
-        invoke_input = input_data
-        if checkpoint_state:
-            invoke_input = {**(checkpoint_state or {}), **(input_data or {})}
-
-        final_state = None
+        serialized_input = _serialize_input(input_data)
 
         async for event in self._bridge.stream(
             self._graph_id,
-            invoke_input,
+            serialized_input,
             merged_config,
             stream_mode=modes,
         ):
             mode = event.get("mode", "values")
             data = event.get("data")
-
-            if mode == "values":
-                final_state = data
-
             yield (mode, data)
-
-        # Save final state as checkpoint
-        if final_state is not None:
-            await self._save_checkpoint(merged_config, final_state)
 
     async def astream_events(
         self,
@@ -228,7 +230,6 @@ class JSGraphWrapper:
             context=context,
             subgraphs=subgraphs,
         ):
-            # Wrap in on_chain_stream format
             yield {
                 "event": "on_chain_stream",
                 "run_id": run_id,
@@ -265,69 +266,6 @@ class JSGraphWrapper:
         return clone
 
     # ------------------------------------------------------------------
-    # Checkpoint helpers
-    # ------------------------------------------------------------------
-
-    async def _load_checkpoint(self, config: dict[str, Any]) -> dict[str, Any] | None:
-        """Load the latest checkpoint state if a checkpointer is set."""
-        if self.checkpointer is None:
-            return None
-
-        thread_id = (config.get("configurable") or {}).get("thread_id")
-        if not thread_id:
-            return None
-
-        try:
-            checkpoint_config = {"configurable": {"thread_id": thread_id}}
-            checkpoint_tuple = await self.checkpointer.aget_tuple(checkpoint_config)
-            if checkpoint_tuple and checkpoint_tuple.checkpoint:
-                channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
-                return channel_values if channel_values else None
-        except Exception as exc:
-            await logger.adebug(
-                "Failed to load checkpoint for JS graph",
-                graph_id=self._graph_id,
-                thread_id=thread_id,
-                exc_info=exc,
-            )
-
-        return None
-
-    async def _save_checkpoint(self, config: dict[str, Any], state: dict[str, Any]) -> None:
-        """Save a checkpoint with the given state."""
-        if self.checkpointer is None:
-            return
-
-        thread_id = (config.get("configurable") or {}).get("thread_id")
-        if not thread_id:
-            return
-
-        try:
-            checkpoint = {
-                "v": 1,
-                "ts": datetime.now(UTC).isoformat(),
-                "id": str(uuid.uuid4()),
-                "channel_values": state,
-                "channel_versions": {},
-                "versions_seen": {},
-                "pending_sends": [],
-            }
-            checkpoint_config = {"configurable": {"thread_id": thread_id}}
-            await self.checkpointer.aput(
-                checkpoint_config,
-                checkpoint,
-                {"source": "loop", "step": -1, "writes": {}},
-                {},
-            )
-        except Exception as exc:
-            await logger.awarning(
-                "Failed to save checkpoint for JS graph",
-                graph_id=self._graph_id,
-                thread_id=thread_id,
-                exc_info=exc,
-            )
-
-    # ------------------------------------------------------------------
     # Config helpers
     # ------------------------------------------------------------------
 
@@ -336,7 +274,6 @@ class JSGraphWrapper:
         base = copy.deepcopy(self.config) if self.config else {}
         if config:
             config_dict = dict(config) if not isinstance(config, dict) else config
-            # Deep merge configurable
             base_cfg = base.get("configurable", {})
             new_cfg = config_dict.get("configurable", {})
             merged_cfg = {**base_cfg, **new_cfg}

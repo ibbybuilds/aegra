@@ -6,7 +6,7 @@ import {
   createError,
   createNotification,
 } from "./protocol.js";
-import { loadGraph, getSchema } from "./graph-loader.js";
+import { loadGraph, getSchema, shutdownCheckpointer } from "./graph-loader.js";
 import { invoke, stream } from "./graph-executor.js";
 
 // ---------------------------------------------------------------------------
@@ -137,6 +137,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
 
       case "shutdown": {
         send(createResponse(id, { status: "shutting_down" }));
+        await shutdownCheckpointer();
         process.exit(0);
         break; // unreachable, keeps linter happy
       }
@@ -180,7 +181,7 @@ rl.on("line", async (line: string) => {
 
 rl.on("close", () => {
   log("stdin closed, exiting");
-  process.exit(0);
+  shutdownCheckpointer().finally(() => process.exit(0));
 });
 
 // ---------------------------------------------------------------------------
@@ -189,12 +190,12 @@ rl.on("close", () => {
 
 process.on("SIGTERM", () => {
   log("received SIGTERM");
-  process.exit(0);
+  shutdownCheckpointer().finally(() => process.exit(0));
 });
 
 process.on("SIGINT", () => {
   log("received SIGINT");
-  process.exit(0);
+  shutdownCheckpointer().finally(() => process.exit(0));
 });
 
 // Prevent crashes from unhandled promise rejections

@@ -1,5 +1,25 @@
+import { Command } from "@langchain/langgraph";
 import { getGraph } from "./graph-loader.js";
 import type { InvokeResult, StreamEvent } from "./types.js";
+
+/**
+ * Reconstruct a LangGraph Command from a serialized wire format.
+ *
+ * The Python side serialises resume commands as:
+ * `{ "__command__": { "resume": ..., "goto": ..., "update": ... } }`
+ */
+function maybeCommand(
+  input: Record<string, unknown>,
+): Command | Record<string, unknown> {
+  const raw = input.__command__ as Record<string, unknown> | undefined;
+  if (!raw) return input;
+
+  return new Command({
+    resume: raw.resume,
+    goto: raw.goto as string | string[] | undefined,
+    update: raw.update as Record<string, unknown> | undefined,
+  });
+}
 
 /**
  * Synchronously invoke a loaded graph and return the final state.
@@ -10,7 +30,8 @@ export async function invoke(
   config?: Record<string, unknown>,
 ): Promise<InvokeResult> {
   const graph = await getGraph(graphId);
-  const result = await graph.invoke(input, config);
+  const resolved = maybeCommand(input);
+  const result = await graph.invoke(resolved, config);
   return { state: result };
 }
 
@@ -27,10 +48,11 @@ export async function* stream(
   streamMode?: string[],
 ): AsyncGenerator<StreamEvent> {
   const graph = await getGraph(graphId);
+  const resolved = maybeCommand(input);
 
   const modes = streamMode ?? ["values"];
 
-  const streamIterator = await graph.stream(input, {
+  const streamIterator = await graph.stream(resolved, {
     ...config,
     streamMode: modes,
   });

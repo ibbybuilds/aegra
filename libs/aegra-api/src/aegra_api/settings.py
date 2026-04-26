@@ -5,6 +5,7 @@ from pydantic import BeforeValidator, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aegra_api import __version__
+from aegra_api.constants import MULTIHOST_URL_RE
 
 
 def parse_lower(v: str) -> str:
@@ -63,6 +64,15 @@ class AppSettings(EnvBase):
     # Logging
     LOG_LEVEL: UpperStr = "INFO"
     LOG_VERBOSITY: LowerStr = "verbose"
+    LOG_EXCLUDE_PATHS: str = ""  # Comma-separated path prefixes to skip in access logs
+
+    @computed_field
+    @property
+    def log_exclude_paths(self) -> tuple[str, ...]:
+        """Parse LOG_EXCLUDE_PATHS into a tuple of path prefixes."""
+        if not self.LOG_EXCLUDE_PATHS:
+            return ()
+        return tuple(part.strip() for part in self.LOG_EXCLUDE_PATHS.split(",") if part.strip())
 
 
 class DatabaseSettings(EnvBase):
@@ -87,12 +97,72 @@ class DatabaseSettings(EnvBase):
         """Replace the URL scheme/driver prefix with the target scheme."""
         return re.sub(r"^postgres(?:ql)?(\+\w+)?://", f"{target_scheme}://", url)
 
+    @staticmethod
+    def _to_sqlalchemy_multihost(url: str) -> str:
+        """Convert a libpq multi-host URL to SQLAlchemy query-param format.
+
+        PostgreSQL libpq and psycopg accept comma-separated hosts in the
+        URL authority (``host1:5432,host2:5433``).  SQLAlchemy's asyncpg
+        dialect requires hosts and ports as query parameters instead.
+
+        Single-host URLs are returned unchanged.
+        """
+        m = MULTIHOST_URL_RE.match(url)
+        if not m:
+            return url
+
+        hostlist = m.group("hostlist")
+        if "," not in hostlist:
+            return url
+
+        scheme = m.group("scheme")
+        userinfo = m.group("userinfo") or ""
+        path = m.group("path") or ""
+        query = m.group("query") or ""
+
+        hosts: list[str] = []
+        ports: list[str] = []
+        for spec in hostlist.split(","):
+            if spec.startswith("["):
+                # IPv6 literal: [::1]:5432 or [::1]
+                if "]" not in spec:
+                    msg = f"Malformed IPv6 in DATABASE_URL: `{spec}` — missing closing bracket"
+                    raise ValueError(msg)
+                bracket_end = spec.index("]")
+                host = spec[: bracket_end + 1]
+                rest = spec[bracket_end + 1 :]
+                port = rest[1:] if rest.startswith(":") else ""
+            else:
+                host, _, port = spec.rpartition(":")
+            if host and port:
+                if not port.isdigit():
+                    msg = f"Non-integer port in DATABASE_URL: `{spec}` — port must be a number, got `{port}`"
+                    raise ValueError(msg)
+                hosts.append(host)
+                ports.append(port)
+            else:
+                hosts.append(host if host else spec)
+                ports.append("5432")
+
+        auth = f"{userinfo}@" if userinfo else ""
+        ha_params = f"host={','.join(hosts)}&port={','.join(ports)}"
+        all_params = f"{ha_params}&{query}" if query else ha_params
+
+        return f"{scheme}{auth}/{path}?{all_params}"
+
     @computed_field
     @property
     def database_url(self) -> str:
-        """Async URL for SQLAlchemy (asyncpg)."""
+        """Async URL for SQLAlchemy (asyncpg).
+
+        When ``DATABASE_URL`` contains multiple comma-separated hosts
+        (e.g. ``postgresql://h1:5432,h2:5432/db``), the URL is rewritten
+        into SQLAlchemy's query-param multi-host format so that asyncpg
+        receives hosts as a list and can fail over natively.
+        """
         if self.DATABASE_URL:
-            return self._normalize_scheme(self.DATABASE_URL, "postgresql+asyncpg")
+            url = self._normalize_scheme(self.DATABASE_URL, "postgresql+asyncpg")
+            return self._to_sqlalchemy_multihost(url)
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"

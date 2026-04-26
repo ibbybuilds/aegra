@@ -630,7 +630,7 @@ class TestGetGraphWithContext:
 class TestFactoryNotCalledAtStartup:
     """Verify that factory graphs are classified but NOT invoked at load time.
 
-    Regression test for https://github.com/ibbybuilds/aegra/issues/245:
+    Regression test for https://github.com/aegra/aegra/issues/245:
     dynamic graph factories were called with ``user=None`` during server
     startup for schema extraction, causing the first request to get a graph
     compiled without user context.

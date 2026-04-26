@@ -37,7 +37,7 @@ class StoreIndexConfig(TypedDict, total=False):
     """Configuration for vector embeddings in store.
 
     Enables semantic similarity search using pgvector.
-    See: https://github.com/ibbybuilds/aegra/issues/104
+    See: https://github.com/aegra/aegra/issues/104
     """
 
     dims: int

@@ -204,7 +204,7 @@ def test_history_invalid_limit(client: TestClient, mock_langgraph):
 
 # ------------------------------------------------------------------
 # Regression: `before` parameter must not double-wrap RunnableConfig
-# See: https://github.com/ibbybuilds/aegra/issues/274
+# See: https://github.com/aegra/aegra/issues/274
 # ------------------------------------------------------------------
 
 

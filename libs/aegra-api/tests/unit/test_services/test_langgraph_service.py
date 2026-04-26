@@ -440,7 +440,7 @@ class TestLangGraphServiceGraphs:
     async def test_load_graph_from_file_with_dataclass(self, tmp_path: Path) -> None:
         """Test that a graph module containing a dataclass loads without errors.
 
-        Regression test for: https://github.com/ibbybuilds/aegra/issues/197
+        Regression test for: https://github.com/aegra/aegra/issues/197
         Dataclasses require the module to be in sys.modules during class creation.
         """
         graph_file = tmp_path / "dc_graph.py"

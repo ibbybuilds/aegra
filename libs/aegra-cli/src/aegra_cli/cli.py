@@ -1,5 +1,7 @@
 """Aegra CLI - Command-line interface for managing self-hosted agent deployments."""
 
+import importlib.util
+import ipaddress
 import json
 import os
 import shutil
@@ -345,6 +347,31 @@ def _ensure_js_dependencies(config_path: Path) -> None:
     type=click.Path(exists=True, path_type=Path),
     help="Path to docker-compose.yml file for PostgreSQL.",
 )
+@click.option(
+    "--debug-port",
+    default=None,
+    type=int,
+    help="Port for debugger to listen on (no debugger if not specified).",
+    show_default=True,
+)
+@click.option(
+    "--debug-host",
+    default=None,
+    help="Host for debugger to bind to (127.0.0.1 if not specified).",
+    show_default=True,
+)
+@click.option(
+    "--wait-for-client",
+    is_flag=True,
+    default=False,
+    help="Break and wait for a debugger client to attach before starting.",
+)
+@click.option(
+    "--no-reload",
+    is_flag=True,
+    default=None,
+    help="Disable auto-reload",
+)
 @click.pass_context
 def dev(
     ctx: click.Context,
@@ -355,11 +382,16 @@ def dev(
     env_file: Path | None,
     no_db_check: bool,
     compose_file: Path | None,
+    debug_port: int | None,
+    debug_host: str | None,
+    wait_for_client: bool,
+    no_reload: bool | None,
 ) -> None:
-    """Run the development server with hot reload.
+    """Run the development server with optional hot reload.
 
-    Starts uvicorn with --reload flag for development.
-    The server will automatically restart when code changes are detected.
+    Starts uvicorn with auto-reload enabled by default for development.
+    The server will automatically restart when code changes are detected unless
+    --no-reload is specified.
 
     Aegra auto-discovers aegra.json in the current directory, so you
     should run 'aegra dev' from your project root.
@@ -377,6 +409,12 @@ def dev(
 
         aegra dev --no-db-check          # Start without database check
     """
+    # Validate debug options: --wait-for-client only makes sense with --debug-port
+    if wait_for_client and debug_port is None:
+        raise click.UsageError("--wait-for-client requires --debug-port to be set")
+    if debug_host is not None and debug_port is None:
+        raise click.UsageError("--debug-host requires --debug-port to be set")
+
     # Discover or validate config file
     if config_file is not None:
         # User specified a config file explicitly
@@ -461,6 +499,14 @@ def dev(
     # Check for LangGraph.js graphs and install Node.js dependencies if needed
     _ensure_js_dependencies(resolved_config)
 
+    if debug_port is not None:
+        info_lines.append(f"[cyan]Debug port:[/cyan] {debug_port}")
+        if debug_host is not None:
+            info_lines.append(f"[cyan]Debug host:[/cyan] {debug_host}")
+        if wait_for_client:
+            info_lines.append("[cyan]Wait for client to attach:[/cyan] True")
+    if no_reload:
+        info_lines.append("\n[dim]Auto-reload is disabled[/dim]")
     info_lines.append("\n[dim]Press Ctrl+C to stop the server[/dim]")
 
     console.print(
@@ -471,17 +517,64 @@ def dev(
         )
     )
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "uvicorn",
-        app,
-        "--host",
-        host,
-        "--port",
-        str(port),
-        "--reload",
-    ]
+    # Build command. If debug_port is provided, wrap uvicorn with debugpy.
+    cmd_uvicorn = ["-m", "uvicorn", app, "--host", host, "--port", str(port)]
+    if not no_reload:
+        cmd_uvicorn.append("--reload")
+
+    if debug_port is not None:
+        if importlib.util.find_spec("debugpy") is None:
+            console.print(
+                "[bold red]Error:[/bold red] debugpy is not installed.\n"
+                "Install it with: [cyan]pip install 'aegra-cli[debug]'[/cyan]"
+            )
+            sys.exit(1)
+
+        if not no_reload:
+            console.print(
+                "[yellow]Note:[/yellow] debugpy is active. Hot-reload will disconnect the debugger "
+                "on each file change — reattach after every reload."
+            )
+
+        # Always bind debugpy to the debug host (default loopback) regardless of --host
+        listen = str(debug_port)
+        is_loopback = True
+
+        # If debug_host is specified, warn if it's not loopback. Also handle ip v4 and v6 addresses
+        if debug_host is not None:
+            try:
+                address = ipaddress.ip_address(debug_host)
+                if address.version == 4:
+                    listen = f"{debug_host}:{debug_port}"
+                else:
+                    listen = f"[{debug_host}]:{debug_port}"
+                is_loopback = address.is_loopback
+            except ValueError:
+                if debug_host in ("localhost"):
+                    listen = f"{debug_host}:{debug_port}"
+                else:
+                    console.print(
+                        "[yellow]Warning:[/yellow] Invalid debug host specified. "
+                        "Falling back to loopback binding for debugpy."
+                    )
+
+        if not is_loopback:
+            console.print(
+                Panel(
+                    "[bold red]Warning:[/bold red] Debug host is non-loopback and exposes an "
+                    "unauthenticated debug server!\n"
+                    "[dim]Binding debugpy to a non-loopback address can allow remote code "
+                    "execution. Use only if you understand the risk.[/dim]",
+                    title="[bold red]Debug Exposure Warning[/bold red]",
+                    border_style="red",
+                )
+            )
+        cmd = [sys.executable, "-m", "debugpy", "--listen", listen]
+        if wait_for_client:
+            cmd.append("--wait-for-client")
+        cmd.extend(cmd_uvicorn)
+    else:
+        cmd = [sys.executable] + cmd_uvicorn
 
     process = None
     try:

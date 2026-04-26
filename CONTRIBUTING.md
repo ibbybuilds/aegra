@@ -255,7 +255,7 @@ git push origin feat/my-feature
 
 ```bash
 # Add upstream remote (once)
-git remote add upstream https://github.com/ibbybuilds/aegra.git
+git remote add upstream https://github.com/aegra/aegra.git
 
 # Update your fork
 git fetch upstream

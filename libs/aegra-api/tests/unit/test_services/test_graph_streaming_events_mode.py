@@ -1,7 +1,7 @@
 """Test stream_mode='events' functionality.
 
 Tests for issue #99: stream_mode="events" does not work
-https://github.com/ibbybuilds/aegra/issues/99
+https://github.com/aegra/aegra/issues/99
 """
 
 from unittest.mock import MagicMock

@@ -16,7 +16,7 @@ pip install aegra-cli
 
 ```bash
 # Clone the repository
-git clone https://github.com/ibbybuilds/aegra.git
+git clone https://github.com/aegra/aegra.git
 cd aegra
 
 # Install all workspace packages

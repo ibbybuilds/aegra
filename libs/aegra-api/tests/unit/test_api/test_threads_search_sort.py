@@ -94,14 +94,8 @@ class TestResolveSortSdkShape:
         assert _col_name(column) == "updated_at"
         assert asc is False
 
-    def test_sdk_state_updated_at_falls_back_silently(self) -> None:
-        """state_updated_at is a valid SDK literal but has no matching column → default."""
-        column, asc = _resolve_sort(ThreadSearchRequest(sort_by="state_updated_at", sort_order="asc"))
-        assert _col_name(column) == "created_at"
-        assert asc is False
-
-    def test_sdk_unknown_sort_by_falls_back(self) -> None:
-        """Malformed sort_by falls back silently — no 500, no getattr leak."""
-        column, asc = _resolve_sort(ThreadSearchRequest(sort_by="password; DROP TABLE", sort_order="asc"))
-        assert _col_name(column) == "created_at"
-        assert asc is False
+    # Note on removed cases: invalid sort_by used to silently fall back, which
+    # masked the precedence bug where a valid order_by would also be dropped.
+    # sort_by is now Literal-validated by Pydantic, so unknown values 422 at
+    # the request boundary and never reach _resolve_sort. The integration
+    # suite asserts the 422 path; see test_search_invalid_sort_by_returns_422.

@@ -471,13 +471,27 @@ class TestSearchThreads:
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
-    def test_search_sdk_state_updated_at_falls_back(self, client):
-        """sort_by='state_updated_at' (valid SDK literal, no column here) falls back without 500."""
+    def test_search_sdk_state_updated_at_returns_422(self, client):
+        """sort_by='state_updated_at' is in the SDK's literal but not in our schema → 422."""
         resp = client.post(
             "/threads/search",
             json={"sort_by": "state_updated_at", "sort_order": "desc"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 422
+        assert "sort_by" in resp.text
+
+    def test_search_invalid_sort_by_returns_422(self, client):
+        """Unknown sort_by is rejected at the model layer, regardless of order_by.
+
+        Regression: pre-fix code silently fell back to created_at DESC when
+        sort_by was invalid, dropping a valid order_by alongside it.
+        """
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "definitely_not_a_column", "order_by": "updated_at ASC"},
+        )
+        assert resp.status_code == 422
+        assert "sort_by" in resp.text
 
     def test_search_rejects_invalid_sort_order(self, client):
         """sort_order is a Literal['asc','desc']; other values are rejected by Pydantic."""

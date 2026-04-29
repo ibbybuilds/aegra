@@ -73,9 +73,10 @@ class ThreadSearchRequest(BaseModel):
     offset: int | None = Field(0, ge=0, description="Results offset")
     order_by: str | None = Field(
         "created_at DESC",
-        description="Sort order (legacy single-field form, e.g. 'updated_at ASC')",
+        deprecated=True,
+        description="DEPRECATED: use sort_by + sort_order. Legacy single-field form, e.g. 'updated_at ASC'.",
     )
-    sort_by: str | None = Field(
+    sort_by: Literal["thread_id", "status", "created_at", "updated_at"] | None = Field(
         None,
         description="Field to sort by (SDK-compatible). Takes precedence over order_by.",
     )

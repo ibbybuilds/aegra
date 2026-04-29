@@ -140,6 +140,50 @@ async def test_search_metadata_bool_filter_e2e() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+async def test_search_pagination_stable_with_tied_sort_key_e2e() -> None:
+    """Paginating by a non-unique sort key (status) must partition cleanly.
+
+    Without a stable secondary sort, Postgres can return rows in arbitrary
+    order within tied buckets, so two pages can overlap or drop rows. The
+    handler now appends thread_id as a tie-break.
+    """
+    tag = f"pagination-{uuid.uuid4().hex[:8]}"
+    client = get_e2e_client()
+
+    seeded: list[str] = []
+    for _ in range(6):
+        thread = await client.threads.create(metadata={"search_test_tag": tag})
+        seeded.append(thread["thread_id"])
+    elog("Seeded threads (all status=idle, identical sort key)", seeded)
+
+    page_size = 2
+    collected: list[str] = []
+    async with AsyncClient(base_url=settings.app.SERVER_URL, timeout=30.0) as http_client:
+        for offset in range(0, len(seeded), page_size):
+            resp = await http_client.post(
+                "/threads/search",
+                json={
+                    "metadata": {"search_test_tag": tag},
+                    "sort_by": "status",
+                    "sort_order": "asc",
+                    "limit": page_size,
+                    "offset": offset,
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            page = [t["thread_id"] for t in resp.json()]
+            elog(f"Page offset={offset}", page)
+            assert len(page) == page_size, f"page at offset {offset} had {len(page)} rows"
+            collected.extend(page)
+
+    assert sorted(collected) == sorted(seeded), (
+        f"pagination dropped or duplicated rows: collected={collected}, seeded={seeded}"
+    )
+    assert len(collected) == len(set(collected)), f"pagination returned dupes: {collected}"
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_search_malformed_order_by_falls_back_e2e() -> None:
     """Unknown/malformed order_by must not 500 — falls back to default ordering."""
     tag = f"sort-bad-{uuid.uuid4().hex[:8]}"

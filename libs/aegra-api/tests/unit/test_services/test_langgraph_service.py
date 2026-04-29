@@ -545,10 +545,7 @@ class TestLangGraphServiceContext:
         assert result["existing"] == "value"
         assert result["configurable"]["user_id"] == "user-123"
         assert result["configurable"]["user_display_name"] == "Test User"
-        assert result["configurable"]["langgraph_auth_user"] == {
-            "identity": "user-123",
-            "name": "Test User",
-        }
+        assert result["configurable"]["langgraph_auth_user"] is mock_user
 
     def test_inject_user_context_without_user(self):
         """Test injecting context without user object"""
@@ -572,18 +569,17 @@ class TestLangGraphServiceContext:
         assert result["configurable"]["user_id"] == "user-123"
         assert result["configurable"]["user_display_name"] == "Test User"
 
-    def test_inject_user_context_user_to_dict_failure(self):
-        """Test fallback when user.to_dict() fails"""
+    def test_inject_user_context_user_object_passed_directly(self):
+        """Test that the user object is passed directly (not serialized)."""
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.side_effect = Exception("to_dict failed")
 
         result = inject_user_context(mock_user, {})
 
         assert result["configurable"]["user_id"] == "user-123"
         assert result["configurable"]["user_display_name"] == "Test User"
-        assert result["configurable"]["langgraph_auth_user"] == {"identity": "user-123"}
+        assert result["configurable"]["langgraph_auth_user"] is mock_user
 
     def test_inject_user_context_existing_configurable(self):
         """Test preserving existing configurable values"""

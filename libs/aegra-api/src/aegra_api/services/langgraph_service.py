@@ -680,14 +680,10 @@ def inject_user_context(user: Any | None, base_config: dict[str, Any] | None = N
         config["configurable"].setdefault("user_id", user.identity)
         config["configurable"].setdefault("user_display_name", getattr(user, "display_name", None) or user.identity)
 
-        # Full auth payload for graph nodes - includes ALL fields from auth handler
+        # Pass user object directly so langgraph's _build_server_info() can
+        # detect it via hasattr(obj, "identity") and populate Runtime.server_info.
         if "langgraph_auth_user" not in config["configurable"]:
-            try:
-                # user.to_dict() returns all fields including extras from auth handlers
-                config["configurable"]["langgraph_auth_user"] = user.to_dict()
-            except Exception:
-                # Fallback: minimal dict if to_dict unavailable or fails
-                config["configurable"]["langgraph_auth_user"] = {"identity": user.identity}
+            config["configurable"]["langgraph_auth_user"] = user
 
     return config
 

@@ -536,7 +536,6 @@ class TestLangGraphServiceContext:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123", "name": "Test User"}
 
         base_config = {"existing": "value"}
 
@@ -562,7 +561,6 @@ class TestLangGraphServiceContext:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         result = inject_user_context(mock_user, None)
 
@@ -586,7 +584,6 @@ class TestLangGraphServiceContext:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         base_config = {"configurable": {"existing_key": "existing_value"}}
 
@@ -604,7 +601,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         thread_id = "thread-456"
         additional_config = {"custom": "value"}
@@ -620,7 +616,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         thread_id = "thread-456"
 
@@ -634,7 +629,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         run_id = "run-789"
         thread_id = "thread-456"
@@ -656,7 +650,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         run_id = "run-789"
         thread_id = "thread-456"
@@ -675,7 +668,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         run_id = "run-789"
         thread_id = "thread-456"
@@ -716,7 +708,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         run_id = "run-789"
         thread_id = "thread-456"
@@ -742,7 +733,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         run_id = "run-789"
         thread_id = "thread-456"
@@ -781,7 +771,6 @@ class TestLangGraphServiceConfigs:
         mock_user = Mock()
         mock_user.identity = "user-123"
         mock_user.display_name = "Test User"
-        mock_user.to_dict.return_value = {"identity": "user-123"}
 
         run_id = "run-abc-123"
         thread_id = "thread-456"

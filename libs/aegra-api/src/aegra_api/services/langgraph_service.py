@@ -680,10 +680,7 @@ def inject_user_context(user: Any | None, base_config: dict[str, Any] | None = N
         config["configurable"].setdefault("user_id", user.identity)
         config["configurable"].setdefault("user_display_name", getattr(user, "display_name", None) or user.identity)
 
-        # Pass user object directly so langgraph's _build_server_info() can
-        # detect it via hasattr(obj, "identity") and populate Runtime.server_info.
-        if "langgraph_auth_user" not in config["configurable"]:
-            config["configurable"]["langgraph_auth_user"] = user
+        config["configurable"]["langgraph_auth_user"] = user
 
     return config
 

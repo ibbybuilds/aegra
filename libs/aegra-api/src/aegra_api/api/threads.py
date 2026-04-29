@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import warnings
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -40,6 +41,42 @@ router = APIRouter(tags=["Threads"], dependencies=auth_dependency)
 logger = structlog.getLogger(__name__)
 
 thread_state_service = ThreadStateService()
+
+
+# --- Sort resolution for /threads/search ---
+
+_ALLOWED_SORT_FIELDS: frozenset[str] = frozenset({"created_at", "updated_at", "thread_id", "status"})
+_DEFAULT_SORT_FIELD = "created_at"
+_DEFAULT_SORT_ASC = False
+
+
+def _resolve_sort(request: ThreadSearchRequest) -> tuple[Any, bool]:
+    """Resolve (ORM column, is_ascending) for /threads/search.
+
+    Precedence: SDK-style ``sort_by`` (Pydantic-validated against the column
+    Literal) wins over the legacy ``order_by`` string. ``order_by`` stays
+    permissive — unknown columns or malformed input silently fall back to the
+    default (``created_at DESC``) — to preserve backward compatibility.
+    """
+    if request.sort_by:
+        column = getattr(ThreadORM, request.sort_by)
+        asc = (request.sort_order or "desc").lower() == "asc"
+        return column, asc
+
+    # order_by is marked deprecated on the Pydantic Field for OpenAPI; the
+    # access-site warning is meant for callers, not for the handler honouring
+    # the field — suppress it here.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        legacy = request.order_by
+
+    if legacy:
+        parts = legacy.strip().split()
+        if parts and parts[0].lower() in _ALLOWED_SORT_FIELDS:
+            asc = len(parts) > 1 and parts[1].lower() == "asc"
+            return getattr(ThreadORM, parts[0].lower()), asc
+
+    return getattr(ThreadORM, _DEFAULT_SORT_FIELD), _DEFAULT_SORT_ASC
 
 
 # --- Helper for safe ORM -> Pydantic conversion (Test/Mock compatible) ---
@@ -841,12 +878,17 @@ async def search_threads(
         stmt = stmt.where(ThreadORM.status == request.status)
 
     if request.metadata:
-        for key, value in request.metadata.items():
-            stmt = stmt.where(ThreadORM.metadata_json[key].as_string() == str(value))
+        # JSONB containment: type-correct, deep-nested, GIN-indexable. Mirrors
+        # AssistantService.search_assistants for cross-endpoint consistency.
+        stmt = stmt.where(ThreadORM.metadata_json.op("@>")(request.metadata))
 
     offset = request.offset or 0
     limit = request.limit or 20
-    stmt = stmt.order_by(ThreadORM.created_at.desc()).offset(offset).limit(limit)
+    column, asc = _resolve_sort(request)
+    direction = column.asc() if asc else column.desc()
+    # Secondary sort on thread_id keeps offset pagination stable when the
+    # primary sort key has duplicates (status buckets, microsecond ties).
+    stmt = stmt.order_by(direction, ThreadORM.thread_id.asc()).offset(offset).limit(limit)
 
     result = await session.scalars(stmt)
     rows = result.all()

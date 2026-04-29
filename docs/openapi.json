@@ -3,7 +3,7 @@
   "info": {
     "title": "Aegra",
     "description": "Production-ready Agent Protocol server",
-    "version": "0.9.5"
+    "version": "0.9.6"
   },
   "paths": {
     "/info": {
@@ -4365,8 +4365,43 @@
               }
             ],
             "title": "Order By",
-            "description": "Sort order",
-            "default": "created_at DESC"
+            "description": "DEPRECATED: use sort_by + sort_order. Legacy single-field form, e.g. 'updated_at ASC'.",
+            "default": "created_at DESC",
+            "deprecated": true
+          },
+          "sort_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "thread_id",
+                  "status",
+                  "created_at",
+                  "updated_at"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort By",
+            "description": "Field to sort by (SDK-compatible). Takes precedence over order_by."
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order",
+            "description": "Sort direction (SDK-compatible). Defaults to 'desc' when sort_by is set."
           }
         },
         "type": "object",

@@ -71,8 +71,8 @@ class TestRunsStreamingEndpoints:
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
-            # DB setup
-            mock_session.scalar.return_value = sample_assistant
+            # DB setup: first scalar = thread ownership check (None = new thread), second = assistant
+            mock_session.scalar.side_effect = [None, sample_assistant]
 
             # Mock generator for streaming response
             async def mock_generator() -> AsyncGenerator:

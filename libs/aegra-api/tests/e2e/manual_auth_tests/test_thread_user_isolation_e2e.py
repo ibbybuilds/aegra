@@ -62,9 +62,7 @@ class TestThreadOwnership:
         elog("Alice created thread", {"thread_id": thread_id})
 
         bob_headers = get_auth_headers("bob")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=bob_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=bob_headers, timeout=30.0) as http:
             resp = await http.get(f"/threads/{thread_id}")
 
         elog("Bob GET Alice's thread", {"status": resp.status_code})
@@ -91,9 +89,7 @@ class TestThreadSearch:
         elog("Seeded threads", {"alice": alice_thread["thread_id"], "bob": bob_thread["thread_id"]})
 
         alice_headers = get_auth_headers("alice")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=alice_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=alice_headers, timeout=30.0) as http:
             resp = await http.post(
                 "/threads/search",
                 json={"metadata": {"isolation_tag": tag}, "limit": 100},
@@ -117,9 +113,7 @@ class TestThreadSearch:
         bob_thread = await bob_client.threads.create(metadata={"isolation_tag": tag})
 
         alice_headers = get_auth_headers("alice")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=alice_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=alice_headers, timeout=30.0) as http:
             resp = await http.get("/threads", params={"limit": 1000})
         assert resp.status_code == 200, resp.text
 
@@ -144,9 +138,7 @@ class TestThreadMutationIsolation:
         thread_id = thread["thread_id"]
 
         bob_headers = get_auth_headers("bob")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=bob_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=bob_headers, timeout=30.0) as http:
             resp = await http.patch(
                 f"/threads/{thread_id}",
                 json={"metadata": {"hijacked": True}},
@@ -164,9 +156,7 @@ class TestThreadMutationIsolation:
         thread_id = thread["thread_id"]
 
         bob_headers = get_auth_headers("bob")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=bob_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=bob_headers, timeout=30.0) as http:
             resp = await http.delete(f"/threads/{thread_id}")
         elog("Bob DELETE Alice's thread", {"status": resp.status_code})
         assert resp.status_code == 404, (
@@ -185,9 +175,7 @@ class TestThreadMutationIsolation:
         thread_id = thread["thread_id"]
 
         bob_headers = get_auth_headers("bob")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=bob_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=bob_headers, timeout=30.0) as http:
             resp = await http.post(
                 f"/threads/{thread_id}/runs",
                 json={"assistant_id": "agent", "input": {"messages": [{"role": "human", "content": "hi"}]}},
@@ -205,9 +193,7 @@ class TestThreadMutationIsolation:
         thread_id = thread["thread_id"]
 
         bob_headers = get_auth_headers("bob")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=bob_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=bob_headers, timeout=30.0) as http:
             resp = await http.post(
                 f"/threads/{thread_id}/runs/stream",
                 json={"assistant_id": "agent", "input": {"messages": [{"role": "human", "content": "hi"}]}},
@@ -225,9 +211,7 @@ class TestThreadMutationIsolation:
         thread_id = thread["thread_id"]
 
         bob_headers = get_auth_headers("bob")
-        async with httpx.AsyncClient(
-            base_url=get_server_url(), headers=bob_headers, timeout=30.0
-        ) as http:
+        async with httpx.AsyncClient(base_url=get_server_url(), headers=bob_headers, timeout=30.0) as http:
             resp = await http.post(
                 f"/threads/{thread_id}/runs/wait",
                 json={"assistant_id": "agent", "input": {"messages": [{"role": "human", "content": "hi"}]}},

@@ -51,9 +51,7 @@ async def create_run(
     endpoint to follow progress. Provide either `input` or `command` (for
     human-in-the-loop resumption) but not both.
     """
-    existing_thread = await session.scalar(
-        select(ThreadORM).where(ThreadORM.thread_id == thread_id)
-    )
+    existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
     if existing_thread and existing_thread.user_id != user.identity:
         raise HTTPException(404, f"Thread '{thread_id}' not found")
 
@@ -99,9 +97,7 @@ async def create_and_stream_run(
     after the client disconnects (default is `"cancel"`). Use `stream_mode`
     to control which event types are emitted.
     """
-    existing_thread = await session.scalar(
-        select(ThreadORM).where(ThreadORM.thread_id == thread_id)
-    )
+    existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
     if existing_thread and existing_thread.user_id != user.identity:
         raise HTTPException(404, f"Thread '{thread_id}' not found")
 
@@ -324,9 +320,7 @@ async def wait_for_run(
 
     # Session block: all pre-execution DB work (validate, create run, submit)
     async with maker() as session:
-        existing_thread = await session.scalar(
-            select(ThreadORM).where(ThreadORM.thread_id == thread_id)
-        )
+        existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
         if existing_thread and existing_thread.user_id != user.identity:
             raise HTTPException(404, f"Thread '{thread_id}' not found")
 

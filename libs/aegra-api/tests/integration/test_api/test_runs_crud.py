@@ -776,9 +776,13 @@ class TestWaitForRunTimeouts:
         run = _run_row(status="running")
         run.output = {"partial": "data"}
 
+        thread = _thread_row()
+
         class Session(DummySessionBase):
             async def scalar(self, stmt):
                 stmt_str = str(stmt).lower()
+                if "from thread" in stmt_str:
+                    return thread
                 if "from assistant" in stmt_str:
                     return assistant
                 if "from run" in stmt_str:

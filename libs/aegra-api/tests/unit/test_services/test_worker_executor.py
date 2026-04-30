@@ -370,6 +370,62 @@ class TestRestoreTraceContext:
 
         assert call_order == ["clear", "set_trace", "bind"]
 
+    def test_user_metadata_merged_with_system_keys(self) -> None:
+        """job.run_metadata is merged into the trace context metadata."""
+        job = RunJob(
+            identity=RunIdentity(
+                run_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                thread_id="11111111-2222-3333-4444-555555555555",
+                graph_id="test-graph",
+            ),
+            user=User(identity="test-user"),
+            run_metadata={"tenant": "acme", "feature_flag": True},
+        )
+        trace = {"correlation_id": "req-abc"}
+
+        with patch(f"{MODULE}.set_trace_context") as mock_set_trace:
+            _restore_trace_context("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", job, trace)
+
+        metadata = mock_set_trace.call_args.kwargs["metadata"]
+        assert metadata["tenant"] == "acme"
+        assert metadata["feature_flag"] is True
+        # System keys still present
+        assert metadata["run_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert metadata["thread_id"] == "11111111-2222-3333-4444-555555555555"
+        assert metadata["graph_id"] == "test-graph"
+        assert metadata["original_request_id"] == "req-abc"
+
+    def test_user_metadata_cannot_override_system_keys(self) -> None:
+        """Reserved system keys win on collision; user spoof is dropped."""
+        job = RunJob(
+            identity=RunIdentity(
+                run_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                thread_id="11111111-2222-3333-4444-555555555555",
+                graph_id="test-graph",
+            ),
+            user=User(identity="test-user"),
+            run_metadata={"run_id": "spoofed", "tenant": "acme"},
+        )
+        trace = {"correlation_id": "req-abc"}
+
+        with patch(f"{MODULE}.set_trace_context") as mock_set_trace:
+            _restore_trace_context("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", job, trace)
+
+        metadata = mock_set_trace.call_args.kwargs["metadata"]
+        assert metadata["run_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert metadata["tenant"] == "acme"
+
+    def test_empty_run_metadata_keeps_system_keys_only(self) -> None:
+        """A job without run_metadata produces the four system keys unchanged."""
+        job = _make_run_job()  # run_metadata defaults to {}
+        trace = {"correlation_id": "req-abc"}
+
+        with patch(f"{MODULE}.set_trace_context") as mock_set_trace:
+            _restore_trace_context("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", job, trace)
+
+        metadata = mock_set_trace.call_args.kwargs["metadata"]
+        assert set(metadata.keys()) == {"run_id", "thread_id", "graph_id", "original_request_id"}
+
 
 # ------------------------------------------------------------------
 # WorkerExecutor.submit

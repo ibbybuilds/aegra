@@ -123,3 +123,51 @@ class TestRunJob:
         )
         assert job.execution.input_data is None
         assert job.behavior.subgraphs is False
+        assert job.run_metadata == {}
+
+    def test_run_metadata_roundtrip(self) -> None:
+        """run_metadata round-trips through to_execution_params / from_run_orm."""
+        job = RunJob(
+            identity=RunIdentity(run_id="r1", thread_id="t1", graph_id="g1"),
+            user=User(identity="u1"),
+            run_metadata={"tenant": "acme", "feature_flag": True, "retry_count": 2},
+        )
+        params = job.to_execution_params()
+        assert params["run_metadata"] == {"tenant": "acme", "feature_flag": True, "retry_count": 2}
+
+        class FakeORM:
+            run_id = "r1"
+            thread_id = "t1"
+            execution_params = params
+
+        restored = RunJob.from_run_orm(FakeORM())
+        assert restored.run_metadata == job.run_metadata
+
+    def test_from_run_orm_legacy_row_without_run_metadata(self) -> None:
+        """Rows persisted before run_metadata existed deserialize with an empty dict."""
+
+        class LegacyORM:
+            run_id = "r1"
+            thread_id = "t1"
+            execution_params = {
+                "graph_id": "g1",
+                "user": {"identity": "u1", "is_authenticated": True, "permissions": []},
+                "execution": {
+                    "input_data": {},
+                    "config": {},
+                    "context": {},
+                    "stream_mode": None,
+                    "checkpoint": None,
+                    "command": None,
+                },
+                "behavior": {
+                    "interrupt_before": None,
+                    "interrupt_after": None,
+                    "multitask_strategy": None,
+                    "subgraphs": False,
+                },
+                # No "run_metadata" key — pre-PR row.
+            }
+
+        restored = RunJob.from_run_orm(LegacyORM())
+        assert restored.run_metadata == {}

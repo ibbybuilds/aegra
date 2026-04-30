@@ -237,6 +237,7 @@ async def _prepare_run(
             multitask_strategy=request.multitask_strategy,
             subgraphs=request.stream_subgraphs or False,
         ),
+        run_metadata=request.metadata or {},
     )
 
     # Persist run record with trace metadata for worker observability.

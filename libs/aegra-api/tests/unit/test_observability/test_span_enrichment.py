@@ -9,6 +9,7 @@ from aegra_api.observability.span_enrichment import (
     SpanEnrichmentProcessor,
     _trace_attrs,
     make_run_trace_context,
+    merge_run_metadata,
     set_trace_context,
 )
 
@@ -230,3 +231,75 @@ class TestMakeRunTraceContext:
         assert "langfuse.user.id" not in attrs
         assert "user.id" not in attrs
         assert attrs["langfuse.trace.name"] == "my_graph"
+
+    def test_extra_metadata_merged_into_trace_context(self) -> None:
+        """User-supplied extra_metadata appears alongside system runtime keys."""
+        ctx = make_run_trace_context(
+            "run-1",
+            "thread-1",
+            "my_graph",
+            "user-1",
+            extra_metadata={"tenant": "acme", "feature_flag": True},
+        )
+
+        attrs = ctx.run(_trace_attrs.get)
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+        assert attrs["langfuse.trace.metadata.feature_flag"] is True
+        # System keys preserved
+        assert attrs["langfuse.trace.metadata.run_id"] == "run-1"
+        assert attrs["langfuse.trace.metadata.thread_id"] == "thread-1"
+        assert attrs["langfuse.trace.metadata.graph_id"] == "my_graph"
+
+    def test_extra_metadata_cannot_override_system_keys(self) -> None:
+        """Reserved system keys win on collision; user value is dropped."""
+        ctx = make_run_trace_context(
+            "run-actual",
+            "thread-1",
+            "my_graph",
+            "user-1",
+            extra_metadata={"run_id": "run-spoofed", "tenant": "acme"},
+        )
+
+        attrs = ctx.run(_trace_attrs.get)
+        assert attrs["langfuse.trace.metadata.run_id"] == "run-actual"
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+
+
+class TestMergeRunMetadata:
+    """Tests for merge_run_metadata()."""
+
+    def test_returns_system_only_when_extra_is_none(self) -> None:
+        system = {"run_id": "r1", "thread_id": "t1"}
+        assert merge_run_metadata(None, system) == system
+
+    def test_returns_system_only_when_extra_is_empty(self) -> None:
+        system = {"run_id": "r1", "thread_id": "t1"}
+        assert merge_run_metadata({}, system) == system
+
+    def test_user_keys_added_when_no_collision(self) -> None:
+        system = {"run_id": "r1", "thread_id": "t1"}
+        result = merge_run_metadata({"tenant": "acme", "retries": 3}, system)
+        assert result == {"run_id": "r1", "thread_id": "t1", "tenant": "acme", "retries": 3}
+
+    def test_system_wins_on_collision(self) -> None:
+        system = {"run_id": "actual", "thread_id": "t1"}
+        result = merge_run_metadata({"run_id": "spoofed", "tenant": "acme"}, system)
+        assert result["run_id"] == "actual"
+        assert result["tenant"] == "acme"
+
+    def test_collision_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A user-supplied reserved key triggers a warning log."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            merge_run_metadata({"thread_id": "spoofed"}, {"thread_id": "actual"})
+
+        assert any("thread_id" in record.message for record in caplog.records)
+
+    def test_no_warning_when_keys_do_not_collide(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            merge_run_metadata({"tenant": "acme"}, {"run_id": "r1"})
+
+        assert not any("overridden" in record.message for record in caplog.records)

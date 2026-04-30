@@ -21,9 +21,17 @@ Usage::
 """
 
 import contextvars
+import logging
 
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
+
+logger = logging.getLogger(__name__)
+
+# Metadata keys reserved for runtime state; user-supplied values for
+# these keys are dropped (system value wins) so they remain reliable
+# join keys between logs, spans, and the runs table.
+_RESERVED_METADATA_KEYS = frozenset({"run_id", "thread_id", "graph_id", "original_request_id"})
 
 # Per-request context variable holding span attributes to inject.
 # None means no trace context is set; on_start() is a no-op in that case.
@@ -118,24 +126,64 @@ def set_trace_context(
     _trace_attrs.set(attrs or None)
 
 
+def merge_run_metadata(
+    extra_metadata: dict[str, str | int | float | bool] | None,
+    system_metadata: dict[str, str | int | float | bool],
+) -> dict[str, str | int | float | bool]:
+    """Merge user-supplied metadata with system-injected runtime keys.
+
+    The reserved keys (``run_id``, ``thread_id``, ``graph_id``,
+    ``original_request_id``) are runtime invariants and join keys between
+    logs, spans, and the runs table.  When a user-supplied key collides
+    with a reserved key, the system value wins and a warning is logged so
+    the override is visible during debugging without breaking the request.
+    """
+    if not extra_metadata:
+        return dict(system_metadata)
+    merged: dict[str, str | int | float | bool] = {}
+    for key, value in extra_metadata.items():
+        if key in _RESERVED_METADATA_KEYS:
+            logger.warning(
+                "User metadata key '%s' overridden by system value; reserved keys: %s",
+                key,
+                sorted(_RESERVED_METADATA_KEYS),
+            )
+            continue
+        merged[key] = value
+    merged.update(system_metadata)
+    return merged
+
+
 def make_run_trace_context(
     run_id: str,
     thread_id: str,
     graph_id: str,
     user_identity: str | None,
+    *,
+    extra_metadata: dict[str, str | int | float | bool] | None = None,
 ) -> contextvars.Context:
     """Return an isolated context copy with OTEL trace attributes pre-set for a run.
 
     Creates a copy of the current context and populates it with per-request
     span attributes.  Pass the returned context to ``asyncio.create_task(...,
     context=ctx)`` so the background task starts with the correct trace data.
+
+    User-supplied ``extra_metadata`` is merged with the system runtime keys
+    (``run_id``, ``thread_id``, ``graph_id``).  System keys win on collision —
+    see :func:`merge_run_metadata`.
     """
+    system_metadata: dict[str, str | int | float | bool] = {
+        "run_id": run_id,
+        "thread_id": thread_id,
+        "graph_id": graph_id,
+    }
+    metadata = merge_run_metadata(extra_metadata, system_metadata)
     ctx = contextvars.copy_context()
     ctx.run(
         set_trace_context,
         user_id=user_identity,
         session_id=thread_id,
         trace_name=graph_id,
-        metadata={"run_id": run_id, "thread_id": thread_id, "graph_id": graph_id},
+        metadata=metadata,
     )
     return ctx

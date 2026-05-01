@@ -1,6 +1,7 @@
 """Unit tests for SpanEnrichmentProcessor and set_trace_context."""
 
 import asyncio
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -289,17 +290,16 @@ class TestMergeRunMetadata:
 
     def test_collision_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """A user-supplied reserved key triggers a warning log."""
-        import logging
-
         with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
             merge_run_metadata({"thread_id": "spoofed"}, {"thread_id": "actual"})
 
         assert any("thread_id" in record.message for record in caplog.records)
 
     def test_no_warning_when_keys_do_not_collide(self, caplog: pytest.LogCaptureFixture) -> None:
-        import logging
-
+        """No warning of any kind is emitted when user keys do not hit reserved names."""
         with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
             merge_run_metadata({"tenant": "acme"}, {"run_id": "r1"})
 
-        assert not any("overridden" in record.message for record in caplog.records)
+        # Stricter than a substring check: assert no WARNING-level record was
+        # emitted from the merge_run_metadata logger at all.
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

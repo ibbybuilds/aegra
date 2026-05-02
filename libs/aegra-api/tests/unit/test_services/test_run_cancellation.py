@@ -13,11 +13,25 @@ import pytest
 from redis import RedisError
 
 from aegra_api.core.cancellation_state import cancellations
+from aegra_api.observability import metrics as metrics_module
 from aegra_api.observability.metrics import get_worker_metrics, setup_worker_metrics
 from aegra_api.services.run_cancellation import (
     signal_user_cancel,
     try_cancel_pending,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset module-level metric singletons before each test.
+
+    ``fresh_registry`` only gives each test a new ``CollectorRegistry``;
+    without this reset the cached ``_worker_metrics`` / ``_reaper_metrics``
+    objects (bound to the previous test's registry) keep their counter
+    values and a CAS-hit increment in one test bleeds into the next.
+    """
+    monkeypatch.setattr(metrics_module, "_worker_metrics", None)
+    monkeypatch.setattr(metrics_module, "_reaper_metrics", None)
 
 
 @pytest.fixture
@@ -53,7 +67,9 @@ def _make_session(rowcount: int) -> MagicMock:
 async def test_try_cancel_pending_returns_true_and_increments_metric_on_cas_hit(
     fresh_registry: prometheus_client.CollectorRegistry,
 ) -> None:
-    """CAS hit → commit, log, increment runs_completed{status='interrupted'}, return True."""
+    """CAS hit → commit, log, increment runs_completed{status='interrupted'},
+    emit terminal cancel signal so streaming clients see the end event,
+    return True."""
     setup_worker_metrics(registry=fresh_registry)
     metrics = get_worker_metrics()
     assert metrics is not None
@@ -61,11 +77,14 @@ async def test_try_cancel_pending_returns_true_and_increments_metric_on_cas_hit(
     run_orm = _make_run("run-cas-hit", graph_id="graph-cas")
     session = _make_session(rowcount=1)
 
-    result = await try_cancel_pending(session, run_orm)
+    with patch("aegra_api.services.run_cancellation.streaming_service") as mock_streaming:
+        mock_streaming.signal_run_cancelled = AsyncMock()
+        result = await try_cancel_pending(session, run_orm)
 
     assert result is True
     session.commit.assert_awaited_once()
     session.rollback.assert_not_awaited()
+    mock_streaming.signal_run_cancelled.assert_awaited_once_with("run-cas-hit")
     assert metrics.runs_completed.labels(graph_id="graph-cas", status="interrupted")._value.get() == 1.0
 
 
@@ -73,7 +92,9 @@ async def test_try_cancel_pending_returns_true_and_increments_metric_on_cas_hit(
 async def test_try_cancel_pending_returns_false_and_rolls_back_on_cas_miss(
     fresh_registry: prometheus_client.CollectorRegistry,
 ) -> None:
-    """CAS miss (worker won the race) → rollback, NO metric increment, return False."""
+    """CAS miss (worker won the race) → rollback, NO metric increment,
+    NO terminal signal (the worker that picked the run up owns those),
+    return False."""
     setup_worker_metrics(registry=fresh_registry)
     metrics = get_worker_metrics()
     assert metrics is not None
@@ -81,11 +102,14 @@ async def test_try_cancel_pending_returns_false_and_rolls_back_on_cas_miss(
     run_orm = _make_run("run-cas-miss", graph_id="graph-cas")
     session = _make_session(rowcount=0)
 
-    result = await try_cancel_pending(session, run_orm)
+    with patch("aegra_api.services.run_cancellation.streaming_service") as mock_streaming:
+        mock_streaming.signal_run_cancelled = AsyncMock()
+        result = await try_cancel_pending(session, run_orm)
 
     assert result is False
     session.rollback.assert_awaited_once()
     session.commit.assert_not_awaited()
+    mock_streaming.signal_run_cancelled.assert_not_awaited()
     # The success-path metric must stay at zero — the worker that picked
     # the run up will increment it via execute_run.
     assert metrics.runs_completed.labels(graph_id="graph-cas", status="interrupted")._value.get() == 0.0
@@ -103,10 +127,32 @@ async def test_try_cancel_pending_handles_missing_graph_id_in_params(
     run_orm = _make_run("run-no-params", graph_id=None)
     session = _make_session(rowcount=1)
 
-    result = await try_cancel_pending(session, run_orm)
+    with patch("aegra_api.services.run_cancellation.streaming_service") as mock_streaming:
+        mock_streaming.signal_run_cancelled = AsyncMock()
+        result = await try_cancel_pending(session, run_orm)
 
     assert result is True
     assert metrics.runs_completed.labels(graph_id="unknown", status="interrupted")._value.get() == 1.0
+
+
+@pytest.mark.asyncio
+async def test_try_cancel_pending_swallows_redis_error_from_signal(
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """If the broker is unreachable, the cancel must still succeed — the DB
+    row is already 'interrupted' and clients will eventually time out
+    rather than wait for an end event that will never arrive."""
+    setup_worker_metrics(registry=fresh_registry)
+
+    run_orm = _make_run("run-broker-down", graph_id="graph-cas")
+    session = _make_session(rowcount=1)
+
+    with patch("aegra_api.services.run_cancellation.streaming_service") as mock_streaming:
+        mock_streaming.signal_run_cancelled = AsyncMock(side_effect=RedisError("redis down"))
+        result = await try_cancel_pending(session, run_orm)
+
+    assert result is True
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

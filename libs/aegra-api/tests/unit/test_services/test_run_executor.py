@@ -97,11 +97,11 @@ class TestExecuteRunCancelledError:
 
             # Mark as user cancel so execute_run finalizes as interrupted
             cancellations.mark("run-1", "user")
-            try:
-                with pytest.raises(asyncio.CancelledError):
-                    await execute_run(_make_job())
-            finally:
-                cancellations.clear("run-1", only="user")
+            with pytest.raises(asyncio.CancelledError):
+                await execute_run(_make_job())
+            # execute_run's finally must clear the registry itself —
+            # otherwise the leak this PR closes silently regresses.
+            assert cancellations.reason_of("run-1") is None
 
         # update_run_status called once for "running"
         assert mock_update.await_count == 1
@@ -266,11 +266,12 @@ class TestLeaseLossCancellation:
 
             # Simulate heartbeat marking this as a lease-loss cancel
             cancellations.mark("run-1", "lease_loss")
-            try:
-                with pytest.raises(asyncio.CancelledError):
-                    await execute_run(_make_job())
-            finally:
-                cancellations.clear("run-1")
+            with pytest.raises(asyncio.CancelledError):
+                await execute_run(_make_job())
+            # execute_run's finally must clear the registry on the
+            # lease-loss path too, otherwise the tag survives into the
+            # rerun and the new worker mis-classifies its own cancel.
+            assert cancellations.reason_of("run-1") is None
 
         # finalize_run must NOT be called — the new worker owns this run
         mock_finalize.assert_not_awaited()
@@ -307,11 +308,11 @@ class TestLeaseLossCancellation:
 
             # Mark as user cancel so execute_run finalizes as interrupted
             cancellations.mark("run-1", "user")
-            try:
-                with pytest.raises(asyncio.CancelledError):
-                    await execute_run(_make_job())
-            finally:
-                cancellations.clear("run-1", only="user")
+            with pytest.raises(asyncio.CancelledError):
+                await execute_run(_make_job())
+            # execute_run owns clearing the registry — letting the
+            # finally here mask a leak would let it regress silently.
+            assert cancellations.reason_of("run-1") is None
 
         # User cancel: finalize and signal MUST happen
         mock_finalize.assert_awaited_once()

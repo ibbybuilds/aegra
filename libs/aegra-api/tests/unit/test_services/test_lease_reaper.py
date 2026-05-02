@@ -480,6 +480,27 @@ class TestBumpRetryCount:
 
         assert outcome is None
 
+    @pytest.mark.asyncio
+    async def test_returns_none_when_execution_params_missing(self) -> None:
+        """Corrupted row (execution_params=None) must NOT be revived with a
+        synthetic dict — a run with no graph/input metadata cannot be retried
+        meaningfully. Mirror _update_enqueued_at: log + skip."""
+        run_orm = MagicMock()
+        run_orm.execution_params = None
+
+        session = AsyncMock()
+        session.scalar = AsyncMock(return_value=run_orm)
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+        maker = _make_session_maker(session)
+
+        with patch("aegra_api.services.lease_reaper._get_session_maker", return_value=maker):
+            outcome = await LeaseReaper._bump_retry_count("run-corrupt", max_retries=3)
+
+        assert outcome is None
+        session.commit.assert_not_called()
+        session.execute.assert_not_called()
+
 
 class TestCheckRetryLimits:
     @pytest.mark.asyncio

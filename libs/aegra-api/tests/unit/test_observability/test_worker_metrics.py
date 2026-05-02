@@ -972,12 +972,22 @@ def test_mark_lease_loss_does_not_leak_into_user_cancelled() -> None:
     assert reg.reason_of("run-lease") == "lease_loss"
 
 
-def test_mark_overwrites_with_last_writer_wins() -> None:
+def test_mark_lease_loss_overwrites_user() -> None:
     """A lease-loss arriving after a user cancel takes precedence so the
     reaper-driven retry isn't clobbered by an interrupted-finalize."""
     reg = CancellationRegistry()
     reg.mark("rid", "user")
     reg.mark("rid", "lease_loss")
+    assert reg.reason_of("rid") == "lease_loss"
+
+
+def test_mark_user_cannot_overwrite_lease_loss() -> None:
+    """If lease-loss is already tagged, a later user cancel must not
+    erase it. Without this precedence the old worker would finalize
+    the run as 'interrupted' and clobber the rerun on another worker."""
+    reg = CancellationRegistry()
+    reg.mark("rid", "lease_loss")
+    reg.mark("rid", "user")
     assert reg.reason_of("rid") == "lease_loss"
 
 

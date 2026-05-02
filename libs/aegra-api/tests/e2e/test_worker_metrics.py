@@ -243,7 +243,19 @@ async def test_cancel_pending_run_metrics() -> None:
     cancelled = await sdk.runs.cancel(thread["thread_id"], run["run_id"])
     elog("Cancelled run", {"run_id": cancelled["run_id"], "status": cancelled["status"]})
 
-    await asyncio.sleep(1.0)
+    # Poll for the run to reach a terminal state before scraping the metric.
+    # A fixed sleep races with finalization: the cancel event finishes after
+    # the SQL update commits but before the metric increment, so a sleep that
+    # is "long enough" most of the time still flakes under load.
+    terminal_states = {"success", "error", "interrupted"}
+    final = await sdk.runs.get(thread["thread_id"], run["run_id"])
+    for _ in range(20):
+        if final["status"] in terminal_states:
+            break
+        await asyncio.sleep(0.25)
+        final = await sdk.runs.get(thread["thread_id"], run["run_id"])
+    else:
+        pytest.fail(f"run did not reach a terminal state after cancel; status={final['status']}")
 
     async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
         after = await _scrape(client)
@@ -256,7 +268,6 @@ async def test_cancel_pending_run_metrics() -> None:
     )
     elog("completed{interrupted}", {"before": interrupted_before, "after": interrupted_after})
 
-    final = await sdk.runs.get(thread["thread_id"], run["run_id"])
     if final["status"] == "interrupted":
         assert interrupted_after is not None, "interrupted metric must exist after a real cancel"
         assert interrupted_after >= interrupted_before + 1, (

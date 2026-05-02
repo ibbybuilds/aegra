@@ -110,13 +110,14 @@ async def execute_run(job: RunJob) -> None:
             pass
         raise
     except Exception as exc:
-        logger.exception("Run failed", run_id=run_id)
-        # ``str(exc)`` may contain hostnames, file paths, or credentials
-        # bubbled up from underlying libraries (DB drivers, HTTP clients).
-        # The full message goes to logs (via ``logger.exception``), but the
-        # DB row is returned to the caller via GET /runs/{id} — store only
-        # the sanitized form there.
+        # Both ``str(exc)`` and the formatted traceback may carry hostnames,
+        # file paths, or credentials bubbled up from underlying libraries
+        # (DB drivers, HTTP clients). Project policy is to keep that out of
+        # logs entirely — log only the structural error type and run_id.
+        # Operators who need a full traceback can reproduce the failure
+        # locally with DEBUG-level logging enabled or attach a debugger.
         safe_message = f"{type(exc).__name__}: execution failed"
+        logger.error("Run failed", run_id=run_id, error_type=type(exc).__name__)
         await finalize_run(run_id, thread_id, status="error", thread_status="error", output={}, error=safe_message)
         _increment_completed(graph_id, "error")
         await _best_effort_signal(streaming_service.signal_run_error, run_id, safe_message, type(exc).__name__)

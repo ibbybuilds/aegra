@@ -83,7 +83,12 @@ async def try_cancel_pending(session: AsyncSession, run_orm: RunORM) -> bool:
 
     On a successful CAS the run never enters ``execute_run``, so this
     is the only place that increments ``runs_completed{status="interrupted"}``
-    for the pending-cancel branch.
+    for the pending-cancel branch and the only place that emits the
+    terminal ``end`` event for clients already streaming via
+    ``/threads/{thread_id}/runs/stream`` or
+    ``/threads/{thread_id}/runs/{run_id}/stream`` — without that signal
+    those clients keep waiting on the broker even though the DB row is
+    already terminal.
     """
     cas_result = await session.execute(
         update(RunORM)
@@ -99,6 +104,20 @@ async def try_cancel_pending(session: AsyncSession, run_orm: RunORM) -> bool:
     if metrics is not None:
         graph_id = extract_graph_id(run_orm.execution_params)
         metrics.runs_completed.labels(graph_id=graph_id, status="interrupted").inc()
+    # Best-effort terminal signal so attached streaming clients see the
+    # end event. ``signal_run_cancelled`` is idempotent (no-op if the
+    # broker is already finished) and goes through the Redis-backed
+    # broker, so it works cross-instance. A Redis outage here must not
+    # fail the cancel — the DB row is already ``interrupted`` and the
+    # client will eventually time out instead of finalizing successfully.
+    try:
+        await streaming_service.signal_run_cancelled(run_orm.run_id)
+    except (RedisError, RuntimeError) as exc:
+        logger.warning(
+            "Failed to broadcast pending-cancel end event",
+            run_id=run_orm.run_id,
+            error=str(exc),
+        )
     return True
 
 

@@ -278,16 +278,22 @@ class LeaseReaper:
         """Increment ``_retry_count`` for one run.
 
         Returns ``(new_count, params)`` on success, ``None`` when the row
-        is missing or the UPDATE fails. Caller decides whether the new
+        is missing, the row has no ``execution_params`` (data corruption
+        — synthesizing one would revive a broken run with no graph/input
+        metadata), or the UPDATE fails. Caller decides whether the new
         count exceeds the retry limit.
         """
         maker = _get_session_maker()
         try:
             async with maker() as session:
                 run_orm = await session.scalar(select(RunORM).where(RunORM.run_id == run_id).with_for_update())
-                if run_orm is None:
+                if run_orm is None or run_orm.execution_params is None:
+                    logger.warning(
+                        "Run missing or has no execution_params, skipping retry bump",
+                        run_id=run_id,
+                    )
                     return None
-                params: dict[str, Any] = run_orm.execution_params or {}
+                params: dict[str, Any] = run_orm.execution_params
                 retry_count = params.get("_retry_count", 0) + 1
                 if retry_count > max_retries:
                     return retry_count, params

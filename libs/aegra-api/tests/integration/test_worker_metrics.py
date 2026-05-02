@@ -60,14 +60,15 @@ def test_metrics_endpoint_includes_worker_metrics(
     assert response.status_code == 200
 
     body = response.text
-    # Spot-check representative worker metrics
-    assert "aegra_runs_dispatched" in body
-    assert "aegra_runs_completed" in body
+    # Spot-check representative worker metrics — Counters are exposed with
+    # ``_total`` suffix, Gauges/Histograms without.
+    assert "aegra_runs_dispatched_total" in body
+    assert "aegra_runs_completed_total" in body
     assert "aegra_runs_in_flight" in body
     assert "aegra_run_execution_seconds" in body
     assert "aegra_run_queue_wait_seconds" in body
-    assert "aegra_redis_reachable" in body
-    assert "aegra_run_retries" in body
+    assert "aegra_redis_up" in body
+    assert "aegra_run_retries_total" in body
 
 
 def test_metrics_endpoint_includes_reaper_metrics(
@@ -82,9 +83,9 @@ def test_metrics_endpoint_includes_reaper_metrics(
     assert response.status_code == 200
 
     body = response.text
-    assert "aegra_reaper_crashed_recovered" in body
-    assert "aegra_reaper_stuck_reenqueued" in body
-    assert "aegra_reaper_permanently_failed" in body
+    assert "aegra_reaper_crashed_recovered_total" in body
+    assert "aegra_reaper_stuck_reenqueued_total" in body
+    assert "aegra_reaper_permanently_failed_total" in body
     assert "aegra_reaper_cycle_seconds" in body
     assert "aegra_queue_depth" in body
 
@@ -101,8 +102,8 @@ def test_worker_metrics_not_in_output_when_not_registered(
     assert response.status_code == 200
 
     body = response.text
-    assert "aegra_runs_dispatched" not in body
-    assert "aegra_reaper_crashed_recovered" not in body
+    assert "aegra_runs_dispatched_total" not in body
+    assert "aegra_reaper_crashed_recovered_total" not in body
 
 
 def test_worker_metrics_not_exposed_when_prometheus_disabled(
@@ -115,3 +116,46 @@ def test_worker_metrics_not_exposed_when_prometheus_disabled(
 
     response = client.get("/metrics")
     assert response.status_code == 404
+
+
+def test_metrics_value_changes_after_increment(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """Proves the registry is *wired* to the /metrics endpoint, not just
+    that names are present. Drives an increment then asserts the scrape
+    output reflects the new value."""
+    app = _make_app(monkeypatch, fresh_registry)
+    metrics = metrics_module.get_worker_metrics()
+    assert metrics is not None
+
+    metrics.runs_dispatched.labels(graph_id="test-pipe").inc()
+
+    client = TestClient(app)
+    response = client.get("/metrics")
+    assert response.status_code == 200
+
+    body = response.text
+    # The exposition format is ``aegra_runs_dispatched_total{graph_id="test-pipe"} 1.0``.
+    assert 'aegra_runs_dispatched_total{graph_id="test-pipe"} 1.0' in body
+
+
+def test_lease_losses_carries_reason_label(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """The ``reason`` label must distinguish ``rowcount_zero`` from
+    ``heartbeat_timeout`` so on-call can tell the two failure modes
+    apart from a single dashboard."""
+    app = _make_app(monkeypatch, fresh_registry)
+    metrics = metrics_module.get_worker_metrics()
+    assert metrics is not None
+
+    metrics.lease_losses.labels(graph_id="g", reason="rowcount_zero").inc()
+    metrics.lease_losses.labels(graph_id="g", reason="heartbeat_timeout").inc(2)
+
+    client = TestClient(app)
+    body = client.get("/metrics").text
+
+    assert 'aegra_lease_losses_total{graph_id="g",reason="rowcount_zero"} 1.0' in body
+    assert 'aegra_lease_losses_total{graph_id="g",reason="heartbeat_timeout"} 2.0' in body

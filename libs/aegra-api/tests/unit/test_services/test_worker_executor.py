@@ -198,7 +198,10 @@ class TestHeartbeatLoop:
     @pytest.mark.asyncio
     async def test_extends_lease_on_each_iteration(self) -> None:
         session = AsyncMock()
-        session.execute = AsyncMock()
+        # Successful UPDATE returns rowcount=1
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        session.execute = AsyncMock(return_value=update_result)
         session.commit = AsyncMock()
         maker = _make_session_maker(session)
 
@@ -220,16 +223,18 @@ class TestHeartbeatLoop:
             mock_settings.worker.LEASE_DURATION_SECONDS = 30
 
             with pytest.raises(asyncio.CancelledError):
-                await _heartbeat_loop("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "worker-0")
+                await _heartbeat_loop("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "worker-0", graph_id="g")
 
         # One iteration completed before cancellation on second sleep
         assert session.execute.await_count == 1
         assert session.commit.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_continues_loop_on_db_error(self) -> None:
+    async def test_swallows_sqlalchemyerror_and_continues_heartbeat_loop(self) -> None:
+        from sqlalchemy.exc import SQLAlchemyError
+
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=Exception("DB connection lost"))
+        session.execute = AsyncMock(side_effect=SQLAlchemyError("DB connection lost"))
         maker = _make_session_maker(session)
 
         call_count = 0
@@ -246,10 +251,12 @@ class TestHeartbeatLoop:
             patch(f"{MODULE}.asyncio.sleep", side_effect=counting_sleep),
         ):
             mock_settings.worker.HEARTBEAT_INTERVAL_SECONDS = 1
-            mock_settings.worker.LEASE_DURATION_SECONDS = 30
+            # Use a long lease so the failure-budget bail-out doesn't fire and
+            # the loop genuinely keeps going across iterations.
+            mock_settings.worker.LEASE_DURATION_SECONDS = 3600
 
             with pytest.raises(asyncio.CancelledError):
-                await _heartbeat_loop("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "worker-0")
+                await _heartbeat_loop("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "worker-0", graph_id="g")
 
         # Loop continued despite DB errors (2 iterations before cancel on 3rd sleep)
         assert session.execute.await_count == 2

@@ -14,22 +14,26 @@ import contextvars
 import os
 import re
 import socket
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import structlog
 from asgi_correlation_id import correlation_id
 from redis import RedisError
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from aegra_api.core.active_runs import active_runs
+from aegra_api.core.cancellation_state import cancellations
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.core.redis_manager import redis_manager
 from aegra_api.models.run_job import RunJob
-from aegra_api.observability.metrics import get_worker_metrics
+from aegra_api.observability.metrics import extract_graph_id, get_worker_metrics
 from aegra_api.observability.span_enrichment import set_trace_context
 from aegra_api.services.base_executor import BaseExecutor
-from aegra_api.services.run_executor import _lease_loss_cancellations, execute_run
+from aegra_api.services.run_executor import execute_run
 from aegra_api.services.run_status import finalize_run, update_run_status
 from aegra_api.settings import settings
 
@@ -192,6 +196,12 @@ class WorkerExecutor(BaseExecutor):
                     semaphore.release()
                     continue
 
+                # Count only valid run_ids as dequeued — symmetric with
+                # runs_discarded (invalid IDs are NOT counted as dequeues).
+                metrics = get_worker_metrics()
+                if metrics is not None:
+                    metrics.runs_dequeued.inc()
+
                 task = asyncio.create_task(self._execute_and_release(run_id, worker_name, semaphore))
                 self._job_tasks.add(task)
                 task.add_done_callback(self._job_tasks.discard)
@@ -223,32 +233,7 @@ class WorkerExecutor(BaseExecutor):
                 timeout=settings.worker.BG_JOB_TIMEOUT_SECS,
             )
         except TimeoutError:
-            logger.error(
-                "Job exceeded timeout, killing",
-                worker=worker_name,
-                run_id=run_id,
-                timeout_secs=settings.worker.BG_JOB_TIMEOUT_SECS,
-            )
-            metrics = get_worker_metrics()
-            thread_id, graph_id = await _get_run_context_for_timeout(run_id)
-            if metrics is not None:
-                label = graph_id or "unknown"
-                metrics.run_timeouts.labels(graph_id=label).inc()
-                metrics.runs_completed.labels(graph_id=label, status="error").inc()
-            # execute_run's CancelledError handler (timeout default path) skips
-            # finalize — this is the sole place that finalizes timed-out runs.
-            if thread_id is not None:
-                await finalize_run(
-                    run_id,
-                    thread_id,
-                    status="error",
-                    thread_status="error",
-                    error="Job exceeded maximum execution time",
-                )
-            else:
-                # Fallback: update run status only (thread_id lookup failed)
-                await update_run_status(run_id, "error", error="Job exceeded maximum execution time")
-            await _release_lease(run_id, worker_name)
+            await _handle_timeout(run_id, worker_name)
         except asyncio.CancelledError:
             logger.info("Job task cancelled", worker=worker_name, run_id=run_id)
             raise
@@ -263,23 +248,26 @@ class WorkerExecutor(BaseExecutor):
     # ------------------------------------------------------------------
 
     async def _dequeue(self) -> str | None:
-        """BLPOP with 5s timeout. Falls back to Postgres polling if Redis is down."""
+        """BLPOP with 5s timeout. Falls back to Postgres polling if Redis is down.
+
+        Note: ``runs_dequeued`` is incremented by the caller after run_id
+        validation so it stays symmetric with ``runs_discarded`` (a discarded
+        run_id is not counted as a successful dequeue).
+        """
         try:
             client = redis_manager.get_client()
             result = await client.blpop(settings.worker.WORKER_QUEUE_KEY, timeout=5)  # type: ignore[arg-type]
             metrics = get_worker_metrics()
             if metrics is not None:
-                metrics.redis_reachable.set(1)
+                metrics.redis_up.set(1)
             if result is None:
                 return None
-            if metrics is not None:
-                metrics.runs_dequeued.inc()
             return result[1]
         except RedisError as exc:
             metrics = get_worker_metrics()
             if metrics is not None:
                 metrics.dequeue_errors.inc()
-                metrics.redis_reachable.set(0)
+                metrics.redis_up.set(0)
             logger.warning("Redis BLPOP failed, falling back to Postgres poll", error=str(exc))
             await asyncio.sleep(settings.worker.POSTGRES_POLL_INTERVAL_SECONDS)
             return await self._poll_postgres()
@@ -294,6 +282,10 @@ class WorkerExecutor(BaseExecutor):
                 metrics = get_worker_metrics()
                 if metrics is not None:
                     metrics.runs_completed.labels(graph_id="unknown", status="error").inc()
+                # execute_run never runs on the corruption path, so the
+                # cancellation registry entries (if any user / lease-loss
+                # mark was set before pickup) would leak. Clear them here.
+                cancellations.clear(run_id)
             # contention: no metric — run belongs to another worker
             logger.debug("Lease not acquired or job missing, skipping", run_id=run_id, worker=worker_name)
             return
@@ -301,59 +293,80 @@ class WorkerExecutor(BaseExecutor):
         loaded = acquire_result.loaded
         graph_id = loaded.job.identity.graph_id
         metrics = get_worker_metrics()
-        _in_flight_incremented = False
 
-        # Gauge increment: immediately after acquire, before any await
-        if metrics is not None:
-            metrics.runs_in_flight.labels(graph_id=graph_id).inc()
-            _in_flight_incremented = True
-
-            # Queue wait time
-            if loaded.enqueued_at is not None:
-                wait_seconds = (lease_acquired_at - datetime.fromtimestamp(loaded.enqueued_at, tz=UTC)).total_seconds()
-                if wait_seconds >= 0:
-                    metrics.run_queue_wait_seconds.labels(graph_id=graph_id).observe(wait_seconds)
-
-        _restore_trace_context(run_id, loaded.job, loaded.trace)
-        logger.info(
-            "Worker picked up run",
-            worker=worker_name,
-            run_id=run_id,
-            graph_id=graph_id,
-        )
-        # Wrap execute_run in a task so the heartbeat can cancel it on
-        # lease loss, preventing double execution by a second worker.
-        job_task = asyncio.create_task(execute_run(loaded.job))
-        heartbeat_task = asyncio.create_task(
-            _heartbeat_loop(run_id, worker_name, job_task=job_task, graph_id=graph_id),
-            context=contextvars.copy_context(),
-        )
-
-        _should_observe_duration = True
+        # Pair runs_in_flight inc/dec inside a single try/finally so the
+        # gauge can never leak — even on a synchronous failure between
+        # the increment and the first await. The flag covers the
+        # metrics-disabled case (no inc → no dec).
+        in_flight_incremented = False
+        observe_duration = True
+        job_task: asyncio.Task[None] | None = None
+        heartbeat_task: asyncio.Task[None] | None = None
         try:
-            await job_task
-        except asyncio.CancelledError:
-            _should_observe_duration = False  # partial time, don't observe
-            logger.info("Worker job cancelled", worker=worker_name, run_id=run_id)
-        except Exception:
-            logger.exception("Worker job failed", worker=worker_name, run_id=run_id)
+            if metrics is not None:
+                metrics.runs_in_flight.labels(graph_id=graph_id).inc()
+                in_flight_incremented = True
+
+                if loaded.enqueued_at is not None:
+                    wait_seconds = (
+                        lease_acquired_at - datetime.fromtimestamp(loaded.enqueued_at, tz=UTC)
+                    ).total_seconds()
+                    if wait_seconds >= 0:
+                        metrics.run_queue_wait_seconds.labels(graph_id=graph_id).observe(wait_seconds)
+                    else:
+                        logger.warning(
+                            "Negative queue wait, possible clock skew between API and worker hosts",
+                            run_id=run_id,
+                            wait_seconds=wait_seconds,
+                            graph_id=graph_id,
+                        )
+
+            _restore_trace_context(run_id, loaded.job, loaded.trace)
+            logger.info(
+                "Worker picked up run",
+                worker=worker_name,
+                run_id=run_id,
+                graph_id=graph_id,
+            )
+            # Wrap execute_run in a task so the heartbeat can cancel it on
+            # lease loss, preventing double execution by a second worker.
+            job_task = asyncio.create_task(execute_run(loaded.job))
+            heartbeat_task = asyncio.create_task(
+                _heartbeat_loop(run_id, worker_name, job_task=job_task, graph_id=graph_id),
+                context=contextvars.copy_context(),
+            )
+
+            try:
+                await job_task
+            except asyncio.CancelledError:
+                observe_duration = False  # partial time, don't observe
+                logger.info("Worker job cancelled", worker=worker_name, run_id=run_id)
+            except Exception:
+                logger.exception("Worker job failed", worker=worker_name, run_id=run_id)
         finally:
             # Cancel both child tasks — job_task may still be running if
             # this coroutine was cancelled by wait_for timeout (CancelledError
             # is delivered to `await job_task`, but the Task itself is not
             # cancelled automatically).
-            if not job_task.done():
+            if job_task is not None and not job_task.done():
                 job_task.cancel()
-            heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await asyncio.gather(job_task, heartbeat_task, return_exceptions=True)
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+            child_tasks: list[asyncio.Task[None]] = []
+            if job_task is not None:
+                child_tasks.append(job_task)
+            if heartbeat_task is not None:
+                child_tasks.append(heartbeat_task)
+            if child_tasks:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.gather(*child_tasks, return_exceptions=True)
             await _release_lease(run_id, worker_name)
 
             elapsed = (datetime.now(UTC) - lease_acquired_at).total_seconds()
             if metrics is not None:
-                if _in_flight_incremented:
+                if in_flight_incremented:
                     metrics.runs_in_flight.labels(graph_id=graph_id).dec()
-                if _should_observe_duration:
+                if observe_duration:
                     metrics.run_execution_seconds.labels(graph_id=graph_id).observe(elapsed)
 
             logger.info(
@@ -382,6 +395,48 @@ class WorkerExecutor(BaseExecutor):
 # ------------------------------------------------------------------
 
 
+async def _handle_timeout(run_id: str, worker_name: str) -> None:
+    """Finalize a timed-out run as error and emit timeout metrics.
+
+    ``execute_run``'s CancelledError handler (timeout/default branch) skips
+    finalize — this is the sole site that finalizes timed-out runs and
+    increments ``runs_completed{status="error"}`` for them.
+    """
+    logger.error(
+        "Job exceeded timeout, killing",
+        worker=worker_name,
+        run_id=run_id,
+        timeout_secs=settings.worker.BG_JOB_TIMEOUT_SECS,
+    )
+    metrics = get_worker_metrics()
+    thread_id, graph_id = await _get_run_context_for_timeout(run_id)
+    if metrics is not None:
+        label = graph_id or "unknown"
+        metrics.run_timeouts.labels(graph_id=label).inc()
+        # INVARIANT: this is the ONLY site that increments
+        # ``runs_completed{status="error"}`` for timeouts. ``execute_run``'s
+        # CancelledError handler explicitly skips the increment on the
+        # timeout-default branch — see run_executor.py.
+        metrics.runs_completed.labels(graph_id=label, status="error").inc()
+        # Observe execution duration even on timeout, clamped to the
+        # configured timeout. Without this, the timed-out runs never
+        # appear in the histogram and P99 reads as the next-largest
+        # bucket, biasing dashboards toward shorter durations.
+        metrics.run_execution_seconds.labels(graph_id=label).observe(float(settings.worker.BG_JOB_TIMEOUT_SECS))
+    if thread_id is not None:
+        await finalize_run(
+            run_id,
+            thread_id,
+            status="error",
+            thread_status="error",
+            error="Job exceeded maximum execution time",
+        )
+    else:
+        # Fallback: update run status only (thread_id lookup failed)
+        await update_run_status(run_id, "error", error="Job exceeded maximum execution time")
+    await _release_lease(run_id, worker_name)
+
+
 async def _get_run_context_for_timeout(run_id: str) -> tuple[str | None, str | None]:
     """Look up thread_id and graph_id for a timed-out run in a single query.
 
@@ -397,10 +452,15 @@ async def _get_run_context_for_timeout(run_id: str) -> tuple[str | None, str | N
             if row is None:
                 return None, None
             thread_id = row[0]
-            graph_id = row[1].get("graph_id") if row[1] is not None else None
+            graph_id = extract_graph_id(row[1]) if row[1] is not None else None
             return thread_id, graph_id
-    except Exception:
-        logger.warning("Run context lookup failed for timeout handler", run_id=run_id)
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "Run context lookup failed for timeout handler",
+            run_id=run_id,
+            error=str(exc),
+            exc_info=True,
+        )
     return None, None
 
 
@@ -409,17 +469,19 @@ async def _get_run_context_for_timeout(run_id: str) -> tuple[str | None, str | N
 # ------------------------------------------------------------------
 
 
+@dataclass(slots=True, frozen=True)
 class _LoadedRun:
     """RunJob plus raw trace metadata and enqueue timestamp from execution_params."""
 
-    __slots__ = ("job", "trace", "enqueued_at")
-
-    def __init__(self, job: RunJob, trace: dict[str, str], enqueued_at: float | None) -> None:
-        self.job = job
-        self.trace = trace
-        self.enqueued_at = enqueued_at
+    job: RunJob
+    trace: dict[str, str]
+    enqueued_at: float | None
 
 
+_AcquireReason = Literal["ok", "contention", "corruption"]
+
+
+@dataclass(slots=True, frozen=True)
 class _AcquireResult:
     """Result of a lease acquisition attempt.
 
@@ -429,11 +491,8 @@ class _AcquireResult:
     - ``"corruption"``: row missing or execution_params is None — run marked as error
     """
 
-    __slots__ = ("loaded", "reason")
-
-    def __init__(self, loaded: _LoadedRun | None, reason: str) -> None:
-        self.loaded = loaded
-        self.reason = reason
+    loaded: _LoadedRun | None
+    reason: _AcquireReason
 
 
 async def _acquire_and_load(run_id: str, worker_name: str) -> _AcquireResult:
@@ -505,55 +564,113 @@ async def _release_lease(run_id: str, worker_name: str) -> None:
         await session.commit()
 
 
+_HeartbeatOutcome = Literal["ok", "lost", "failed"]
+
+
+async def _extend_lease_once(run_id: str, worker_name: str) -> _HeartbeatOutcome:
+    """Run a single heartbeat iteration.
+
+    - ``"ok"``: lease was extended.
+    - ``"lost"``: UPDATE returned rowcount=0 — another worker owns this run.
+    - ``"failed"``: DB / Redis / network error — caller decides whether to retry.
+    """
+    duration = settings.worker.LEASE_DURATION_SECONDS
+    maker = _get_session_maker()
+    new_expiry = datetime.now(UTC) + timedelta(seconds=duration)
+    try:
+        async with maker() as session:
+            result = await session.execute(
+                update(RunORM)
+                .where(RunORM.run_id == run_id, RunORM.claimed_by == worker_name)
+                .values(lease_expires_at=new_expiry)
+            )
+            await session.commit()
+    except (SQLAlchemyError, TimeoutError, ConnectionError, RedisError) as exc:
+        logger.warning(
+            "Heartbeat lease extension failed",
+            run_id=run_id,
+            worker=worker_name,
+            error=str(exc),
+            exc_info=True,
+        )
+        return "failed"
+    return "lost" if result.rowcount == 0 else "ok"  # type: ignore[union-attr]
+
+
 async def _heartbeat_loop(
     run_id: str,
     worker_name: str,
     *,
+    graph_id: str,
     job_task: asyncio.Task[None] | None = None,
-    graph_id: str = "unknown",
 ) -> None:
     """Extend lease periodically while the job is running.
 
     If the lease is lost (another worker claimed the run), cancels
     ``job_task`` to prevent double execution.
+
+    If consecutive heartbeat failures persist long enough that the DB
+    lease has almost certainly expired, treat it as a lease loss too —
+    the reaper may have already re-enqueued the run, so continuing to
+    execute would risk a double execution by the second worker.
     """
     interval = settings.worker.HEARTBEAT_INTERVAL_SECONDS
     duration = settings.worker.LEASE_DURATION_SECONDS
-    maker = _get_session_maker()
+    # Bail out one ``interval`` before the lease would expire — between
+    # the last successful extension and the current iteration up to
+    # ``interval`` seconds may have elapsed, so triggering at exactly
+    # ``duration`` gives the reaper a window to re-enqueue while we are
+    # still running. ``max(0, ...)`` so the loop still terminates if an
+    # operator misconfigures HEARTBEAT_INTERVAL >= LEASE_DURATION.
+    failure_budget = max(0, duration - interval)
+    consecutive_failure_seconds = 0
 
     while True:
         await asyncio.sleep(interval)
-        try:
-            new_expiry = datetime.now(UTC) + timedelta(seconds=duration)
-            async with maker() as session:
-                result = await session.execute(
-                    update(RunORM)
-                    .where(RunORM.run_id == run_id, RunORM.claimed_by == worker_name)
-                    .values(lease_expires_at=new_expiry)
-                )
-                await session.commit()
-            if result.rowcount == 0:  # type: ignore[union-attr]
-                metrics = get_worker_metrics()
-                if metrics is not None:
-                    metrics.lease_losses.labels(graph_id=graph_id).inc()
-                logger.warning(
-                    "Lease lost, cancelling job to prevent double execution",
-                    run_id=run_id,
-                    worker=worker_name,
-                )
-                if job_task is not None and not job_task.done():
-                    _lease_loss_cancellations.add(run_id)
-                    job_task.cancel()
-                return
-            metrics = get_worker_metrics()
+        outcome = await _extend_lease_once(run_id, worker_name)
+        metrics = get_worker_metrics()
+
+        if outcome == "ok":
+            consecutive_failure_seconds = 0
             if metrics is not None:
                 metrics.heartbeat_extensions.labels(graph_id=graph_id).inc()
             logger.debug("Lease extended", run_id=run_id, worker=worker_name)
-        except Exception:
-            metrics = get_worker_metrics()
+            continue
+
+        if outcome == "lost":
             if metrics is not None:
-                metrics.heartbeat_failures.labels(graph_id=graph_id).inc()
-            logger.warning("Heartbeat lease extension failed", run_id=run_id, worker=worker_name)
+                metrics.lease_losses.labels(graph_id=graph_id, reason="rowcount_zero").inc()
+            logger.warning(
+                "Lease lost, cancelling job to prevent double execution",
+                run_id=run_id,
+                worker=worker_name,
+            )
+            _cancel_for_lease_loss(run_id, job_task)
+            return
+
+        # outcome == "failed"
+        consecutive_failure_seconds += interval
+        if metrics is not None:
+            metrics.heartbeat_failures.labels(graph_id=graph_id).inc()
+        if consecutive_failure_seconds >= failure_budget:
+            if metrics is not None:
+                metrics.lease_losses.labels(graph_id=graph_id, reason="heartbeat_timeout").inc()
+            logger.error(
+                "Heartbeat failed long enough that the lease has likely expired, assuming lease loss",
+                run_id=run_id,
+                worker=worker_name,
+                failed_for_seconds=consecutive_failure_seconds,
+                lease_duration_seconds=duration,
+            )
+            _cancel_for_lease_loss(run_id, job_task)
+            return
+
+
+def _cancel_for_lease_loss(run_id: str, job_task: asyncio.Task[None] | None) -> None:
+    """Mark a run as lease-loss and cancel its job task if still running."""
+    if job_task is not None and not job_task.done():
+        cancellations.mark(run_id, "lease_loss")
+        job_task.cancel()
 
 
 async def _is_run_terminal(run_id: str) -> bool:

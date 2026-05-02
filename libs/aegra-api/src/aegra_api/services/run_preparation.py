@@ -248,7 +248,6 @@ async def _prepare_run(
         "correlation_id": correlation_id.get(""),
         "user_id": user.identity,
         "thread_id": thread_id,
-        "graph_id": assistant.graph_id,
     }
     exec_params["_enqueued_at"] = time.time()
 

@@ -19,8 +19,7 @@ from aegra_api.core.orm import _get_session_maker, get_session
 from aegra_api.core.sse import create_end_event, get_sse_headers
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
-from aegra_api.observability.metrics import get_worker_metrics
-from aegra_api.services.run_executor import mark_user_cancellation, unmark_user_cancellation
+from aegra_api.services.run_cancellation import CancelAction, cancel_running_run, try_cancel_pending
 from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.services.run_waiters import TERMINAL_STATES, encode_output, heartbeat_wait_body
 from aegra_api.services.streaming_service import streaming_service
@@ -404,9 +403,8 @@ async def cancel_run_endpoint(
     thread_id: str,
     run_id: str,
     wait: int = Query(0, ge=0, le=1, description="Set to 1 to wait for the run task to settle before returning."),
-    action: str = Query(
+    action: CancelAction = Query(
         "cancel",
-        pattern="^(cancel|interrupt)$",
         description="Cancellation strategy: 'cancel' for hard cancel, 'interrupt' for cooperative interrupt.",
     ),
     user: User = Depends(get_current_user),
@@ -430,79 +428,32 @@ async def cancel_run_endpoint(
     if not run_orm:
         raise HTTPException(404, f"Run '{run_id}' not found")
 
+    # Terminal-state idempotency: clients commonly retry cancel after a run
+    # has already finalized. Returning early prevents the user-cancellation
+    # set from being seeded for a run whose execute_run cleanup has already
+    # discarded the entry — that path leaks unbounded under repeated
+    # cancel-after-finish.
+    if run_orm.status in TERMINAL_STATES:
+        return Run.model_validate(run_orm)
+
     if run_orm.status == "pending":
-        # Atomic CAS: only update if still pending (prevents TOCTOU with worker pickup)
-        cas_result = await session.execute(
-            update(RunORM)
-            .where(RunORM.run_id == run_id, RunORM.status == "pending")
-            .values(status="interrupted", updated_at=datetime.now(UTC))
-        )
-        if cas_result.rowcount > 0:  # type: ignore[union-attr]
-            await session.commit()
-            logger.info(f"[cancel_run] cancelled pending run_id={run_id}")
-            # Run never went through execute_run, so increment completed here
-            metrics = get_worker_metrics()
-            if metrics is not None:
-                graph_id = (run_orm.execution_params or {}).get("graph_id", "unknown")
-                metrics.runs_completed.labels(graph_id=graph_id, status="interrupted").inc()
+        if await try_cancel_pending(session, run_orm):
+            # CAS hit — pending run is now interrupted, no broadcast needed.
+            pass
         else:
-            # Worker picked it up between SELECT and CAS — now running.
-            # Fall through to the running-cancel path.
-            await session.rollback()
+            # Worker claimed the run between our SELECT and CAS. Re-fetch
+            # to confirm it is actually still active before broadcasting
+            # the cancel — the run may have already finished.
             run_orm = await session.scalar(select(RunORM).where(RunORM.run_id == run_id))
             if run_orm is None:
                 raise HTTPException(404, f"Run '{run_id}' not found")
             if run_orm.status in TERMINAL_STATES:
-                # Run already completed between CAS and re-fetch
                 return Run.model_validate(run_orm)
-            mark_user_cancellation(run_id)
-            try:
-                if action == "interrupt":
-                    logger.info(f"[cancel_run] interrupt (was pending) run_id={run_id}")
-                    await streaming_service.interrupt_run(run_id)
-                else:
-                    logger.info(f"[cancel_run] cancel (was pending) run_id={run_id}")
-                    await streaming_service.cancel_run(run_id)
-            except Exception:
-                unmark_user_cancellation(run_id)
-                raise
-            # Safety-net UPDATE: only if execute_run hasn't finalized yet.
-            # execute_run handles finalization via _user_cancellations path,
-            # but the cancel is async — this catches the gap.
-            await session.execute(
-                update(RunORM)
-                .where(RunORM.run_id == run_id, RunORM.status.notin_(TERMINAL_STATES))
-                .values(status="interrupted", updated_at=datetime.now(UTC))
-            )
-            await session.commit()
-    elif action == "interrupt":
-        logger.info(f"[cancel_run] interrupt run_id={run_id} user={user.identity} thread_id={thread_id}")
-        mark_user_cancellation(run_id)
-        try:
-            await streaming_service.interrupt_run(run_id)
-        except Exception:
-            unmark_user_cancellation(run_id)
-            raise
-        await session.execute(
-            update(RunORM)
-            .where(RunORM.run_id == str(run_id), RunORM.status.notin_(TERMINAL_STATES))
-            .values(status="interrupted", updated_at=datetime.now(UTC))
-        )
-        await session.commit()
+            logger.info(f"[cancel_run] {action} (was pending) run_id={run_id}")
+            await cancel_running_run(session, run_id, action)
     else:
-        logger.info(f"[cancel_run] cancel run_id={run_id} user={user.identity} thread_id={thread_id}")
-        mark_user_cancellation(run_id)
-        try:
-            await streaming_service.cancel_run(run_id)
-        except Exception:
-            unmark_user_cancellation(run_id)
-            raise
-        await session.execute(
-            update(RunORM)
-            .where(RunORM.run_id == str(run_id), RunORM.status.notin_(TERMINAL_STATES))
-            .values(status="interrupted", updated_at=datetime.now(UTC))
-        )
-        await session.commit()
+        logger.info(f"[cancel_run] {action} run_id={run_id} user={user.identity} thread_id={thread_id}")
+        await cancel_running_run(session, run_id, action)
 
     # Optionally wait for the run to settle
     if wait:

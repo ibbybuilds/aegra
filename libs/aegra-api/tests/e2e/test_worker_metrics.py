@@ -4,10 +4,10 @@ Requires a running server with ENABLE_PROMETHEUS_METRICS=true
 and REDIS_BROKER_ENABLED=true (production mode).
 
 Test plan:
-1. Verify all 21 metrics appear on /metrics endpoint
+1. Verify all 20 metrics appear on /metrics endpoint
 2. Submit a run, verify dispatched/completed/execution_seconds increment
-3. Verify redis_reachable=1 and queue_depth gauge
-4. Verify reaper cycle_seconds is observed after >=15s
+3. Verify redis_up=1 and queue_depth gauge
+4. Verify reaper cycle_seconds is observed after one reaper interval
 5. Cancel a pending run, verify completed{interrupted} increments
 """
 
@@ -60,7 +60,7 @@ async def _scrape(client: httpx.AsyncClient) -> str:
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_all_worker_metrics_present() -> None:
-    """All 21 worker + reaper metric names should appear in /metrics output."""
+    """All 20 worker + reaper metric names should appear in /metrics output."""
     if not settings.observability.ENABLE_PROMETHEUS_METRICS:
         pytest.skip("ENABLE_PROMETHEUS_METRICS=false")
 
@@ -69,26 +69,26 @@ async def test_all_worker_metrics_present() -> None:
         body = await _scrape(client)
 
     expected_metrics = [
-        # Worker metrics (15)
-        "aegra_runs_dispatched",
-        "aegra_runs_completed",
+        # Worker metrics (15) — Counter names include the explicit ``_total`` suffix
+        "aegra_runs_dispatched_total",
+        "aegra_runs_completed_total",
         "aegra_runs_in_flight",
-        "aegra_runs_discarded",
+        "aegra_runs_discarded_total",
         "aegra_run_execution_seconds",
         "aegra_run_queue_wait_seconds",
-        "aegra_run_timeouts",
-        "aegra_submit_errors",
-        "aegra_runs_dequeued",
-        "aegra_dequeue_errors",
-        "aegra_redis_reachable",
-        "aegra_heartbeat_extensions",
-        "aegra_heartbeat_failures",
-        "aegra_lease_losses",
-        "aegra_run_retries",
+        "aegra_run_timeouts_total",
+        "aegra_submit_errors_total",
+        "aegra_runs_dequeued_total",
+        "aegra_dequeue_errors_total",
+        "aegra_redis_up",
+        "aegra_heartbeat_extensions_total",
+        "aegra_heartbeat_failures_total",
+        "aegra_lease_losses_total",
+        "aegra_run_retries_total",
         # Reaper metrics (5)
-        "aegra_reaper_crashed_recovered",
-        "aegra_reaper_stuck_reenqueued",
-        "aegra_reaper_permanently_failed",
+        "aegra_reaper_crashed_recovered_total",
+        "aegra_reaper_stuck_reenqueued_total",
+        "aegra_reaper_permanently_failed_total",
         "aegra_reaper_cycle_seconds",
         "aegra_queue_depth",
     ]
@@ -96,12 +96,14 @@ async def test_all_worker_metrics_present() -> None:
     missing = [m for m in expected_metrics if m not in body]
     elog("Missing metrics", missing)
     assert not missing, f"Missing metrics from /metrics: {missing}"
+    # Sanity check: there are 20 application-level metrics, period.
+    assert len(expected_metrics) == 20
 
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_redis_reachable_gauge() -> None:
-    """redis_reachable should be 1.0 when Redis is connected."""
+async def test_redis_up_gauge() -> None:
+    """redis_up should be 1.0 when Redis is connected."""
     if not settings.observability.ENABLE_PROMETHEUS_METRICS:
         pytest.skip("ENABLE_PROMETHEUS_METRICS=false")
 
@@ -109,8 +111,8 @@ async def test_redis_reachable_gauge() -> None:
     async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
         body = await _scrape(client)
 
-    val = _get_metric(body, "aegra_redis_reachable")
-    elog("redis_reachable", val)
+    val = _get_metric(body, "aegra_redis_up")
+    elog("redis_up", val)
     assert val == 1.0
 
 
@@ -206,30 +208,31 @@ async def test_run_lifecycle_metrics() -> None:
 
 
 @pytest.mark.e2e
+@pytest.mark.prod_only
 @pytest.mark.asyncio
 async def test_cancel_pending_run_metrics() -> None:
-    """Cancel a pending run before it executes, verify completed{interrupted}."""
+    """Cancel a pending run before it executes, verify completed{interrupted}.
+
+    Strict assertion: ``runs_completed{status="interrupted"}`` must increase
+    by exactly 1 when the cancel landed before the worker picked the run up
+    (status=="interrupted"). If the worker raced ahead and the run finished
+    as ``success`` before the cancel arrived, the test is informational
+    rather than strict — that race is benign.
+    """
     if not settings.observability.ENABLE_PROMETHEUS_METRICS:
         pytest.skip("ENABLE_PROMETHEUS_METRICS=false")
-    if not settings.redis.REDIS_BROKER_ENABLED:
-        pytest.skip("REDIS_BROKER_ENABLED=false — cancel-pending CAS requires worker mode")
 
     server_url = settings.app.SERVER_URL
     sdk = get_e2e_client()
     graph_id = "agent"
 
-    # Create assistant
     assistant = await sdk.assistants.create(graph_id=graph_id, if_exists="do_nothing")
     assistant_id = assistant["assistant_id"]
 
-    # Scrape before
     async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
         before = await _scrape(client)
 
-    # Create a thread and run
     thread = await sdk.threads.create()
-
-    # Submit run — it will go through the worker queue
     run = await sdk.runs.create(
         thread["thread_id"],
         assistant_id=assistant_id,
@@ -237,103 +240,68 @@ async def test_cancel_pending_run_metrics() -> None:
     )
     elog("Created run", {"run_id": run["run_id"], "status": run["status"]})
 
-    # Cancel it
     cancelled = await sdk.runs.cancel(thread["thread_id"], run["run_id"])
     elog("Cancelled run", {"run_id": cancelled["run_id"], "status": cancelled["status"]})
 
-    # Wait a moment for metrics to settle
     await asyncio.sleep(1.0)
 
-    # Scrape after
     async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
         after = await _scrape(client)
 
-    # completed{interrupted} should have incremented (either from CAS or user cancel)
-    interrupted_after = _parse_metric(
-        after, "aegra_runs_completed_total", {"graph_id": graph_id, "status": "interrupted"}
-    )
     interrupted_before = (
         _parse_metric(before, "aegra_runs_completed_total", {"graph_id": graph_id, "status": "interrupted"}) or 0
     )
+    interrupted_after = _parse_metric(
+        after, "aegra_runs_completed_total", {"graph_id": graph_id, "status": "interrupted"}
+    )
     elog("completed{interrupted}", {"before": interrupted_before, "after": interrupted_after})
-    # It may have completed as success before cancel reached it, so check >= rather than >
-    assert interrupted_after is not None
 
-    # Clean up
+    final = await sdk.runs.get(thread["thread_id"], run["run_id"])
+    if final["status"] == "interrupted":
+        assert interrupted_after is not None, "interrupted metric must exist after a real cancel"
+        assert interrupted_after >= interrupted_before + 1, (
+            f"interrupted counter must increase by >=1 after a successful cancel; "
+            f"before={interrupted_before}, after={interrupted_after}"
+        )
+    else:
+        elog("Race: run finished before cancel landed", {"status": final["status"]})
+
     await sdk.threads.delete(thread["thread_id"])
 
 
 @pytest.mark.e2e
+@pytest.mark.prod_only
 @pytest.mark.asyncio
 async def test_reaper_cycle_observed() -> None:
-    """After the reaper runs (every 15s), cycle_seconds should have observations."""
+    """After the reaper runs at least once, ``cycle_seconds`` must show new
+    observations. Reads the interval from settings so a config change can't
+    silently make the test pass on stale data."""
     if not settings.observability.ENABLE_PROMETHEUS_METRICS:
         pytest.skip("ENABLE_PROMETHEUS_METRICS=false")
-    if not settings.redis.REDIS_BROKER_ENABLED:
-        pytest.skip("REDIS_BROKER_ENABLED=false — reaper requires worker mode")
 
     server_url = settings.app.SERVER_URL
+    interval = settings.worker.REAPER_INTERVAL_SECONDS
 
-    # Wait for at least one reaper cycle (15s default)
-    await asyncio.sleep(16)
-
-    async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
-        body = await _scrape(client)
-
-    cycle_count = _get_metric(body, "aegra_reaper_cycle_seconds_count")
-    elog("reaper_cycle_seconds_count", cycle_count)
-    assert cycle_count > 0, "Reaper should have completed at least one cycle after 16s"
-
-    # queue_depth should be set by the reaper
-    depth = _get_metric(body, "aegra_queue_depth")
-    elog("queue_depth (post-reaper)", depth)
-    assert depth >= 0.0
-
-
-@pytest.mark.e2e
-@pytest.mark.asyncio
-async def test_heartbeat_metric_exists_after_run() -> None:
-    """Verify the heartbeat_extensions metric is registered and queryable after a run."""
-    if not settings.observability.ENABLE_PROMETHEUS_METRICS:
-        pytest.skip("ENABLE_PROMETHEUS_METRICS=false")
-    if not settings.redis.REDIS_BROKER_ENABLED:
-        pytest.skip("REDIS_BROKER_ENABLED=false — heartbeats require worker mode")
-
-    server_url = settings.app.SERVER_URL
-    sdk = get_e2e_client()
-    graph_id = "agent"
-
-    # Create assistant
-    assistant = await sdk.assistants.create(graph_id=graph_id, if_exists="do_nothing")
-    assistant_id = assistant["assistant_id"]
-
-    # Scrape before
     async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
         before = await _scrape(client)
+    cycle_before = _parse_metric(before, "aegra_reaper_cycle_seconds_count") or 0.0
 
-    # Submit a run
-    thread = await sdk.threads.create()
-    run = await sdk.runs.create(
-        thread["thread_id"],
-        assistant_id=assistant_id,
-        input={"messages": [{"role": "human", "content": "heartbeat test " * 50}]},
-    )
-    elog("Created run", {"run_id": run["run_id"]})
+    # Wait one full reaper interval plus a small slack.
+    await asyncio.sleep(interval + 1.5)
 
-    # Wait for it to complete
-    await sdk.runs.join(thread["thread_id"], run["run_id"])
-    final_run = await sdk.runs.get(thread["thread_id"], run["run_id"])
-    elog("Final run", {"status": final_run["status"]})
-
-    # Scrape after
     async with httpx.AsyncClient(base_url=server_url, timeout=10.0) as client:
         after = await _scrape(client)
+    cycle_after = _get_metric(after, "aegra_reaper_cycle_seconds_count")
 
-    # Check if heartbeat was extended (run may be too fast for 10s heartbeat)
-    heartbeat_after = _parse_metric(after, "aegra_heartbeat_extensions_total", {"graph_id": graph_id}) or 0
-    heartbeat_before = _parse_metric(before, "aegra_heartbeat_extensions_total", {"graph_id": graph_id}) or 0
-    elog("heartbeat_extensions", {"before": heartbeat_before, "after": heartbeat_after})
-    # Don't assert — echo graph completes fast. Just verify the metric exists.
+    elog(
+        "reaper_cycle_seconds_count",
+        {"before": cycle_before, "after": cycle_after, "interval": interval},
+    )
+    assert cycle_after > cycle_before, (
+        f"reaper_cycle_seconds_count must increase across one reaper interval "
+        f"({interval}s); before={cycle_before}, after={cycle_after}"
+    )
 
-    # Clean up
-    await sdk.threads.delete(thread["thread_id"])
+    depth = _get_metric(after, "aegra_queue_depth")
+    elog("queue_depth (post-reaper)", depth)
+    assert depth >= 0.0

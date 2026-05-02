@@ -861,8 +861,22 @@ async def test_runs_in_flight_does_not_inc_on_corruption(
     ):
         await executor._execute_with_lease("rif-corrupt", "w0")
 
-    # No graph_id was inc'd → no labels for any graph; the only thing we
-    # can assert is that no negative value crept into a known label.
+    # The actual regression we're guarding against is the gauge going
+    # negative — an unconditional ``dec`` in ``finally`` paired with a
+    # skipped ``inc`` on the corruption path. Inspect every sample of
+    # ``aegra_runs_in_flight`` in the registry and assert nothing dropped
+    # below zero. (No graph_id was inc'd, so the typical case is no
+    # samples at all; the assertion still holds in that case.)
+    in_flight_samples = [
+        sample.value
+        for family in fresh_registry.collect()
+        if family.name == "aegra_runs_in_flight"
+        for sample in family.samples
+        if sample.name == "aegra_runs_in_flight"
+    ]
+    assert all(value >= 0.0 for value in in_flight_samples), (
+        f"runs_in_flight went negative on the corruption path: {in_flight_samples}"
+    )
     assert metrics.runs_completed.labels(graph_id="unknown", status="error")._value.get() == 1.0
 
 

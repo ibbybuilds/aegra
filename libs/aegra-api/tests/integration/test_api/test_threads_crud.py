@@ -727,7 +727,6 @@ class TestThreadUpdateState:
             assert cfg["configurable"]["checkpoint_id"] == "original-cp"
             assert mock_agent.aupdate_state.call_args[1]["as_node"] == "__copy__"
 
-
     def test_update_state_body_checkpoint_id_routes_to_update_path(self):
         """values=None + as_node=None + checkpoint_id must NOT short-circuit to GET.
 

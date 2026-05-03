@@ -443,12 +443,7 @@ async def update_thread_state(
     # field (checkpoint_id / checkpoint) MUST flow through to the update
     # path so the caller's selected checkpoint is honored — otherwise
     # the GET shim reads query params and silently drops the body fields.
-    if (
-        request.values is None
-        and request.as_node is None
-        and request.checkpoint_id is None
-        and not request.checkpoint
-    ):
+    if request.values is None and request.as_node is None and request.checkpoint_id is None and not request.checkpoint:
         return await get_thread_state(
             thread_id=thread_id,
             subgraphs=request.subgraphs or False,

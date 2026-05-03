@@ -3,6 +3,7 @@
 from urllib.parse import quote_plus
 
 import pytest
+from sqlalchemy.engine import make_url
 
 from aegra_api.settings import AppSettings, DatabaseSettings, WorkerSettings
 
@@ -382,6 +383,38 @@ class TestMultiHostDatabaseURL:
         db = DatabaseSettings(_env_file=None)
 
         assert db.database_url == "postgresql+asyncpg:///db?host=h1,h2&port=5432,5432"
+
+    def test_multihost_rewritten_url_parses_with_sqlalchemy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Asyncpg multi-host URL must parse via SQLAlchemy (alembic env path)."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+        url = make_url(db.database_url)
+
+        assert url.drivername == "postgresql+asyncpg"
+        assert url.database == "db"
+        # Multi-host details live in query params, not in url.host.
+        assert url.query["host"] == "h1,h2"
+        assert url.query["port"] == "5432,5432"
+        assert url.query["target_session_attrs"] == "read-write"
+
+    def test_database_url_sync_preserves_libpq_multihost(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """database_url_sync must preserve libpq comma-host syntax (psycopg consumers)."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+
+        # Raw libpq form: comma-separated hosts in the authority, no
+        # ``host=`` query param rewrite, no async driver suffix.
+        assert "h1:5432,h2:5432" in db.database_url_sync
+        assert "host=" not in db.database_url_sync
+        assert db.database_url_sync.startswith("postgresql://")
 
 
 class TestWorkerSettingsLeaseValidation:

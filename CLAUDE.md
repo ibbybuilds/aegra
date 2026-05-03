@@ -216,6 +216,28 @@ These rules exist because AI agents repeatedly make these mistakes. Follow them 
 - **If you don't understand why code exists, ask or leave it alone** (Chesterton's Fence).
 - **NEVER commit commented-out code.** Delete it or keep it — no middle ground.
 
+### Database & Migrations (STRICT)
+Aegra runs against user-managed Postgres including multi-host HA (PR #299). DB code has invariants that break silently in prod. Before touching DB code, walk this checklist:
+
+- **Two URLs, do not cross drivers.**
+  - `settings.db.database_url` → asyncpg query-param form. SQLAlchemy only.
+  - `settings.db.database_url_sync` → raw libpq, comma-host preserved. psycopg only (LangGraph pool, migrations precheck).
+  - Feeding `database_url_sync` to SQLAlchemy (`create_engine`, `async_engine_from_config`) silently breaks HA — SQLAlchemy's URL parser doesn't grok libpq comma-hosts. For sync DBAPI, use `psycopg.connect(database_url_sync)` directly.
+
+- **Pool ownership.** Long-lived pools belong in `db_manager` only. Short-lived helpers must close deterministically (`with` or `try/finally`). Code running before `db_manager.initialize()` cannot assume pools exist.
+
+- **Migrations.**
+  - Schema changes go through alembic, never raw DDL from app code.
+  - Linear `down_revision` chain. Idempotent + resumable.
+  - Lifespan uses `run_migrations_if_needed()` (lock-free precheck). `run_migrations()` is for `aegra db upgrade` only. Don't regress the precheck.
+  - Multi-pod path: `RUN_MIGRATIONS_ON_STARTUP=false` + `aegra db upgrade` out-of-band. Changing startup behavior needs both `.env.example` files + `docs/guides/deployment.mdx` updated.
+
+- **SQL-layer authorization.** Every tenant-scoped read/write needs `user_id == user.identity` in the WHERE, even with `@auth.on` registered (default-allow when no handler — see GHSA-m98r-6667-4wq7). Routes taking `thread_id`/`assistant_id`/`cron_id` path params verify ownership + 404 at handler entry, not deeper.
+
+- **Connection footprint.** New pools increase per-pod conn count. Extend existing or document the cap impact. PgBouncer/RDS Proxy transaction-pool mode breaks LISTEN/NOTIFY + prepared statements; flag accordingly.
+
+- **Testing.** Mock at the driver layer, not SQLAlchemy, when bypassing SQLAlchemy. Assert the exact URL passed to the driver matches `settings.db.*` so refactors can't quietly reintroduce SQLAlchemy URL parsing on libpq strings.
+
 ### Security
 - NEVER store secrets, API keys, or passwords in code — only in `.env` files or environment variables.
 - NEVER log sensitive information (passwords, tokens, PII).

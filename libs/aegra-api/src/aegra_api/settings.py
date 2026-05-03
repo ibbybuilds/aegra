@@ -62,6 +62,11 @@ class AppSettings(EnvBase):
     ENV_MODE: UpperStr = "LOCAL"
     DEBUG: bool = False
 
+    # Run alembic upgrade head on startup. Default True (dev / single-pod).
+    # Set False for multi-pod K8s to avoid advisory-lock probe timeouts;
+    # run migrations out-of-band via `aegra db upgrade`.
+    RUN_MIGRATIONS_ON_STARTUP: bool = True
+
     # Logging
     LOG_LEVEL: UpperStr = "INFO"
     LOG_VERBOSITY: LowerStr = "verbose"

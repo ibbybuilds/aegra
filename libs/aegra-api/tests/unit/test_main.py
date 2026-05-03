@@ -110,10 +110,9 @@ async def test_lifespan_calls_required_initialization():
 async def test_lifespan_skips_migrations_when_disabled(monkeypatch):
     """When RUN_MIGRATIONS_ON_STARTUP=false, lifespan must not call alembic."""
     import aegra_api.main as main_module
+    from aegra_api.settings import settings
 
     importlib.reload(main_module)
-    from aegra_api.main import lifespan
-    from aegra_api.settings import settings
 
     monkeypatch.setattr(settings.app, "RUN_MIGRATIONS_ON_STARTUP", False)
 
@@ -130,7 +129,7 @@ async def test_lifespan_skips_migrations_when_disabled(monkeypatch):
         mock_langgraph_service.initialize = AsyncMock()
         mock_get_langgraph_service.return_value = mock_langgraph_service
 
-        async with lifespan(MagicMock()):
+        async with main_module.lifespan(MagicMock()):
             pass
 
         mock_migrations.assert_not_called()
@@ -144,10 +143,9 @@ async def test_lifespan_skips_migrations_when_disabled(monkeypatch):
 async def test_lifespan_runs_migrations_when_enabled(monkeypatch):
     """Default (RUN_MIGRATIONS_ON_STARTUP=true) keeps the auto-migrate behavior."""
     import aegra_api.main as main_module
+    from aegra_api.settings import settings
 
     importlib.reload(main_module)
-    from aegra_api.main import lifespan
-    from aegra_api.settings import settings
 
     monkeypatch.setattr(settings.app, "RUN_MIGRATIONS_ON_STARTUP", True)
 
@@ -164,7 +162,7 @@ async def test_lifespan_runs_migrations_when_enabled(monkeypatch):
         mock_langgraph_service.initialize = AsyncMock()
         mock_get_langgraph_service.return_value = mock_langgraph_service
 
-        async with lifespan(MagicMock()):
+        async with main_module.lifespan(MagicMock()):
             pass
 
         mock_migrations.assert_called_once()

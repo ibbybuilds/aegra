@@ -766,6 +766,45 @@ class TestThreadUpdateState:
             assert values is None
             assert cfg["configurable"]["checkpoint_id"] == "body-cp"
 
+    def test_update_state_body_checkpoint_dict_routes_to_update_path(self):
+        """Same as above but exercises the `checkpoint` dict variant of the gate.
+
+        The gate guards both `checkpoint_id` and `checkpoint` body fields.
+        Covering only one half could let the other regress silently.
+        """
+        app = create_test_app(include_runs=False, include_threads=True)
+        thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        mock_agent = AsyncMock()
+        mock_agent.aupdate_state.return_value = {"configurable": {"checkpoint_id": "new-cp", "checkpoint_ns": ""}}
+        mock_agent.with_config = Mock(return_value=mock_agent)
+
+        with patch("aegra_api.services.langgraph_service.get_langgraph_service") as mock_get_service:
+            mock_service = mock_get_service.return_value
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
+
+            resp = client.post(
+                "/threads/test-123/state",
+                json={
+                    "values": None,
+                    "as_node": None,
+                    "checkpoint": {"checkpoint_id": "body-cp", "checkpoint_ns": ""},
+                },
+            )
+
+            assert resp.status_code == 200
+            mock_agent.aupdate_state.assert_called_once()
+            cfg, values, *_ = mock_agent.aupdate_state.call_args[0]
+            assert values is None
+            assert cfg["configurable"]["checkpoint_id"] == "body-cp"
+
 
 class TestThreadStateCheckpoint:
     """Test GET /threads/{thread_id}/state/{checkpoint_id} endpoint"""

@@ -62,13 +62,9 @@ class AppSettings(EnvBase):
     ENV_MODE: UpperStr = "LOCAL"
     DEBUG: bool = False
 
-    # Migrations
-    # When True (default), run `alembic upgrade head` on FastAPI startup.
-    # Convenient for dev / single-pod / docker-compose. In multi-pod
-    # deployments (e.g. Kubernetes), every replica boot races for the
-    # alembic advisory lock and probes can time out, so it's recommended
-    # to set this to False and run migrations out-of-band via an init
-    # container, Helm pre-upgrade Job, or `aegra migrate`.
+    # Run alembic upgrade head on startup. Default True (dev / single-pod).
+    # Set False for multi-pod K8s to avoid advisory-lock probe timeouts;
+    # run migrations out-of-band via `aegra db upgrade`.
     RUN_MIGRATIONS_ON_STARTUP: bool = True
 
     # Logging

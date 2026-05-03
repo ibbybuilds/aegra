@@ -217,44 +217,26 @@ These rules exist because AI agents repeatedly make these mistakes. Follow them 
 - **NEVER commit commented-out code.** Delete it or keep it — no middle ground.
 
 ### Database & Migrations (STRICT)
-Aegra runs against arbitrary user Postgres setups, including HA / multi-host. Database-related code has hidden invariants that bite in production. Before writing or reviewing any DB code, walk this checklist:
+Aegra runs against user-managed Postgres including multi-host HA (PR #299). DB code has invariants that break silently in prod. Before touching DB code, walk this checklist:
 
-- **Two URLs, two drivers, do not mix.**
-  - `settings.db.database_url` → async, asyncpg driver, used by SQLAlchemy. Multi-host is rewritten into asyncpg query-param form by `_to_sqlalchemy_multihost`.
-  - `settings.db.database_url_sync` → raw libpq form, used by psycopg v3 directly (LangGraph checkpointer, store, anything driven by psycopg.connect / psycopg_pool). Comma-separated hosts are preserved verbatim.
-  - **Never feed `database_url_sync` into SQLAlchemy** (`create_engine`, `async_engine_from_config`, etc.) — SQLAlchemy's URL parser does not understand libpq multi-host syntax and will silently break HA deployments. If you need a sync DBAPI conn, call `psycopg.connect(database_url_sync)` directly.
-  - **Never feed `database_url` into raw psycopg** — the asyncpg query-param form is not what libpq expects.
+- **Two URLs, do not cross drivers.**
+  - `settings.db.database_url` → asyncpg query-param form. SQLAlchemy only.
+  - `settings.db.database_url_sync` → raw libpq, comma-host preserved. psycopg only (LangGraph pool, migrations precheck).
+  - Feeding `database_url_sync` to SQLAlchemy (`create_engine`, `async_engine_from_config`) silently breaks HA — SQLAlchemy's URL parser doesn't grok libpq comma-hosts. For sync DBAPI, use `psycopg.connect(database_url_sync)` directly.
 
-- **Multi-host (PR #299) compatibility is mandatory.**
-  - `DATABASE_URL=postgresql://h1:5432,h2:5432/db?target_session_attrs=read-write` must keep working everywhere DB code executes.
-  - When you add code that opens a connection, prefer reusing `db_manager` pools or routing through the helpers above. If you must build your own connection, branch on which URL you need and document why in the call site.
-  - Add a regression test that asserts the URL handed to your driver is unchanged from `settings.db.*`, so future refactors do not silently re-introduce a SQLAlchemy URL parse on a libpq string.
-
-- **Pool ownership.**
-  - Long-lived pools live in `db_manager` (`core/database.py`). Application code should not open its own pool.
-  - Short-lived helpers (migrations precheck, one-shot scripts) are allowed to open a private connection but must close it deterministically (`with` block, or `try/finally` + `dispose`).
-  - Code that runs *before* `db_manager.initialize()` (anything in the FastAPI lifespan startup phase before that line) must not assume pools exist.
+- **Pool ownership.** Long-lived pools belong in `db_manager` only. Short-lived helpers must close deterministically (`with` or `try/finally`). Code running before `db_manager.initialize()` cannot assume pools exist.
 
 - **Migrations.**
-  - Schema changes go through Alembic — never `CREATE TABLE` / `ALTER TABLE` from app code.
-  - Generate migrations with `uv run --package aegra-api alembic revision --autogenerate -m "..."`, then review the generated file before committing. Autogenerate misses things (CHECK constraints, comment changes, certain index types).
-  - `down_revision` chain must be linear and complete. Every new migration's `down_revision` references the previous head.
-  - Migrations must be idempotent and resumable. Pods can crash mid-upgrade; the next run must pick up cleanly. Use `op.create_index(..., if_not_exists=True)` style guards where the dialect supports it.
-  - **Multi-pod startup race:** every replica boots and races for Alembic's advisory lock. The lifespan startup path uses `run_migrations_if_needed()` which short-circuits via a lock-free precheck when the DB is at head. Do not regress this. The unconditional `run_migrations()` is reserved for explicit, out-of-band invocation (`aegra db upgrade`, init container, Helm pre-upgrade Job).
-  - Set `RUN_MIGRATIONS_ON_STARTUP=false` is a documented multi-pod path; if you change startup behavior, update both `.env.example` files AND `docs/guides/deployment.mdx`.
+  - Schema changes go through alembic, never raw DDL from app code.
+  - Linear `down_revision` chain. Idempotent + resumable.
+  - Lifespan uses `run_migrations_if_needed()` (lock-free precheck). `run_migrations()` is for `aegra db upgrade` only. Don't regress the precheck.
+  - Multi-pod path: `RUN_MIGRATIONS_ON_STARTUP=false` + `aegra db upgrade` out-of-band. Changing startup behavior needs both `.env.example` files + `docs/guides/deployment.mdx` updated.
 
-- **Authorization at the SQL layer.**
-  - Every read or write of a tenant-scoped resource (threads, assistants, runs, store items, crons) MUST include a `user_id == user.identity` filter in the SQL `WHERE` clause, even when `@auth.on` policy hooks exist.
-  - Default-allow on missing `@auth.on` handlers means the SQL filter is the only safety net. See PR #337 / GHSA-m98r-6667-4wq7 for the cross-tenant IDOR class this prevents.
-  - When a route accepts a path resource id (`thread_id`, `assistant_id`, etc.) and writes anywhere, the very first thing the handler does after auth is verify ownership and 404 if it fails. Do not delegate this to deeper helpers — those can be called from other paths.
+- **SQL-layer authorization.** Every tenant-scoped read/write needs `user_id == user.identity` in the WHERE, even with `@auth.on` registered (default-allow when no handler — see GHSA-m98r-6667-4wq7). Routes taking `thread_id`/`assistant_id`/`cron_id` path params verify ownership + 404 at handler entry, not deeper.
 
-- **Connection footprint.**
-  - Every new persistent pool / engine increases per-pod connection count. Postgres `max_connections` is finite. Do not silently add a new pool — extend an existing one or document the cap impact.
-  - `pgbouncer` / RDS Proxy in transaction-pool mode breaks `LISTEN/NOTIFY` and prepared statements; aegra docs flag this. Don't add features that depend on those without flagging the same caveat.
+- **Connection footprint.** New pools increase per-pod conn count. Extend existing or document the cap impact. PgBouncer/RDS Proxy transaction-pool mode breaks LISTEN/NOTIFY + prepared statements; flag accordingly.
 
-- **Testing.**
-  - Unit tests for any DB helper must mock at the driver layer, not the SQLAlchemy layer, when the helper is supposed to bypass SQLAlchemy. Otherwise the test will pass while the real path silently regresses on multi-host URLs.
-  - Add a test that asserts the *exact URL* passed to the driver is the unmodified value from settings, so a future "small refactor" can't quietly inject SQLAlchemy URL parsing.
+- **Testing.** Mock at the driver layer, not SQLAlchemy, when bypassing SQLAlchemy. Assert the exact URL passed to the driver matches `settings.db.*` so refactors can't quietly reintroduce SQLAlchemy URL parsing on libpq strings.
 
 ### Security
 - NEVER store secrets, API keys, or passwords in code — only in `.env` files or environment variables.

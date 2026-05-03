@@ -384,15 +384,7 @@ class TestMultiHostDatabaseURL:
         assert db.database_url == "postgresql+asyncpg:///db?host=h1,h2&port=5432,5432"
 
     def test_multihost_rewritten_url_parses_with_sqlalchemy(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The rewritten asyncpg multi-host URL must be parseable by SQLAlchemy.
-
-        Alembic builds an async engine from this URL via
-        ``async_engine_from_config`` (see ``alembic/env.py``). SQLAlchemy's
-        URL parser does not understand libpq comma-host syntax, so the
-        rewritten query-param form is the only shape it can consume.
-        Locks in the contract so a future "small refactor" cannot quietly
-        feed libpq syntax to SQLAlchemy and silently break HA deployments.
-        """
+        """Asyncpg multi-host URL must parse via SQLAlchemy (alembic env path)."""
         from sqlalchemy.engine.url import make_url
 
         monkeypatch.setenv(
@@ -411,12 +403,7 @@ class TestMultiHostDatabaseURL:
         assert url.query["target_session_attrs"] == "read-write"
 
     def test_database_url_sync_preserves_libpq_multihost(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``database_url_sync`` must keep the raw libpq multi-host syntax.
-
-        psycopg v3 (LangGraph checkpointer pool, migrations precheck) parses
-        comma-separated hosts natively via libpq. Rewriting into asyncpg
-        query-param form here would break those consumers.
-        """
+        """database_url_sync must preserve libpq comma-host syntax (psycopg consumers)."""
         monkeypatch.setenv(
             "DATABASE_URL",
             "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",

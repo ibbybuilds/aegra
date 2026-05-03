@@ -286,10 +286,7 @@ class TestIsDatabaseUpToDate:
             mock_connect.assert_not_called()
 
     def test_uses_libpq_url_for_multihost_compatibility(self):
-        """The precheck must hand the libpq-style URL straight to psycopg
-        (not through SQLAlchemy's URL parser) so multi-host DATABASE_URL
-        values introduced by PR #299 keep working.
-        """
+        """Precheck hands libpq URL straight to psycopg (multi-host PR #299)."""
         from aegra_api.core.migrations import _is_database_up_to_date
 
         cfg = MagicMock()

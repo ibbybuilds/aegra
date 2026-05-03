@@ -74,10 +74,8 @@ def _log_connection_help(error: Exception) -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context manager for startup/shutdown"""
-    # Auto-apply pending database migrations before anything else.
-    # Disable in multi-pod deployments by setting RUN_MIGRATIONS_ON_STARTUP=false
-    # and running migrations out-of-band (init container, Helm pre-upgrade Job,
-    # or `aegra db upgrade`). See docs/guides/deployment.mdx.
+    # Multi-pod K8s: set RUN_MIGRATIONS_ON_STARTUP=false + run `aegra db upgrade`
+    # out-of-band. See docs/guides/deployment.mdx.
     if settings.app.RUN_MIGRATIONS_ON_STARTUP:
         try:
             await run_migrations_async()

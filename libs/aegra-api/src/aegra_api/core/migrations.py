@@ -8,7 +8,7 @@ Two entry points:
 
 - ``run_migrations()`` always upgrades to head, acquiring the alembic
   advisory lock unconditionally. Suitable for explicit, out-of-band
-  invocation (init containers, Helm pre-upgrade Jobs, ``aegra migrate``).
+  invocation (init containers, Helm pre-upgrade Jobs, ``aegra db upgrade``).
 
 - ``run_migrations_if_needed()`` first does a cheap read-only check
   comparing the database's current revision against the migration
@@ -98,11 +98,16 @@ def _is_database_up_to_date(cfg: Config) -> bool:
     acquired, so this is safe to call from many pods concurrently.
 
     Returns:
-        True if the database revision matches head (no migration needed),
-        False otherwise (migration needed, or table not yet created).
+        True if there is nothing to apply (the database revision matches
+        head, or the script directory has no revisions at all), False
+        otherwise (migration pending, or no current revision yet).
     """
     script = ScriptDirectory.from_config(cfg)
     head = script.get_current_head()
+
+    # Empty script directory: nothing to apply, skip the upgrade entirely.
+    if head is None:
+        return True
 
     # Use the synchronous Postgres URL with the psycopg v3 driver.
     # We deliberately do not reuse the app's async pool here because this
@@ -117,7 +122,7 @@ def _is_database_up_to_date(cfg: Config) -> bool:
     finally:
         engine.dispose()
 
-    return current is not None and current == head
+    return current == head
 
 
 def run_migrations() -> None:
@@ -125,7 +130,7 @@ def run_migrations() -> None:
 
     Acquires Alembic's advisory lock and upgrades to head. Use this for
     explicit invocations: init containers, Helm pre-upgrade Jobs, or the
-    ``aegra migrate`` CLI command.
+    ``aegra db upgrade`` CLI command.
     """
     cfg = get_alembic_config()
     logger.info("running database migrations")

@@ -265,6 +265,22 @@ class TestIsDatabaseUpToDate:
         ):
             assert _is_database_up_to_date(cfg) is False
 
+    def test_returns_true_when_script_directory_empty(self):
+        """No revisions at all means nothing to apply; skip the upgrade path."""
+        from aegra_api.core.migrations import _is_database_up_to_date
+
+        cfg = MagicMock()
+        script = MagicMock()
+        script.get_current_head.return_value = None
+
+        with (
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
+            patch("aegra_api.core.migrations.create_engine") as mock_create_engine,
+        ):
+            assert _is_database_up_to_date(cfg) is True
+            # Should short-circuit before opening any DB connection.
+            mock_create_engine.assert_not_called()
+
     def test_disposes_engine_on_success_and_failure(self):
         """The short-lived engine must be disposed even when revision lookup fails."""
         from aegra_api.core.migrations import _is_database_up_to_date

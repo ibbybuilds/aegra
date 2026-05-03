@@ -77,7 +77,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Auto-apply pending database migrations before anything else.
     # Disable in multi-pod deployments by setting RUN_MIGRATIONS_ON_STARTUP=false
     # and running migrations out-of-band (init container, Helm pre-upgrade Job,
-    # or `aegra migrate`). See docs/guides/production-deployment.mdx.
+    # or `aegra db upgrade`). See docs/guides/deployment.mdx.
     if settings.app.RUN_MIGRATIONS_ON_STARTUP:
         try:
             await run_migrations_async()

@@ -1,11 +1,11 @@
-# NOTE: This module is intentionally retained but not registered on the CLI.
-# The db commands were removed in v0.5.x because migrations run automatically
-# on server startup. This file may be re-added when manual migration control
-# is needed (e.g., for rolling deployments with Redis-based worker architecture).
 """Database migration commands for Aegra.
 
 Uses alembic's Python API directly (instead of subprocess) so that
-script_location is resolved relative to the ini file — not the CWD.
+script_location is resolved relative to the ini file, not the CWD.
+
+These commands let operators run migrations out-of-band (init container,
+Helm pre-upgrade Job, scripted deploy) when ``RUN_MIGRATIONS_ON_STARTUP``
+is disabled in multi-pod environments.
 """
 
 import sys

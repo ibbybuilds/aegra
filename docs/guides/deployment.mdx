@@ -189,7 +189,33 @@ Two ways to configure the database connection:
 
 ## Migrations
 
-Migrations run automatically on startup for all deployment methods. You do not need to run them manually.
+By default, Aegra runs `alembic upgrade head` during FastAPI's lifespan startup. The fast path is lock-free: each pod first reads the current revision and skips the upgrade entirely if the database is already at head.
+
+For single-pod and dev setups (`aegra dev`, `aegra up`, single docker-compose service) this is what you want and you do not need to run migrations manually.
+
+### Multi-pod (Kubernetes, etc.)
+
+When several replicas boot at the same time and a real upgrade is pending, every pod queues on Alembic's advisory lock. Liveness or readiness probes can time out before pods finish startup, causing restart loops. To avoid this, run migrations out-of-band and disable the startup hook on app pods:
+
+```bash
+# .env (or pod env)
+RUN_MIGRATIONS_ON_STARTUP=false
+```
+
+Then run migrations once per release using one of:
+
+- **Helm pre-upgrade Job** that runs `aegra db upgrade` (recommended)
+- **Init container** on the deployment that runs `aegra db upgrade` before the API container starts
+- **Manual / CI step** that runs `aegra db upgrade` against the target database before the deployment rolls
+
+The same `aegra db` group also exposes `current`, `history`, and `downgrade` for inspection and rollback.
+
+```bash
+aegra db upgrade        # apply all pending migrations
+aegra db current        # show the current revision
+aegra db history -v     # show migration history
+aegra db downgrade -1   # roll back one revision
+```
 
 ## Health checks
 
@@ -218,5 +244,8 @@ The generated `docker-compose.yml` uses `/health` to monitor the API container. 
   </Accordion>
   <Accordion title="Migrations hang on startup">
     Check if another process holds a lock on the database, if the database is reachable but slow, or check server logs for specific migration errors.
+  </Accordion>
+  <Accordion title="Pods restart-loop on rolling deploy (Kubernetes)">
+    All replicas race for Alembic's advisory lock on boot. As fleet size grows, later pods queue past their probe deadline and the kubelet kills them. Set `RUN_MIGRATIONS_ON_STARTUP=false` and run `aegra db upgrade` once per release from a Helm pre-upgrade Job or init container.
   </Accordion>
 </AccordionGroup>

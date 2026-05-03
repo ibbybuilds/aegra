@@ -1,7 +1,7 @@
 """Tests for aegra_api.core.migrations module."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -134,10 +134,155 @@ class TestRunMigrations:
             assert args[0][1] == "head"  # Second positional arg is "head"
 
     @pytest.mark.asyncio
-    async def test_run_migrations_async_runs_in_thread(self):
-        """Should run migrations via asyncio.to_thread."""
+    async def test_run_migrations_async_dispatches_to_lockfree_path(self):
+        """run_migrations_async should hand off to the lock-free helper."""
         with patch("aegra_api.core.migrations.asyncio.to_thread") as mock_to_thread:
-            from aegra_api.core.migrations import run_migrations, run_migrations_async
+            from aegra_api.core.migrations import (
+                run_migrations_async,
+                run_migrations_if_needed,
+            )
 
             await run_migrations_async()
-            mock_to_thread.assert_called_once_with(run_migrations)
+            mock_to_thread.assert_called_once_with(run_migrations_if_needed)
+
+
+class TestRunMigrationsIfNeeded:
+    """Tests for the lock-free fast-path used at FastAPI startup."""
+
+    def _setup_alembic_ini(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "alembic.ini").write_text("[alembic]\nscript_location = alembic\n")
+        (tmp_path / "alembic").mkdir()
+
+    def test_skips_upgrade_when_database_at_head(self, tmp_path, monkeypatch):
+        """When current revision matches head, no upgrade is invoked."""
+        self._setup_alembic_ini(tmp_path, monkeypatch)
+
+        with (
+            patch("aegra_api.core.migrations._is_database_up_to_date", return_value=True) as mock_check,
+            patch("aegra_api.core.migrations.command") as mock_command,
+        ):
+            from aegra_api.core.migrations import run_migrations_if_needed
+
+            run_migrations_if_needed()
+
+            mock_check.assert_called_once()
+            mock_command.upgrade.assert_not_called()
+
+    def test_runs_upgrade_when_database_behind_head(self, tmp_path, monkeypatch):
+        """When the precheck reports drift, upgrade is invoked."""
+        self._setup_alembic_ini(tmp_path, monkeypatch)
+
+        with (
+            patch("aegra_api.core.migrations._is_database_up_to_date", return_value=False),
+            patch("aegra_api.core.migrations.command") as mock_command,
+        ):
+            from aegra_api.core.migrations import run_migrations_if_needed
+
+            run_migrations_if_needed()
+
+            mock_command.upgrade.assert_called_once()
+            assert mock_command.upgrade.call_args[0][1] == "head"
+
+    def test_falls_back_to_upgrade_when_precheck_fails(self, tmp_path, monkeypatch):
+        """If the precheck raises (e.g. alembic_version missing on first install)
+        the upgrade still runs so a fresh database can bootstrap.
+        """
+        self._setup_alembic_ini(tmp_path, monkeypatch)
+
+        with (
+            patch(
+                "aegra_api.core.migrations._is_database_up_to_date",
+                side_effect=RuntimeError("alembic_version table missing"),
+            ),
+            patch("aegra_api.core.migrations.command") as mock_command,
+        ):
+            from aegra_api.core.migrations import run_migrations_if_needed
+
+            run_migrations_if_needed()
+
+            mock_command.upgrade.assert_called_once()
+
+
+class TestIsDatabaseUpToDate:
+    """Tests for the lock-free revision precheck helper."""
+
+    def test_returns_true_when_revisions_match(self):
+        from aegra_api.core.migrations import _is_database_up_to_date
+
+        cfg = MagicMock()
+        engine = MagicMock()
+        connection = MagicMock()
+        engine.connect.return_value.__enter__.return_value = connection
+        ctx = MagicMock()
+        ctx.get_current_revision.return_value = "abc123"
+        script = MagicMock()
+        script.get_current_head.return_value = "abc123"
+
+        with (
+            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
+        ):
+            assert _is_database_up_to_date(cfg) is True
+
+    def test_returns_false_when_revisions_differ(self):
+        from aegra_api.core.migrations import _is_database_up_to_date
+
+        cfg = MagicMock()
+        engine = MagicMock()
+        connection = MagicMock()
+        engine.connect.return_value.__enter__.return_value = connection
+        ctx = MagicMock()
+        ctx.get_current_revision.return_value = "abc123"
+        script = MagicMock()
+        script.get_current_head.return_value = "def456"
+
+        with (
+            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
+        ):
+            assert _is_database_up_to_date(cfg) is False
+
+    def test_returns_false_when_no_current_revision(self):
+        """A fresh database with no alembic_version row needs the upgrade path."""
+        from aegra_api.core.migrations import _is_database_up_to_date
+
+        cfg = MagicMock()
+        engine = MagicMock()
+        connection = MagicMock()
+        engine.connect.return_value.__enter__.return_value = connection
+        ctx = MagicMock()
+        ctx.get_current_revision.return_value = None
+        script = MagicMock()
+        script.get_current_head.return_value = "abc123"
+
+        with (
+            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
+        ):
+            assert _is_database_up_to_date(cfg) is False
+
+    def test_disposes_engine_on_success_and_failure(self):
+        """The short-lived engine must be disposed even when revision lookup fails."""
+        from aegra_api.core.migrations import _is_database_up_to_date
+
+        cfg = MagicMock()
+        engine = MagicMock()
+        connection = MagicMock()
+        engine.connect.return_value.__enter__.return_value = connection
+        engine.connect.return_value.__exit__.return_value = False
+
+        with (
+            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch(
+                "aegra_api.core.migrations.MigrationContext.configure",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=MagicMock()),
+            pytest.raises(RuntimeError),
+        ):
+            _is_database_up_to_date(cfg)
+        engine.dispose.assert_called_once()

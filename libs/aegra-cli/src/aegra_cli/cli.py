@@ -17,6 +17,7 @@ from rich.table import Table
 
 from aegra_cli import __version__
 from aegra_cli.commands import init
+from aegra_cli.commands.db import db
 from aegra_cli.env import load_env_file
 from aegra_cli.templates import (
     get_docker_compose,
@@ -760,6 +761,7 @@ def down(compose_file: Path | None, volumes: bool):
 
 # Register command groups and commands from the commands package
 cli.add_command(init)
+cli.add_command(db)
 
 
 def main():

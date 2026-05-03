@@ -3,6 +3,18 @@
 Provides automatic Alembic migration support for both development (repo)
 and production (pip install) deployments. Resolves the alembic.ini and
 migration scripts from either CWD or the installed aegra-api package.
+
+Two entry points:
+
+- ``run_migrations()`` always upgrades to head, acquiring the alembic
+  advisory lock unconditionally. Suitable for explicit, out-of-band
+  invocation (init containers, Helm pre-upgrade Jobs, ``aegra migrate``).
+
+- ``run_migrations_if_needed()`` first does a cheap read-only check
+  comparing the database's current revision against the migration
+  script head. If they match, it returns without acquiring any lock.
+  This is what the FastAPI startup path uses to keep multi-pod boots
+  fast in the steady state, where the database is already migrated.
 """
 
 import asyncio
@@ -10,7 +22,11 @@ from pathlib import Path
 
 import structlog
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine
 
+from aegra_api.settings import settings
 from alembic import command
 
 logger = structlog.get_logger(__name__)
@@ -74,23 +90,81 @@ def get_alembic_config() -> Config:
     return cfg
 
 
-def run_migrations() -> None:
-    """Run all pending database migrations synchronously.
+def _is_database_up_to_date(cfg: Config) -> bool:
+    """Check whether the database is already at the migration head.
 
-    Uses Alembic's upgrade command to apply all pending migrations.
-    Safe to call repeatedly - Alembic is idempotent and uses database
-    locks to prevent concurrent migration conflicts.
+    Reads ``alembic_version`` via a short-lived sync engine and compares
+    against the script directory's head revision. No advisory lock is
+    acquired, so this is safe to call from many pods concurrently.
+
+    Returns:
+        True if the database revision matches head (no migration needed),
+        False otherwise (migration needed, or table not yet created).
+    """
+    script = ScriptDirectory.from_config(cfg)
+    head = script.get_current_head()
+
+    # Use the synchronous Postgres URL with the psycopg v3 driver.
+    # We deliberately do not reuse the app's async pool here because this
+    # runs before the app initializes its pools, and we want a short-lived
+    # connection that is closed before alembic opens its own.
+    sync_url = settings.db.database_url_sync.replace("postgresql://", "postgresql+psycopg://", 1)
+    engine = create_engine(sync_url, pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            current = ctx.get_current_revision()
+    finally:
+        engine.dispose()
+
+    return current is not None and current == head
+
+
+def run_migrations() -> None:
+    """Unconditionally run all pending database migrations.
+
+    Acquires Alembic's advisory lock and upgrades to head. Use this for
+    explicit invocations: init containers, Helm pre-upgrade Jobs, or the
+    ``aegra migrate`` CLI command.
     """
     cfg = get_alembic_config()
-    logger.info("Running database migrations...")
+    logger.info("running database migrations")
     command.upgrade(cfg, "head")
-    logger.info("Database migrations completed")
+    logger.info("database migrations completed")
+
+
+def run_migrations_if_needed() -> None:
+    """Run migrations only when the database is behind head.
+
+    Performs a lock-free read of the current revision first. If it
+    already matches head, returns immediately without entering the
+    alembic upgrade path. Otherwise falls through to ``run_migrations``.
+
+    This keeps app pod boots cheap in the steady state where the database
+    is already at head, avoiding the advisory-lock contention that
+    serializes ``alembic upgrade head`` calls across replicas.
+    """
+    cfg = get_alembic_config()
+    try:
+        if _is_database_up_to_date(cfg):
+            logger.debug("database already at migration head; skipping upgrade")
+            return
+    except Exception as exc:
+        # Fall through to full upgrade so first-time installs (where
+        # alembic_version doesn't exist yet) still work. The full path
+        # logs and raises on real failures.
+        logger.debug("revision precheck failed; falling back to full upgrade", error=str(exc))
+
+    logger.info("running database migrations")
+    command.upgrade(cfg, "head")
+    logger.info("database migrations completed")
 
 
 async def run_migrations_async() -> None:
-    """Run all pending database migrations (async-safe).
+    """Run pending migrations from an async context (lock-free fast path).
 
-    Wraps the synchronous migration in a thread executor because Alembic's
-    env.py uses asyncio.run() internally, which requires its own event loop.
+    Wraps :func:`run_migrations_if_needed` in a thread executor because
+    Alembic's env.py uses ``asyncio.run()`` internally, which requires
+    its own event loop.
     """
-    await asyncio.to_thread(run_migrations)
+    await asyncio.to_thread(run_migrations_if_needed)

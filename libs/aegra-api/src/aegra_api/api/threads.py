@@ -438,7 +438,8 @@ async def update_thread_state(
     any state change — used to anchor a subsequent run as a fork of that
     checkpoint rather than of the thread's latest state.
     """
-    if request.values is None and request.as_node is None:
+    # GET-shim only fires when body has no mutation or checkpoint targeting.
+    if request.values is None and request.as_node is None and request.checkpoint_id is None and not request.checkpoint:
         return await get_thread_state(
             thread_id=thread_id,
             subgraphs=request.subgraphs or False,

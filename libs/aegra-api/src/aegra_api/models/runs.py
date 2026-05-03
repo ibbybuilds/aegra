@@ -82,7 +82,7 @@ class RunCreate(BaseModel):
         # Checkpoint-only resume keeps input=None so Pregel resumes from next=[...]
         # instead of restarting from __start__ with an empty input.
         if self.input is None and self.command is None and self.checkpoint is None:
-            raise ValueError("Must specify either 'input' or 'command'")
+            raise ValueError("Must specify at least one of 'input', 'command', or 'checkpoint'")
         return self
 
 

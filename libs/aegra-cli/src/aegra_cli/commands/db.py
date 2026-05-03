@@ -6,6 +6,14 @@ script_location is resolved relative to the ini file, not the CWD.
 These commands let operators run migrations out-of-band (init container,
 Helm pre-upgrade Job, scripted deploy) when ``RUN_MIGRATIONS_ON_STARTUP``
 is disabled in multi-pod environments.
+
+Import-order note: ``aegra_api.*`` is imported inside each subcommand
+callback, not at module top. The ``db`` group's callback runs
+``load_env_file`` before any subcommand callback fires, so deferring the
+import lets ``aegra_api.settings`` read the freshly populated
+``os.environ`` instead of the empty pre-CLI env. Top-level imports here
+would freeze ``settings`` to defaults before the user's .env loads,
+breaking ``aegra db <cmd>`` against any non-default database.
 """
 
 import sys
@@ -15,12 +23,8 @@ from pathlib import Path
 
 import click
 import structlog
-from aegra_api.core.migrations import get_alembic_config
-from alembic import command
-from alembic.util import CommandError
 from rich.console import Console
 from rich.panel import Panel
-from sqlalchemy.exc import SQLAlchemyError
 
 from aegra_cli.env import load_env_file
 
@@ -43,6 +47,11 @@ def _run_alembic(
         success_msg: Message to display on success
         error_prefix: Prefix for error message
     """
+    # Imported here (not at module top) so this module can be imported
+    # before .env loads — see import-order note in module docstring.
+    from alembic.util import CommandError
+    from sqlalchemy.exc import SQLAlchemyError
+
     try:
         fn()
         console.print(f"\n[bold green]{success_msg}[/bold green]")
@@ -100,6 +109,9 @@ def upgrade() -> None:
         )
     )
 
+    from aegra_api.core.migrations import get_alembic_config
+    from alembic import command
+
     cfg = get_alembic_config()
 
     def run() -> None:
@@ -146,6 +158,9 @@ def downgrade(revision: str) -> None:
     if revision == "base":
         console.print("[yellow]Warning:[/yellow] Downgrading to 'base' will remove all migrations!")
 
+    from aegra_api.core.migrations import get_alembic_config
+    from alembic import command
+
     cfg = get_alembic_config()
 
     def run() -> None:
@@ -177,6 +192,9 @@ def current() -> None:
             border_style="cyan",
         )
     )
+
+    from aegra_api.core.migrations import get_alembic_config
+    from alembic import command
 
     cfg = get_alembic_config()
     # Capture alembic output to stdout
@@ -223,6 +241,9 @@ def history(verbose: bool) -> None:
             border_style="cyan",
         )
     )
+
+    from aegra_api.core.migrations import get_alembic_config
+    from alembic import command
 
     cfg = get_alembic_config()
     output = StringIO()

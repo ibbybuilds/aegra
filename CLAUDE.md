@@ -107,6 +107,12 @@ def process(items): ...
 - Use absolute imports with `aegra_api.*` prefix.
 - **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** (confirmed by actual `ImportError`) or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If unsure, put it at the top — only move inline after confirming the import cycle with an actual error.
 
+### Code Comments (STRICT)
+- **Max 2 lines per comment. 3 only when truly unavoidable.** If you can't say it in 2 lines, the code is the wrong shape or you're over-explaining. Delete the comment, rename a variable, or split the function.
+- Comments answer **why** the code exists or **why this weird shape**. They never restate what the code obviously does, narrate history ("previously X, now Y"), or apologize. Git blame holds the history.
+- No JSDoc/docstring filler on self-describing names. The signature IS the doc.
+- Optimize for future readers grepping for intent, not for narrative.
+
 ### Linter Suppressions (`noqa`, `type: ignore`)
 - **NEVER suppress a lint warning when the underlying issue can be fixed.** `# noqa: F401` on a dead re-export means you should delete the re-export and fix the importers. `# type: ignore` on a type mismatch means you should fix the types.
 - Suppressions are **only acceptable** when:

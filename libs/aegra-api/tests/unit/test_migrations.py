@@ -207,20 +207,28 @@ class TestRunMigrationsIfNeeded:
 class TestIsDatabaseUpToDate:
     """Tests for the lock-free revision precheck helper."""
 
+    def _patch_psycopg(self, current_revision: str | None) -> MagicMock:
+        """Build a `patch` for psycopg.connect that yields a context-managed
+        connection whose MigrationContext returns ``current_revision``.
+        """
+        connection = MagicMock()
+        connect_cm = MagicMock()
+        connect_cm.__enter__.return_value = connection
+        connect_cm.__exit__.return_value = False
+        return connection, connect_cm
+
     def test_returns_true_when_revisions_match(self):
         from aegra_api.core.migrations import _is_database_up_to_date
 
         cfg = MagicMock()
-        engine = MagicMock()
-        connection = MagicMock()
-        engine.connect.return_value.__enter__.return_value = connection
+        connection, connect_cm = self._patch_psycopg("abc123")
         ctx = MagicMock()
         ctx.get_current_revision.return_value = "abc123"
         script = MagicMock()
         script.get_current_head.return_value = "abc123"
 
         with (
-            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
             patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
@@ -230,16 +238,14 @@ class TestIsDatabaseUpToDate:
         from aegra_api.core.migrations import _is_database_up_to_date
 
         cfg = MagicMock()
-        engine = MagicMock()
-        connection = MagicMock()
-        engine.connect.return_value.__enter__.return_value = connection
+        _, connect_cm = self._patch_psycopg("abc123")
         ctx = MagicMock()
         ctx.get_current_revision.return_value = "abc123"
         script = MagicMock()
         script.get_current_head.return_value = "def456"
 
         with (
-            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
             patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
@@ -250,16 +256,14 @@ class TestIsDatabaseUpToDate:
         from aegra_api.core.migrations import _is_database_up_to_date
 
         cfg = MagicMock()
-        engine = MagicMock()
-        connection = MagicMock()
-        engine.connect.return_value.__enter__.return_value = connection
+        _, connect_cm = self._patch_psycopg(None)
         ctx = MagicMock()
         ctx.get_current_revision.return_value = None
         script = MagicMock()
         script.get_current_head.return_value = "abc123"
 
         with (
-            patch("aegra_api.core.migrations.create_engine", return_value=engine),
+            patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
             patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
@@ -275,30 +279,37 @@ class TestIsDatabaseUpToDate:
 
         with (
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
-            patch("aegra_api.core.migrations.create_engine") as mock_create_engine,
+            patch("aegra_api.core.migrations.psycopg.connect") as mock_connect,
         ):
             assert _is_database_up_to_date(cfg) is True
             # Should short-circuit before opening any DB connection.
-            mock_create_engine.assert_not_called()
+            mock_connect.assert_not_called()
 
-    def test_disposes_engine_on_success_and_failure(self):
-        """The short-lived engine must be disposed even when revision lookup fails."""
+    def test_uses_libpq_url_for_multihost_compatibility(self):
+        """The precheck must hand the libpq-style URL straight to psycopg
+        (not through SQLAlchemy's URL parser) so multi-host DATABASE_URL
+        values introduced by PR #299 keep working.
+        """
         from aegra_api.core.migrations import _is_database_up_to_date
 
         cfg = MagicMock()
-        engine = MagicMock()
-        connection = MagicMock()
-        engine.connect.return_value.__enter__.return_value = connection
-        engine.connect.return_value.__exit__.return_value = False
+        _, connect_cm = self._patch_psycopg("abc123")
+        ctx = MagicMock()
+        ctx.get_current_revision.return_value = "abc123"
+        script = MagicMock()
+        script.get_current_head.return_value = "abc123"
 
         with (
-            patch("aegra_api.core.migrations.create_engine", return_value=engine),
-            patch(
-                "aegra_api.core.migrations.MigrationContext.configure",
-                side_effect=RuntimeError("boom"),
-            ),
-            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=MagicMock()),
-            pytest.raises(RuntimeError),
+            patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm) as mock_connect,
+            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
             _is_database_up_to_date(cfg)
-        engine.dispose.assert_called_once()
+
+        # Single positional arg, equal to settings.db.database_url_sync, no
+        # SQLAlchemy URL rewrite layered on top.
+        assert mock_connect.call_count == 1
+        passed_url = mock_connect.call_args.args[0]
+        from aegra_api.settings import settings
+
+        assert passed_url == settings.db.database_url_sync

@@ -20,11 +20,11 @@ Two entry points:
 import asyncio
 from pathlib import Path
 
+import psycopg
 import structlog
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine
 
 from aegra_api.settings import settings
 from alembic import command
@@ -109,18 +109,16 @@ def _is_database_up_to_date(cfg: Config) -> bool:
     if head is None:
         return True
 
-    # Use the synchronous Postgres URL with the psycopg v3 driver.
-    # We deliberately do not reuse the app's async pool here because this
-    # runs before the app initializes its pools, and we want a short-lived
-    # connection that is closed before alembic opens its own.
-    sync_url = settings.db.database_url_sync.replace("postgresql://", "postgresql+psycopg://", 1)
-    engine = create_engine(sync_url, pool_pre_ping=True)
-    try:
-        with engine.connect() as conn:
-            ctx = MigrationContext.configure(conn)
-            current = ctx.get_current_revision()
-    finally:
-        engine.dispose()
+    # Open a short-lived psycopg connection directly using the libpq-style
+    # URL from settings. This deliberately bypasses SQLAlchemy's URL parser
+    # so multi-host DATABASE_URL values (``postgresql://h1,h2/db``, see
+    # ``DatabaseSettings._to_sqlalchemy_multihost``) work natively via libpq
+    # failover. We do not reuse the app's async pool because this runs
+    # before pools initialize, and we want the connection closed before
+    # alembic opens its own.
+    with psycopg.connect(settings.db.database_url_sync) as conn:
+        ctx = MigrationContext.configure(conn)
+        current = ctx.get_current_revision()
 
     return current == head
 

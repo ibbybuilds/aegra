@@ -72,22 +72,17 @@ class RunCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_input_command_exclusivity(self) -> Self:
-        """Ensure input and command are mutually exclusive"""
-        # Allow empty input dict when command is present (frontend compatibility)
+        """Ensure input and command are mutually exclusive."""
+        # Empty input dict alongside command: drop it for frontend compatibility.
         if self.input is not None and self.command is not None:
-            # If input is just an empty dict, treat it as None for compatibility
             if self.input == {}:
                 self.input = None
             else:
                 raise ValueError("Cannot specify both 'input' and 'command' - they are mutually exclusive")
-        if self.input is None and self.command is None:
-            if self.checkpoint is not None:
-                # Keep input as None so LangGraph resumes from the checkpoint.
-                # Coercing to {} makes Pregel treat it as fresh input and restart
-                # from __start__ instead of continuing from next=[...].
-                pass
-            else:
-                raise ValueError("Must specify either 'input' or 'command'")
+        # Checkpoint-only resume keeps input=None so Pregel resumes from next=[...]
+        # instead of restarting from __start__ with an empty input.
+        if self.input is None and self.command is None and self.checkpoint is None:
+            raise ValueError("Must specify either 'input' or 'command'")
         return self
 
 

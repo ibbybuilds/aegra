@@ -728,6 +728,46 @@ class TestThreadUpdateState:
             assert mock_agent.aupdate_state.call_args[1]["as_node"] == "__copy__"
 
 
+    def test_update_state_body_checkpoint_id_routes_to_update_path(self):
+        """values=None + as_node=None + checkpoint_id must NOT short-circuit to GET.
+
+        Regression test: a body-only checkpoint targeting payload
+        (without values or as_node) used to fall through the GET-shim
+        gate, which reads query params and ignores body checkpoint
+        fields. The caller's selected checkpoint was silently dropped.
+        Now the gate also checks checkpoint_id / checkpoint, so the
+        request flows to aupdate_state with the body checkpoint honored.
+        """
+        app = create_test_app(include_runs=False, include_threads=True)
+        thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        mock_agent = AsyncMock()
+        mock_agent.aupdate_state.return_value = {"configurable": {"checkpoint_id": "new-cp", "checkpoint_ns": ""}}
+        mock_agent.with_config = Mock(return_value=mock_agent)
+
+        with patch("aegra_api.services.langgraph_service.get_langgraph_service") as mock_get_service:
+            mock_service = mock_get_service.return_value
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
+
+            resp = client.post(
+                "/threads/test-123/state",
+                json={"values": None, "as_node": None, "checkpoint_id": "body-cp"},
+            )
+
+            assert resp.status_code == 200
+            mock_agent.aupdate_state.assert_called_once()
+            cfg, values, *_ = mock_agent.aupdate_state.call_args[0]
+            assert values is None
+            assert cfg["configurable"]["checkpoint_id"] == "body-cp"
+
+
 class TestThreadStateCheckpoint:
     """Test GET /threads/{thread_id}/state/{checkpoint_id} endpoint"""
 

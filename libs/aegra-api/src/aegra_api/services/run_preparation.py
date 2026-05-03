@@ -256,7 +256,7 @@ async def _prepare_run(
         thread_id=thread_id,
         assistant_id=resolved_assistant_id,
         status=initial_status,
-        input=request.input or {},
+        input=request.input,  # preserve None for checkpoint-only resume; matches RunExecution.input_data
         config=config,
         context=context,
         user_id=user.identity,

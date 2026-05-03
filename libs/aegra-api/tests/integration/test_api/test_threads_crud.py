@@ -728,15 +728,8 @@ class TestThreadUpdateState:
             assert mock_agent.aupdate_state.call_args[1]["as_node"] == "__copy__"
 
     def test_update_state_body_checkpoint_id_routes_to_update_path(self):
-        """values=None + as_node=None + checkpoint_id must NOT short-circuit to GET.
-
-        Regression test: a body-only checkpoint targeting payload
-        (without values or as_node) used to fall through the GET-shim
-        gate, which reads query params and ignores body checkpoint
-        fields. The caller's selected checkpoint was silently dropped.
-        Now the gate also checks checkpoint_id / checkpoint, so the
-        request flows to aupdate_state with the body checkpoint honored.
-        """
+        """Body-only checkpoint_id must flow to aupdate_state, not the GET shim
+        which reads query params and would silently drop the body field."""
         app = create_test_app(include_runs=False, include_threads=True)
         thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
 
@@ -767,11 +760,8 @@ class TestThreadUpdateState:
             assert cfg["configurable"]["checkpoint_id"] == "body-cp"
 
     def test_update_state_body_checkpoint_dict_routes_to_update_path(self):
-        """Same as above but exercises the `checkpoint` dict variant of the gate.
-
-        The gate guards both `checkpoint_id` and `checkpoint` body fields.
-        Covering only one half could let the other regress silently.
-        """
+        """Mirror of the checkpoint_id case for the `checkpoint` dict variant
+        so neither half of the gate condition can regress silently."""
         app = create_test_app(include_runs=False, include_threads=True)
         thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
 

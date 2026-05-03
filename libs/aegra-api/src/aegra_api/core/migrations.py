@@ -13,7 +13,6 @@ from pathlib import Path
 import psycopg
 import structlog
 from alembic.config import Config
-from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
 from aegra_api.settings import settings
@@ -89,12 +88,18 @@ def _is_database_up_to_date(cfg: Config) -> bool:
     if head is None:
         return True
 
-    # Use psycopg.connect directly. SQLAlchemy's URL parser breaks on
-    # libpq comma-host syntax; psycopg parses it natively, preserving
-    # multi-host failover from PR #299.
-    with psycopg.connect(settings.db.database_url_sync) as conn:
-        ctx = MigrationContext.configure(conn)
-        current = ctx.get_current_revision()
+    # Read alembic_version directly via psycopg. MigrationContext.configure
+    # requires a SQLAlchemy Connection (accesses conn.dialect), and SQLAlchemy's
+    # URL parser breaks on libpq comma-host syntax — so we bypass both,
+    # preserving multi-host failover from PR #299.
+    with psycopg.connect(settings.db.database_url_sync) as conn, conn.cursor() as cur:
+        try:
+            cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
+            row = cur.fetchone()
+            current = row[0] if row else None
+        except psycopg.errors.UndefinedTable:
+            conn.rollback()
+            current = None
 
     return current == head
 

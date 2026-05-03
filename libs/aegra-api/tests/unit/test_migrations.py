@@ -207,11 +207,24 @@ class TestRunMigrationsIfNeeded:
 class TestIsDatabaseUpToDate:
     """Tests for the lock-free revision precheck helper."""
 
-    def _patch_psycopg(self, current_revision: str | None) -> MagicMock:
-        """Build a `patch` for psycopg.connect that yields a context-managed
-        connection whose MigrationContext returns ``current_revision``.
+    def _patch_psycopg(self, current_revision: str | None, *, raises: Exception | None = None):
+        """Build a context-managed psycopg.connect mock whose cursor returns
+        a single-row alembic_version result of ``current_revision`` (or None
+        when the table is empty). Pass ``raises`` to simulate UndefinedTable.
         """
+        cursor = MagicMock()
+        if raises is not None:
+            cursor.execute.side_effect = raises
+        else:
+            cursor.fetchone.return_value = (current_revision,) if current_revision is not None else None
+
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = cursor
+        cursor_cm.__exit__.return_value = False
+
         connection = MagicMock()
+        connection.cursor.return_value = cursor_cm
+
         connect_cm = MagicMock()
         connect_cm.__enter__.return_value = connection
         connect_cm.__exit__.return_value = False
@@ -221,15 +234,12 @@ class TestIsDatabaseUpToDate:
         from aegra_api.core.migrations import _is_database_up_to_date
 
         cfg = MagicMock()
-        connection, connect_cm = self._patch_psycopg("abc123")
-        ctx = MagicMock()
-        ctx.get_current_revision.return_value = "abc123"
+        _, connect_cm = self._patch_psycopg("abc123")
         script = MagicMock()
         script.get_current_head.return_value = "abc123"
 
         with (
             patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
-            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
             assert _is_database_up_to_date(cfg) is True
@@ -239,14 +249,11 @@ class TestIsDatabaseUpToDate:
 
         cfg = MagicMock()
         _, connect_cm = self._patch_psycopg("abc123")
-        ctx = MagicMock()
-        ctx.get_current_revision.return_value = "abc123"
         script = MagicMock()
         script.get_current_head.return_value = "def456"
 
         with (
             patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
-            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
             assert _is_database_up_to_date(cfg) is False
@@ -257,14 +264,30 @@ class TestIsDatabaseUpToDate:
 
         cfg = MagicMock()
         _, connect_cm = self._patch_psycopg(None)
-        ctx = MagicMock()
-        ctx.get_current_revision.return_value = None
         script = MagicMock()
         script.get_current_head.return_value = "abc123"
 
         with (
             patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
-            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
+            patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
+        ):
+            assert _is_database_up_to_date(cfg) is False
+
+    def test_returns_false_when_alembic_version_table_missing(self):
+        """Fresh install: alembic_version doesn't exist yet. Treat as 'not up to date'
+        so the upgrade path runs and bootstraps the schema.
+        """
+        import psycopg
+
+        from aegra_api.core.migrations import _is_database_up_to_date
+
+        cfg = MagicMock()
+        _, connect_cm = self._patch_psycopg(None, raises=psycopg.errors.UndefinedTable("alembic_version"))
+        script = MagicMock()
+        script.get_current_head.return_value = "abc123"
+
+        with (
+            patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
             assert _is_database_up_to_date(cfg) is False
@@ -291,14 +314,11 @@ class TestIsDatabaseUpToDate:
 
         cfg = MagicMock()
         _, connect_cm = self._patch_psycopg("abc123")
-        ctx = MagicMock()
-        ctx.get_current_revision.return_value = "abc123"
         script = MagicMock()
         script.get_current_head.return_value = "abc123"
 
         with (
             patch("aegra_api.core.migrations.psycopg.connect", return_value=connect_cm) as mock_connect,
-            patch("aegra_api.core.migrations.MigrationContext.configure", return_value=ctx),
             patch("aegra_api.core.migrations.ScriptDirectory.from_config", return_value=script),
         ):
             _is_database_up_to_date(cfg)

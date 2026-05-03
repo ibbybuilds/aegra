@@ -3,6 +3,7 @@
 from urllib.parse import quote_plus
 
 import pytest
+from sqlalchemy.engine import make_url
 
 from aegra_api.settings import AppSettings, DatabaseSettings, WorkerSettings
 
@@ -385,8 +386,6 @@ class TestMultiHostDatabaseURL:
 
     def test_multihost_rewritten_url_parses_with_sqlalchemy(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Asyncpg multi-host URL must parse via SQLAlchemy (alembic env path)."""
-        from sqlalchemy.engine.url import make_url
-
         monkeypatch.setenv(
             "DATABASE_URL",
             "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",

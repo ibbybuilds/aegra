@@ -34,7 +34,6 @@ async def test_lifespan_registers_otel_provider(monkeypatch):
     import aegra_api.main as main_module
 
     importlib.reload(main_module)
-    from aegra_api.main import lifespan
 
     # Mock all the dependencies
     with (
@@ -55,7 +54,7 @@ async def test_lifespan_registers_otel_provider(monkeypatch):
 
         mock_app = MagicMock()
 
-        async with lifespan(mock_app):
+        async with main_module.lifespan(mock_app):
             # Verify OpenTelemetryProvider is registered
             otel_providers = [p for p in manager._providers if isinstance(p, OpenTelemetryProvider)]
             assert len(otel_providers) == 1, "OpenTelemetry provider should be registered during lifespan startup"
@@ -71,7 +70,6 @@ async def test_lifespan_calls_required_initialization():
     import aegra_api.main as main_module
 
     importlib.reload(main_module)
-    from aegra_api.main import lifespan
 
     with (
         patch("aegra_api.main.run_migrations_async", new_callable=AsyncMock) as mock_migrations,
@@ -90,7 +88,7 @@ async def test_lifespan_calls_required_initialization():
         mock_app = MagicMock()
 
         # Run the lifespan function
-        async with lifespan(mock_app):
+        async with main_module.lifespan(mock_app):
             pass
 
         # Verify migrations run first, then initialization

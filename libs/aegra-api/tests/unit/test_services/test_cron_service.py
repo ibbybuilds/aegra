@@ -7,7 +7,6 @@ Follows the same fixture + class pattern as test_assistant_service.py.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
-from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
 from fastapi import HTTPException
@@ -621,9 +620,9 @@ class TestCronToResponseExtended:
         assert resp.thread_id == "t-42"
 
     def test_handles_on_run_completed(self) -> None:
-        cron = _make_cron_orm(on_run_completed="create_new")
+        cron = _make_cron_orm(on_run_completed="keep")
         resp = _cron_to_response(cron)
-        assert resp.on_run_completed == "create_new"
+        assert resp.on_run_completed == "keep"
 
     def test_handles_end_time(self) -> None:
         end = datetime(2025, 12, 31, 23, 59, 59, tzinfo=UTC)
@@ -670,7 +669,7 @@ class TestCreateCronExtended:
         mock_session: AsyncMock,
     ) -> None:
         mock_session.scalar.return_value = _make_assistant_orm()
-        end = datetime(2026, 1, 1, tzinfo=UTC)
+        end = datetime.now(UTC) + timedelta(days=365)
         req = CronCreate(
             assistant_id="asst-001",
             schedule="*/5 * * * *",
@@ -692,13 +691,13 @@ class TestCreateCronExtended:
         req = CronCreate(
             assistant_id="asst-001",
             schedule="*/5 * * * *",
-            on_run_completed="create_new",
+            on_run_completed="keep",
         )
 
         await cron_service.create_cron(req, "test-user")
 
         added_obj = mock_session.add.call_args[0][0]
-        assert added_obj.on_run_completed == "create_new"
+        assert added_obj.on_run_completed == "keep"
 
     @pytest.mark.asyncio
     async def test_stores_payload_with_all_fields(
@@ -817,11 +816,11 @@ class TestUpdateCronExtended:
         cron_service: CronService,
         mock_session: AsyncMock,
     ) -> None:
-        updated = _make_cron_orm(on_run_completed="create_new")
+        updated = _make_cron_orm(on_run_completed="keep")
         mock_session.scalar.side_effect = [_make_cron_orm(), updated]
 
-        resp = await cron_service.update_cron("cron-001", CronUpdate(on_run_completed="create_new"), "test-user")
-        assert resp.on_run_completed == "create_new"
+        resp = await cron_service.update_cron("cron-001", CronUpdate(on_run_completed="keep"), "test-user")
+        assert resp.on_run_completed == "keep"
 
     @pytest.mark.asyncio
     async def test_updates_metadata(
@@ -996,13 +995,17 @@ class TestGetDueCrons:
         mock_session: AsyncMock,
     ) -> None:
         due = [_make_cron_orm(cron_id="c1"), _make_cron_orm(cron_id="c2")]
-        result = Mock()
-        result.scalars.return_value.all.return_value = due
-        mock_session.execute.return_value = result
+        # Phase 1: SELECT cron_id FOR UPDATE SKIP LOCKED -> rows yielding (cron_id,)
+        ids_result = Mock()
+        ids_result.all.return_value = [("c1",), ("c2",)]
+        # Phase 2: UPDATE ... RETURNING -> scalars().all()
+        update_result = Mock()
+        update_result.scalars.return_value.all.return_value = due
+        mock_session.execute.side_effect = [ids_result, update_result]
 
         result = await cron_service.get_due_crons()
         assert len(result) == 2
-        mock_session.execute.assert_awaited_once()
+        assert mock_session.execute.await_count == 2
         mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -1011,14 +1014,14 @@ class TestGetDueCrons:
         cron_service: CronService,
         mock_session: AsyncMock,
     ) -> None:
-        result = Mock()
-        result.scalars.return_value.all.return_value = []
-        mock_session.execute.return_value = result
+        ids_result = Mock()
+        ids_result.all.return_value = []
+        mock_session.execute.return_value = ids_result
 
         result = await cron_service.get_due_crons()
         assert result == []
+        # Only the SELECT runs; UPDATE is skipped when no IDs are claimable.
         mock_session.execute.assert_awaited_once()
-        mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_accepts_custom_now(
@@ -1026,15 +1029,14 @@ class TestGetDueCrons:
         cron_service: CronService,
         mock_session: AsyncMock,
     ) -> None:
-        result = Mock()
-        result.scalars.return_value.all.return_value = []
-        mock_session.execute.return_value = result
+        ids_result = Mock()
+        ids_result.all.return_value = []
+        mock_session.execute.return_value = ids_result
 
         custom_now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
         result = await cron_service.get_due_crons(now=custom_now)
         assert result == []
         mock_session.execute.assert_awaited_once()
-        mock_session.commit.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1142,10 +1144,18 @@ class TestTimezoneAwareNextRun:
         with_utc = _compute_next_run("0 12 * * *", now=now, timezone="UTC")
         assert without_tz == with_utc
 
-    def test_invalid_timezone_raises(self) -> None:
-        """ZoneInfoNotFoundError must propagate so the caller can map it to 422."""
-        with pytest.raises((ZoneInfoNotFoundError, KeyError)):
-            _compute_next_run("0 9 * * *", timezone="Not/ATimezone")
+    def test_invalid_timezone_falls_back_to_utc(self) -> None:
+        """Invalid stored timezones must not crash the scheduler.
+
+        Create/update validate the TZ at the API boundary (returning 422),
+        but if the stored payload contains a stale value (e.g. an OS that
+        no longer ships a particular IANA zone), ``_compute_next_run``
+        falls back to UTC and logs a warning rather than raising.
+        """
+        now = datetime(2025, 3, 15, 0, 0, 0, tzinfo=UTC)
+        utc_result = _compute_next_run("0 9 * * *", now=now)
+        bad_tz_result = _compute_next_run("0 9 * * *", now=now, timezone="Not/ATimezone")
+        assert bad_tz_result == utc_result
 
 
 # ---------------------------------------------------------------------------

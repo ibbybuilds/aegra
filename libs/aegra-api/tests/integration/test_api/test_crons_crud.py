@@ -4,7 +4,7 @@ Uses the same test-client + mocked-service pattern as test_assistants_crud.py.
 """
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -284,7 +284,23 @@ class TestCreateCronExtended:
     """Extended tests for POST /runs/crons."""
 
     def test_with_all_fields(self, client, mock_cron_service: AsyncMock) -> None:
-        mock_cron_service.create_cron.return_value = AsyncMock()
+        # enabled=False means the API skips the first run and returns a Cron
+        # response instead of a Run, so we feed a real ORM-shaped mock through.
+        cron_orm = Mock()
+        cron_orm.cron_id = "cron-x"
+        cron_orm.assistant_id = "asst-001"
+        cron_orm.thread_id = None
+        cron_orm.user_id = "test-user"
+        cron_orm.schedule = "*/5 * * * *"
+        cron_orm.payload = {"input": {"messages": [{"role": "user", "content": "hi"}]}}
+        cron_orm.metadata_dict = {"env": "prod"}
+        cron_orm.enabled = False
+        cron_orm.on_run_completed = "keep"
+        cron_orm.end_time = None
+        cron_orm.next_run_date = _NOW
+        cron_orm.created_at = _NOW
+        cron_orm.updated_at = _NOW
+        mock_cron_service.create_cron.return_value = cron_orm
 
         resp = client.post(
             "/runs/crons",
@@ -295,7 +311,7 @@ class TestCreateCronExtended:
                 "metadata": {"env": "prod"},
                 "config": {"temperature": 0.5},
                 "webhook": "https://hooks.example.com/cb",
-                "on_run_completed": "create_new",
+                "on_run_completed": "keep",
                 "enabled": False,
                 "multitask_strategy": "reject",
                 "stream_mode": "values",
@@ -303,7 +319,9 @@ class TestCreateCronExtended:
             },
         )
         assert resp.status_code == 200
-        assert "run_id" in resp.json()
+        body = resp.json()
+        assert body["cron_id"] == "cron-x"
+        assert body["enabled"] is False
 
     def test_missing_assistant_id_returns_422(self, client, mock_cron_service: AsyncMock) -> None:
         resp = client.post(
@@ -376,7 +394,7 @@ class TestUpdateCronExtended:
         mock_cron_service.update_cron.return_value = _cron_response(
             schedule="0 12 * * *",
             enabled=False,
-            on_run_completed="create_new",
+            on_run_completed="keep",
         )
 
         resp = client.patch(
@@ -384,14 +402,14 @@ class TestUpdateCronExtended:
             json={
                 "schedule": "0 12 * * *",
                 "enabled": False,
-                "on_run_completed": "create_new",
+                "on_run_completed": "keep",
             },
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["schedule"] == "0 12 * * *"
         assert data["enabled"] is False
-        assert data["on_run_completed"] == "create_new"
+        assert data["on_run_completed"] == "keep"
 
     def test_empty_update_body(self, client, mock_cron_service: AsyncMock) -> None:
         mock_cron_service.update_cron.return_value = _cron_response()
@@ -475,7 +493,7 @@ class TestSearchCronsExtended:
             _cron_response(
                 cron_id="c-full",
                 thread_id="t-1",
-                on_run_completed="create_new",
+                on_run_completed="keep",
                 payload={"input": {"k": "v"}},
             ),
         ]
@@ -485,7 +503,7 @@ class TestSearchCronsExtended:
         data = resp.json()[0]
         assert data["cron_id"] == "c-full"
         assert data["thread_id"] == "t-1"
-        assert data["on_run_completed"] == "create_new"
+        assert data["on_run_completed"] == "keep"
         assert data["payload"] == {"input": {"k": "v"}}
         assert data["schedule"] == "*/5 * * * *"
         assert "created_at" in data

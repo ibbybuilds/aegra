@@ -20,7 +20,7 @@ from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Cron as CronORM
 from aegra_api.core.orm import get_session
-from aegra_api.models import Run, RunCreate, User
+from aegra_api.models import Run, User
 from aegra_api.models.crons import (
     CronCountRequest,
     CronCreate,
@@ -29,7 +29,13 @@ from aegra_api.models.crons import (
     CronUpdate,
 )
 from aegra_api.models.errors import NOT_FOUND
-from aegra_api.services.cron_service import CronService, get_cron_service
+from aegra_api.services.cron_scheduler import _build_run_create
+from aegra_api.services.cron_service import (
+    CronService,
+    _cron_to_response,
+    get_cron_service,
+    should_delete_stateless_thread,
+)
 from aegra_api.services.run_cleanup import delete_thread_by_id, schedule_background_cleanup
 from aegra_api.services.run_preparation import _prepare_run
 
@@ -42,24 +48,25 @@ logger = structlog.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@router.post("/runs/crons", response_model=Run)
+@router.post("/runs/crons", response_model=Run | CronResponse)
 async def create_cron(
     request: CronCreate,
     user: User = Depends(get_current_user),
     service: CronService = Depends(get_cron_service),
     session: AsyncSession = Depends(get_session),
-) -> Run:
+) -> Run | CronResponse:
     """Create a cron job that fires on a schedule (stateless).
 
     Persists the cron record, then triggers the first run immediately and
     returns the ``Run`` object (matching LangGraph SDK ``create()`` contract).
+    When the caller passes ``enabled=False`` the first run is suppressed and
+    the response is the persisted ``Cron`` instead.
     """
     ctx = build_auth_context(user, "crons", "create")
     value = request.model_dump()
     await handle_event(ctx, value)
 
-    cron = await service.create_cron(request, user.identity)
-    return await _trigger_first_run(session, cron, user)
+    return await _create_cron_atomic(request, user, service, session)
 
 
 # ---------------------------------------------------------------------------
@@ -67,25 +74,25 @@ async def create_cron(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/threads/{thread_id}/runs/crons", response_model=Run)
+@router.post("/threads/{thread_id}/runs/crons", response_model=Run | CronResponse)
 async def create_cron_for_thread(
     thread_id: str,
     request: CronCreate,
     user: User = Depends(get_current_user),
     service: CronService = Depends(get_cron_service),
     session: AsyncSession = Depends(get_session),
-) -> Run:
+) -> Run | CronResponse:
     """Create a cron job bound to an existing thread.
 
     The thread is reused for every scheduled run. Triggers the first run
-    immediately and returns the ``Run`` object.
+    immediately and returns the ``Run`` object. When ``enabled=False`` is
+    passed the first run is suppressed and the persisted cron is returned.
     """
     ctx = build_auth_context(user, "crons", "create")
     value = {**request.model_dump(), "thread_id": thread_id}
     await handle_event(ctx, value)
 
-    cron = await service.create_cron(request, user.identity, thread_id=thread_id)
-    return await _trigger_first_run(session, cron, user, thread_id=thread_id)
+    return await _create_cron_atomic(request, user, service, session, thread_id=thread_id)
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +182,39 @@ async def count_crons(
 # ---------------------------------------------------------------------------
 
 
+async def _create_cron_atomic(
+    request: CronCreate,
+    user: User,
+    service: CronService,
+    session: AsyncSession,
+    *,
+    thread_id: str | None = None,
+) -> Run | CronResponse:
+    """Insert the cron and (when enabled) trigger the first run.
+
+    A failed first run deletes the cron so the operator does not end up with
+    an orphan record that the scheduler will keep firing on the next tick.
+    When ``request.enabled`` is False the first run is suppressed entirely
+    and the persisted ``Cron`` is returned instead of a ``Run``.
+    """
+    cron = await service.create_cron(request, user.identity, thread_id=thread_id)
+
+    if request.enabled is False:
+        return _cron_to_response(cron)
+
+    try:
+        return await _trigger_first_run(session, cron, user, thread_id=thread_id)
+    except Exception:
+        try:
+            await service.delete_cron(cron.cron_id, user.identity)
+        except Exception:
+            logger.exception(
+                "Failed to roll back cron after first-run setup error",
+                cron_id=cron.cron_id,
+            )
+        raise
+
+
 async def _trigger_first_run(
     session: AsyncSession,
     cron: CronORM,
@@ -183,23 +223,10 @@ async def _trigger_first_run(
     thread_id: str | None = None,
 ) -> Run:
     """Create the initial run for a newly created cron job."""
-    payload = cron.payload or {}
     effective_thread_id = thread_id or cron.thread_id or str(uuid4())
-    should_delete_thread = thread_id is None and cron.thread_id is None and cron.on_run_completed != "keep"
+    should_delete_thread = thread_id is None and should_delete_stateless_thread(cron)
 
-    run_request = RunCreate(
-        assistant_id=cron.assistant_id,
-        input=payload.get("input"),
-        config=payload.get("config"),
-        context=payload.get("context"),
-        checkpoint=payload.get("checkpoint"),
-        interrupt_before=payload.get("interrupt_before"),
-        interrupt_after=payload.get("interrupt_after"),
-        stream_subgraphs=payload.get("stream_subgraphs"),
-        stream_mode=payload.get("stream_mode"),
-        multitask_strategy=payload.get("multitask_strategy"),
-        metadata=None,
-    )
+    run_request = _build_run_create(cron)
 
     try:
         _run_id, run, _job = await _prepare_run(

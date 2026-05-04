@@ -415,14 +415,21 @@ class TestFireCron:
         cron.end_time = None
         mock_session = AsyncMock()
 
-        with patch(
-            "aegra_api.services.cron_scheduler._prepare_run",
-            new_callable=AsyncMock,
-        ) as mock_prepare:
+        with (
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+            ) as mock_prepare,
+            patch(
+                "aegra_api.services.cron_scheduler.CronScheduler._cleanup_failed_stateless_thread",
+                new_callable=AsyncMock,
+            ),
+        ):
             mock_prepare.side_effect = HTTPException(404, "assistant not found")
             # Should not raise
             await scheduler._fire_cron(mock_session, cron)
-            mock_session.execute.assert_not_awaited()
+            # Releases the claim (claimed_until=None) so next tick can retry.
+            mock_session.execute.assert_awaited_once()
             mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -433,14 +440,25 @@ class TestFireCron:
         cron.end_time = None
         mock_session = AsyncMock()
 
-        with patch(
-            "aegra_api.services.cron_scheduler._prepare_run",
-            new_callable=AsyncMock,
-        ) as mock_prepare:
+        with (
+            patch(
+                "aegra_api.services.cron_scheduler._prepare_run",
+                new_callable=AsyncMock,
+            ) as mock_prepare,
+            patch(
+                "aegra_api.services.cron_scheduler.CronScheduler._cleanup_failed_stateless_thread",
+                new_callable=AsyncMock,
+            ),
+        ):
             mock_prepare.side_effect = RuntimeError("database connection lost")
             # Should not raise
             await scheduler._fire_cron(mock_session, cron)
-            mock_session.execute.assert_not_awaited()
+            # Releases the claim only; next_run_date is NOT advanced.
+            mock_session.execute.assert_awaited_once()
+            stmt = mock_session.execute.call_args[0][0]
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+            assert "claimed_until" in compiled
+            assert "next_run_date" not in compiled
             mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio

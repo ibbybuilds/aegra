@@ -1,9 +1,12 @@
 """Background scheduler that fires due cron jobs.
 
-Wakes up every ``CRON_POLL_INTERVAL_SECONDS`` (default 60 s), queries for
-enabled crons whose ``next_run_date`` has passed, triggers a run for each
-one via the existing run-preparation pipeline, then advances the cron to
-its next occurrence.
+Wakes up every ``CRON_POLL_INTERVAL_SECONDS`` (default 60 s), claims any
+enabled crons whose ``next_run_date`` has passed, and triggers a run for
+each one via the existing run-preparation pipeline. Once a run is created
+the cron is advanced to its next occurrence (or disabled when ``end_time``
+has passed). The claim window itself is governed by
+``CRON_CLAIM_DURATION_SECONDS`` so a slow ``_fire_cron`` cannot race the
+next tick.
 
 Follows the same ``start()/stop()`` lifecycle pattern used by
 :class:`aegra_api.services.lease_reaper.LeaseReaper`.
@@ -22,7 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aegra_api.core.orm import Cron as CronORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.models import RunCreate, User
-from aegra_api.services.cron_service import CronService, _compute_next_run, _is_seconds_cron
+from aegra_api.services.cron_service import (
+    CronService,
+    _compute_next_run,
+    _is_seconds_cron,
+    should_delete_stateless_thread,
+)
 from aegra_api.services.run_cleanup import delete_thread_by_id, schedule_background_cleanup
 from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.settings import settings
@@ -30,9 +38,46 @@ from aegra_api.settings import settings
 logger = structlog.getLogger(__name__)
 
 
+# Backwards-compat re-export. ``cron_scheduler.py`` previously exposed this
+# helper at module scope and a few tests / callers may still import it from
+# here. Kept thin; the canonical home is now ``cron_service``.
 def _should_delete_stateless_thread(cron: CronORM) -> bool:
-    """Return True when the cron should delete its ephemeral thread after completion."""
-    return cron.thread_id is None and cron.on_run_completed != "keep"
+    """Proxy to :func:`aegra_api.services.cron_service.should_delete_stateless_thread`."""
+    return should_delete_stateless_thread(cron)
+
+
+def _build_run_create(cron: CronORM) -> RunCreate:
+    """Build a ``RunCreate`` from the cron's stored payload.
+
+    Shared between :func:`_fire_cron` and the API's first-run trigger so the
+    two code paths can never drift.
+    """
+    payload = cron.payload or {}
+    return RunCreate(
+        assistant_id=cron.assistant_id,
+        input=payload.get("input"),
+        config=payload.get("config"),
+        context=payload.get("context"),
+        checkpoint=payload.get("checkpoint"),
+        interrupt_before=payload.get("interrupt_before"),
+        interrupt_after=payload.get("interrupt_after"),
+        stream_subgraphs=payload.get("stream_subgraphs"),
+        stream_mode=payload.get("stream_mode"),
+        multitask_strategy=payload.get("multitask_strategy"),
+        metadata=None,
+    )
+
+
+async def _validate_cron_user(user_id: str) -> bool:
+    """Liveness check called before constructing a forged ``User`` for a fire.
+
+    Default implementation accepts any non-empty user id. Operators that
+    integrate a real identity store can monkey-patch this symbol to
+    deactivate or revoke firing for users that no longer exist. Returning
+    False from this hook causes the scheduler to log a warning, disable the
+    cron, and skip the firing.
+    """
+    return bool(user_id)
 
 
 class CronScheduler:
@@ -50,6 +95,7 @@ class CronScheduler:
         logger.info(
             "Cron scheduler started",
             interval_seconds=settings.cron.CRON_POLL_INTERVAL_SECONDS,
+            claim_seconds=settings.cron.CRON_CLAIM_DURATION_SECONDS,
         )
 
     async def stop(self) -> None:
@@ -75,23 +121,32 @@ class CronScheduler:
                 logger.exception("Error in cron scheduler tick")
 
     async def _tick(self) -> None:
-        """Find all due crons and fire a run for each one."""
+        """Find all due crons and fire a run for each one.
+
+        Each cron runs in its own session so a SQL failure on one cron
+        cannot put the shared transaction into ``InFailedSqlTransaction`` and
+        silently kill the rest of the batch.
+        """
         now = datetime.now(UTC)
         maker = _get_session_maker()
 
-        async with maker() as session:
-            due_crons = await self._find_due_crons(session, now)
-            if not due_crons:
-                logger.debug("Cron tick: no jobs due")
-                return
+        async with maker() as claim_session:
+            due_crons = await self._find_due_crons(claim_session, now)
 
-            logger.info("Cron tick: found due jobs", count=len(due_crons))
+        if not due_crons:
+            logger.debug("Cron tick: no jobs due")
+            return
 
-            for cron in due_crons:
+        logger.info("Cron tick: found due jobs", count=len(due_crons))
+
+        for cron in due_crons:
+            async with maker() as cron_session:
                 try:
-                    await self._fire_cron(session, cron)
+                    await self._fire_cron(cron_session, cron)
                 except Exception:
                     logger.exception("Failed to fire cron job", cron_id=cron.cron_id)
+                    with contextlib.suppress(Exception):
+                        await cron_session.rollback()
 
     @staticmethod
     async def _find_due_crons(session: AsyncSession, now: datetime) -> list[CronORM]:
@@ -101,29 +156,27 @@ class CronScheduler:
     @staticmethod
     async def _fire_cron(session: AsyncSession, cron: CronORM) -> None:
         """Create a run from the cron's payload and advance next_run_date."""
-        payload = cron.payload or {}
         now = datetime.now(UTC)
-        should_delete_thread = _should_delete_stateless_thread(cron)
+        should_delete_thread = should_delete_stateless_thread(cron)
         run_created = False
 
-        # Build a RunCreate from the stored payload
-        run_request = RunCreate(
-            assistant_id=cron.assistant_id,
-            input=payload.get("input"),
-            config=payload.get("config"),
-            context=payload.get("context"),
-            checkpoint=payload.get("checkpoint"),
-            interrupt_before=payload.get("interrupt_before"),
-            interrupt_after=payload.get("interrupt_after"),
-            stream_subgraphs=payload.get("stream_subgraphs"),
-            stream_mode=payload.get("stream_mode"),
-            multitask_strategy=payload.get("multitask_strategy"),
-            metadata=None,
-        )
+        # Liveness check: refuse to forge a User for a deleted/revoked identity.
+        if not await _validate_cron_user(cron.user_id):
+            logger.warning(
+                "Disabling cron because the owning user failed liveness check",
+                cron_id=cron.cron_id,
+                user_id=cron.user_id,
+            )
+            await session.execute(
+                update(CronORM)
+                .where(CronORM.cron_id == cron.cron_id)
+                .values(enabled=False, claimed_until=None, updated_at=now)
+            )
+            await session.commit()
+            return
 
-        # Determine thread_id: use cron.thread_id if bound, else create ephemeral
+        run_request = _build_run_create(cron)
         thread_id = cron.thread_id or str(uuid4())
-
         user = User(
             identity=cron.user_id,
             display_name="cron-scheduler",
@@ -156,11 +209,15 @@ class CronScheduler:
             if should_delete_thread:
                 await CronScheduler._cleanup_failed_stateless_thread(thread_id, cron)
 
-        # Advance to next occurrence (or disable if past end_time)
+        # Advance to next occurrence (or disable when past end_time). Always
+        # clear ``claimed_until`` so the cron becomes eligible again on its
+        # next scheduled occurrence.
         if run_created:
             if cron.end_time and now >= cron.end_time:
                 await session.execute(
-                    update(CronORM).where(CronORM.cron_id == cron.cron_id).values(enabled=False, updated_at=now)
+                    update(CronORM)
+                    .where(CronORM.cron_id == cron.cron_id)
+                    .values(enabled=False, claimed_until=None, updated_at=now)
                 )
             else:
                 timezone = (cron.payload or {}).get("timezone")
@@ -177,8 +234,14 @@ class CronScheduler:
                 await session.execute(
                     update(CronORM)
                     .where(CronORM.cron_id == cron.cron_id)
-                    .values(next_run_date=next_run, updated_at=now)
+                    .values(next_run_date=next_run, claimed_until=None, updated_at=now)
                 )
+        else:
+            # Run setup failed: release the claim so the next tick can retry,
+            # but don't advance ``next_run_date`` — the schedule is unchanged.
+            await session.execute(
+                update(CronORM).where(CronORM.cron_id == cron.cron_id).values(claimed_until=None, updated_at=now)
+            )
         await session.commit()
 
     @staticmethod

@@ -220,6 +220,23 @@ class CronSettings(EnvBase):
 
     CRON_ENABLED: bool = True
     CRON_POLL_INTERVAL_SECONDS: int = 60
+    # Maximum lease duration for an in-flight cron firing. Once a cron is
+    # claimed by ``get_due_crons`` its ``claimed_until`` is set to
+    # ``now + CRON_CLAIM_DURATION_SECONDS`` so concurrent pollers and
+    # subsequent ticks don't double-fire it. Should comfortably exceed the
+    # worst-case ``_fire_cron`` duration. Defaults to 5 minutes.
+    CRON_CLAIM_DURATION_SECONDS: int = 300
+    # Cap on how many crons a single user may own. Set to 0 to disable.
+    CRON_MAX_PER_USER: int = 100
+    # Allow 6-field (seconds-first) cron schedules. Sub-minute schedules
+    # multiply scheduler load and DB writes; off by default.
+    CRON_ALLOW_SECONDS_SCHEDULE: bool = False
+    # Cap on how many crons a single tick will fire (prevents one slow
+    # poll from queuing up unbounded work).
+    CRON_TICK_BATCH_SIZE: int = 100
+    # Soft cap on JSONB payload size (input + config + context + checkpoint
+    # + metadata combined) accepted on create/update.
+    CRON_MAX_PAYLOAD_BYTES: int = 64 * 1024
 
     @model_validator(mode="after")
     def _validate_poll_interval(self) -> "CronSettings":
@@ -228,6 +245,16 @@ class CronSettings(EnvBase):
             raise ValueError(
                 f"CRON_POLL_INTERVAL_SECONDS must be greater than 0, got {self.CRON_POLL_INTERVAL_SECONDS}"
             )
+        if self.CRON_CLAIM_DURATION_SECONDS <= 0:
+            raise ValueError(
+                f"CRON_CLAIM_DURATION_SECONDS must be greater than 0, got {self.CRON_CLAIM_DURATION_SECONDS}"
+            )
+        if self.CRON_MAX_PER_USER < 0:
+            raise ValueError(f"CRON_MAX_PER_USER must be >= 0, got {self.CRON_MAX_PER_USER}")
+        if self.CRON_TICK_BATCH_SIZE <= 0:
+            raise ValueError(f"CRON_TICK_BATCH_SIZE must be greater than 0, got {self.CRON_TICK_BATCH_SIZE}")
+        if self.CRON_MAX_PAYLOAD_BYTES <= 0:
+            raise ValueError(f"CRON_MAX_PAYLOAD_BYTES must be greater than 0, got {self.CRON_MAX_PAYLOAD_BYTES}")
         return self
 
 

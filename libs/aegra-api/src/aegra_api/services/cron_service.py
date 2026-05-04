@@ -5,7 +5,7 @@ to the existing run preparation pipeline.
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,6 +24,7 @@ from aegra_api.models.crons import (
     CronResponse,
     CronSearchRequest,
     CronUpdate,
+    OnRunCompleted,
 )
 from aegra_api.services.langgraph_service import LangGraphService, get_langgraph_service
 from aegra_api.settings import settings
@@ -62,14 +63,34 @@ def _is_seconds_cron(schedule: str) -> bool:
 
 
 def _is_valid_schedule(schedule: str) -> bool:
-    """Validate a cron expression (5-field standard or 6-field seconds-first)."""
-    if _is_seconds_cron(schedule):
-        try:
-            croniter(schedule, datetime.now(UTC), second_at_beginning=True)
-            return True
-        except (ValueError, KeyError):
-            return False
-    return croniter.is_valid(schedule)
+    """Validate a cron expression by parsing AND iterating once.
+
+    Some malformed expressions (out-of-range step values, impossible day
+    combinations) only raise on iteration, not construction.
+    """
+    seconds = _is_seconds_cron(schedule)
+    try:
+        it = croniter(schedule, datetime.now(UTC), second_at_beginning=seconds)
+        it.get_next(datetime)
+        return True
+    except (ValueError, KeyError):
+        return False
+
+
+def _resolve_timezone(timezone: str | None) -> ZoneInfo | None:
+    """Return a ZoneInfo for *timezone* or ``None`` when invalid/absent.
+
+    The scheduler tolerates stored timezones that became invalid (tzdata
+    upgrade, OS update) by falling back to UTC and logging a warning so a
+    cron is never permanently stuck.
+    """
+    if timezone is None:
+        return None
+    try:
+        return ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, KeyError):
+        logger.warning("Invalid stored timezone, falling back to UTC", timezone=timezone)
+        return None
 
 
 def _compute_next_run(
@@ -88,8 +109,8 @@ def _compute_next_run(
     expressions (e.g. ``*/30 * * * * *`` = every 30 seconds).
     """
     base = now or datetime.now(UTC)
-    if timezone:
-        tz = ZoneInfo(timezone)
+    tz = _resolve_timezone(timezone)
+    if tz is not None:
         base = base.astimezone(tz)
     second_at_beginning = _is_seconds_cron(schedule)
     result = croniter(schedule, base, second_at_beginning=second_at_beginning).get_next(datetime)
@@ -105,7 +126,7 @@ def _cron_to_response(row: CronORM) -> CronResponse:
         cron_id=str(row.cron_id),
         assistant_id=str(row.assistant_id),
         thread_id=row.thread_id,
-        on_run_completed=row.on_run_completed,
+        on_run_completed=cast("OnRunCompleted | None", row.on_run_completed),
         end_time=row.end_time,
         schedule=row.schedule,
         created_at=row.created_at,
@@ -116,6 +137,15 @@ def _cron_to_response(row: CronORM) -> CronResponse:
         metadata=row.metadata_dict or {},
         enabled=row.enabled,
     )
+
+
+def should_delete_stateless_thread(cron: CronORM) -> bool:
+    """Return True when a stateless cron should drop its ephemeral thread.
+
+    Stateless = the cron is not bound to a thread. ``on_run_completed``
+    defaults to ``"delete"`` and only ``"keep"`` opts out.
+    """
+    return cron.thread_id is None and cron.on_run_completed != "keep"
 
 
 class CronService:
@@ -149,16 +179,34 @@ class CronService:
         Returns the ORM row so the caller (API layer) can also trigger
         the first run and return the ``Run`` response.
         """
-        # Validate schedule expression
+        # Schedule: validate format AND seconds-feature gate.
+        if _is_seconds_cron(request.schedule) and not settings.cron.CRON_ALLOW_SECONDS_SCHEDULE:
+            raise HTTPException(
+                422,
+                "6-field (seconds) cron schedules are disabled. Enable CRON_ALLOW_SECONDS_SCHEDULE to allow them.",
+            )
         if not _is_valid_schedule(request.schedule):
             raise HTTPException(422, f"Invalid cron schedule: {request.schedule}")
 
-        # Validate timezone when provided
+        # Validate timezone when provided. We refuse invalid TZs at create
+        # time even though the scheduler now falls back to UTC at run time.
         if request.timezone is not None:
             try:
                 ZoneInfo(request.timezone)
             except (ZoneInfoNotFoundError, KeyError):
                 raise HTTPException(422, f"Invalid timezone: {request.timezone}")
+
+        # Per-user cap to prevent one tenant from exhausting the scheduler.
+        max_per_user = settings.cron.CRON_MAX_PER_USER
+        if max_per_user > 0:
+            existing = await self.session.scalar(
+                select(func.count()).select_from(CronORM).where(CronORM.user_id == user_identity)
+            )
+            if (existing or 0) >= max_per_user:
+                raise HTTPException(
+                    429,
+                    f"Cron limit reached: a single user may own at most {max_per_user} crons.",
+                )
 
         available_graphs = self._get_available_graphs()
         requested_assistant_id = str(request.assistant_id)
@@ -178,10 +226,17 @@ class CronService:
         payload = _build_payload(request)
         now = datetime.now(UTC)
         # Advance past the immediate first occurrence since _trigger_first_run
-        # fires a run right away. We skip to the second occurrence so the
-        # scheduler does not fire a duplicate run seconds after creation.
+        # fires a run right away when ``enabled`` is not False. We skip to the
+        # second occurrence so the scheduler does not fire a duplicate run
+        # seconds after creation. When the caller suppresses the first run
+        # (enabled=False) the scheduler picks up the regular first occurrence.
         first_occ = _compute_next_run(request.schedule, now=now, timezone=request.timezone)
-        next_run = _compute_next_run(request.schedule, now=first_occ, timezone=request.timezone)
+        will_fire_immediately = request.enabled is not False
+        next_run = (
+            _compute_next_run(request.schedule, now=first_occ, timezone=request.timezone)
+            if will_fire_immediately
+            else first_occ
+        )
 
         cron_orm = CronORM(
             cron_id=str(uuid4()),
@@ -212,7 +267,7 @@ class CronService:
         user_identity: str,
     ) -> CronResponse:
         """Update an existing cron job and return the updated ``CronResponse``."""
-        cron = await self._get_cron_or_404(cron_id, user_identity)
+        cron = await self._get_cron_or_404(cron_id, user_identity, lock=True)
 
         values: dict[str, Any] = {"updated_at": datetime.now(UTC)}
         existing_payload = dict(cron.payload or {})
@@ -225,6 +280,11 @@ class CronService:
 
         # Schedule
         if request.schedule is not None:
+            if _is_seconds_cron(request.schedule) and not settings.cron.CRON_ALLOW_SECONDS_SCHEDULE:
+                raise HTTPException(
+                    422,
+                    "6-field (seconds) cron schedules are disabled. Enable CRON_ALLOW_SECONDS_SCHEDULE to allow them.",
+                )
             if not _is_valid_schedule(request.schedule):
                 raise HTTPException(422, f"Invalid cron schedule: {request.schedule}")
             values["schedule"] = request.schedule
@@ -252,10 +312,16 @@ class CronService:
             timezone = existing_payload.get("timezone")
             values["next_run_date"] = _compute_next_run(schedule, timezone=timezone)
 
-        await self.session.execute(update(CronORM).where(CronORM.cron_id == cron_id).values(**values))
+        result = await self.session.execute(
+            update(CronORM).where(CronORM.cron_id == cron_id, CronORM.user_id == user_identity).values(**values)
+        )
+        if result.rowcount == 0:  # type: ignore[union-attr]
+            raise HTTPException(404, f"Cron '{cron_id}' not found")
         await self.session.commit()
 
-        updated = await self.session.scalar(select(CronORM).where(CronORM.cron_id == cron_id))
+        updated = await self.session.scalar(
+            select(CronORM).where(CronORM.cron_id == cron_id, CronORM.user_id == user_identity)
+        )
         if not updated:
             raise HTTPException(404, f"Cron '{cron_id}' not found")
 
@@ -264,7 +330,7 @@ class CronService:
 
     async def delete_cron(self, cron_id: str, user_identity: str) -> None:
         """Delete a cron job."""
-        cron = await self._get_cron_or_404(cron_id, user_identity)
+        cron = await self._get_cron_or_404(cron_id, user_identity, lock=True)
         await self.session.delete(cron)
         await self.session.commit()
         logger.info("Deleted cron job", cron_id=cron_id)
@@ -322,24 +388,52 @@ class CronService:
     async def get_due_crons(self, now: datetime | None = None) -> list[CronORM]:
         """Atomically claim enabled cron jobs whose ``next_run_date`` is in the past.
 
-        The claim temporarily moves ``next_run_date`` forward by one poll interval
-        so concurrent scheduler instances do not pick the same rows before they are
-        processed. Successful execution overwrites this temporary value with the real
-        next occurrence; failed execution leaves the cron claimable again on a later
-        poll instead of skipping the schedule permanently.
+        The claim writes ``claimed_until = now + CRON_CLAIM_DURATION_SECONDS``
+        and only matches rows that are not currently claimed. This decouples
+        the claim window from the poll interval, so a slow ``_fire_cron`` no
+        longer races against the next tick.
+
+        Capped by ``CRON_TICK_BATCH_SIZE`` so a single instance never tries
+        to fan out unbounded work in one tick.
+
+        Note on at-least-once semantics: if a worker claims a cron, fires the
+        run, and crashes before persisting the next ``next_run_date``, the
+        claim eventually expires and the cron is re-claimed. This means runs
+        can fire more than once per occurrence under crash conditions.
+        Idempotency at the agent level is the operator's responsibility.
         """
         now = now or datetime.now(UTC)
-        claimed_until = now + timedelta(seconds=settings.cron.CRON_POLL_INTERVAL_SECONDS)
-        stmt = (
-            update(CronORM)
+        claim_seconds = settings.cron.CRON_CLAIM_DURATION_SECONDS
+        claimed_until = now + timedelta(seconds=claim_seconds)
+        batch = settings.cron.CRON_TICK_BATCH_SIZE
+
+        # Phase 1: pick up to N claimable cron_ids in a SELECT ... FOR UPDATE
+        # SKIP LOCKED so concurrent pollers across instances see disjoint
+        # claims. This avoids racing UPDATE ... RETURNING which has no LIMIT.
+        select_stmt = (
+            select(CronORM.cron_id)
             .where(
                 CronORM.enabled.is_(True),
                 CronORM.next_run_date <= now,
+                (CronORM.claimed_until.is_(None)) | (CronORM.claimed_until <= now),
             )
-            .values(next_run_date=claimed_until, updated_at=now)
+            .order_by(CronORM.next_run_date.asc())
+            .limit(batch)
+            .with_for_update(skip_locked=True)
+        )
+        ids_result = await self.session.execute(select_stmt)
+        cron_ids = [row[0] for row in ids_result.all()]
+        if not cron_ids:
+            await self.session.commit()
+            return []
+
+        update_stmt = (
+            update(CronORM)
+            .where(CronORM.cron_id.in_(cron_ids))
+            .values(claimed_until=claimed_until, updated_at=now)
             .returning(CronORM)
         )
-        result = await self.session.execute(stmt)
+        result = await self.session.execute(update_stmt)
         await self.session.commit()
         return list(result.scalars().all())
 
@@ -347,17 +441,22 @@ class CronService:
         """Advance ``next_run_date`` to the next occurrence after *now*.
 
         If the cron has an ``end_time`` that has passed, disable it instead.
+        Releases the in-flight claim by clearing ``claimed_until``.
         """
         now = datetime.now(UTC)
         if cron.end_time and now >= cron.end_time:
             await self.session.execute(
-                update(CronORM).where(CronORM.cron_id == cron.cron_id).values(enabled=False, updated_at=now)
+                update(CronORM)
+                .where(CronORM.cron_id == cron.cron_id)
+                .values(enabled=False, claimed_until=None, updated_at=now)
             )
         else:
             timezone = (cron.payload or {}).get("timezone")
             next_run = _compute_next_run(cron.schedule, now=now, timezone=timezone)
             await self.session.execute(
-                update(CronORM).where(CronORM.cron_id == cron.cron_id).values(next_run_date=next_run, updated_at=now)
+                update(CronORM)
+                .where(CronORM.cron_id == cron.cron_id)
+                .values(next_run_date=next_run, claimed_until=None, updated_at=now)
             )
         await self.session.commit()
 
@@ -365,11 +464,22 @@ class CronService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _get_cron_or_404(self, cron_id: str, user_identity: str) -> CronORM:
-        """Return the user's cron row or raise a 404 when it does not exist."""
-        cron = await self.session.scalar(
-            select(CronORM).where(CronORM.cron_id == cron_id, CronORM.user_id == user_identity)
-        )
+    async def _get_cron_or_404(
+        self,
+        cron_id: str,
+        user_identity: str,
+        *,
+        lock: bool = False,
+    ) -> CronORM:
+        """Return the user's cron row or raise a 404 when it does not exist.
+
+        When *lock* is True the row is selected ``FOR UPDATE`` so concurrent
+        scheduler ticks cannot race the API write.
+        """
+        stmt = select(CronORM).where(CronORM.cron_id == cron_id, CronORM.user_id == user_identity)
+        if lock:
+            stmt = stmt.with_for_update()
+        cron = await self.session.scalar(stmt)
         if not cron:
             raise HTTPException(404, f"Cron '{cron_id}' not found")
         return cron

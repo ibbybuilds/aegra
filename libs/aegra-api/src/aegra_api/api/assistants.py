@@ -64,8 +64,9 @@ def _merge_handler_filters_into_metadata(
         flat_meta = {k: v for k, v in filters.items() if k != "metadata"}
         request.metadata = {**(request.metadata or {}), **nested_meta, **flat_meta}
         return
-    if value.get("metadata"):
-        request.metadata = {**(request.metadata or {}), **value["metadata"]}
+    value_meta = value.get("metadata")
+    if isinstance(value_meta, dict) and value_meta:
+        request.metadata = {**(request.metadata or {}), **value_meta}
 
 
 @router.post("/assistants", response_model=Assistant, response_model_by_alias=False)

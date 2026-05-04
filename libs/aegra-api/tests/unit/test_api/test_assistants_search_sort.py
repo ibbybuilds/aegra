@@ -94,6 +94,13 @@ class TestMergeHandlerFilters:
         _merge_handler_filters_into_metadata(request, {"owner": "real-user"}, {})
         assert request.metadata == {"owner": "real-user"}
 
+    def test_value_metadata_set_to_non_mapping_does_not_crash(self) -> None:
+        """If a handler mutates ``value['metadata']`` to a non-mapping (e.g. a
+        bare string), the merge must skip rather than ``TypeError`` on ``**``."""
+        request = AssistantSearchRequest(metadata={"env": "prod"})
+        _merge_handler_filters_into_metadata(request, None, {"metadata": "not-a-dict"})
+        assert request.metadata == {"env": "prod"}
+
     def test_handler_returning_both_nested_metadata_and_flat_keys_merges_both(self) -> None:
         """A handler returning ``{"metadata": {"tenant": "x"}, "owner": "u1"}`` must
         apply BOTH constraints. Earlier code returned after the nested branch and

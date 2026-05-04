@@ -1090,7 +1090,7 @@
           "Threads"
         ],
         "summary": "Update Thread State",
-        "description": "Update thread state or retrieve it via POST.\n\nWhen `values` is provided, creates a new checkpoint with the updated state.\nUse `as_node` to attribute the update to a specific graph node. When\n`values` is null, this endpoint acts as a POST-based alternative to the\nGET state endpoint (useful when passing complex checkpoint/subgraph\nparameters in the request body).",
+        "description": "Update thread state or retrieve it via POST.\n\nWhen `values` is provided, creates a new checkpoint with the updated state.\nUse `as_node` to attribute the update to a specific graph node. When\n`values` is null AND `as_node` is not provided, this endpoint acts as a\nPOST-based alternative to the GET state endpoint (useful when passing\ncomplex checkpoint/subgraph parameters in the request body).\n\nWhen `values` is null AND `as_node` is provided (e.g. ``as_node=\"__copy__\"``\nas LangGraph Studio sends for \"Re-run from here\"), this creates a new\ncheckpoint derived from the supplied ``checkpoint_id`` without applying\nany state change \u2014 used to anchor a subsequent run as a fork of that\ncheckpoint rather than of the thread's latest state.",
         "operationId": "update_thread_state_threads__thread_id__state_post",
         "parameters": [
           {
@@ -3386,10 +3386,17 @@
             "default": "pending"
           },
           "input": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Input",
-            "description": "Input data provided to the run."
+            "description": "Input data provided to the run. None for checkpoint-only resume."
           },
           "output": {
             "anyOf": [
@@ -3465,7 +3472,6 @@
           "run_id",
           "thread_id",
           "assistant_id",
-          "input",
           "user_id",
           "created_at",
           "updated_at"

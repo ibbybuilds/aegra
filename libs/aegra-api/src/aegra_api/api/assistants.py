@@ -57,11 +57,12 @@ def _merge_handler_filters_into_metadata(
     ``{"owner": user_id}`` → metadata containment match), matching the
     LangGraph SDK auth contract.
     """
-    if filters and "metadata" in filters and isinstance(filters["metadata"], dict):
-        request.metadata = {**(request.metadata or {}), **filters["metadata"]}
-        return
     if filters:
-        request.metadata = {**(request.metadata or {}), **filters}
+        # A handler may return both a nested metadata payload AND flat scope
+        # constraints (e.g. {"metadata": {...}, "owner": "u1"}). Merge both.
+        nested_meta = filters["metadata"] if isinstance(filters.get("metadata"), dict) else {}
+        flat_meta = {k: v for k, v in filters.items() if k != "metadata"}
+        request.metadata = {**(request.metadata or {}), **nested_meta, **flat_meta}
         return
     if value.get("metadata"):
         request.metadata = {**(request.metadata or {}), **value["metadata"]}
@@ -110,10 +111,12 @@ async def list_assistants(
     filters = await handle_event(ctx, value)
 
     if filters or value.get("metadata"):
+        # Build a transient request just to reuse the merge helper, then hand
+        # the resulting metadata filter to list_assistants — which doesn't
+        # paginate. Using search_assistants here would silently cap at 20.
         search_request = AssistantSearchRequest()
         _merge_handler_filters_into_metadata(search_request, filters, value)
-        column, asc = _resolve_sort(search_request)
-        assistants = await service.search_assistants(search_request, user.identity, sort_column=column, sort_asc=asc)
+        assistants = await service.list_assistants(user.identity, metadata=search_request.metadata)
     else:
         assistants = await service.list_assistants(user.identity)
 

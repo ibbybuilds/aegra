@@ -565,16 +565,35 @@ class TestSearchAssistantsSortAndAuth:
         app = create_test_app(include_runs=False, include_threads=False)
         app.include_router(assistants_module.router)
         app.dependency_overrides[get_assistant_service] = lambda: mock_assistant_service
-        mock_assistant_service.search_assistants.return_value = []
+        mock_assistant_service.list_assistants.return_value = []
 
         with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
             mock_handle.return_value = {"owner": "user-123"}
             resp = make_client(app).get("/assistants")
 
         assert resp.status_code == 200
-        mock_assistant_service.search_assistants.assert_called_once()
-        called_request = mock_assistant_service.search_assistants.call_args.args[0]
-        assert called_request.metadata == {"owner": "user-123"}
+        mock_assistant_service.list_assistants.assert_called_once()
+        kwargs = mock_assistant_service.list_assistants.call_args.kwargs
+        assert kwargs.get("metadata") == {"owner": "user-123"}
+
+    def test_list_with_filters_does_not_paginate(self, mock_assistant_service):
+        """GET /assistants must return all rows even when an auth handler is
+        active — going through search_assistants would silently cap at 20."""
+        from aegra_api.api import assistants as assistants_module
+        from aegra_api.services.assistant_service import get_assistant_service
+
+        app = create_test_app(include_runs=False, include_threads=False)
+        app.include_router(assistants_module.router)
+        app.dependency_overrides[get_assistant_service] = lambda: mock_assistant_service
+        mock_assistant_service.list_assistants.return_value = []
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"owner": "user-123"}
+            resp = make_client(app).get("/assistants")
+
+        assert resp.status_code == 200
+        mock_assistant_service.search_assistants.assert_not_called()
+        mock_assistant_service.list_assistants.assert_called_once()
 
 
 class TestCountAssistants:

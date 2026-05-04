@@ -93,3 +93,15 @@ class TestMergeHandlerFilters:
         request = AssistantSearchRequest(metadata={"owner": "attacker"})
         _merge_handler_filters_into_metadata(request, {"owner": "real-user"}, {})
         assert request.metadata == {"owner": "real-user"}
+
+    def test_handler_returning_both_nested_metadata_and_flat_keys_merges_both(self) -> None:
+        """A handler returning ``{"metadata": {"tenant": "x"}, "owner": "u1"}`` must
+        apply BOTH constraints. Earlier code returned after the nested branch and
+        silently dropped the flat keys — leaking rows the flat scope would exclude."""
+        request = AssistantSearchRequest(metadata={"env": "prod"})
+        _merge_handler_filters_into_metadata(
+            request,
+            {"metadata": {"tenant": "x"}, "owner": "u1"},
+            {},
+        )
+        assert request.metadata == {"env": "prod", "tenant": "x", "owner": "u1"}

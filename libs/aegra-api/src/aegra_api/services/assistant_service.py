@@ -219,13 +219,23 @@ class AssistantService:
 
         return to_pydantic(assistant_orm)
 
-    async def list_assistants(self, user_identity: str) -> list[Assistant]:
-        """List user's assistants and system assistants"""
-        # Include both user's assistants and system assistants (like search_assistants does)
+    async def list_assistants(
+        self,
+        user_identity: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[Assistant]:
+        """List user's assistants and system assistants.
+
+        Optionally filtered by a metadata containment predicate. Unlike
+        ``search_assistants``, this method does not paginate — callers that
+        need pagination should use search.
+        """
         stmt = select(AssistantORM).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
+        if metadata:
+            stmt = stmt.where(AssistantORM.metadata_dict.op("@>")(metadata))
         result = await self.session.scalars(stmt)
-        user_assistants = [to_pydantic(a) for a in result.all()]
-        return user_assistants
+        return [to_pydantic(a) for a in result.all()]
 
     async def search_assistants(
         self,

@@ -213,6 +213,10 @@ class TestGetStoreItem:
 
     def test_get_item_with_empty_namespace_query_param(self, client, mock_store):
         """Test empty namespace query param is treated as no namespace"""
+        from unittest.mock import patch, wraps
+
+        from aegra_api.api.store import apply_user_namespace_scoping
+
         mock_item = DummyStoreItem(
             key="test-key",
             value={"data": "test"},
@@ -220,12 +224,16 @@ class TestGetStoreItem:
         )
         mock_store.aget.return_value = mock_item
 
-        resp = client.get("/store/items?namespace=&key=test-key")
+        with patch(
+            "aegra_api.api.store.apply_user_namespace_scoping",
+            wraps=apply_user_namespace_scoping,
+        ) as spy:
+            resp = client.get("/store/items?namespace=&key=test-key")
 
         assert resp.status_code == 200
+        spy.assert_called_once_with("test-user", [])
         call_args = mock_store.aget.call_args
-        namespace = call_args[0][0]
-        assert namespace == ("users", "test-user")
+        assert call_args[0][0] == ("users", "test-user")
 
 
 class TestDeleteStoreItem:
@@ -257,6 +265,23 @@ class TestDeleteStoreItem:
 
         assert resp.status_code == 422
         assert "key" in resp.json()["detail"].lower()
+
+    def test_delete_item_with_empty_namespace_query_param(self, client, mock_store):
+        """Test empty namespace query param is treated as no namespace"""
+        from unittest.mock import patch, wraps
+
+        from aegra_api.api.store import apply_user_namespace_scoping
+
+        with patch(
+            "aegra_api.api.store.apply_user_namespace_scoping",
+            wraps=apply_user_namespace_scoping,
+        ) as spy:
+            resp = client.delete("/store/items?key=test-key&namespace=")
+
+        assert resp.status_code == 204
+        spy.assert_called_once_with("test-user", [])
+        call_args = mock_store.adelete.call_args
+        assert call_args[0][0] == ("users", "test-user")
 
     def test_delete_item_with_namespace(self, client, mock_store):
         """Test deleting item with specific namespace"""

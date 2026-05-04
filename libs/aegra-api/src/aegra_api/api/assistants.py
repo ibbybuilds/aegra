@@ -33,11 +33,6 @@ from aegra_api.services.assistant_service import AssistantService, get_assistant
 router = APIRouter(tags=["Assistants"], dependencies=auth_dependency)
 
 
-_ALLOWED_SORT_FIELDS: frozenset[str] = frozenset({"assistant_id", "name", "graph_id", "created_at", "updated_at"})
-_DEFAULT_SORT_FIELD = "created_at"
-_DEFAULT_SORT_ASC = False
-
-
 def _resolve_sort(request: AssistantSearchRequest) -> tuple[Any, bool]:
     """Resolve (ORM column, is_ascending) for /assistants/search.
 
@@ -46,7 +41,7 @@ def _resolve_sort(request: AssistantSearchRequest) -> tuple[Any, bool]:
     """
     if request.sort_by:
         return getattr(AssistantORM, request.sort_by), (request.sort_order or "desc").lower() == "asc"
-    return getattr(AssistantORM, _DEFAULT_SORT_FIELD), _DEFAULT_SORT_ASC
+    return AssistantORM.created_at, False
 
 
 def _merge_handler_filters_into_metadata(

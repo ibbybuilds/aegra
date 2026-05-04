@@ -1,5 +1,6 @@
 import re
 from typing import Annotated
+from urllib.parse import quote_plus
 
 from pydantic import BeforeValidator, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,17 +62,10 @@ class AppSettings(EnvBase):
     ENV_MODE: UpperStr = "LOCAL"
     DEBUG: bool = False
 
-    @computed_field
-    @property
-    def sse_ping_interval_secs(self) -> int:
-        """Integer ping interval for ``EventSourceResponse``.
-
-        sse-starlette accepts only ``int`` seconds; the underlying setting is
-        ``float`` to support sub-second heartbeats in the legacy JSON-wait
-        endpoints and in tests. Clamp to ``>= 1`` so 0/negative floats can't
-        produce a zero ping interval.
-        """
-        return max(1, int(self.KEEPALIVE_INTERVAL_SECS))
+    # Run alembic upgrade head on startup. Default True (dev / single-pod).
+    # Set False for multi-pod K8s to avoid advisory-lock probe timeouts;
+    # run migrations out-of-band via `aegra db upgrade`.
+    RUN_MIGRATIONS_ON_STARTUP: bool = True
 
     # Logging
     LOG_LEVEL: UpperStr = "INFO"
@@ -85,6 +79,18 @@ class AppSettings(EnvBase):
         if not self.LOG_EXCLUDE_PATHS:
             return ()
         return tuple(part.strip() for part in self.LOG_EXCLUDE_PATHS.split(",") if part.strip())
+
+    @computed_field
+    @property
+    def sse_ping_interval_secs(self) -> int:
+        """Integer ping interval for ``EventSourceResponse``.
+
+        sse-starlette accepts only ``int`` seconds; the underlying setting is
+        ``float`` to support sub-second heartbeats in the legacy JSON-wait
+        endpoints and in tests. Clamp to ``>= 1`` so 0/negative floats can't
+        produce a zero ping interval.
+        """
+        return max(1, int(self.KEEPALIVE_INTERVAL_SECS))
 
 
 class DatabaseSettings(EnvBase):
@@ -176,7 +182,7 @@ class DatabaseSettings(EnvBase):
             url = self._normalize_scheme(self.DATABASE_URL, "postgresql+asyncpg")
             return self._to_sqlalchemy_multihost(url)
         return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
+            f"postgresql+asyncpg://{quote_plus(self.POSTGRES_USER)}:{quote_plus(self.POSTGRES_PASSWORD)}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
@@ -187,7 +193,7 @@ class DatabaseSettings(EnvBase):
         if self.DATABASE_URL:
             return self._normalize_scheme(self.DATABASE_URL, "postgresql")
         return (
-            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
+            f"postgresql://{quote_plus(self.POSTGRES_USER)}:{quote_plus(self.POSTGRES_PASSWORD)}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 

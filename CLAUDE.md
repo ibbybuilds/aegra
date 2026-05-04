@@ -107,6 +107,12 @@ def process(items): ...
 - Use absolute imports with `aegra_api.*` prefix.
 - **ALWAYS place imports at the top of the file.** Never use inline/lazy imports inside functions unless there is a **proven circular dependency** (confirmed by actual `ImportError`) or the import is from an **optional dependency** that may not be installed (wrapped in `try/except ImportError`). "Might be slow" or "only used here" are NOT valid reasons for inline imports. If unsure, put it at the top — only move inline after confirming the import cycle with an actual error.
 
+### Code Comments (STRICT)
+- **Max 2 lines per comment. 3 only when truly unavoidable.** If you can't say it in 2 lines, the code is the wrong shape or you're over-explaining. Delete the comment, rename a variable, or split the function.
+- Comments answer **why** the code exists or **why this weird shape**. They never restate what the code obviously does, narrate history ("previously X, now Y"), or apologize. Git blame holds the history.
+- No JSDoc/docstring filler on self-describing names. The signature IS the doc.
+- Optimize for future readers grepping for intent, not for narrative.
+
 ### Linter Suppressions (`noqa`, `type: ignore`)
 - **NEVER suppress a lint warning when the underlying issue can be fixed.** `# noqa: F401` on a dead re-export means you should delete the re-export and fix the importers. `# type: ignore` on a type mismatch means you should fix the types.
 - Suppressions are **only acceptable** when:
@@ -215,6 +221,28 @@ These rules exist because AI agents repeatedly make these mistakes. Follow them 
 - **Do not assume a library is available.** Check `pyproject.toml` before importing a new dependency.
 - **If you don't understand why code exists, ask or leave it alone** (Chesterton's Fence).
 - **NEVER commit commented-out code.** Delete it or keep it — no middle ground.
+
+### Database & Migrations (STRICT)
+Aegra runs against user-managed Postgres including multi-host HA (PR #299). DB code has invariants that break silently in prod. Before touching DB code, walk this checklist:
+
+- **Two URLs, do not cross drivers.**
+  - `settings.db.database_url` → asyncpg query-param form. SQLAlchemy only.
+  - `settings.db.database_url_sync` → raw libpq, comma-host preserved. psycopg only (LangGraph pool, migrations precheck).
+  - Feeding `database_url_sync` to SQLAlchemy (`create_engine`, `async_engine_from_config`) silently breaks HA — SQLAlchemy's URL parser doesn't grok libpq comma-hosts. For sync DBAPI, use `psycopg.connect(database_url_sync)` directly.
+
+- **Pool ownership.** Long-lived pools belong in `db_manager` only. Short-lived helpers must close deterministically (`with` or `try/finally`). Code running before `db_manager.initialize()` cannot assume pools exist.
+
+- **Migrations.**
+  - Schema changes go through alembic, never raw DDL from app code.
+  - Linear `down_revision` chain. Idempotent + resumable.
+  - Lifespan uses `run_migrations_if_needed()` (lock-free precheck). `run_migrations()` is for `aegra db upgrade` only. Don't regress the precheck.
+  - Multi-pod path: `RUN_MIGRATIONS_ON_STARTUP=false` + `aegra db upgrade` out-of-band. Changing startup behavior needs both `.env.example` files + `docs/guides/deployment.mdx` updated.
+
+- **SQL-layer authorization.** Every tenant-scoped read/write needs `user_id == user.identity` in the WHERE, even with `@auth.on` registered (default-allow when no handler — see GHSA-m98r-6667-4wq7). Routes taking `thread_id`/`assistant_id`/`cron_id` path params verify ownership + 404 at handler entry, not deeper.
+
+- **Connection footprint.** New pools increase per-pod conn count. Extend existing or document the cap impact. PgBouncer/RDS Proxy transaction-pool mode breaks LISTEN/NOTIFY + prepared statements; flag accordingly.
+
+- **Testing.** Mock at the driver layer, not SQLAlchemy, when bypassing SQLAlchemy. Assert the exact URL passed to the driver matches `settings.db.*` so refactors can't quietly reintroduce SQLAlchemy URL parsing on libpq strings.
 
 ### Security
 - NEVER store secrets, API keys, or passwords in code — only in `.env` files or environment variables.

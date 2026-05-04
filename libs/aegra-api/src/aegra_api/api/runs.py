@@ -17,6 +17,7 @@ from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Run as RunORM
+from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.core.orm import _get_session_maker, get_session
 from aegra_api.core.sse import create_end_event, get_sse_headers, heartbeat_factory, sse_to_bytes
 from aegra_api.models import Run, RunCreate, RunStatus, User
@@ -53,6 +54,10 @@ async def create_run(
     endpoint to follow progress. Provide either `input` or `command` (for
     human-in-the-loop resumption) but not both.
     """
+    existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
+    if existing_thread and existing_thread.user_id != user.identity:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
     # Authorization check (create_run action on threads resource)
     ctx = build_auth_context(user, "threads", "create_run")
     value = {**request.model_dump(), "thread_id": thread_id}
@@ -99,6 +104,10 @@ async def create_and_stream_run(
     ``KEEPALIVE_INTERVAL_SECS`` so idle proxies don't drop long-running
     silent nodes (e.g. agents holding an upstream WebSocket).
     """
+    existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
+    if existing_thread and existing_thread.user_id != user.identity:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
     run_id, run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
     # Default to cancel on disconnect - this matches user expectation that clicking
@@ -328,6 +337,10 @@ async def wait_for_run(
 
     # Session block: all pre-execution DB work (validate, create run, submit)
     async with maker() as session:
+        existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
+        if existing_thread and existing_thread.user_id != user.identity:
+            raise HTTPException(404, f"Thread '{thread_id}' not found")
+
         run_id, _run, _job = await _prepare_run(session, thread_id, request, user, initial_status="pending")
 
     # No pool connection held from here — safe for long waits

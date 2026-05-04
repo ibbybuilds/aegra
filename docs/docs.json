@@ -72,7 +72,8 @@
               "guides/dependencies",
               "guides/observability",
               "guides/deployment",
-              "guides/worker-architecture"
+              "guides/worker-architecture",
+              "guides/high-availability"
             ]
           },
           {

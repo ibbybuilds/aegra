@@ -1,7 +1,10 @@
 """Tests for AppSettings, DatabaseSettings, and WorkerSettings."""
 
+from urllib.parse import quote_plus
+
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.engine import make_url
 
 from aegra_api.settings import AppSettings, CronSettings, DatabaseSettings, WorkerSettings
 
@@ -160,6 +163,259 @@ class TestDatabaseURLSupport:
 
         # _normalize_scheme won't match, so URL passes through as-is
         assert db.DATABASE_URL == "not-a-url"
+
+
+class TestSpecialCharactersInCredentials:
+    """Test that special characters in POSTGRES_USER/POSTGRES_PASSWORD are URL-encoded."""
+
+    def _clear_db_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in (
+            "DATABASE_URL",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DB",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+    @pytest.mark.parametrize(
+        ("password", "expected_encoded"),
+        [
+            pytest.param("p@ssword", quote_plus("p@ssword"), id="at_sign"),
+            pytest.param("p/ss#word", quote_plus("p/ss#word"), id="slash_and_hash"),
+            pytest.param("pass%word", quote_plus("pass%word"), id="percent"),
+            pytest.param("p?ss=word", quote_plus("p?ss=word"), id="question_and_equals"),
+            pytest.param("p:ss+word", quote_plus("p:ss+word"), id="colon_and_plus"),
+            pytest.param("p@ss/w#rd%2B", quote_plus("p@ss/w#rd%2B"), id="multiple_special"),
+        ],
+    )
+    def test_password_url_encoded_in_database_url(
+        self, monkeypatch: pytest.MonkeyPatch, password: str, expected_encoded: str
+    ) -> None:
+        """Special characters in POSTGRES_PASSWORD are URL-encoded in database_url."""
+        self._clear_db_env(monkeypatch)
+        monkeypatch.setenv("POSTGRES_USER", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", password)
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert f"user:{expected_encoded}@" in db.database_url
+        assert db.database_url.startswith("postgresql+asyncpg://")
+
+    @pytest.mark.parametrize(
+        ("password", "expected_encoded"),
+        [
+            pytest.param("p@ssword", quote_plus("p@ssword"), id="at_sign"),
+            pytest.param("p/ss#word", quote_plus("p/ss#word"), id="slash_and_hash"),
+        ],
+    )
+    def test_password_url_encoded_in_database_url_sync(
+        self, monkeypatch: pytest.MonkeyPatch, password: str, expected_encoded: str
+    ) -> None:
+        """Special characters in POSTGRES_PASSWORD are URL-encoded in database_url_sync."""
+        self._clear_db_env(monkeypatch)
+        monkeypatch.setenv("POSTGRES_USER", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", password)
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert f"user:{expected_encoded}@" in db.database_url_sync
+        assert db.database_url_sync.startswith("postgresql://")
+
+    def test_user_with_special_chars_url_encoded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Special characters in POSTGRES_USER are URL-encoded."""
+        self._clear_db_env(monkeypatch)
+        monkeypatch.setenv("POSTGRES_USER", "user@domain")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+
+        db = DatabaseSettings(_env_file=None)
+
+        expected_user = quote_plus("user@domain")
+        assert f"{expected_user}:pass@" in db.database_url
+        assert f"{expected_user}:pass@" in db.database_url_sync
+
+    def test_both_user_and_password_with_special_chars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both POSTGRES_USER and POSTGRES_PASSWORD with special chars are encoded."""
+        self._clear_db_env(monkeypatch)
+        monkeypatch.setenv("POSTGRES_USER", "u@er")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss/word")
+
+        db = DatabaseSettings(_env_file=None)
+
+        expected_user = quote_plus("u@er")
+        expected_pass = quote_plus("p@ss/word")
+        assert f"{expected_user}:{expected_pass}@" in db.database_url
+        assert f"{expected_user}:{expected_pass}@" in db.database_url_sync
+
+    def test_plain_credentials_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Credentials without special characters produce the same URL as before."""
+        self._clear_db_env(monkeypatch)
+        monkeypatch.setenv("POSTGRES_USER", "admin")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "secret123")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "admin:secret123@" in db.database_url
+        assert "admin:secret123@" in db.database_url_sync
+
+
+class TestMultiHostDatabaseURL:
+    """Test multi-host DATABASE_URL support for native PostgreSQL HA."""
+
+    def test_multihost_converted_for_asyncpg(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Multi-host libpq URL is converted to SQLAlchemy query-param format for asyncpg."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@h1:5432,h2:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert db.database_url == "postgresql+asyncpg://user:pass@/db?host=h1,h2&port=5432,5433"
+
+    def test_multihost_preserved_for_psycopg(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Multi-host URL is kept in libpq format for psycopg (database_url_sync)."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@h1:5432,h2:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert db.database_url_sync == "postgresql://user:pass@h1:5432,h2:5433/db"
+
+    def test_multihost_preserves_query_params(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Query params like target_session_attrs are preserved after conversion."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write&sslmode=require",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+
+        url = db.database_url
+        assert url.startswith("postgresql+asyncpg://user:pass@/db?")
+        assert "host=h1,h2" in url
+        assert "port=5432,5432" in url
+        assert "target_session_attrs=read-write" in url
+        assert "sslmode=require" in url
+
+    @pytest.mark.parametrize(
+        ("env_url", "expected_hosts", "expected_ports"),
+        [
+            pytest.param(
+                "postgresql://user:pass@h1,h2/db",
+                "host=h1,h2",
+                "port=5432,5432",
+                id="defaults_port_when_omitted",
+            ),
+            pytest.param(
+                "postgresql://user:pass@h1:5432,h2/db",
+                "host=h1,h2",
+                "port=5432,5432",
+                id="mixed_ports",
+            ),
+            pytest.param(
+                "postgresql://u:p@h1:5432,h2:5432,h3:5432/db",
+                "host=h1,h2,h3",
+                "port=5432,5432,5432",
+                id="three_hosts",
+            ),
+            pytest.param(
+                "postgresql://u:p@h1:,h2:5433/db",
+                "host=h1,h2",
+                "port=5432,5433",
+                id="trailing_colon_defaults_port",
+            ),
+            pytest.param(
+                "postgresql://u:p@[::1]:5432,[::2]:5433/db",
+                "host=[::1],[::2]",
+                "port=5432,5433",
+                id="ipv6_hosts",
+            ),
+            pytest.param(
+                "postgresql://u:p@[::1],[::2]/db",
+                "host=[::1],[::2]",
+                "port=5432,5432",
+                id="ipv6_without_port",
+            ),
+        ],
+    )
+    def test_multihost_host_port_matrix(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        env_url: str,
+        expected_hosts: str,
+        expected_ports: str,
+    ) -> None:
+        """Multi-host URLs are parsed into correct host/port query params."""
+        monkeypatch.setenv("DATABASE_URL", env_url)
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert expected_hosts in db.database_url
+        assert expected_ports in db.database_url
+
+    def test_malformed_ipv6_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Malformed bracketed IPv6 (missing closing bracket) raises at startup."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@[::1:5432,[::2]:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        with pytest.raises(ValueError, match="missing closing bracket"):
+            _ = db.database_url
+
+    def test_non_integer_port_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer port in multi-host URL raises at startup."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h1:abc,h2:5433/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        with pytest.raises(ValueError, match="Non-integer port"):
+            _ = db.database_url
+
+    def test_single_host_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Single-host URL is not rewritten."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@h1:5432/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert db.database_url == "postgresql+asyncpg://user:pass@h1:5432/db"
+
+    def test_multihost_no_userinfo(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Multi-host URL without userinfo is converted correctly."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://h1:5432,h2:5432/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert db.database_url == "postgresql+asyncpg:///db?host=h1,h2&port=5432,5432"
+
+    def test_multihost_rewritten_url_parses_with_sqlalchemy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Asyncpg multi-host URL must parse via SQLAlchemy (alembic env path)."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+        url = make_url(db.database_url)
+
+        assert url.drivername == "postgresql+asyncpg"
+        assert url.database == "db"
+        # Multi-host details live in query params, not in url.host.
+        assert url.query["host"] == "h1,h2"
+        assert url.query["port"] == "5432,5432"
+        assert url.query["target_session_attrs"] == "read-write"
+
+    def test_database_url_sync_preserves_libpq_multihost(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """database_url_sync must preserve libpq comma-host syntax (psycopg consumers)."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+
+        # Raw libpq form: comma-separated hosts in the authority, no
+        # ``host=`` query param rewrite, no async driver suffix.
+        assert "h1:5432,h2:5432" in db.database_url_sync
+        assert "host=" not in db.database_url_sync
+        assert db.database_url_sync.startswith("postgresql://")
 
 
 class TestWorkerSettingsLeaseValidation:

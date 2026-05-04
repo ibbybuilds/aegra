@@ -17,6 +17,7 @@ from rich.table import Table
 
 from aegra_cli import __version__
 from aegra_cli.commands import init
+from aegra_cli.commands.db import db
 from aegra_cli.env import load_env_file
 from aegra_cli.templates import (
     get_docker_compose,
@@ -232,6 +233,12 @@ def ensure_docker_files(project_path: Path, slug: str) -> Path:
     default=False,
     help="Break and wait for a debugger client to attach before starting.",
 )
+@click.option(
+    "--no-reload",
+    is_flag=True,
+    default=None,
+    help="Disable auto-reload",
+)
 @click.pass_context
 def dev(
     ctx: click.Context,
@@ -245,11 +252,13 @@ def dev(
     debug_port: int | None,
     debug_host: str | None,
     wait_for_client: bool,
+    no_reload: bool | None,
 ) -> None:
-    """Run the development server with hot reload.
+    """Run the development server with optional hot reload.
 
-    Starts uvicorn with --reload flag for development.
-    The server will automatically restart when code changes are detected.
+    Starts uvicorn with auto-reload enabled by default for development.
+    The server will automatically restart when code changes are detected unless
+    --no-reload is specified.
 
     Aegra auto-discovers aegra.json in the current directory, so you
     should run 'aegra dev' from your project root.
@@ -359,6 +368,8 @@ def dev(
             info_lines.append(f"[cyan]Debug host:[/cyan] {debug_host}")
         if wait_for_client:
             info_lines.append("[cyan]Wait for client to attach:[/cyan] True")
+    if no_reload:
+        info_lines.append("\n[dim]Auto-reload is disabled[/dim]")
     info_lines.append("\n[dim]Press Ctrl+C to stop the server[/dim]")
 
     console.print(
@@ -370,7 +381,9 @@ def dev(
     )
 
     # Build command. If debug_port is provided, wrap uvicorn with debugpy.
-    cmd_uvicorn = ["-m", "uvicorn", app, "--host", host, "--port", str(port), "--reload"]
+    cmd_uvicorn = ["-m", "uvicorn", app, "--host", host, "--port", str(port)]
+    if not no_reload:
+        cmd_uvicorn.append("--reload")
 
     if debug_port is not None:
         if importlib.util.find_spec("debugpy") is None:
@@ -380,13 +393,14 @@ def dev(
             )
             sys.exit(1)
 
-        console.print(
-            "[yellow]Note:[/yellow] debugpy is active. Hot-reload will disconnect the debugger "
-            "on each file change — reattach after every reload."
-        )
+        if not no_reload:
+            console.print(
+                "[yellow]Note:[/yellow] debugpy is active. Hot-reload will disconnect the debugger "
+                "on each file change — reattach after every reload."
+            )
 
         # Always bind debugpy to the debug host (default loopback) regardless of --host
-        listen = debug_port
+        listen = str(debug_port)
         is_loopback = True
 
         # If debug_host is specified, warn if it's not loopback. Also handle ip v4 and v6 addresses
@@ -747,6 +761,7 @@ def down(compose_file: Path | None, volumes: bool):
 
 # Register command groups and commands from the commands package
 cli.add_command(init)
+cli.add_command(db)
 
 
 def main():

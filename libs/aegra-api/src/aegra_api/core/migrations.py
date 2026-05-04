@@ -1,16 +1,21 @@
-"""Database migration utilities for Aegra.
+"""Alembic migration helpers.
 
-Provides automatic Alembic migration support for both development (repo)
-and production (pip install) deployments. Resolves the alembic.ini and
-migration scripts from either CWD or the installed aegra-api package.
+Resolves alembic.ini from CWD or the installed package. Two entry points:
+- ``run_migrations()``: unconditional upgrade, takes advisory lock. Use for
+  out-of-band runs (``aegra db upgrade``, init container, Helm Job).
+- ``run_migrations_if_needed()``: lock-free precheck, skips upgrade when
+  already at head. FastAPI startup uses this to avoid multi-pod lock contention.
 """
 
 import asyncio
 from pathlib import Path
 
+import psycopg
 import structlog
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
+from aegra_api.settings import settings
 from alembic import command
 
 logger = structlog.get_logger(__name__)
@@ -74,23 +79,59 @@ def get_alembic_config() -> Config:
     return cfg
 
 
-def run_migrations() -> None:
-    """Run all pending database migrations synchronously.
+def _is_database_up_to_date(cfg: Config) -> bool:
+    """Lock-free check: True iff DB revision matches script head."""
+    script = ScriptDirectory.from_config(cfg)
+    head = script.get_current_head()
 
-    Uses Alembic's upgrade command to apply all pending migrations.
-    Safe to call repeatedly - Alembic is idempotent and uses database
-    locks to prevent concurrent migration conflicts.
+    # Empty script directory: nothing to apply.
+    if head is None:
+        return True
+
+    # Read alembic_version directly via psycopg. MigrationContext.configure
+    # requires a SQLAlchemy Connection (accesses conn.dialect), and SQLAlchemy's
+    # URL parser breaks on libpq comma-host syntax — so we bypass both,
+    # preserving multi-host failover from PR #299.
+    with psycopg.connect(settings.db.database_url_sync) as conn, conn.cursor() as cur:
+        try:
+            cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
+            row = cur.fetchone()
+            current = row[0] if row else None
+        except psycopg.errors.UndefinedTable:
+            conn.rollback()
+            current = None
+
+    return current == head
+
+
+def run_migrations() -> None:
+    """Unconditional upgrade to head. Takes advisory lock."""
+    cfg = get_alembic_config()
+    logger.info("running database migrations")
+    command.upgrade(cfg, "head")
+    logger.info("database migrations completed")
+
+
+def run_migrations_if_needed() -> None:
+    """Skip upgrade when already at head; otherwise fall through to upgrade.
+
+    Precheck failure (e.g. fresh install with no alembic_version yet) also
+    falls through so bootstrap works.
     """
     cfg = get_alembic_config()
-    logger.info("Running database migrations...")
+    try:
+        if _is_database_up_to_date(cfg):
+            logger.debug("database already at migration head; skipping upgrade")
+            return
+    except Exception as exc:
+        logger.debug("revision precheck failed; falling back to full upgrade", error=str(exc))
+
+    logger.info("running database migrations")
     command.upgrade(cfg, "head")
-    logger.info("Database migrations completed")
+    logger.info("database migrations completed")
 
 
 async def run_migrations_async() -> None:
-    """Run all pending database migrations (async-safe).
-
-    Wraps the synchronous migration in a thread executor because Alembic's
-    env.py uses asyncio.run() internally, which requires its own event loop.
-    """
-    await asyncio.to_thread(run_migrations)
+    """Async wrapper over the lock-free fast path. Alembic's env.py owns
+    its own event loop, so we hand off to a thread."""
+    await asyncio.to_thread(run_migrations_if_needed)

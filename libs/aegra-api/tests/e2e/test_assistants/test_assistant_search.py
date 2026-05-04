@@ -151,3 +151,100 @@ async def test_assistant_search_metadata():
         # 3. Cleanup all assistants
         for assistant in created_assistants:
             await client.assistants.delete(assistant_id=assistant["assistant_id"])
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_assistant_search_sort_by_name_asc():
+    """Sort_by=name + sort_order=asc returns lexicographically ascending names."""
+    client = get_e2e_client()
+    created = []
+    try:
+        for i, name in enumerate(("zeta-sort-asst", "alpha-sort-asst", "mu-sort-asst")):
+            a = await client.assistants.create(
+                name=name,
+                graph_id="agent",
+                context={"max_search_results": i + 100},
+                metadata={"sort_test_marker": "asc-name"},
+                if_exists="do_nothing",
+            )
+            created.append(a)
+
+        results = await client.assistants.search(
+            metadata={"sort_test_marker": "asc-name"},
+            sort_by="name",
+            sort_order="asc",
+        )
+
+        names = [r["name"] for r in results]
+        assert names == sorted(names), f"Expected ascending order, got {names}"
+    finally:
+        for a in created:
+            await client.assistants.delete(assistant_id=a["assistant_id"])
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_assistant_search_sort_by_name_desc():
+    """Sort_by=name + sort_order=desc returns lexicographically descending names."""
+    client = get_e2e_client()
+    created = []
+    try:
+        for i, name in enumerate(("alpha-sort-d", "zeta-sort-d", "mu-sort-d")):
+            a = await client.assistants.create(
+                name=name,
+                graph_id="agent",
+                context={"max_search_results": i + 200},
+                metadata={"sort_test_marker": "desc-name"},
+                if_exists="do_nothing",
+            )
+            created.append(a)
+
+        results = await client.assistants.search(
+            metadata={"sort_test_marker": "desc-name"},
+            sort_by="name",
+            sort_order="desc",
+        )
+
+        names = [r["name"] for r in results]
+        assert names == sorted(names, reverse=True), f"Expected descending order, got {names}"
+    finally:
+        for a in created:
+            await client.assistants.delete(assistant_id=a["assistant_id"])
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_assistant_search_pagination_is_stable_across_offset():
+    """Tie-break on assistant_id keeps offset pagination stable when many rows
+    share a sort key (e.g. created in the same microsecond batch)."""
+    client = get_e2e_client()
+    created = []
+    try:
+        for i in range(5):
+            a = await client.assistants.create(
+                name=f"pagestable-{i}",
+                graph_id="agent",
+                context={"max_search_results": i + 300},
+                metadata={"sort_test_marker": "pagination"},
+                if_exists="do_nothing",
+            )
+            created.append(a)
+
+        page_one = await client.assistants.search(
+            metadata={"sort_test_marker": "pagination"},
+            limit=2,
+            offset=0,
+        )
+        page_two = await client.assistants.search(
+            metadata={"sort_test_marker": "pagination"},
+            limit=2,
+            offset=2,
+        )
+
+        page_one_ids = {a["assistant_id"] for a in page_one}
+        page_two_ids = {a["assistant_id"] for a in page_two}
+        assert not page_one_ids & page_two_ids, "Pagination pages overlap (tie-break missing)"
+    finally:
+        for a in created:
+            await client.assistants.delete(assistant_id=a["assistant_id"])

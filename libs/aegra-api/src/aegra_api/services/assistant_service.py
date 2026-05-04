@@ -231,12 +231,13 @@ class AssistantService:
         self,
         request: Any,  # AssistantSearchRequest
         user_identity: str,
+        *,
+        sort_column: Any | None = None,
+        sort_asc: bool = False,
     ) -> list[Assistant]:
         """Search assistants with filters"""
-        # Start with user's assistants
         stmt = select(AssistantORM).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
 
-        # Apply filters
         if request.name:
             stmt = stmt.where(AssistantORM.name.ilike(f"%{request.name}%"))
 
@@ -249,15 +250,18 @@ class AssistantService:
         if request.metadata:
             stmt = stmt.where(AssistantORM.metadata_dict.op("@>")(request.metadata))
 
-        # Apply pagination
+        column = sort_column if sort_column is not None else AssistantORM.created_at
+        direction = column.asc() if sort_asc else column.desc()
+        # Tie-break on assistant_id keeps offset pagination stable when the
+        # primary sort column has duplicates.
+        stmt = stmt.order_by(direction, AssistantORM.assistant_id.asc())
+
         offset = request.offset or 0
         limit = request.limit or 20
         stmt = stmt.offset(offset).limit(limit)
 
         result = await self.session.scalars(stmt)
-        paginated_assistants = [to_pydantic(a) for a in result.all()]
-
-        return paginated_assistants
+        return [to_pydantic(a) for a in result.all()]
 
     async def count_assistants(
         self,

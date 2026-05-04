@@ -11,10 +11,13 @@ Architecture:
 - Service Layer (assistant_service.py): Business logic, validation, orchestration
 """
 
+from typing import Any
+
 from fastapi import APIRouter, Body, Depends, Query
 
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
+from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.models import (
     AgentSchemas,
     Assistant,
@@ -28,6 +31,45 @@ from aegra_api.models.errors import NOT_FOUND
 from aegra_api.services.assistant_service import AssistantService, get_assistant_service
 
 router = APIRouter(tags=["Assistants"], dependencies=auth_dependency)
+
+
+_ALLOWED_SORT_FIELDS: frozenset[str] = frozenset({"assistant_id", "name", "graph_id", "created_at", "updated_at"})
+_DEFAULT_SORT_FIELD = "created_at"
+_DEFAULT_SORT_ASC = False
+
+
+def _resolve_sort(request: AssistantSearchRequest) -> tuple[Any, bool]:
+    """Resolve (ORM column, is_ascending) for /assistants/search.
+
+    sort_by is Pydantic-validated against a Literal — invalid values 422 at
+    the request boundary. Default is created_at DESC.
+    """
+    if request.sort_by:
+        return getattr(AssistantORM, request.sort_by), (request.sort_order or "desc").lower() == "asc"
+    return getattr(AssistantORM, _DEFAULT_SORT_FIELD), _DEFAULT_SORT_ASC
+
+
+def _merge_handler_filters_into_metadata(
+    request: AssistantSearchRequest,
+    filters: dict[str, Any] | None,
+    value: dict[str, Any],
+) -> None:
+    """Merge auth-handler filters into request.metadata.
+
+    Mirrors create/update assistant: handlers may either return
+    ``{"metadata": {...}}`` or mutate ``value["metadata"]`` directly. Other
+    top-level filter keys are treated as metadata constraints (e.g.
+    ``{"owner": user_id}`` → metadata containment match), matching the
+    LangGraph SDK auth contract.
+    """
+    if filters and "metadata" in filters and isinstance(filters["metadata"], dict):
+        request.metadata = {**(request.metadata or {}), **filters["metadata"]}
+        return
+    if filters:
+        request.metadata = {**(request.metadata or {}), **filters}
+        return
+    if value.get("metadata"):
+        request.metadata = {**(request.metadata or {}), **value["metadata"]}
 
 
 @router.post("/assistants", response_model=Assistant, response_model_by_alias=False)
@@ -69,14 +111,14 @@ async def list_assistants(
     """
     # Authorization check (search action for listing)
     ctx = build_auth_context(user, "assistants", "search")
-    value = {}
+    value: dict[str, Any] = {}
     filters = await handle_event(ctx, value)
 
-    # Apply filters if provided by handler
-    if filters:
-        # Convert filters to search request format
-        search_request = AssistantSearchRequest(filters=filters)
-        assistants = await service.search_assistants(search_request, user.identity)
+    if filters or value.get("metadata"):
+        search_request = AssistantSearchRequest()
+        _merge_handler_filters_into_metadata(search_request, filters, value)
+        column, asc = _resolve_sort(search_request)
+        assistants = await service.search_assistants(search_request, user.identity, sort_column=column, sort_asc=asc)
     else:
         assistants = await service.list_assistants(user.identity)
 
@@ -98,13 +140,10 @@ async def search_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
+    _merge_handler_filters_into_metadata(request, filters, value)
+    column, asc = _resolve_sort(request)
 
-    # Merge handler filters with request filters
-    if filters:
-        request_filters = request.filters or {}
-        request.filters = {**request_filters, **filters}
-
-    return await service.search_assistants(request, user.identity)
+    return await service.search_assistants(request, user.identity, sort_column=column, sort_asc=asc)
 
 
 @router.post("/assistants/count", response_model=int)
@@ -122,11 +161,7 @@ async def count_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-
-    # Merge handler filters with request filters
-    if filters:
-        request_filters = request.filters or {}
-        request.filters = {**request_filters, **filters}
+    _merge_handler_filters_into_metadata(request, filters, value)
 
     return await service.count_assistants(request, user.identity)
 

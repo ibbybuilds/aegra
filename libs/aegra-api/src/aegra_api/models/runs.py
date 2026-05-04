@@ -100,7 +100,9 @@ class Run(BaseModel):
     status: str = Field(
         "pending", description="Current run status: pending, running, error, success, timeout, or interrupted."
     )
-    input: dict[str, Any] = Field(..., description="Input data provided to the run.")
+    input: dict[str, Any] | None = Field(
+        None, description="Input data provided to the run. None for checkpoint-only resume."
+    )
     output: dict[str, Any] | None = Field(
         None, description="Final output produced by the run, or null if not yet complete."
     )

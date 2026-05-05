@@ -304,13 +304,31 @@ class TestMergeRunMetadata:
         # emitted from the merge_run_metadata logger at all.
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
-    def test_original_request_id_is_not_reserved(self) -> None:
+    def test_original_request_id_passes_through_when_system_lacks_it(self) -> None:
         """``original_request_id`` is set only on the worker path; the local-executor
         path omits it. Reserving it would silently drop user values when the
         system value is missing — confirm it flows through as a regular key."""
         system = {"run_id": "r1", "thread_id": "t1", "graph_id": "g1"}
         result = merge_run_metadata({"original_request_id": "user-corr-id"}, system)
         assert result["original_request_id"] == "user-corr-id"
+
+    def test_non_reserved_system_collision_drops_user_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A user value that collides with a non-reserved system key is dropped
+        with a warning. Without this, the worker path silently overwrote
+        user-supplied ``original_request_id`` (and any other future system
+        injection) via ``merged.update(system_metadata)``."""
+        system = {
+            "run_id": "r1",
+            "thread_id": "t1",
+            "graph_id": "g1",
+            "original_request_id": "system-corr-id",
+        }
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            result = merge_run_metadata({"original_request_id": "user-corr-id"}, system)
+
+        assert result["original_request_id"] == "system-corr-id"
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("original_request_id" in w.message for w in warnings)
 
     def test_non_primitive_value_is_dropped_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """OTEL span attributes accept only primitives; nested values are

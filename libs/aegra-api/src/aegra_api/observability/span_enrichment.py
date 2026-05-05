@@ -152,6 +152,13 @@ def merge_run_metadata(
     system value wins and a warning is logged so the override is visible
     during debugging without breaking the request.
 
+    Non-reserved system keys (e.g., ``original_request_id`` injected by
+    the worker path when an HTTP correlation-id is present) also win on
+    collision; a warning is emitted there too so user-metadata loss is
+    never silent. The contract is uniform: any key already in
+    ``system_metadata`` is overridden, regardless of whether it is
+    reserved or only conditionally injected.
+
     Non-primitive values (anything other than ``str``, ``int``, ``float``,
     ``bool``) are dropped with a warning. OTEL span attributes accept
     only primitives; passing a nested dict or list to ``span.set_attribute``
@@ -167,6 +174,12 @@ def merge_run_metadata(
                 "User metadata key '%s' overridden by system value; reserved keys: %s",
                 key,
                 sorted(_RESERVED_METADATA_KEYS),
+            )
+            continue
+        if key in system_metadata:
+            logger.warning(
+                "User metadata key '%s' overridden by system value",
+                key,
             )
             continue
         if not isinstance(value, _PRIMITIVE_ATTR_TYPES):

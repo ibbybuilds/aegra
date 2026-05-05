@@ -1,7 +1,7 @@
 """Streaming service for orchestrating SSE streaming."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
 import structlog
@@ -85,7 +85,7 @@ class StreamingService:
         self,
         run: Run,
         last_event_id: str | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         """Stream run execution with unified producer-consumer pattern.
 
         Cancellation on client disconnect is handled at the transport layer
@@ -115,8 +115,14 @@ class StreamingService:
             logger.debug(f"Stream cancelled for run {run_id}")
             raise
         except Exception as e:
-            logger.error(f"Error in stream_run_execution for run {run_id}: {e}")
-            yield create_error_event(str(e))
+            # Swallow rather than re-raise: this is the SSE producer for
+            # an active connection. Re-raising would surface a 500 mid-
+            # stream, which clients can't reconnect to. We instead emit a
+            # structured error event so consumers can react cleanly.
+            # str(e) is suppressed on the wire because Python exception
+            # messages can leak file paths, internal IDs, and frame hints.
+            logger.exception("stream execution failed", run_id=run_id)
+            yield create_error_event({"error": type(e).__name__, "message": "execution failed"})
 
     async def _replay_stored_events(self, run_id: str, last_event_id: str | None) -> AsyncIterator[tuple[str, str]]:
         """Replay stored events from the broker's replay buffer.

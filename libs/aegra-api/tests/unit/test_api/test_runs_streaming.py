@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from redis import RedisError
 
 from aegra_api.api.runs import create_and_stream_run, stream_run
 from aegra_api.core.orm import Assistant as AssistantORM
@@ -149,7 +150,8 @@ class TestRunsStreamingEndpoints:
             patch("aegra_api.api.runs.broker_manager.request_cancel", new_callable=AsyncMock) as mock_cancel,
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
-            mock_session.scalar.return_value = sample_assistant
+            # First scalar = thread ownership check (None = new thread); second = assistant
+            mock_session.scalar.side_effect = [None, sample_assistant]
 
             response = await create_and_stream_run(thread_id, request, mock_user, mock_session)
 
@@ -198,11 +200,12 @@ class TestRunsStreamingEndpoints:
             patch(
                 "aegra_api.api.runs.broker_manager.request_cancel",
                 new_callable=AsyncMock,
-                side_effect=RuntimeError("broker down"),
+                side_effect=RedisError("broker down"),
             ),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
-            mock_session.scalar.return_value = sample_assistant
+            # First scalar = thread ownership check (None = new thread); second = assistant
+            mock_session.scalar.side_effect = [None, sample_assistant]
 
             response = await create_and_stream_run(thread_id, request, mock_user, mock_session)
             handler = response.client_close_handler_callable

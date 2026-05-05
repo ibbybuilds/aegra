@@ -2,13 +2,14 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, MutableMapping
+from collections.abc import AsyncGenerator, MutableMapping
 from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from redis import RedisError
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette import EventSourceResponse
@@ -19,7 +20,7 @@ from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.core.orm import _get_session_maker, get_session
-from aegra_api.core.sse import create_end_event, get_sse_headers, heartbeat_factory, sse_to_bytes
+from aegra_api.core.sse import create_end_event, get_sse_headers, make_sse_response, sse_to_bytes
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
 from aegra_api.services.broker import broker_manager
@@ -118,20 +119,17 @@ async def create_and_stream_run(
     async def _cancel_on_client_close(_msg: MutableMapping[str, Any]) -> None:
         try:
             await broker_manager.request_cancel(run_id, "cancel")
-        except Exception:
-            # Swallow to avoid cascading the failure through sse-starlette's
-            # task group. If the broker is unreachable we can't stop the run;
-            # it will either complete normally (result persists to Postgres)
-            # or be reaped when its worker lease expires.
+        except (RedisError, OSError):
+            # Swallow infra/transport failures so sse-starlette's task group
+            # tears down cleanly. Programmer errors (TypeError, AttributeError,
+            # ...) propagate. The lease reaper picks up unreachable runs.
             logger.exception("Failed to cancel run on client disconnect", run_id=run_id)
 
     close_handler = _cancel_on_client_close if cancel_on_disconnect else None
 
-    return EventSourceResponse(
+    return make_sse_response(
         sse_to_bytes(streaming_service.stream_run_execution(run, None)),
-        ping=settings.app.sse_ping_interval_secs,
-        ping_message_factory=heartbeat_factory,
-        client_close_handler_callable=close_handler,
+        close_handler=close_handler,
         headers={
             **get_sse_headers(),
             "Location": f"/threads/{thread_id}/runs/{run_id}/stream",
@@ -399,14 +397,12 @@ async def stream_run(
     if run_orm.status in TERMINAL_STATES and not last_event_id:
         final_status = "error" if run_orm.status == "error" else run_orm.status
 
-        async def generate_final() -> AsyncIterator[str]:
+        async def generate_final() -> AsyncGenerator[str, None]:
             yield create_end_event(status=final_status)
 
         logger.info(f"[stream_run] starting terminal stream run_id={run_id} status={run_orm.status}")
-        return EventSourceResponse(
+        return make_sse_response(
             sse_to_bytes(generate_final()),
-            ping=settings.app.sse_ping_interval_secs,
-            ping_message_factory=heartbeat_factory,
             headers={
                 **get_sse_headers(),
                 "Location": f"/threads/{thread_id}/runs/{run_id}/stream",
@@ -419,10 +415,8 @@ async def stream_run(
     # Build a lightweight Pydantic Run from ORM for streaming context (IDs already strings)
     run_model = Run.model_validate(run_orm)
 
-    return EventSourceResponse(
+    return make_sse_response(
         sse_to_bytes(streaming_service.stream_run_execution(run_model, last_event_id)),
-        ping=settings.app.sse_ping_interval_secs,
-        ping_message_factory=heartbeat_factory,
         headers={
             **get_sse_headers(),
             "Location": f"/threads/{thread_id}/runs/{run_id}/stream",

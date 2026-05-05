@@ -2,16 +2,18 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from fastapi.responses import StreamingResponse
+from redis import RedisError
 from sse_starlette import EventSourceResponse
 
 from aegra_api.api.stateless_runs import (
+    _background_cleanup_tasks,
     _cleanup_after_background_run,
     _delete_thread_by_id,
     stateless_create_run,
@@ -21,6 +23,39 @@ from aegra_api.api.stateless_runs import (
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.models import Run, RunCreate, User
+
+
+def _raise_immediately(exc: BaseException) -> Iterator[None]:
+    """Generator that raises ``exc`` on first iteration. Backs ``_FailingTask.__await__``."""
+    raise exc
+    yield  # pragma: no cover - unreachable, makes this a generator
+
+
+class _FailingTask:
+    """Minimal awaitable stand-in for an asyncio.Task that raises on await.
+
+    Mimics ``done()``/``cancel()`` so ``_delete_thread_by_id`` enters the
+    ``await task`` branch, then raises the configured exception when
+    awaited. ``asyncio.Future.set_exception`` flips ``done()`` to True up
+    front, which would skip the await branch entirely — hence this stub.
+
+    ``__await__`` returns the iterator from ``_raise_immediately`` rather
+    than being a generator function itself: keeps the body small and
+    obvious instead of relying on the ``raise; yield`` quirk to coerce
+    Python into treating the method as a generator.
+    """
+
+    def __init__(self, exc: BaseException) -> None:
+        self._exc = exc
+
+    def done(self) -> bool:
+        return False
+
+    def cancel(self) -> None:
+        return None
+
+    def __await__(self) -> Iterator[None]:
+        return _raise_immediately(self._exc)
 
 
 class TestDeleteThreadById:
@@ -148,14 +183,9 @@ class TestDeleteThreadById:
         mock_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        # Use a Future that raises CancelledError when awaited
-        fut = asyncio.get_event_loop().create_future()
-        fut.cancel()
-
-        mock_task = MagicMock()
-        mock_task.done.return_value = False
-        mock_task.cancel.return_value = None
-        mock_task.__await__ = fut.__await__
+        # asyncio.Future is a real awaitable; the source calls .cancel()
+        # then awaits — the await raises CancelledError.
+        fut: asyncio.Future[None] = asyncio.get_event_loop().create_future()
 
         with (
             patch("aegra_api.api.stateless_runs._get_session_maker", return_value=mock_maker),
@@ -163,14 +193,23 @@ class TestDeleteThreadById:
                 "aegra_api.api.stateless_runs.streaming_service.cancel_run",
                 new_callable=AsyncMock,
             ),
-            patch("aegra_api.api.stateless_runs.active_runs", {run_id: mock_task}),
+            patch("aegra_api.api.stateless_runs.active_runs", {run_id: fut}),
         ):
             # Should not raise — CancelledError is caught
             await _delete_thread_by_id(thread_id, user_id)
 
     @pytest.mark.asyncio
-    async def test_logs_exception_on_task_await_error(self, mock_session: AsyncMock) -> None:
-        """Generic exception from awaiting a task is logged but not re-raised."""
+    async def test_logs_infra_error_on_task_await(self, mock_session: AsyncMock) -> None:
+        """Defensive: infra-class errors on ``await task`` are logged, not re-raised.
+
+        Real ``asyncio.Task`` always raises ``CancelledError`` after
+        ``task.cancel()``, so this RedisError flow is reachable only if
+        ``active_runs`` ever holds a non-Task awaitable (e.g. a custom
+        wrapper or a future). Test guards the narrow ``(RedisError,
+        SQLAlchemyError, OSError)`` tuple from accidental widening —
+        complements ``test_propagates_programmer_error`` which asserts
+        non-infra exceptions still propagate.
+        """
         thread_id = str(uuid4())
         user_id = "test-user"
         run_id = str(uuid4())
@@ -194,25 +233,63 @@ class TestDeleteThreadById:
         mock_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        # Use a Future that raises RuntimeError when awaited
-        fut = asyncio.get_event_loop().create_future()
-        fut.set_exception(RuntimeError("task exploded"))
-
-        mock_task = MagicMock()
-        mock_task.done.return_value = False
-        mock_task.cancel.return_value = None
-        mock_task.__await__ = fut.__await__
-
         with (
             patch("aegra_api.api.stateless_runs._get_session_maker", return_value=mock_maker),
             patch(
                 "aegra_api.api.stateless_runs.streaming_service.cancel_run",
                 new_callable=AsyncMock,
             ),
-            patch("aegra_api.api.stateless_runs.active_runs", {run_id: mock_task}),
+            patch(
+                "aegra_api.api.stateless_runs.active_runs",
+                {run_id: _FailingTask(RedisError("redis hiccup"))},
+            ),
         ):
-            # Should not raise — exception is logged
+            # Should not raise — RedisError is in the narrow cleanup tuple
             await _delete_thread_by_id(thread_id, user_id)
+
+    @pytest.mark.asyncio
+    async def test_propagates_programmer_error(self, mock_session: AsyncMock) -> None:
+        """Programmer errors (RuntimeError, AttributeError, ...) on ``await task`` propagate.
+
+        Regression for the narrow-tuple cleanup: per CLAUDE.md and the
+        review comment, broker/cancel paths must not swallow random
+        programmer errors — those signal real bugs and need to surface.
+        """
+        thread_id = str(uuid4())
+        user_id = "test-user"
+        run_id = str(uuid4())
+
+        active_run = RunORM(
+            run_id=run_id,
+            thread_id=thread_id,
+            user_id=user_id,
+            status="running",
+            input={},
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [active_run]
+        mock_session.scalars.return_value = mock_scalars
+
+        mock_maker = MagicMock()
+        mock_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with (  # noqa: SIM117
+            patch("aegra_api.api.stateless_runs._get_session_maker", return_value=mock_maker),
+            patch(
+                "aegra_api.api.stateless_runs.streaming_service.cancel_run",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs.active_runs",
+                {run_id: _FailingTask(RuntimeError("task exploded"))},
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="task exploded"):
+                await _delete_thread_by_id(thread_id, user_id)
 
 
 class TestCleanupAfterBackgroundRun:
@@ -533,6 +610,183 @@ class TestStatelessStreamRun:
                     pass
 
         mock_delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_slow_client_disconnect_with_finished_run_schedules_cleanup(
+        self,
+        mock_user: User,
+        mock_session: AsyncMock,
+    ) -> None:
+        """Slow-client / dead-proxy abort after the run finished must clean up.
+
+        Regression for the leak described in review: ``completed = False``
+        is also reached when sse-starlette aborts the body iterator on a
+        send-timeout. If the broker reports the run finished, there's
+        nothing left to resume — the wrapper must schedule a deferred
+        delete instead of leaking the ephemeral thread.
+        """
+        request = RunCreate(assistant_id="agent", input={"msg": "hi"})
+
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: metadata\n\n"
+            # Mid-stream abort, but by this point the broker reports finished.
+            raise asyncio.CancelledError
+
+        mock_response = EventSourceResponse(
+            _fake_body(),
+            headers={"Content-Location": "/threads/eph-thread-slow/runs/run-finished"},
+        )
+
+        finished_broker = MagicMock()
+        finished_broker.is_finished.return_value = True
+
+        with (
+            patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-slow"),
+            patch(
+                "aegra_api.api.stateless_runs.create_and_stream_run",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs.broker_manager.get_broker",
+                return_value=finished_broker,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs._delete_thread_by_id",
+                new_callable=AsyncMock,
+            ) as mock_delete,
+        ):
+            # Snapshot the cleanup-task set BEFORE running the scenario so
+            # we only await tasks created by this test, not stragglers from
+            # prior tests in the same session (which may belong to a
+            # defunct event loop).
+            tasks_before = set(_background_cleanup_tasks)
+
+            result = await stateless_stream_run(request, mock_user, mock_session)
+
+            with contextlib.suppress(asyncio.CancelledError):
+                async for _chunk in result.body_iterator:
+                    pass
+
+            new_tasks = [task for task in _background_cleanup_tasks if task not in tasks_before]
+            if new_tasks:
+                await asyncio.gather(*new_tasks, return_exceptions=True)
+
+        mock_delete.assert_called_once_with("eph-thread-slow", mock_user.identity)
+
+    @pytest.mark.asyncio
+    async def test_slow_client_disconnect_with_active_run_keeps_thread(
+        self,
+        mock_user: User,
+        mock_session: AsyncMock,
+    ) -> None:
+        """Slow-client abort while the run is still active must NOT clean up.
+
+        Symmetric to ``test_slow_client_disconnect_with_finished_run_schedules_cleanup``:
+        when ``broker.is_finished()`` is False (run still running), the
+        wrapper must keep the thread so the caller can still resume.
+        Otherwise we'd cancel-via-deletion an in-flight execution and
+        break the ``on_disconnect="continue"`` contract.
+        """
+        request = RunCreate(assistant_id="agent", input={"msg": "hi"}, on_disconnect="continue")
+
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: metadata\n\n"
+            raise asyncio.CancelledError
+
+        mock_response = EventSourceResponse(
+            _fake_body(),
+            headers={"Content-Location": "/threads/eph-thread-active/runs/run-active"},
+        )
+
+        active_broker = MagicMock()
+        active_broker.is_finished.return_value = False  # run still in flight
+
+        with (
+            patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-active"),
+            patch(
+                "aegra_api.api.stateless_runs.create_and_stream_run",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs.broker_manager.get_broker",
+                return_value=active_broker,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs._delete_thread_by_id",
+                new_callable=AsyncMock,
+            ) as mock_delete,
+        ):
+            tasks_before = set(_background_cleanup_tasks)
+
+            result = await stateless_stream_run(request, mock_user, mock_session)
+
+            with contextlib.suppress(asyncio.CancelledError):
+                async for _chunk in result.body_iterator:
+                    pass
+
+            new_tasks = [task for task in _background_cleanup_tasks if task not in tasks_before]
+            if new_tasks:
+                await asyncio.gather(*new_tasks, return_exceptions=True)
+
+        mock_delete.assert_not_called()
+        assert not new_tasks, "Should not schedule cleanup when run still active"
+
+    @pytest.mark.asyncio
+    async def test_slow_client_disconnect_without_run_id_keeps_thread(
+        self,
+        mock_user: User,
+        mock_session: AsyncMock,
+    ) -> None:
+        """Missing Content-Location header → slow-client cleanup branch is skipped.
+
+        ``_extract_run_id_from_headers`` returns None when it can't parse
+        the header. The wrapper falls through to the keep-thread branch
+        rather than guessing — failing closed avoids false-positive
+        deletions that would race with the still-running execution.
+        """
+        request = RunCreate(assistant_id="agent", input={"msg": "hi"}, on_disconnect="continue")
+
+        async def _fake_body() -> AsyncIterator[bytes]:
+            yield b"event: metadata\n\n"
+            raise asyncio.CancelledError
+
+        # No Content-Location → run_id extraction returns None.
+        mock_response = EventSourceResponse(_fake_body(), headers={})
+
+        with (
+            patch("aegra_api.api.stateless_runs.uuid4", return_value="eph-thread-noid"),
+            patch(
+                "aegra_api.api.stateless_runs.create_and_stream_run",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "aegra_api.api.stateless_runs.broker_manager.get_broker",
+            ) as mock_get_broker,
+            patch(
+                "aegra_api.api.stateless_runs._delete_thread_by_id",
+                new_callable=AsyncMock,
+            ) as mock_delete,
+        ):
+            tasks_before = set(_background_cleanup_tasks)
+
+            result = await stateless_stream_run(request, mock_user, mock_session)
+
+            with contextlib.suppress(asyncio.CancelledError):
+                async for _chunk in result.body_iterator:
+                    pass
+
+            new_tasks = [task for task in _background_cleanup_tasks if task not in tasks_before]
+            if new_tasks:
+                await asyncio.gather(*new_tasks, return_exceptions=True)
+
+        mock_delete.assert_not_called()
+        # Without a run_id we must not consult the broker — the slow-client
+        # branch is gated on `run_id is not None` precisely to skip this.
+        mock_get_broker.assert_not_called()
+        assert not new_tasks, "Should not schedule cleanup when run_id unavailable"
 
     @pytest.mark.asyncio
     async def test_stream_cleanup_failure_is_logged_not_raised(self, mock_user: User, mock_session: AsyncMock) -> None:

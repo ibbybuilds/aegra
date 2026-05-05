@@ -1,15 +1,17 @@
 """Server-Sent Events utilities and formatting"""
 
+import contextlib
 import json
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sse_starlette import ServerSentEvent
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from aegra_api.core.serializers import GeneralSerializer
+from aegra_api.settings import settings
 
 # Global serializer instance
 _serializer = GeneralSerializer()
@@ -70,15 +72,43 @@ def get_sse_headers() -> dict[str, str]:
     }
 
 
-async def sse_to_bytes(inner: AsyncIterator[str]) -> AsyncIterator[bytes]:
-    """Adapt an ``AsyncIterator[str]`` of pre-formatted SSE messages to bytes.
+async def sse_to_bytes(inner: AsyncGenerator[str, None]) -> AsyncGenerator[bytes, None]:
+    """Adapt an ``AsyncGenerator[str]`` of pre-formatted SSE messages to bytes.
 
     ``sse_starlette.EventSourceResponse`` wraps plain strings as *new* SSE
     events (double-encoding them). Pass bytes through its iterator so our
     already-formatted messages reach the wire untouched.
+
+    Wraps ``inner`` in ``contextlib.aclosing`` so its ``finally`` blocks
+    (broker cleanup, replay-buffer release) fire deterministically even
+    when sse-starlette aborts us mid-stream on cancel.
     """
-    async for chunk in inner:
-        yield chunk.encode("utf-8")
+    async with contextlib.aclosing(inner) as managed:
+        async for chunk in managed:
+            yield chunk.encode("utf-8")
+
+
+def make_sse_response(
+    body: AsyncIterator[bytes],
+    *,
+    headers: Mapping[str, str],
+    close_handler: Callable[[MutableMapping[str, Any]], Awaitable[None]] | None = None,
+    status_code: int = 200,
+) -> EventSourceResponse:
+    """Construct an ``EventSourceResponse`` with our shared SSE defaults.
+
+    Centralizes ping interval + heartbeat factory so every SSE endpoint
+    emits identical wire-format keepalives. ``settings`` is read at call
+    time so live overrides (e.g. tests, env reloads) take effect.
+    """
+    return EventSourceResponse(
+        body,
+        status_code=status_code,
+        ping=settings.app.sse_ping_interval_secs,
+        ping_message_factory=heartbeat_factory,
+        client_close_handler_callable=close_handler,
+        headers=dict(headers),
+    )
 
 
 def format_sse_message(

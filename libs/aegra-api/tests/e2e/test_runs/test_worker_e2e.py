@@ -10,12 +10,15 @@ asyncio tasks.  They exercise:
   - Cancel propagation via Redis pub/sub to worker
   - Stateless run execution via worker
   - Stream reconnection after worker produces events
+  - SSE client disconnect → cross-instance cancel via Redis pub/sub
 """
 
 import asyncio
 
+import httpx
 import pytest
 
+from aegra_api.settings import settings
 from tests.e2e._utils import check_and_skip_if_geo_blocked, elog, get_e2e_client
 
 
@@ -180,3 +183,77 @@ async def test_worker_stream_produces_events() -> None:
     assert len(events) > 0, "Expected at least one stream event"
     assert "metadata" in event_types, "Expected metadata event in stream"
     assert any(e in event_types for e in ("values", "updates")), "Expected values or updates event"
+
+
+@pytest.mark.e2e
+@pytest.mark.prod_only
+@pytest.mark.asyncio
+async def test_sse_client_disconnect_cancels_via_redis() -> None:
+    """SSE client disconnect propagates cancel through Redis pub/sub.
+
+    Default ``on_disconnect="cancel"`` wires
+    ``client_close_handler_callable`` to ``broker_manager.request_cancel``
+    which, in prod mode, publishes on a Redis cancel channel any worker
+    can receive. Closing the HTTP stream mid-flight must drive the run
+    to ``interrupted`` even when the worker that picked it up is on a
+    different instance.
+
+    Uses raw httpx so we control connection close timing precisely; the
+    SDK's stream helper drains to completion and won't reproduce the
+    abort.
+    """
+    sdk_client = get_e2e_client()
+    thread = await sdk_client.threads.create()
+    thread_id = thread["thread_id"]
+    elog("Thread", thread)
+
+    server_url = settings.app.SERVER_URL.rstrip("/")
+    payload = {
+        "assistant_id": "agent",
+        "input": {"messages": [{"role": "user", "content": "Write a very long essay about computing history."}]},
+        "stream_mode": ["values"],
+    }
+
+    run_id: str | None = None
+    async with (
+        httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=30.0)) as http,
+        http.stream(
+            "POST",
+            f"{server_url}/threads/{thread_id}/runs/stream",
+            json=payload,
+            headers={"Accept": "text/event-stream"},
+        ) as response,
+    ):
+        assert response.status_code == 200, f"stream failed: {response.status_code}"
+        location = response.headers.get("content-location", "")
+        parts = location.strip("/").split("/")
+        if len(parts) >= 4 and parts[2] == "runs":
+            run_id = parts[3]
+
+        chunks_seen = 0
+        async for _chunk in response.aiter_bytes():
+            chunks_seen += 1
+            if chunks_seen >= 2:
+                break
+        elog("Disconnecting after chunks", {"chunks_seen": chunks_seen, "run_id": run_id})
+        # Drop out of the `async with` to close the connection — that's
+        # the http.disconnect that fires the close handler.
+
+    assert run_id is not None, "Could not extract run_id from stream response headers"
+
+    # Cancel propagates via Redis pub/sub; allow worker some time to react
+    # and persist the status update.
+    final_status: str = "pending"
+    for _ in range(30):
+        await asyncio.sleep(0.5)
+        run = await sdk_client.runs.get(thread_id=thread_id, run_id=run_id)
+        check_and_skip_if_geo_blocked(run)
+        final_status = run["status"]
+        if final_status in ("interrupted", "success", "error"):
+            break
+
+    elog("Final run state", {"run_id": run_id, "status": final_status})
+    assert final_status == "interrupted", (
+        f"Expected interrupted after SSE disconnect, got {final_status}. "
+        "Cross-instance cancel via Redis pub/sub may have regressed."
+    )

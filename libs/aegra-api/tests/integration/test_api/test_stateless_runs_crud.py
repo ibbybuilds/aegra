@@ -380,15 +380,19 @@ class TestStatelessCreateRun:
         override_session_dependency(app, Session)
         client = make_client(app)
 
-        resp = client.post(
-            "/runs",
-            json={
-                "assistant_id": "asst-123",
-                "input": {"msg": "hi"},
-                "config": {"configurable": {"key": "val"}},
-                "context": {"key": "val"},
-            },
-        )
+        # Mock _delete_thread_by_id: assistant lookup raises 404, the cleanup
+        # path opens its own DB session via _get_session_maker which is not
+        # initialized in this test harness.
+        with patch("aegra_api.api.stateless_runs._delete_thread_by_id", new_callable=AsyncMock):
+            resp = client.post(
+                "/runs",
+                json={
+                    "assistant_id": "asst-123",
+                    "input": {"msg": "hi"},
+                    "config": {"configurable": {"key": "val"}},
+                    "context": {"key": "val"},
+                },
+            )
         # Validation conflict is removed; request proceeds to assistant lookup
         assert resp.status_code == 404
 

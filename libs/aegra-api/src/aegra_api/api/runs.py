@@ -2,14 +2,17 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, MutableMapping
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from redis import RedisError
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sse_starlette import EventSourceResponse
 
 from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
@@ -17,9 +20,10 @@ from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.core.orm import _get_session_maker, get_session
-from aegra_api.core.sse import create_end_event, get_sse_headers
+from aegra_api.core.sse import create_end_event, get_sse_headers, make_sse_response, sse_to_bytes
 from aegra_api.models import Run, RunCreate, RunStatus, User
 from aegra_api.models.errors import CONFLICT, NOT_FOUND, SSE_RESPONSE
+from aegra_api.services.broker import broker_manager
 from aegra_api.services.run_preparation import _prepare_run
 from aegra_api.services.run_waiters import TERMINAL_STATES, encode_output, heartbeat_wait_body
 from aegra_api.services.streaming_service import streaming_service
@@ -86,7 +90,7 @@ async def create_and_stream_run(
     request: RunCreate,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> StreamingResponse:
+) -> EventSourceResponse:
     """Create a new run and stream its execution via SSE.
 
     Returns a `text/event-stream` response with Server-Sent Events. Each
@@ -96,6 +100,10 @@ async def create_and_stream_run(
     Set `on_disconnect` to `"continue"` if the run should keep executing
     after the client disconnects (default is `"cancel"`). Use `stream_mode`
     to control which event types are emitted.
+
+    A periodic SSE keepalive comment is sent every
+    ``KEEPALIVE_INTERVAL_SECS`` so idle proxies don't drop long-running
+    silent nodes (e.g. agents holding an upstream WebSocket).
     """
     existing_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == thread_id))
     if existing_thread and existing_thread.user_id != user.identity:
@@ -108,13 +116,21 @@ async def create_and_stream_run(
     # set on_disconnect="continue" if they want the task to continue.
     cancel_on_disconnect = (request.on_disconnect or "cancel").lower() == "cancel"
 
-    return StreamingResponse(
-        streaming_service.stream_run_execution(
-            run,
-            None,
-            cancel_on_disconnect=cancel_on_disconnect,
-        ),
-        media_type="text/event-stream",
+    async def _cancel_on_client_close(_msg: MutableMapping[str, Any]) -> None:
+        try:
+            await broker_manager.request_cancel(run_id, "cancel")
+        except (RedisError, OSError):
+            # Swallow infra/transport failures so sse-starlette's task group
+            # tears down cleanly. Programmer errors (TypeError, AttributeError,
+            # ...) propagate. The lease reaper picks up unreachable runs.
+            # OSError covers ConnectionError/TimeoutError (3.11+ subclasses).
+            logger.exception("Failed to cancel run on client disconnect", run_id=run_id)
+
+    close_handler = _cancel_on_client_close if cancel_on_disconnect else None
+
+    return make_sse_response(
+        sse_to_bytes(streaming_service.stream_run_execution(run, None)),
+        close_handler=close_handler,
         headers={
             **get_sse_headers(),
             "Location": f"/threads/{thread_id}/runs/{run_id}/stream",
@@ -350,13 +366,16 @@ async def stream_run(
     _stream_mode: str | None = Query(None, description="Override the stream mode for this connection."),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> StreamingResponse:
+) -> EventSourceResponse:
     """Stream an existing run's execution via SSE.
 
     Attach to a run that was created without streaming (e.g. via the create
     endpoint) to receive its events in real time. If the run has already
     finished, a single `end` event is emitted. Use the `Last-Event-ID`
     header to resume from a specific event after a disconnect.
+
+    A periodic SSE keepalive comment is sent every
+    ``KEEPALIVE_INTERVAL_SECS`` so idle proxies don't drop attached streams.
     """
     logger.info(f"[stream_run] fetch for stream run_id={run_id} thread_id={thread_id} user={user.identity}")
     run_orm = await session.scalar(
@@ -370,19 +389,21 @@ async def stream_run(
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     logger.info(f"[stream_run] status={run_orm.status} user={user.identity} thread_id={thread_id} run_id={run_id}")
+    # No client_close_handler_callable: this is a reconnect-style endpoint, so
+    # a single client disconnecting must not cancel the shared run — other
+    # consumers may still be attached via /join or another /stream.
     # If already terminal and no Last-Event-ID, just emit end.
     # If Last-Event-ID is present, fall through to stream_run_execution
     # which will replay missed events from the buffer before ending.
     if run_orm.status in TERMINAL_STATES and not last_event_id:
         final_status = "error" if run_orm.status == "error" else run_orm.status
 
-        async def generate_final() -> AsyncIterator[str]:
+        async def generate_final() -> AsyncGenerator[str, None]:
             yield create_end_event(status=final_status)
 
         logger.info(f"[stream_run] starting terminal stream run_id={run_id} status={run_orm.status}")
-        return StreamingResponse(
-            generate_final(),
-            media_type="text/event-stream",
+        return make_sse_response(
+            sse_to_bytes(generate_final()),
             headers={
                 **get_sse_headers(),
                 "Location": f"/threads/{thread_id}/runs/{run_id}/stream",
@@ -395,9 +416,8 @@ async def stream_run(
     # Build a lightweight Pydantic Run from ORM for streaming context (IDs already strings)
     run_model = Run.model_validate(run_orm)
 
-    return StreamingResponse(
-        streaming_service.stream_run_execution(run_model, last_event_id, cancel_on_disconnect=False),
-        media_type="text/event-stream",
+    return make_sse_response(
+        sse_to_bytes(streaming_service.stream_run_execution(run_model, last_event_id)),
         headers={
             **get_sse_headers(),
             "Location": f"/threads/{thread_id}/runs/{run_id}/stream",

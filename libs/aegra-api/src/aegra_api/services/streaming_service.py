@@ -1,7 +1,7 @@
 """Streaming service for orchestrating SSE streaming."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
 import structlog
@@ -85,9 +85,14 @@ class StreamingService:
         self,
         run: Run,
         last_event_id: str | None = None,
-        cancel_on_disconnect: bool = False,
-    ) -> AsyncIterator[str]:
-        """Stream run execution with unified producer-consumer pattern."""
+    ) -> AsyncGenerator[str, None]:
+        """Stream run execution with unified producer-consumer pattern.
+
+        Cancellation on client disconnect is handled at the transport layer
+        via ``EventSourceResponse(client_close_handler_callable=...)`` — the
+        generator only propagates ``CancelledError`` cleanup without side
+        effects on the broker.
+        """
         run_id = run.run_id
         try:
             # Replay stored events first
@@ -108,12 +113,16 @@ class StreamingService:
 
         except asyncio.CancelledError:
             logger.debug(f"Stream cancelled for run {run_id}")
-            if cancel_on_disconnect:
-                await broker_manager.request_cancel(run_id, "cancel")
             raise
         except Exception as e:
-            logger.error(f"Error in stream_run_execution for run {run_id}: {e}")
-            yield create_error_event(str(e))
+            # Swallow rather than re-raise: this is the SSE producer for
+            # an active connection. Re-raising would surface a 500 mid-
+            # stream, which clients can't reconnect to. We instead emit a
+            # structured error event so consumers can react cleanly.
+            # str(e) is suppressed on the wire because Python exception
+            # messages can leak file paths, internal IDs, and frame hints.
+            logger.exception("stream execution failed", run_id=run_id)
+            yield create_error_event({"error": type(e).__name__, "message": "execution failed"})
 
     async def _replay_stored_events(self, run_id: str, last_event_id: str | None) -> AsyncIterator[tuple[str, str]]:
         """Replay stored events from the broker's replay buffer.

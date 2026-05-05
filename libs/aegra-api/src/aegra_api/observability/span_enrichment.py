@@ -29,18 +29,6 @@ from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 
 logger = logging.getLogger(__name__)
 
-# Metadata keys reserved for runtime state; user-supplied values for
-# these keys are dropped (system value wins) so they remain reliable
-# join keys between logs, spans, and the runs table.
-#
-# ``original_request_id`` is intentionally not reserved: only the worker
-# path injects it (when an HTTP correlation-id is present), and it is
-# absent on the local-executor path. Reserving it would make
-# ``merge_run_metadata`` drop a user-supplied value with a misleading
-# "overridden by system value" warning whenever the system value is
-# missing — a silent data loss with no guarantee benefit.
-_RESERVED_METADATA_KEYS = frozenset({"run_id", "thread_id", "graph_id"})
-
 # OTEL span attributes only accept primitive scalar types. The
 # observability SDK silently drops any other value at attribute-set
 # time, so we filter at this layer and emit an aegra-level warning
@@ -146,18 +134,13 @@ def merge_run_metadata(
 ) -> dict[str, str | int | float | bool]:
     """Merge user-supplied metadata with system-injected runtime keys.
 
-    The reserved keys (``run_id``, ``thread_id``, ``graph_id``) are
-    runtime invariants and join keys between logs, spans, and the runs
-    table. When a user-supplied key collides with a reserved key, the
-    system value wins and a warning is logged so the override is visible
-    during debugging without breaking the request.
-
-    Non-reserved system keys (e.g., ``original_request_id`` injected by
-    the worker path when an HTTP correlation-id is present) also win on
-    collision; a warning is emitted there too so user-metadata loss is
-    never silent. The contract is uniform: any key already in
-    ``system_metadata`` is overridden, regardless of whether it is
-    reserved or only conditionally injected.
+    Any key already present in ``system_metadata`` (currently
+    ``run_id``, ``thread_id``, ``graph_id``, and ``original_request_id``
+    on the worker path) wins on collision: the system value is kept and
+    a warning is logged so the override is visible during debugging
+    without breaking the request. ``system_metadata`` is the single
+    source of truth for "what the runtime owns" — there is no separate
+    reserved-key registry to drift out of sync with caller behavior.
 
     Non-primitive values (anything other than ``str``, ``int``, ``float``,
     ``bool``) are dropped with a warning. OTEL span attributes accept
@@ -169,13 +152,6 @@ def merge_run_metadata(
         return dict(system_metadata)
     merged: dict[str, str | int | float | bool] = {}
     for key, value in extra_metadata.items():
-        if key in _RESERVED_METADATA_KEYS:
-            logger.warning(
-                "User metadata key '%s' overridden by system value; reserved keys: %s",
-                key,
-                sorted(_RESERVED_METADATA_KEYS),
-            )
-            continue
         if key in system_metadata:
             logger.warning(
                 "User metadata key '%s' overridden by system value",

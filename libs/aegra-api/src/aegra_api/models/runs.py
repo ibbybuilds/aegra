@@ -79,11 +79,12 @@ class RunCreate(BaseModel):
 
     # Request metadata (top-level in payload).  Reaches OTEL trace
     # attributes as ``langfuse.trace.metadata.<key>`` (and the
-    # OpenInference ``metadata.<key>`` alias on Phoenix targets).  Values
-    # are restricted to OTEL-attribute primitives because the SDK silently
-    # drops nested values; surfacing the rejection as a 422 makes the
-    # contract honest in the OpenAPI schema.
-    metadata: dict[str, str | int | float | bool] | None = Field(
+    # OpenInference ``metadata.<key>`` alias on Phoenix targets).  The
+    # field is annotated ``dict[str, Any]`` rather than a primitive
+    # union so a malformed payload produces one actionable 422 message
+    # from ``validate_metadata_shape`` instead of N parallel union-arm
+    # errors (one per primitive type Pydantic tries) per offending key.
+    metadata: dict[str, Any] | None = Field(
         None,
         description=(
             "Request metadata propagated to OTEL trace attributes "
@@ -100,23 +101,29 @@ class RunCreate(BaseModel):
     @classmethod
     def validate_metadata_shape(
         cls,
-        v: dict[str, str | int | float | bool] | None,
-    ) -> dict[str, str | int | float | bool] | None:
-        """Enforce key shape, key count, and string-value length.
+        metadata: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Enforce key shape, key count, value type, and string-value length.
 
-        Pydantic's type annotation already rejects non-primitive values;
-        this validator covers the bounds the type system can't express.
+        Validation runs entirely here (rather than relying on a primitive
+        union on the field type) so each violation produces one clear
+        error message instead of N parallel union-arm errors per offending
+        key — easier for clients to surface to humans.
         """
-        if v is None:
+        if metadata is None:
             return None
-        if len(v) > _METADATA_MAX_KEYS:
-            raise ValueError(f"metadata exceeds {_METADATA_MAX_KEYS} keys (got {len(v)})")
-        for key, value in v.items():
+        if len(metadata) > _METADATA_MAX_KEYS:
+            raise ValueError(f"metadata exceeds {_METADATA_MAX_KEYS} keys (got {len(metadata)})")
+        for key, value in metadata.items():
             if not _METADATA_KEY_RE.match(key):
                 raise ValueError(f"metadata key {key!r} must match {_METADATA_KEY_RE.pattern}")
+            if not isinstance(value, (str, int, float, bool)):
+                raise ValueError(
+                    f"metadata value for key {key!r} must be str/int/float/bool, got {type(value).__name__}"
+                )
             if isinstance(value, str) and len(value) > _METADATA_MAX_VALUE_LEN:
                 raise ValueError(f"metadata value for key {key!r} exceeds {_METADATA_MAX_VALUE_LEN} characters")
-        return v
+        return metadata
 
     @model_validator(mode="after")
     def validate_input_command_exclusivity(self) -> Self:

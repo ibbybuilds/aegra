@@ -67,6 +67,17 @@ class RunJob(BaseModel):
     user: User
     execution: RunExecution = RunExecution()
     behavior: RunBehavior = RunBehavior()
+    # User-supplied request metadata, persisted to ``execution_params``
+    # JSONB.  Validation is deliberately asymmetric: ``RunCreate.metadata``
+    # is strict at ingress (primitive-only union, key regex, length caps),
+    # while this field is permissive ``dict[str, Any]`` so legacy rows and
+    # any future schema drift remain readable on ``from_run_orm``.  Values
+    # may collide with reserved system keys (e.g. ``run_id``) — the row
+    # stores user input verbatim for audit fidelity, and the OTEL boundary
+    # in ``observability.span_enrichment.merge_run_metadata`` filters and
+    # warns at emit time.  Consume only via ``merge_run_metadata``; do not
+    # tighten this annotation without restoring an equivalent filter on
+    # read in ``from_run_orm``.
     run_metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_execution_params(self) -> dict[str, Any]:

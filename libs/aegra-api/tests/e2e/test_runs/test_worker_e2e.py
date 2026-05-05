@@ -230,12 +230,18 @@ async def test_sse_client_disconnect_cancels_via_redis() -> None:
         if len(parts) >= 4 and parts[2] == "runs":
             run_id = parts[3]
 
-        chunks_seen = 0
-        async for _chunk in response.aiter_bytes():
-            chunks_seen += 1
-            if chunks_seen >= 2:
+        # Disconnect after the first complete SSE frame. ``aiter_bytes``
+        # chunk boundaries are HTTP-transport-defined (chunked encoding
+        # may coalesce frames or split one across many), so keying off
+        # ``chunks_seen >= N`` is timing-flaky. Buffer until we see the
+        # frame terminator (``\n\n`` per our format_sse_message wire
+        # format) — that's deterministic across transports.
+        buffered = b""
+        async for chunk in response.aiter_bytes():
+            buffered += chunk
+            if b"\n\n" in buffered:
                 break
-        elog("Disconnecting after chunks", {"chunks_seen": chunks_seen, "run_id": run_id})
+        elog("Disconnecting after first SSE frame", {"bytes_seen": len(buffered), "run_id": run_id})
         # Drop out of the `async with` to close the connection — that's
         # the http.disconnect that fires the close handler.
 

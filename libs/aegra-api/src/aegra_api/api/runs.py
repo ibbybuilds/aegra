@@ -123,6 +123,7 @@ async def create_and_stream_run(
             # Swallow infra/transport failures so sse-starlette's task group
             # tears down cleanly. Programmer errors (TypeError, AttributeError,
             # ...) propagate. The lease reaper picks up unreachable runs.
+            # OSError covers ConnectionError/TimeoutError (3.11+ subclasses).
             logger.exception("Failed to cancel run on client disconnect", run_id=run_id)
 
     close_handler = _cancel_on_client_close if cancel_on_disconnect else None

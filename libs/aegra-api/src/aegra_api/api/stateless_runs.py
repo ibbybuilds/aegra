@@ -132,8 +132,15 @@ def _run_finished(run_id: str) -> bool:
     Returning False errs on keeping the thread. The broker cleanup task
     removes the broker dict entry after an hour, but it does NOT delete
     the ephemeral thread row from Postgres — leaving an unmatched abort
-    here leaks an empty ephemeral thread until an external sweeper
-    reaps it (TODO: see follow-up ticket for the orphan-thread sweeper).
+    here leaks an empty ephemeral thread.
+
+    TODO(orphan-thread-sweeper): file as a follow-up issue. The sweeper
+    should periodically delete ephemeral threads (flagged via
+    ``is_ephemeral`` column or metadata) where no run is in
+    pending/running status and ``updated_at`` is older than a configured
+    retention window. Triggering condition for accumulation: prod-mode
+    Redis broker + slow-client / dead-proxy aborts that race ahead of
+    the local pub/sub subscriber draining the run's end event.
 
     A missing broker (None) also returns False — the safe answer for
     "run not started" and "broker dict entry already swept".

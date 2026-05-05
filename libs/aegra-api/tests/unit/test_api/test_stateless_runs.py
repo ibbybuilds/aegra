@@ -25,10 +25,22 @@ from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.models import Run, RunCreate, User
 
 
-def _raise_immediately(exc: BaseException) -> Iterator[None]:
-    """Generator that raises ``exc`` on first iteration. Backs ``_FailingTask.__await__``."""
-    raise exc
-    yield  # pragma: no cover - unreachable, makes this a generator
+class _RaisingIter:
+    """Iterator that raises a configured exception on first ``__next__``.
+
+    Used as the ``__await__`` return value for ``_FailingTask``. Plain
+    iterator class (not a generator) so there's no unreachable ``yield``
+    statement for static analyzers (CodeQL) to flag.
+    """
+
+    def __init__(self, exc: BaseException) -> None:
+        self._exc = exc
+
+    def __iter__(self) -> "_RaisingIter":
+        return self
+
+    def __next__(self) -> None:
+        raise self._exc
 
 
 class _FailingTask:
@@ -38,11 +50,6 @@ class _FailingTask:
     ``await task`` branch, then raises the configured exception when
     awaited. ``asyncio.Future.set_exception`` flips ``done()`` to True up
     front, which would skip the await branch entirely — hence this stub.
-
-    ``__await__`` returns the iterator from ``_raise_immediately`` rather
-    than being a generator function itself: keeps the body small and
-    obvious instead of relying on the ``raise; yield`` quirk to coerce
-    Python into treating the method as a generator.
     """
 
     def __init__(self, exc: BaseException) -> None:
@@ -55,7 +62,7 @@ class _FailingTask:
         return None
 
     def __await__(self) -> Iterator[None]:
-        return _raise_immediately(self._exc)
+        return _RaisingIter(self._exc)
 
 
 class TestDeleteThreadById:

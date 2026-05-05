@@ -22,6 +22,7 @@ Usage::
 
 import contextvars
 import logging
+from typing import Any
 
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
@@ -31,7 +32,20 @@ logger = logging.getLogger(__name__)
 # Metadata keys reserved for runtime state; user-supplied values for
 # these keys are dropped (system value wins) so they remain reliable
 # join keys between logs, spans, and the runs table.
-_RESERVED_METADATA_KEYS = frozenset({"run_id", "thread_id", "graph_id", "original_request_id"})
+#
+# ``original_request_id`` is intentionally not reserved: only the worker
+# path injects it (when an HTTP correlation-id is present), and it is
+# absent on the local-executor path. Reserving it would make
+# ``merge_run_metadata`` drop a user-supplied value with a misleading
+# "overridden by system value" warning whenever the system value is
+# missing — a silent data loss with no guarantee benefit.
+_RESERVED_METADATA_KEYS = frozenset({"run_id", "thread_id", "graph_id"})
+
+# OTEL span attributes only accept primitive scalar types. The
+# observability SDK silently drops any other value at attribute-set
+# time, so we filter at this layer and emit an aegra-level warning
+# instead of letting drops happen invisibly inside the SDK.
+_PRIMITIVE_ATTR_TYPES: tuple[type, ...] = (str, int, float, bool)
 
 # Per-request context variable holding span attributes to inject.
 # None means no trace context is set; on_start() is a no-op in that case.
@@ -127,16 +141,22 @@ def set_trace_context(
 
 
 def merge_run_metadata(
-    extra_metadata: dict[str, str | int | float | bool] | None,
+    extra_metadata: dict[str, Any] | None,
     system_metadata: dict[str, str | int | float | bool],
 ) -> dict[str, str | int | float | bool]:
     """Merge user-supplied metadata with system-injected runtime keys.
 
-    The reserved keys (``run_id``, ``thread_id``, ``graph_id``,
-    ``original_request_id``) are runtime invariants and join keys between
-    logs, spans, and the runs table.  When a user-supplied key collides
-    with a reserved key, the system value wins and a warning is logged so
-    the override is visible during debugging without breaking the request.
+    The reserved keys (``run_id``, ``thread_id``, ``graph_id``) are
+    runtime invariants and join keys between logs, spans, and the runs
+    table. When a user-supplied key collides with a reserved key, the
+    system value wins and a warning is logged so the override is visible
+    during debugging without breaking the request.
+
+    Non-primitive values (anything other than ``str``, ``int``, ``float``,
+    ``bool``) are dropped with a warning. OTEL span attributes accept
+    only primitives; passing a nested dict or list to ``span.set_attribute``
+    is a silent no-op at the SDK level. Filtering here surfaces the drop
+    with the offending key so callers can fix the payload upstream.
     """
     if not extra_metadata:
         return dict(system_metadata)
@@ -147,6 +167,14 @@ def merge_run_metadata(
                 "User metadata key '%s' overridden by system value; reserved keys: %s",
                 key,
                 sorted(_RESERVED_METADATA_KEYS),
+            )
+            continue
+        if not isinstance(value, _PRIMITIVE_ATTR_TYPES):
+            logger.warning(
+                "User metadata key '%s' has non-primitive type %s; dropping "
+                "(OTEL attributes accept str/int/float/bool only)",
+                key,
+                type(value).__name__,
             )
             continue
         merged[key] = value
@@ -160,7 +188,7 @@ def make_run_trace_context(
     graph_id: str,
     user_identity: str | None,
     *,
-    extra_metadata: dict[str, str | int | float | bool] | None = None,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> contextvars.Context:
     """Return an isolated context copy with OTEL trace attributes pre-set for a run.
 

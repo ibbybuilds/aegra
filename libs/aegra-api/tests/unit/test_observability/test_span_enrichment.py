@@ -303,3 +303,41 @@ class TestMergeRunMetadata:
         # Stricter than a substring check: assert no WARNING-level record was
         # emitted from the merge_run_metadata logger at all.
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def test_original_request_id_is_not_reserved(self) -> None:
+        """``original_request_id`` is set only on the worker path; the local-executor
+        path omits it. Reserving it would silently drop user values when the
+        system value is missing — confirm it flows through as a regular key."""
+        system = {"run_id": "r1", "thread_id": "t1", "graph_id": "g1"}
+        result = merge_run_metadata({"original_request_id": "user-corr-id"}, system)
+        assert result["original_request_id"] == "user-corr-id"
+
+    def test_non_primitive_value_is_dropped_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """OTEL span attributes accept only primitives; nested values are
+        dropped at this layer with an aegra-level warning so the loss is
+        visible (rather than swallowed inside the OTEL SDK)."""
+        system = {"run_id": "r1"}
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            result = merge_run_metadata(
+                {"tenant": "acme", "nested": {"x": 1}, "items": [1, 2, 3]},
+                system,
+            )
+
+        assert result["tenant"] == "acme"
+        assert "nested" not in result
+        assert "items" not in result
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("nested" in w.message for w in warnings)
+        assert any("items" in w.message for w in warnings)
+
+    def test_primitive_types_pass_through(self) -> None:
+        """str, int, float, bool all flow through unchanged."""
+        system: dict[str, str | int | float | bool] = {"run_id": "r1"}
+        result = merge_run_metadata(
+            {"s": "v", "i": 42, "f": 3.14, "b": True},
+            system,
+        )
+        assert result["s"] == "v"
+        assert result["i"] == 42
+        assert result["f"] == 3.14
+        assert result["b"] is True

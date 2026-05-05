@@ -415,8 +415,9 @@ class TestRestoreTraceContext:
         assert metadata["run_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         assert metadata["tenant"] == "acme"
 
-    def test_empty_run_metadata_keeps_system_keys_only(self) -> None:
-        """A job without run_metadata produces the four system keys unchanged."""
+    def test_empty_run_metadata_with_correlation_id_keeps_four_system_keys(self) -> None:
+        """When a correlation-id is present, ``original_request_id`` is
+        included in the metadata alongside the three runtime keys."""
         job = _make_run_job()  # run_metadata defaults to {}
         trace = {"correlation_id": "req-abc"}
 
@@ -425,6 +426,19 @@ class TestRestoreTraceContext:
 
         metadata = mock_set_trace.call_args.kwargs["metadata"]
         assert set(metadata.keys()) == {"run_id", "thread_id", "graph_id", "original_request_id"}
+
+    def test_missing_correlation_id_omits_original_request_id(self) -> None:
+        """Requests without an upstream correlation-id header should not produce
+        a ``langfuse.trace.metadata.original_request_id=""`` empty attribute."""
+        job = _make_run_job()
+        trace: dict[str, str] = {}  # no correlation_id
+
+        with patch(f"{MODULE}.set_trace_context") as mock_set_trace:
+            _restore_trace_context("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", job, trace)
+
+        metadata = mock_set_trace.call_args.kwargs["metadata"]
+        assert "original_request_id" not in metadata
+        assert set(metadata.keys()) == {"run_id", "thread_id", "graph_id"}
 
 
 # ------------------------------------------------------------------

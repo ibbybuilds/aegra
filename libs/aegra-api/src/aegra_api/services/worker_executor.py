@@ -26,7 +26,7 @@ from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import _get_session_maker
 from aegra_api.core.redis_manager import redis_manager
 from aegra_api.models.run_job import RunJob
-from aegra_api.observability.span_enrichment import set_trace_context
+from aegra_api.observability.span_enrichment import merge_run_metadata, set_trace_context
 from aegra_api.services.base_executor import BaseExecutor
 from aegra_api.services.run_executor import _lease_loss_cancellations, execute_run
 from aegra_api.services.run_status import finalize_run, update_run_status
@@ -466,7 +466,9 @@ def _restore_trace_context(run_id: str, job: RunJob, trace: dict[str, str]) -> N
     """Restore OTEL and structlog trace context for a worker-executed run.
 
     Clears previous context first to prevent bleed between concurrent
-    jobs processed by the same worker.
+    jobs processed by the same worker.  User-supplied ``run_metadata`` is
+    merged with the system runtime keys; system keys win on collision —
+    see :func:`merge_run_metadata`.
     """
     structlog.contextvars.clear_contextvars()
 
@@ -474,16 +476,22 @@ def _restore_trace_context(run_id: str, job: RunJob, trace: dict[str, str]) -> N
     if original_request_id:
         correlation_id.set(original_request_id)
 
+    system_metadata: dict[str, str | int | float | bool] = {
+        "run_id": run_id,
+        "thread_id": job.identity.thread_id,
+        "graph_id": job.identity.graph_id,
+    }
+    # Gate on non-empty: requests without an upstream correlation-id header
+    # leave ``original_request_id`` as ``""`` — including the empty string
+    # would emit a noisy ``langfuse.trace.metadata.original_request_id=""``
+    # attribute on every such trace.
+    if original_request_id:
+        system_metadata["original_request_id"] = original_request_id
     set_trace_context(
         user_id=job.user.identity,
         session_id=job.identity.thread_id,
         trace_name=job.identity.graph_id,
-        metadata={
-            "run_id": run_id,
-            "thread_id": job.identity.thread_id,
-            "graph_id": job.identity.graph_id,
-            "original_request_id": original_request_id,
-        },
+        metadata=merge_run_metadata(job.run_metadata, system_metadata),
     )
 
     structlog.contextvars.bind_contextvars(

@@ -1,14 +1,21 @@
 """Unit tests for SpanEnrichmentProcessor and set_trace_context."""
 
 import asyncio
+import logging
 from unittest.mock import MagicMock
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
 
 from aegra_api.observability.span_enrichment import (
     SpanEnrichmentProcessor,
     _trace_attrs,
     make_run_trace_context,
+    merge_run_metadata,
     set_trace_context,
 )
 
@@ -230,3 +237,270 @@ class TestMakeRunTraceContext:
         assert "langfuse.user.id" not in attrs
         assert "user.id" not in attrs
         assert attrs["langfuse.trace.name"] == "my_graph"
+
+    def test_extra_metadata_merged_into_trace_context(self) -> None:
+        """User-supplied extra_metadata appears alongside system runtime keys."""
+        ctx = make_run_trace_context(
+            "run-1",
+            "thread-1",
+            "my_graph",
+            "user-1",
+            extra_metadata={"tenant": "acme", "feature_flag": True},
+        )
+
+        attrs = ctx.run(_trace_attrs.get)
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+        assert attrs["langfuse.trace.metadata.feature_flag"] is True
+        # System keys preserved
+        assert attrs["langfuse.trace.metadata.run_id"] == "run-1"
+        assert attrs["langfuse.trace.metadata.thread_id"] == "thread-1"
+        assert attrs["langfuse.trace.metadata.graph_id"] == "my_graph"
+
+    def test_extra_metadata_cannot_override_system_keys(self) -> None:
+        """Reserved system keys win on collision; user value is dropped."""
+        ctx = make_run_trace_context(
+            "run-actual",
+            "thread-1",
+            "my_graph",
+            "user-1",
+            extra_metadata={"run_id": "run-spoofed", "tenant": "acme"},
+        )
+
+        attrs = ctx.run(_trace_attrs.get)
+        assert attrs["langfuse.trace.metadata.run_id"] == "run-actual"
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+
+
+class TestMergeRunMetadata:
+    """Tests for merge_run_metadata()."""
+
+    def test_returns_system_only_when_extra_is_none(self) -> None:
+        system = {"run_id": "r1", "thread_id": "t1"}
+        assert merge_run_metadata(None, system) == system
+
+    def test_returns_system_only_when_extra_is_empty(self) -> None:
+        system = {"run_id": "r1", "thread_id": "t1"}
+        assert merge_run_metadata({}, system) == system
+
+    def test_user_keys_added_when_no_collision(self) -> None:
+        system = {"run_id": "r1", "thread_id": "t1"}
+        result = merge_run_metadata({"tenant": "acme", "retries": 3}, system)
+        assert result == {"run_id": "r1", "thread_id": "t1", "tenant": "acme", "retries": 3}
+
+    def test_system_wins_on_collision(self) -> None:
+        system = {"run_id": "actual", "thread_id": "t1"}
+        result = merge_run_metadata({"run_id": "spoofed", "tenant": "acme"}, system)
+        assert result["run_id"] == "actual"
+        assert result["tenant"] == "acme"
+
+    def test_collision_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A user-supplied reserved key triggers a warning log."""
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            merge_run_metadata({"thread_id": "spoofed"}, {"thread_id": "actual"})
+
+        assert any("thread_id" in record.message for record in caplog.records)
+
+    def test_no_warning_when_keys_do_not_collide(self, caplog: pytest.LogCaptureFixture) -> None:
+        """No warning of any kind is emitted when user keys do not hit reserved names."""
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            merge_run_metadata({"tenant": "acme"}, {"run_id": "r1"})
+
+        # Stricter than a substring check: assert no WARNING-level record was
+        # emitted from the merge_run_metadata logger at all.
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def test_original_request_id_passes_through_when_system_lacks_it(self) -> None:
+        """``original_request_id`` is set only on the worker path; the local-executor
+        path omits it. Reserving it would silently drop user values when the
+        system value is missing — confirm it flows through as a regular key."""
+        system = {"run_id": "r1", "thread_id": "t1", "graph_id": "g1"}
+        result = merge_run_metadata({"original_request_id": "user-corr-id"}, system)
+        assert result["original_request_id"] == "user-corr-id"
+
+    def test_non_reserved_system_collision_drops_user_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A user value that collides with a non-reserved system key is dropped
+        with a warning. Without this, the worker path silently overwrote
+        user-supplied ``original_request_id`` (and any other future system
+        injection) via ``merged.update(system_metadata)``."""
+        system = {
+            "run_id": "r1",
+            "thread_id": "t1",
+            "graph_id": "g1",
+            "original_request_id": "system-corr-id",
+        }
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            result = merge_run_metadata({"original_request_id": "user-corr-id"}, system)
+
+        assert result["original_request_id"] == "system-corr-id"
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("original_request_id" in w.message for w in warnings)
+
+    def test_non_primitive_value_is_dropped_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """OTEL span attributes accept only primitives; nested values are
+        dropped at this layer with an aegra-level warning so the loss is
+        visible (rather than swallowed inside the OTEL SDK)."""
+        system = {"run_id": "r1"}
+        with caplog.at_level(logging.WARNING, logger="aegra_api.observability.span_enrichment"):
+            result = merge_run_metadata(
+                {"tenant": "acme", "nested": {"x": 1}, "items": [1, 2, 3]},
+                system,
+            )
+
+        assert result["tenant"] == "acme"
+        assert "nested" not in result
+        assert "items" not in result
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("nested" in w.message for w in warnings)
+        assert any("items" in w.message for w in warnings)
+
+    def test_primitive_types_pass_through(self) -> None:
+        """str, int, float, bool all flow through unchanged."""
+        system: dict[str, str | int | float | bool] = {"run_id": "r1"}
+        result = merge_run_metadata(
+            {"s": "v", "i": 42, "f": 3.14, "b": True},
+            system,
+        )
+        assert result["s"] == "v"
+        assert result["i"] == 42
+        assert result["f"] == 3.14
+        assert result["b"] is True
+
+
+class TestSpanEnrichmentEndToEnd:
+    """End-to-end verification with the real OpenTelemetry SDK.
+
+    The other tests in this file mock the SDK to isolate behavior.  This
+    class wires up an actual ``TracerProvider`` with an
+    ``InMemorySpanExporter`` so the full chain
+    ``make_run_trace_context`` → context var →
+    ``SpanEnrichmentProcessor.on_start`` → root-span attributes is
+    exercised without mocks.
+
+    Without this coverage, a refactor that quietly broke any link in the
+    chain (e.g. a dropped ``extra_metadata`` kwarg, a wrongly-passed
+    ``contextvars.Context`` to ``asyncio.create_task``, an
+    ``on_start``-vs-``on_end`` ordering regression) would still pass
+    every other test in the file.
+    """
+
+    def setup_method(self) -> None:
+        _trace_attrs.set(None)
+        self.exporter = InMemorySpanExporter()
+        self.provider = TracerProvider()
+        # Order matters: enrichment must run BEFORE export so the
+        # exporter sees attributes set by ``on_start``.
+        self.provider.add_span_processor(SpanEnrichmentProcessor())
+        self.provider.add_span_processor(SimpleSpanProcessor(self.exporter))
+        self.tracer = self.provider.get_tracer(__name__)
+
+    def teardown_method(self) -> None:
+        self.provider.shutdown()
+        _trace_attrs.set(None)
+
+    def _emit_root_span(self, ctx) -> None:
+        """Open and close a root span inside the supplied context."""
+
+        def _create() -> None:
+            with self.tracer.start_as_current_span("test_root_span"):
+                pass
+
+        ctx.run(_create)
+
+    def test_user_metadata_reaches_root_span_attributes(self) -> None:
+        """Happy path: every layer of the propagation pipeline cooperates."""
+        ctx = make_run_trace_context(
+            run_id="run-1",
+            thread_id="thread-1",
+            graph_id="my_graph",
+            user_identity="user-1",
+            extra_metadata={"tenant": "acme", "retries": 3, "ratio": 0.5, "flag": True},
+        )
+
+        self._emit_root_span(ctx)
+
+        spans = self.exporter.get_finished_spans()
+        assert len(spans) == 1
+        attrs = dict(spans[0].attributes or {})
+
+        # Langfuse-native + Phoenix/OpenInference aliases for first-class fields.
+        assert attrs["langfuse.user.id"] == "user-1"
+        assert attrs["user.id"] == "user-1"
+        assert attrs["langfuse.session.id"] == "thread-1"
+        assert attrs["session.id"] == "thread-1"
+        assert attrs["langfuse.trace.name"] == "my_graph"
+
+        # System metadata is always present.
+        assert attrs["langfuse.trace.metadata.run_id"] == "run-1"
+        assert attrs["langfuse.trace.metadata.thread_id"] == "thread-1"
+        assert attrs["langfuse.trace.metadata.graph_id"] == "my_graph"
+
+        # User-supplied metadata flows through with primitive types preserved.
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+        assert attrs["langfuse.trace.metadata.retries"] == 3
+        assert attrs["langfuse.trace.metadata.ratio"] == 0.5
+        assert attrs["langfuse.trace.metadata.flag"] is True
+
+    def test_reserved_collision_system_value_wins_on_root_span(self) -> None:
+        """User attempt to overwrite a reserved key is dropped; non-collision
+        keys still flow through.  This is the contract surfaced via the
+        warning in ``merge_run_metadata`` — verified end-to-end here."""
+        ctx = make_run_trace_context(
+            run_id="actual-run",
+            thread_id="thread-1",
+            graph_id="my_graph",
+            user_identity="user-1",
+            extra_metadata={"run_id": "spoofed", "tenant": "acme"},
+        )
+
+        self._emit_root_span(ctx)
+
+        attrs = dict(self.exporter.get_finished_spans()[0].attributes or {})
+        assert attrs["langfuse.trace.metadata.run_id"] == "actual-run"
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+
+    def test_anonymous_user_with_no_extra_metadata(self) -> None:
+        """``user_identity=None`` + ``extra_metadata=None`` produces a span
+        with system metadata only and no user.id keys at all."""
+        ctx = make_run_trace_context(
+            run_id="r1",
+            thread_id="t1",
+            graph_id="g1",
+            user_identity=None,
+            extra_metadata=None,
+        )
+
+        self._emit_root_span(ctx)
+
+        attrs = dict(self.exporter.get_finished_spans()[0].attributes or {})
+        assert "langfuse.user.id" not in attrs
+        assert "user.id" not in attrs
+        assert attrs["langfuse.session.id"] == "t1"
+        assert attrs["langfuse.trace.name"] == "g1"
+        assert attrs["langfuse.trace.metadata.run_id"] == "r1"
+        # No leftover metadata keys from a previous run/test.
+        user_metadata_keys = [
+            k
+            for k in attrs
+            if k.startswith("langfuse.trace.metadata.") and k.split(".")[-1] not in {"run_id", "thread_id", "graph_id"}
+        ]
+        assert user_metadata_keys == []
+
+    def test_non_primitive_user_metadata_is_dropped_before_span(self) -> None:
+        """A nested value submitted in ``extra_metadata`` is filtered by
+        ``merge_run_metadata`` and never reaches the OTEL SDK — so the
+        span carries the surviving primitive keys but not the nested
+        value (which would otherwise be silently no-op'd inside
+        ``span.set_attribute``)."""
+        ctx = make_run_trace_context(
+            run_id="r1",
+            thread_id="t1",
+            graph_id="g1",
+            user_identity="u1",
+            extra_metadata={"tenant": "acme", "nested": {"x": 1}},
+        )
+
+        self._emit_root_span(ctx)
+
+        attrs = dict(self.exporter.get_finished_spans()[0].attributes or {})
+        assert attrs["langfuse.trace.metadata.tenant"] == "acme"
+        assert "langfuse.trace.metadata.nested" not in attrs

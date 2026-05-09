@@ -23,13 +23,15 @@ config = context.config
 # through quote_plus, so any password char in `<>^&#:%` produces a `%XX`
 # sequence that configparser rejects with `ValueError: invalid interpolation
 # syntax`. config.attributes has no interpolation. See issue #357.
-config.attributes["sqlalchemy.url"] = settings.db.database_url
+# setdefault preserves caller-supplied overrides (e.g. tests or alembic.ini
+# round-trip) so _get_database_url() can still fall back to get_main_option.
+config.attributes.setdefault("sqlalchemy.url", settings.db.database_url)
 
 
 def _get_database_url() -> str:
     """Read URL from config.attributes (set in env.py) or fall back to ini."""
     url = config.attributes.get("sqlalchemy.url")
-    if url:
+    if url is not None:
         return url
     return config.get_main_option("sqlalchemy.url")
 

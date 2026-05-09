@@ -3175,8 +3175,42 @@
               }
             ],
             "title": "Metadata",
-            "description": "Metadata to use for searching and filtering assistants.",
-            "default": {}
+            "description": "Metadata to use for searching and filtering assistants."
+          },
+          "sort_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "assistant_id",
+                  "name",
+                  "graph_id",
+                  "created_at",
+                  "updated_at"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort By",
+            "description": "Field to sort by (SDK-compatible)."
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order",
+            "description": "Sort direction (SDK-compatible). Defaults to 'desc' when sort_by is set."
           }
         },
         "type": "object",

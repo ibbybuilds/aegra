@@ -35,6 +35,7 @@ from aegra_api.models import (
 )
 from aegra_api.models.errors import CONFLICT, NOT_FOUND
 from aegra_api.services.streaming_service import streaming_service
+from aegra_api.services.thread_copy import copy_thread_atomically
 from aegra_api.services.thread_state_service import ThreadStateService
 
 router = APIRouter(tags=["Threads"], dependencies=auth_dependency)
@@ -852,6 +853,71 @@ async def delete_thread(
     await session.commit()
 
     return {"status": "deleted"}
+
+
+@router.post("/threads/{thread_id}/copy", response_model=Thread, responses={**NOT_FOUND})
+async def copy_thread(
+    thread_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Thread:
+    """Deep-copy a thread, preserving its ``checkpoint_id`` chain.
+
+    Status and metadata are inherited from the source (including ``running``
+    or ``error``); ``created_at``/``updated_at`` are regenerated.
+    """
+    # ``new_id`` is generated up-front and exposed to the auth event so handlers
+    # can key per-thread resources (tenant, quota, billing) to the new row.
+    new_id = str(uuid4())
+    ctx = build_auth_context(user, "threads", "create")
+    filters = await handle_event(
+        ctx,
+        {"thread_id": new_id, "src_thread_id": thread_id},
+    )
+
+    src = await session.scalar(
+        select(ThreadORM).where(
+            ThreadORM.thread_id == thread_id,
+            ThreadORM.user_id == user.identity,
+        )
+    )
+    if not src:
+        raise HTTPException(404, f"Thread '{thread_id}' not found")
+
+    # Mirror ``create_thread``: handler metadata wins over source, then
+    # ``copy_thread_atomically`` rewrites ``owner`` last as security invariant.
+    src_metadata = dict(src.metadata_json or {})
+    if filters and "metadata" in filters:
+        handler_meta = filters["metadata"]
+        if isinstance(handler_meta, dict):
+            src_metadata = {**src_metadata, **handler_meta}
+
+    try:
+        await copy_thread_atomically(
+            src_thread_id=thread_id,
+            new_thread_id=new_id,
+            src_status=src.status,
+            src_metadata=src_metadata,
+            user_identity=user.identity,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to copy thread",
+            src_thread_id=thread_id,
+            new_thread_id=new_id,
+        )
+        raise HTTPException(500, "Failed to copy thread") from None
+
+    # Commit before reload so REPEATABLE READ/SERIALIZABLE engines see the row
+    # (the lg_pool INSERT is invisible to a frozen session snapshot otherwise).
+    await session.commit()
+
+    new_thread = await session.scalar(select(ThreadORM).where(ThreadORM.thread_id == new_id))
+    if new_thread is None:
+        # Unreachable: the atomic INSERT just committed.
+        raise HTTPException(500, "Thread copy committed but the row could not be reloaded")
+
+    return _serialize_thread(new_thread)
 
 
 @router.post("/threads/search", response_model=list[Thread])

@@ -3709,7 +3709,7 @@
               }
             ],
             "title": "Metadata",
-            "description": "Request metadata (e.g., from_studio flag)"
+            "description": "Request metadata propagated to OTEL trace attributes (``langfuse.trace.metadata.<key>``).  Keys must match ``[A-Za-z0-9_-]{1,64}``.  Values must be primitive (``str``, ``int``, ``float``, ``bool``); string values are capped at 512 characters.  Maximum 32 keys.  Use this for filterable attributes (tenant, feature flag, environment, sub-agent type) rather than payload data."
           }
         },
         "type": "object",

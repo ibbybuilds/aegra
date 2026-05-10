@@ -122,12 +122,8 @@ def _extract_graph_schemas(graph) -> dict:
 
 
 def _escape_like(value: str) -> str:
-    """Escape LIKE-special characters (``%``, ``_``, ``\\``) in user input.
-
-    User-supplied search terms are interpolated into ILIKE patterns. Without
-    escaping, a caller could supply ``%`` / ``_`` to alter the intended
-    pattern semantics (LIKE injection — CWE-89 variant). The backslash is
-    escaped first so we do not double-escape the escapes added afterwards.
+    """Escape LIKE wildcards (``%``, ``_``, ``\\``) in user input.
+    Backslash is replaced first so subsequent escapes are not double-escaped.
     """
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 

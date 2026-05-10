@@ -1740,7 +1740,7 @@
           "Thread Runs"
         ],
         "summary": "Create And Stream Run",
-        "description": "Create a new run and stream its execution via SSE.\n\nReturns a `text/event-stream` response with Server-Sent Events. Each\nevent has a `type` field (e.g. `values`, `updates`, `messages`,\n`metadata`, `end`) and a JSON `data` payload.\n\nSet `on_disconnect` to `\"continue\"` if the run should keep executing\nafter the client disconnects (default is `\"cancel\"`). Use `stream_mode`\nto control which event types are emitted.",
+        "description": "Create a new run and stream its execution via SSE.\n\nReturns a `text/event-stream` response with Server-Sent Events. Each\nevent has a `type` field (e.g. `values`, `updates`, `messages`,\n`metadata`, `end`) and a JSON `data` payload.\n\nSet `on_disconnect` to `\"continue\"` if the run should keep executing\nafter the client disconnects (default is `\"cancel\"`). Use `stream_mode`\nto control which event types are emitted.\n\nA periodic SSE keepalive comment is sent every\n``KEEPALIVE_INTERVAL_SECS`` so idle proxies don't drop long-running\nsilent nodes (e.g. agents holding an upstream WebSocket).",
         "operationId": "create_and_stream_run_threads__thread_id__runs_stream_post",
         "parameters": [
           {
@@ -2156,7 +2156,7 @@
           "Thread Runs"
         ],
         "summary": "Stream Run",
-        "description": "Stream an existing run's execution via SSE.\n\nAttach to a run that was created without streaming (e.g. via the create\nendpoint) to receive its events in real time. If the run has already\nfinished, a single `end` event is emitted. Use the `Last-Event-ID`\nheader to resume from a specific event after a disconnect.",
+        "description": "Stream an existing run's execution via SSE.\n\nAttach to a run that was created without streaming (e.g. via the create\nendpoint) to receive its events in real time. If the run has already\nfinished, a single `end` event is emitted. Use the `Last-Event-ID`\nheader to resume from a specific event after a disconnect.\n\nA periodic SSE keepalive comment is sent every\n``KEEPALIVE_INTERVAL_SECS`` so idle proxies don't drop attached streams.",
         "operationId": "stream_run_threads__thread_id__runs__run_id__stream_get",
         "parameters": [
           {

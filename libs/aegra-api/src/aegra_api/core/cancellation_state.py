@@ -14,6 +14,23 @@ loop per process. Do not invoke from threads, signal handlers, or
 Cross-instance cancellation is handled by ``RedisBrokerManager``,
 which receives pubsub messages on the same loop.
 
+OWNERSHIP: marks are written by ``mark()`` (API cancel, heartbeat
+lease-loss). The tag is read twice — first by ``execute_run``'s
+CancelledError handler (peek via ``reason_of``, must not consume),
+then by the worker after ``await job_task`` raises (atomic read+remove
+via ``pop_reason``). Single-layer semantics: there is exactly one tag
+per ``run_id`` at a time. Cleanup ownership:
+
+- **Cancel path**: ``worker_executor._execute_with_lease`` calls
+  ``pop_reason`` in its CancelledError handler — atomic with the read,
+  so a concurrent ``mark`` for the re-run is unblocked at zero awaits.
+- **Outermost safety-net**: ``worker_executor._execute_and_release``
+  finally calls ``clear`` — covers rare paths that bypass the inner
+  except (e.g. CancelledError raised inside ``_acquire_and_load``
+  before ``job_task`` exists, or a leaked mark on a success path).
+- **LocalExecutor (dev mode)**: ``submit`` adds a done-callback on
+  the task that calls ``clear`` — there is no enclosing finally.
+
 Precedence rule: a run is tagged with at most one reason. ``lease_loss``
 always wins — once set it is never downgraded to ``"user"`` (only an
 explicit ``clear`` removes it). ``execute_run`` reads the tag in this
@@ -50,8 +67,20 @@ class CancellationRegistry:
         self._tags[run_id] = reason
 
     def reason_of(self, run_id: str) -> CancellationReason | None:
-        """Return the tagged reason or ``None`` if the run has no tag."""
+        """Peek at the tagged reason without removing it.
+
+        Used by ``execute_run`` to classify the CancelledError. The tag must
+        survive this read because the worker peeks it again post-job-done —
+        use ``pop_reason`` for end-of-life atomic read+remove.
+        """
         return self._tags.get(run_id)
+
+    def pop_reason(self, run_id: str) -> CancellationReason | None:
+        """Atomically read and remove the tag — single call replacing
+        ``reason_of`` followed by ``clear``. Used by the worker's cancel
+        handler so a concurrent ``mark`` for a re-run on another worker
+        isn't blocked by precedence (lease_loss > user)."""
+        return self._tags.pop(run_id, None)
 
     def clear(self, run_id: str, *, only: CancellationReason | None = None) -> None:
         """Drop the tag for ``run_id``.

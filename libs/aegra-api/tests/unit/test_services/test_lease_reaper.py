@@ -449,7 +449,10 @@ class TestBumpRetryCount:
 
     @pytest.mark.asyncio
     async def test_commits_on_retryable_increment(self) -> None:
-        """Within-budget retry: bump _retry_count, refresh _enqueued_at, commit."""
+        """Within-budget retry: bump _retry_count, commit. Does NOT touch
+        ``_enqueued_at`` — that refresh belongs to ``_update_enqueued_at``
+        (called by ``_reenqueue`` right after) so a write here is a redundant
+        field assignment immediately overwritten."""
         run_orm = MagicMock()
         run_orm.execution_params = {"_retry_count": 1, "graph_id": "g"}
 
@@ -465,7 +468,7 @@ class TestBumpRetryCount:
         retry_count, params = outcome
         assert retry_count == 2
         assert params["_retry_count"] == 2
-        assert "_enqueued_at" in params
+        assert "_enqueued_at" not in params
         session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio

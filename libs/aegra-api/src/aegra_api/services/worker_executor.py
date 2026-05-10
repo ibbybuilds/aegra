@@ -241,6 +241,9 @@ class WorkerExecutor(BaseExecutor):
             logger.exception("Unexpected error in job execution", run_id=run_id)
         finally:
             active_runs.pop(run_id, None)
+            # Outermost safety-net — covers paths that bypass _execute_with_lease's
+            # except (e.g. CancelledError during ``_acquire_and_load``).
+            cancellations.clear(run_id)
             semaphore.release()
 
     # ------------------------------------------------------------------
@@ -339,15 +342,26 @@ class WorkerExecutor(BaseExecutor):
             try:
                 await job_task
             except asyncio.CancelledError:
-                observe_duration = False  # partial time, don't observe
-                logger.info("Worker job cancelled", worker=worker_name, run_id=run_id)
+                # Swallow + uncancel per asyncio docs — ``asyncio.timeout``
+                # still raises ``TimeoutError`` from its own state.
+                current = asyncio.current_task()
+                if current is not None:
+                    current.uncancel()
+                # Atomic read+remove via pop_reason — keeps the precedence
+                # window for a concurrent re-run user-cancel at zero awaits.
+                cancel_reason = cancellations.pop_reason(run_id)
+                observe_duration = cancel_reason == "user"
+                logger.info(
+                    "Worker job cancelled",
+                    worker=worker_name,
+                    run_id=run_id,
+                    reason=cancel_reason,
+                )
             except Exception:
                 logger.exception("Worker job failed", worker=worker_name, run_id=run_id)
         finally:
-            # Cancel both child tasks — job_task may still be running if
-            # this coroutine was cancelled by wait_for timeout (CancelledError
-            # is delivered to `await job_task`, but the Task itself is not
-            # cancelled automatically).
+            # Safety net — task.cancel() on the outer task already propagates
+            # to job_task via ``_fut_waiter.cancel``; covers exotic paths only.
             if job_task is not None and not job_task.done():
                 job_task.cancel()
             if heartbeat_task is not None:

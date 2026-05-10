@@ -50,6 +50,10 @@ async def execute_run(job: RunJob) -> None:
       cancelling — finalize as interrupted, increment completed metric.
     - **Timeout** (default): ``asyncio.wait_for`` cancels — skip finalize,
       ``_handle_timeout`` (worker_executor) finalizes as error.
+
+    The tag is NOT cleared here — the executor owns that cleanup so the
+    worker can read the reason after ``await job_task`` raises (cancel
+    propagates through ``_fut_waiter.cancel`` and would race our finally).
     """
     run_id = job.identity.run_id
     thread_id = job.identity.thread_id
@@ -125,7 +129,8 @@ async def execute_run(job: RunJob) -> None:
         status = "interrupted" if final_output.has_interrupt else "success"
         await _best_effort_signal(_signal_end_event, run_id, status)
     finally:
-        cancellations.clear(run_id)
+        # Tag clear is the executor's job — it must survive our finally so
+        # the worker can peek the reason after ``await job_task`` raises.
         active_runs.pop(run_id, None)
         if not is_lease_loss:
             await streaming_service.cleanup_run(run_id)

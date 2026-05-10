@@ -841,6 +841,228 @@ async def test_execute_with_lease_observes_duration_when_job_raises_non_cancel_e
 
 
 @pytest.mark.asyncio
+async def test_execute_with_lease_observes_duration_on_user_cancel(
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """User-cancel finalises as ``interrupted`` and increments
+    ``runs_completed`` — its duration must appear in the histogram so
+    ``run_execution_seconds`` stays representative of long-lived runs."""
+    setup_worker_metrics(registry=fresh_registry)
+    metrics = get_worker_metrics()
+    assert metrics is not None
+
+    run_id = "rif-user-cancel"
+    job = MagicMock()
+    job.identity.run_id = run_id
+    job.identity.thread_id = "t1"
+    job.identity.graph_id = "graph-rif-uc"
+
+    loaded = _LoadedRun(job=job, trace={}, enqueued_at=None)
+    acquire_result = _AcquireResult(loaded=loaded, reason="ok")
+
+    executor = WorkerExecutor()
+    started = asyncio.Event()
+
+    async def long_running(_job: object) -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def quiet_heartbeat(*_a: object, **_kw: object) -> None:
+        await asyncio.sleep(3600)
+
+    with (
+        patch(
+            "aegra_api.services.worker_executor._acquire_and_load",
+            new_callable=AsyncMock,
+            return_value=acquire_result,
+        ),
+        patch("aegra_api.services.worker_executor._restore_trace_context"),
+        patch("aegra_api.services.worker_executor.execute_run", side_effect=long_running),
+        patch("aegra_api.services.worker_executor._heartbeat_loop", side_effect=quiet_heartbeat),
+        patch("aegra_api.services.worker_executor._release_lease", new_callable=AsyncMock),
+    ):
+        cancellations.mark(run_id, "user")
+        task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
+        await started.wait()
+        task.cancel()
+        await task
+
+    histogram = metrics.run_execution_seconds.labels(graph_id="graph-rif-uc")
+    assert histogram._sum.get() > 0.0
+    assert metrics.runs_in_flight.labels(graph_id="graph-rif-uc")._value.get() == 0.0
+    # Worker's finally must clear the tag — registry stays bounded.
+    assert cancellations.reason_of(run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_execute_with_lease_skips_duration_when_no_mark(
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """No mark in registry — covers timeout (``_handle_timeout`` observes
+    a clamped value separately) and other outer cancels. The worker must
+    NOT observe here or the timeout case would be double-counted."""
+    setup_worker_metrics(registry=fresh_registry)
+    metrics = get_worker_metrics()
+    assert metrics is not None
+
+    run_id = "rif-no-reason"
+    job = MagicMock()
+    job.identity.run_id = run_id
+    job.identity.thread_id = "t1"
+    job.identity.graph_id = "graph-rif-nr"
+
+    loaded = _LoadedRun(job=job, trace={}, enqueued_at=None)
+    acquire_result = _AcquireResult(loaded=loaded, reason="ok")
+
+    executor = WorkerExecutor()
+    started = asyncio.Event()
+
+    async def long_running(_job: object) -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def quiet_heartbeat(*_a: object, **_kw: object) -> None:
+        await asyncio.sleep(3600)
+
+    with (
+        patch(
+            "aegra_api.services.worker_executor._acquire_and_load",
+            new_callable=AsyncMock,
+            return_value=acquire_result,
+        ),
+        patch("aegra_api.services.worker_executor._restore_trace_context"),
+        patch("aegra_api.services.worker_executor.execute_run", side_effect=long_running),
+        patch("aegra_api.services.worker_executor._heartbeat_loop", side_effect=quiet_heartbeat),
+        patch("aegra_api.services.worker_executor._release_lease", new_callable=AsyncMock),
+    ):
+        # No cancellations.mark — simulates timeout (heartbeat-driven
+        # lease_loss is covered by a separate test below).
+        task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
+        await started.wait()
+        task.cancel()
+        await task
+
+    histogram = metrics.run_execution_seconds.labels(graph_id="graph-rif-nr")
+    assert histogram._sum.get() == 0.0
+    assert metrics.runs_in_flight.labels(graph_id="graph-rif-nr")._value.get() == 0.0
+    assert cancellations.reason_of(run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_execute_with_lease_skips_duration_on_lease_loss(
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """Heartbeat-marked lease_loss tag is still present at the worker's peek
+    (execute_run no longer clears). Worker must skip the histogram — work is
+    partial and rerun-elsewhere — and clear the tag so a concurrent
+    ``mark("user")`` for the rerun isn't blocked by precedence."""
+    setup_worker_metrics(registry=fresh_registry)
+    metrics = get_worker_metrics()
+    assert metrics is not None
+
+    run_id = "rif-lease-loss"
+    job = MagicMock()
+    job.identity.run_id = run_id
+    job.identity.thread_id = "t1"
+    job.identity.graph_id = "graph-rif-ll"
+
+    loaded = _LoadedRun(job=job, trace={}, enqueued_at=None)
+    acquire_result = _AcquireResult(loaded=loaded, reason="ok")
+
+    executor = WorkerExecutor()
+    started = asyncio.Event()
+
+    async def long_running(_job: object) -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def quiet_heartbeat(*_a: object, **_kw: object) -> None:
+        await asyncio.sleep(3600)
+
+    with (
+        patch(
+            "aegra_api.services.worker_executor._acquire_and_load",
+            new_callable=AsyncMock,
+            return_value=acquire_result,
+        ),
+        patch("aegra_api.services.worker_executor._restore_trace_context"),
+        patch("aegra_api.services.worker_executor.execute_run", side_effect=long_running),
+        patch("aegra_api.services.worker_executor._heartbeat_loop", side_effect=quiet_heartbeat),
+        patch("aegra_api.services.worker_executor._release_lease", new_callable=AsyncMock),
+    ):
+        cancellations.mark(run_id, "lease_loss")
+        task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
+        await started.wait()
+        task.cancel()
+        await task
+
+    histogram = metrics.run_execution_seconds.labels(graph_id="graph-rif-ll")
+    assert histogram._sum.get() == 0.0
+    assert metrics.runs_in_flight.labels(graph_id="graph-rif-ll")._value.get() == 0.0
+    # Worker must clear the tag so a re-run on another worker can be marked.
+    assert cancellations.reason_of(run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_pop_reason_clears_tag_before_release_lease(
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """The early ``pop_reason`` must clear the tag BEFORE ``_release_lease``
+    runs — that's the whole point of the race fix. Without atomicity, a
+    concurrent re-run user-cancel could be blocked by precedence during the
+    DB call. Verified by mocking ``_release_lease`` to capture the registry
+    state at its entry."""
+    setup_worker_metrics(registry=fresh_registry)
+    metrics = get_worker_metrics()
+    assert metrics is not None
+
+    run_id = "rif-timing"
+    job = MagicMock()
+    job.identity.run_id = run_id
+    job.identity.thread_id = "t1"
+    job.identity.graph_id = "graph-rif-timing"
+
+    loaded = _LoadedRun(job=job, trace={}, enqueued_at=None)
+    acquire_result = _AcquireResult(loaded=loaded, reason="ok")
+
+    executor = WorkerExecutor()
+    started = asyncio.Event()
+    captured: list[str | None] = []
+
+    async def long_running(_job: object) -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def quiet_heartbeat(*_a: object, **_kw: object) -> None:
+        await asyncio.sleep(3600)
+
+    async def capturing_release(rid: str, _wn: str) -> None:
+        # The early ``pop_reason`` must have already cleared by now.
+        captured.append(cancellations.reason_of(rid))
+
+    with (
+        patch(
+            "aegra_api.services.worker_executor._acquire_and_load",
+            new_callable=AsyncMock,
+            return_value=acquire_result,
+        ),
+        patch("aegra_api.services.worker_executor._restore_trace_context"),
+        patch("aegra_api.services.worker_executor.execute_run", side_effect=long_running),
+        patch("aegra_api.services.worker_executor._heartbeat_loop", side_effect=quiet_heartbeat),
+        patch("aegra_api.services.worker_executor._release_lease", side_effect=capturing_release),
+    ):
+        cancellations.mark(run_id, "lease_loss")
+        task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
+        await started.wait()
+        task.cancel()
+        await task
+
+    assert captured == [None], (
+        f"tag must be cleared by pop_reason before _release_lease — saw {captured} during release"
+    )
+
+
+@pytest.mark.asyncio
 async def test_runs_in_flight_does_not_inc_on_corruption(
     fresh_registry: prometheus_client.CollectorRegistry,
 ) -> None:
@@ -961,8 +1183,34 @@ async def test_handle_timeout_increments_run_timeouts_and_completed_error(
 
 
 # ---------------------------------------------------------------------------
-# Cancellation registry (mark / reason_of / clear)
+# Cancellation registry (mark / reason_of / pop_reason / clear)
 # ---------------------------------------------------------------------------
+
+
+def test_pop_reason_returns_none_when_absent() -> None:
+    """No mark → pop returns None (don't fabricate a reason)."""
+    reg = CancellationRegistry()
+    assert reg.pop_reason("rid") is None
+
+
+def test_pop_reason_is_one_shot() -> None:
+    """``pop_reason`` must remove on read so the cancel-handler's atomic
+    ``read+remove`` semantics hold — a second pop must return None."""
+    reg = CancellationRegistry()
+    reg.mark("rid", "user")
+    assert reg.pop_reason("rid") == "user"
+    assert reg.pop_reason("rid") is None
+    assert reg.reason_of("rid") is None
+
+
+def test_pop_reason_returns_lease_loss_when_precedence_blocked_user() -> None:
+    """A ``mark("user")`` after ``mark("lease_loss")`` is dropped by precedence,
+    so ``pop_reason`` must surface the lease_loss tag — not the rejected one.
+    This is the basis of the worker's ``observe_duration == "user"`` decision."""
+    reg = CancellationRegistry()
+    reg.mark("rid", "lease_loss")
+    reg.mark("rid", "user")
+    assert reg.pop_reason("rid") == "lease_loss"
 
 
 def test_clear_drops_any_existing_tag() -> None:
@@ -1018,3 +1266,39 @@ def test_clear_with_only_is_targeted() -> None:
     reg.mark("rid", "lease_loss")
     reg.clear("rid", only="user")
     assert reg.reason_of("rid") == "lease_loss"
+
+
+@pytest.mark.asyncio
+async def test_execute_run_does_not_clear_cancel_tag(
+    fresh_registry: prometheus_client.CollectorRegistry,
+) -> None:
+    """Architectural guarantee: ``execute_run`` must leave the cancel tag
+    intact for the executor to read after ``await job_task`` raises.
+    Clearing in execute_run's finally would race against the worker's peek
+    because user-cancel propagates through ``_fut_waiter.cancel`` and our
+    finally runs before the worker awakes."""
+    setup_worker_metrics(registry=fresh_registry)
+
+    job = MagicMock()
+    job.identity.run_id = "run-tag-survives"
+    job.identity.thread_id = "t1"
+    job.identity.graph_id = "g1"
+
+    cancellations.mark("run-tag-survives", "user")
+
+    with (
+        patch.object(run_executor_module, "update_run_status", new_callable=AsyncMock),
+        patch.object(run_executor_module, "_stream_graph", new_callable=AsyncMock, side_effect=asyncio.CancelledError),
+        patch.object(run_executor_module, "finalize_run", new_callable=AsyncMock),
+        patch.object(
+            run_executor_module,
+            "streaming_service",
+            MagicMock(signal_run_cancelled=AsyncMock(), cleanup_run=AsyncMock()),
+        ),
+        patch.object(run_executor_module, "_signal_run_done", new_callable=AsyncMock),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await run_executor_module.execute_run(job)
+
+    # Tag must still be present — that is the executor's invariant to consume.
+    assert cancellations.reason_of("run-tag-survives") == "user"

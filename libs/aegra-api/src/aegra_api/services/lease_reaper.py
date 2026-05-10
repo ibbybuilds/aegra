@@ -298,7 +298,8 @@ class LeaseReaper:
                 if retry_count > max_retries:
                     return retry_count, params
                 params["_retry_count"] = retry_count
-                params["_enqueued_at"] = time.time()
+                # ``_reenqueue`` overwrites ``_enqueued_at`` via
+                # ``_update_enqueued_at`` next — setting it here is dead.
                 await session.execute(update(RunORM).where(RunORM.run_id == run_id).values(execution_params=params))
                 await session.commit()
                 return retry_count, params

@@ -99,9 +99,10 @@ class TestExecuteRunCancelledError:
             cancellations.mark("run-1", "user")
             with pytest.raises(asyncio.CancelledError):
                 await execute_run(_make_job())
-            # execute_run's finally must clear the registry itself —
-            # otherwise the leak this PR closes silently regresses.
-            assert cancellations.reason_of("run-1") is None
+            # execute_run must NOT clear — the executor reads the reason
+            # after ``await job_task`` raises and owns the cleanup.
+            assert cancellations.reason_of("run-1") == "user"
+            cancellations.clear("run-1")
 
         # update_run_status called once for "running"
         assert mock_update.await_count == 1
@@ -268,10 +269,10 @@ class TestLeaseLossCancellation:
             cancellations.mark("run-1", "lease_loss")
             with pytest.raises(asyncio.CancelledError):
                 await execute_run(_make_job())
-            # execute_run's finally must clear the registry on the
-            # lease-loss path too, otherwise the tag survives into the
-            # rerun and the new worker mis-classifies its own cancel.
-            assert cancellations.reason_of("run-1") is None
+            # execute_run preserves the tag — executor cleans it up so
+            # the worker can read the reason post-``await job_task``.
+            assert cancellations.reason_of("run-1") == "lease_loss"
+            cancellations.clear("run-1")
 
         # finalize_run must NOT be called — the new worker owns this run
         mock_finalize.assert_not_awaited()
@@ -310,9 +311,9 @@ class TestLeaseLossCancellation:
             cancellations.mark("run-1", "user")
             with pytest.raises(asyncio.CancelledError):
                 await execute_run(_make_job())
-            # execute_run owns clearing the registry — letting the
-            # finally here mask a leak would let it regress silently.
-            assert cancellations.reason_of("run-1") is None
+            # Tag survives execute_run — the executor reads it post-cancel.
+            assert cancellations.reason_of("run-1") == "user"
+            cancellations.clear("run-1")
 
         # User cancel: finalize and signal MUST happen
         mock_finalize.assert_awaited_once()

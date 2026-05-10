@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from aegra_api.core.active_runs import active_runs
+from aegra_api.core.cancellation_state import cancellations
 from aegra_api.models.auth import User
 from aegra_api.models.run_job import RunBehavior, RunExecution, RunIdentity, RunJob
 from aegra_api.services.worker_executor import (
@@ -598,6 +599,57 @@ class TestExecuteAndRelease:
         # Cleaned up after execution
         assert run_id not in active_runs
         # Semaphore was released
+        assert not semaphore.locked()
+
+    @pytest.mark.asyncio
+    async def test_clears_cancel_tag_when_acquire_raises_cancelled(self) -> None:
+        """Outermost safety-net: if CancelledError propagates from
+        ``_acquire_and_load`` (before ``_execute_with_lease``'s try block),
+        the inner except never runs. ``_execute_and_release`` finally must
+        still clear the tag to prevent leaks."""
+        run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        semaphore = asyncio.Semaphore(1)
+        await semaphore.acquire()
+        executor = WorkerExecutor()
+        cancellations.mark(run_id, "user")
+
+        async def cancelling_acquire(_rid: str, _wn: str) -> None:
+            raise asyncio.CancelledError
+
+        with (
+            patch(f"{MODULE}._acquire_and_load", side_effect=cancelling_acquire),
+            patch(f"{MODULE}.settings") as mock_settings,
+        ):
+            mock_settings.worker.BG_JOB_TIMEOUT_SECS = 60
+            with pytest.raises(asyncio.CancelledError):
+                await executor._execute_and_release(run_id, "worker-0", semaphore)
+
+        assert cancellations.reason_of(run_id) is None
+        assert run_id not in active_runs
+        assert not semaphore.locked()
+
+    @pytest.mark.asyncio
+    async def test_clears_leaked_mark_on_success_path(self) -> None:
+        """Outermost safety-net: a stale mark (e.g. broadcast lost so cancel
+        never propagated) must not leak past the run lifecycle. Run completes
+        normally; ``_execute_and_release`` finally clears anyway."""
+        run_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        semaphore = asyncio.Semaphore(1)
+        await semaphore.acquire()
+        executor = WorkerExecutor()
+        cancellations.mark(run_id, "user")
+
+        async def successful_lease(_rid: str, _wn: str) -> None:
+            return None
+
+        executor._execute_with_lease = AsyncMock(side_effect=successful_lease)  # type: ignore[method-assign]
+
+        with patch(f"{MODULE}.settings") as mock_settings:
+            mock_settings.worker.BG_JOB_TIMEOUT_SECS = 60
+            await executor._execute_and_release(run_id, "worker-0", semaphore)
+
+        assert cancellations.reason_of(run_id) is None
+        assert run_id not in active_runs
         assert not semaphore.locked()
 
     @pytest.mark.asyncio

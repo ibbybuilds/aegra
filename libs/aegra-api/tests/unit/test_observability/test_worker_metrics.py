@@ -1,6 +1,7 @@
 """Unit tests for worker and reaper Prometheus metrics."""
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -885,7 +886,10 @@ async def test_execute_with_lease_observes_duration_on_user_cancel(
         task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
         await started.wait()
         task.cancel()
-        await task
+        # Drain — CancelledError is swallowed by ``_execute_with_lease``;
+        # ``suppress`` documents intent and silences CodeQL no-effect warning.
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     histogram = metrics.run_execution_seconds.labels(graph_id="graph-rif-uc")
     assert histogram._sum.get() > 0.0
@@ -940,7 +944,10 @@ async def test_execute_with_lease_skips_duration_when_no_mark(
         task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
         await started.wait()
         task.cancel()
-        await task
+        # Drain — CancelledError is swallowed by ``_execute_with_lease``;
+        # ``suppress`` documents intent and silences CodeQL no-effect warning.
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     histogram = metrics.run_execution_seconds.labels(graph_id="graph-rif-nr")
     assert histogram._sum.get() == 0.0
@@ -994,7 +1001,10 @@ async def test_execute_with_lease_skips_duration_on_lease_loss(
         task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
         await started.wait()
         task.cancel()
-        await task
+        # Drain — CancelledError is swallowed by ``_execute_with_lease``;
+        # ``suppress`` documents intent and silences CodeQL no-effect warning.
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     histogram = metrics.run_execution_seconds.labels(graph_id="graph-rif-ll")
     assert histogram._sum.get() == 0.0
@@ -1055,7 +1065,10 @@ async def test_pop_reason_clears_tag_before_release_lease(
         task = asyncio.create_task(executor._execute_with_lease(run_id, "w0"))
         await started.wait()
         task.cancel()
-        await task
+        # Drain — CancelledError is swallowed by ``_execute_with_lease``;
+        # ``suppress`` documents intent and silences CodeQL no-effect warning.
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     assert captured == [None], (
         f"tag must be cleared by pop_reason before _release_lease — saw {captured} during release"

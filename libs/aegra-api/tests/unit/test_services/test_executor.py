@@ -1,6 +1,7 @@
 """Tests for executor abstraction (local and worker)."""
 
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -63,7 +64,9 @@ class TestLocalExecutor:
             cancellations.mark("run-cb", "user")
             await executor.submit(job)
             task = active_runs["run-cb"]
-            await task
+            # Drain to force done_callback to run before the assertion below.
+            with contextlib.suppress(BaseException):
+                await task
 
         # Done-callback fires synchronously; the tag must be gone now.
         assert cancellations.reason_of("run-cb") is None

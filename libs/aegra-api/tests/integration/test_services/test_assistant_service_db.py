@@ -189,6 +189,41 @@ class TestAssistantServiceDatabase:
         assert assistant in assistant_service.session.deleted_objects
 
     @pytest.mark.asyncio
+    async def test_list_assistants_no_metadata_filter(self, assistant_service):
+        """list_assistants without metadata returns all rows for the user."""
+        mock_result = Mock()
+        mock_result.all.return_value = []
+        assistant_service.session.scalars.return_value = mock_result
+
+        result = await assistant_service.list_assistants("user-123")
+
+        assert result == []
+        assistant_service.session.scalars.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_list_assistants_with_metadata_filter(self, assistant_service):
+        """list_assistants with metadata applies a JSONB containment predicate
+        but no pagination — covers the auth-handler-active GET /assistants path."""
+        mock_result = Mock()
+        mock_result.all.return_value = []
+        assistant_service.session.scalars.return_value = mock_result
+
+        result = await assistant_service.list_assistants(
+            "user-123",
+            metadata={"owner": "user-123", "tenant": "x"},
+        )
+
+        assert result == []
+        # The compiled SQL must reference the @> containment operator and must
+        # NOT contain LIMIT/OFFSET — this is the regression fence for the
+        # silent 20-row cap that the previous fix introduced.
+        called_stmt = assistant_service.session.scalars.call_args.args[0]
+        compiled = str(called_stmt.compile())
+        assert "@>" in compiled
+        assert "LIMIT" not in compiled.upper()
+        assert "OFFSET" not in compiled.upper()
+
+    @pytest.mark.asyncio
     async def test_search_assistants_pagination(self, assistant_service):
         """Test assistant search with pagination"""
         # Create multiple assistants

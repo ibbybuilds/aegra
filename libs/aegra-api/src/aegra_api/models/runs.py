@@ -1,5 +1,6 @@
 """Run-related Pydantic models for Agent Protocol"""
 
+import re
 from datetime import datetime
 from typing import Any, Literal, Self
 
@@ -12,6 +13,18 @@ from pydantic import (
 )
 
 from aegra_api.utils.status_compat import validate_run_status
+
+# Constraints for ``RunCreate.metadata`` keys/values, enforced at request
+# time so the OpenAPI schema is honest about what reaches OTEL.  Without
+# these limits a tenant could submit thousands of keys, megabyte-scale
+# values, or nested structures — all of which would either be silently
+# dropped by ``merge_run_metadata`` or balloon span size past the OTEL
+# collector limits.  Bounds chosen to be generous for legitimate use
+# (tenant id, feature flag, environment, sub-agent type, ...) while
+# closing the DoS surface.
+_METADATA_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_METADATA_MAX_KEYS = 32
+_METADATA_MAX_VALUE_LEN = 512
 
 
 class RunCreate(BaseModel):
@@ -64,28 +77,67 @@ class RunCreate(BaseModel):
         description="Whether to include subgraph events in streaming. When True, includes events from all subgraphs. When False (default when None), excludes subgraph events. Defaults to False for backwards compatibility.",
     )
 
-    # Request metadata (top-level in payload)
+    # Request metadata (top-level in payload).  Reaches OTEL trace
+    # attributes as ``langfuse.trace.metadata.<key>`` (and the
+    # OpenInference ``metadata.<key>`` alias on Phoenix targets).  The
+    # field is annotated ``dict[str, Any]`` rather than a primitive
+    # union so a malformed payload produces one actionable 422 message
+    # from ``validate_metadata_shape`` instead of N parallel union-arm
+    # errors (one per primitive type Pydantic tries) per offending key.
     metadata: dict[str, Any] | None = Field(
         None,
-        description="Request metadata (e.g., from_studio flag)",
+        description=(
+            "Request metadata propagated to OTEL trace attributes "
+            "(``langfuse.trace.metadata.<key>``).  Keys must match "
+            "``[A-Za-z0-9_-]{1,64}``.  Values must be primitive "
+            "(``str``, ``int``, ``float``, ``bool``); string values are "
+            "capped at 512 characters.  Maximum 32 keys.  Use this for "
+            "filterable attributes (tenant, feature flag, environment, "
+            "sub-agent type) rather than payload data."
+        ),
     )
+
+    @field_validator("metadata", mode="after")
+    @classmethod
+    def validate_metadata_shape(
+        cls,
+        metadata: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Enforce key shape, key count, value type, and string-value length.
+
+        Validation runs entirely here (rather than relying on a primitive
+        union on the field type) so each violation produces one clear
+        error message instead of N parallel union-arm errors per offending
+        key — easier for clients to surface to humans.
+        """
+        if metadata is None:
+            return None
+        if len(metadata) > _METADATA_MAX_KEYS:
+            raise ValueError(f"metadata exceeds {_METADATA_MAX_KEYS} keys (got {len(metadata)})")
+        for key, value in metadata.items():
+            if not _METADATA_KEY_RE.match(key):
+                raise ValueError(f"metadata key {key!r} must match {_METADATA_KEY_RE.pattern}")
+            if not isinstance(value, (str, int, float, bool)):
+                raise ValueError(
+                    f"metadata value for key {key!r} must be str/int/float/bool, got {type(value).__name__}"
+                )
+            if isinstance(value, str) and len(value) > _METADATA_MAX_VALUE_LEN:
+                raise ValueError(f"metadata value for key {key!r} exceeds {_METADATA_MAX_VALUE_LEN} characters")
+        return metadata
 
     @model_validator(mode="after")
     def validate_input_command_exclusivity(self) -> Self:
-        """Ensure input and command are mutually exclusive"""
-        # Allow empty input dict when command is present (frontend compatibility)
+        """Ensure input and command are mutually exclusive."""
+        # Empty input dict alongside command: drop it for frontend compatibility.
         if self.input is not None and self.command is not None:
-            # If input is just an empty dict, treat it as None for compatibility
             if self.input == {}:
                 self.input = None
             else:
                 raise ValueError("Cannot specify both 'input' and 'command' - they are mutually exclusive")
-        if self.input is None and self.command is None:
-            if self.checkpoint is not None:
-                # Allow checkpoint-only requests by treating input as empty dict
-                self.input = {}
-            else:
-                raise ValueError("Must specify either 'input' or 'command'")
+        # Checkpoint-only resume keeps input=None so Pregel resumes from next=[...]
+        # instead of restarting from __start__ with an empty input.
+        if self.input is None and self.command is None and self.checkpoint is None:
+            raise ValueError("Must specify at least one of 'input', 'command', or 'checkpoint'")
         return self
 
 
@@ -103,7 +155,9 @@ class Run(BaseModel):
     status: str = Field(
         "pending", description="Current run status: pending, running, error, success, timeout, or interrupted."
     )
-    input: dict[str, Any] = Field(..., description="Input data provided to the run.")
+    input: dict[str, Any] | None = Field(
+        None, description="Input data provided to the run. None for checkpoint-only resume."
+    )
     output: dict[str, Any] | None = Field(
         None, description="Final output produced by the run, or null if not yet complete."
     )

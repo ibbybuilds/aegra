@@ -96,6 +96,49 @@ Aegra uses a pure OpenTelemetry approach:
 
 This keeps overhead low and maintains compatibility with the entire OpenTelemetry ecosystem.
 
+## Run metadata
+
+Each `POST /threads/{thread_id}/runs` (and `/runs/stream`, `/runs/wait`) request accepts an optional top-level `metadata` field whose key/value pairs are propagated onto the run's root OTEL span. This is the recommended channel for filterable trace attributes that aren't part of the LangGraph payload — tenant id, feature flag, environment tag, sub-agent type, and similar.
+
+```json
+{
+  "assistant_id": "agent",
+  "input": {"question": "..."},
+  "metadata": {
+    "tenant": "acme",
+    "feature_flag": true,
+    "subagent": "matter_legal"
+  }
+}
+```
+
+Each entry reaches the root span as `langfuse.trace.metadata.<key>`, which Langfuse exposes as a queryable trace property (rather than burying it under per-observation metadata). On Phoenix and other OTLP targets the same attribute is set verbatim; native first-class metadata aliasing is a planned follow-up.
+
+The value is also persisted to the runs table (`execution_params.run_metadata` JSONB column) so it survives worker restart and is available for post-hoc analysis.
+
+### Constraints
+
+The request validator rejects payloads that would either be silently dropped downstream or balloon span size past collector limits. A violating payload returns `422` with a single message identifying the offending key:
+
+| Constraint | Limit |
+|------------|-------|
+| Maximum number of keys | 32 |
+| Key character set | `[A-Za-z0-9_-]` (no dots, no whitespace, no non-ASCII) |
+| Key length | 1–64 characters |
+| Value type | `str`, `int`, `float`, or `bool` (no nested dicts, lists, or `null`) |
+| String value length | ≤ 512 characters |
+
+The dot exclusion is deliberate: keys are stored under the `langfuse.trace.metadata.` prefix, and allowing dots would let a caller land bare attributes (e.g. `langfuse.user.id`) next to the system ones.
+
+### System-key collisions
+
+Aegra injects a small number of runtime keys into the same metadata stream so they're filterable alongside user-supplied attributes:
+
+- `run_id`, `thread_id`, `graph_id` — always present
+- `original_request_id` — present on the worker path when an HTTP correlation-id was supplied
+
+If the request `metadata` contains a key already populated by the runtime, the system value wins, the user value is dropped, and a warning is logged from `aegra_api.observability.span_enrichment`. This makes the OTEL view a reliable join key with logs and the runs table; user audit fidelity is preserved by keeping the original payload in `execution_params.run_metadata`.
+
 ## Key environment variables
 
 The main variables you'll need:

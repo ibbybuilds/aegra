@@ -11,9 +11,11 @@ from typing import Any, cast
 
 import structlog
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     BaseMessage,
     BaseMessageChunk,
+    ToolMessage,
     ToolMessageChunk,
     convert_to_messages,
     message_chunk_to_message,
@@ -32,6 +34,26 @@ from pydantic.v1 import ValidationError as ValidationErrorLegacy
 from aegra_api.utils.run_utils import _filter_context_by_schema
 
 logger = structlog.getLogger(__name__)
+
+
+def _to_message_chunk(msg: BaseMessage) -> BaseMessage:
+    """Convert a complete message to its chunk equivalent for messages-tuple mode.
+
+    When an LLM does not stream (streaming=False), LangGraph emits complete
+    AIMessage/ToolMessage objects instead of AIMessageChunk/ToolMessageChunk.
+    This means messages-tuple returns "type": "ai" for non-streaming LLMs but
+    "type": "AIMessageChunk" for streaming ones — inconsistent wire types for
+    the same stream mode. This function normalizes them so that messages-tuple
+    always returns chunk types regardless of LLM streaming capability.
+    """
+    if isinstance(msg, (AIMessageChunk, ToolMessageChunk)):
+        return msg
+    if isinstance(msg, AIMessage):
+        return AIMessageChunk(**msg.model_dump(exclude={"type"}))
+    if isinstance(msg, ToolMessage):
+        return ToolMessageChunk(**msg.model_dump(exclude={"type"}))
+    return msg
+
 
 # Type alias for stream output
 AnyStream = AsyncIterator[tuple[str, Any]]
@@ -335,6 +357,10 @@ def _process_stream_event(
     # Handle messages mode
     if mode == "messages":
         if "messages-tuple" in stream_mode:
+            # Normalize message type to chunk for consistent client output
+            if isinstance(chunk, (tuple, list)) and len(chunk) == 2:
+                msg_, meta_ = chunk
+                chunk = (_to_message_chunk(msg_), meta_)
             # Pass through raw tuple format
             if subgraphs and namespace:
                 ns_str = "|".join(namespace) if isinstance(namespace, (list, tuple)) else str(namespace)

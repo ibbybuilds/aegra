@@ -17,9 +17,24 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override the URL from settings — this respects DATABASE_URL, individual
-# POSTGRES_* vars, and preserves query params (e.g. ?sslmode=require).
-config.set_main_option("sqlalchemy.url", settings.db.database_url)
+# Stash URL on config.attributes (plain dict) instead of set_main_option.
+# set_main_option routes through configparser, which treats `%` as interpolation
+# syntax (`%(name)s`). Since 0.9.6 settings.db.database_url passes the password
+# through quote_plus, so any password char in `<>^&#:%` produces a `%XX`
+# sequence that configparser rejects with `ValueError: invalid interpolation
+# syntax`. config.attributes has no interpolation. See issue #357.
+# setdefault preserves caller-supplied overrides (e.g. tests or alembic.ini
+# round-trip) so _get_database_url() can still fall back to get_main_option.
+config.attributes.setdefault("sqlalchemy.url", settings.db.database_url)
+
+
+def _get_database_url() -> str:
+    """Read URL from config.attributes (set in env.py) or fall back to ini."""
+    url = config.attributes.get("sqlalchemy.url")
+    if url is not None:
+        return url
+    return config.get_main_option("sqlalchemy.url")
+
 
 # Interpret the config file for Python logging.
 # Only reconfigure logging when running from CLI (main thread).
@@ -52,7 +67,7 @@ def run_migrations_offline() -> None:
 
     """
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=_get_database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -75,8 +90,8 @@ async def run_async_migrations() -> None:
     and associate a connection with the context.
 
     """
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
+    configuration = config.get_section(config.config_ini_section) or {}
+    configuration["sqlalchemy.url"] = _get_database_url()
 
     connectable = async_engine_from_config(
         configuration,

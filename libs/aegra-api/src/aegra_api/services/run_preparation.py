@@ -225,7 +225,7 @@ async def _prepare_run(
         identity=RunIdentity(run_id=run_id, thread_id=thread_id, graph_id=assistant.graph_id),
         user=user,
         execution=RunExecution(
-            input_data=request.input or {},
+            input_data=request.input,  # preserve None so LangGraph resumes from checkpoint
             config=config,
             context=context,
             stream_mode=request.stream_mode,
@@ -238,6 +238,7 @@ async def _prepare_run(
             multitask_strategy=request.multitask_strategy,
             subgraphs=request.stream_subgraphs or False,
         ),
+        run_metadata=request.metadata or {},
     )
 
     # Persist run record with trace metadata for worker observability.
@@ -257,7 +258,7 @@ async def _prepare_run(
         thread_id=thread_id,
         assistant_id=resolved_assistant_id,
         status=initial_status,
-        input=request.input or {},
+        input=request.input,  # preserve None for checkpoint-only resume; matches RunExecution.input_data
         config=config,
         context=context,
         user_id=user.identity,

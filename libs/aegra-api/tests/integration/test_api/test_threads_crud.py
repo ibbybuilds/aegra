@@ -450,6 +450,63 @@ class TestSearchThreads:
         data = resp.json()
         assert isinstance(data, list)
 
+    def test_search_accepts_order_by_asc(self, client):
+        """order_by='created_at ASC' is accepted without error."""
+        resp = client.post("/threads/search", json={"order_by": "created_at ASC"})
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_search_malformed_order_by_does_not_500(self, client):
+        """Malformed order_by falls back to default and returns 200."""
+        for bad in ["password; DROP TABLE", "nonexistent_col", ""]:
+            resp = client.post("/threads/search", json={"order_by": bad})
+            assert resp.status_code == 200, f"order_by={bad!r} raised {resp.status_code}"
+
+    def test_search_accepts_sdk_sort_shape(self, client):
+        """SDK-style sort_by/sort_order is accepted."""
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "updated_at", "sort_order": "asc"},
+        )
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_search_sdk_state_updated_at_returns_422(self, client):
+        """sort_by='state_updated_at' is in the SDK's literal but not in our schema → 422."""
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "state_updated_at", "sort_order": "desc"},
+        )
+        assert resp.status_code == 422
+        assert "sort_by" in resp.text
+
+    def test_search_invalid_sort_by_returns_422(self, client):
+        """Unknown sort_by is rejected at the model layer, regardless of order_by.
+
+        Regression: pre-fix code silently fell back to created_at DESC when
+        sort_by was invalid, dropping a valid order_by alongside it.
+        """
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "definitely_not_a_column", "order_by": "updated_at ASC"},
+        )
+        assert resp.status_code == 422
+        assert "sort_by" in resp.text
+
+    def test_search_rejects_invalid_sort_order(self, client):
+        """sort_order is a Literal['asc','desc']; other values are rejected by Pydantic."""
+        resp = client.post(
+            "/threads/search",
+            json={"sort_by": "created_at", "sort_order": "sideways"},
+        )
+        assert resp.status_code == 422
+
+    def test_search_accepts_bool_metadata_filter(self, client):
+        """metadata={'active': True} is accepted end-to-end (real matching verified in E2E)."""
+        resp = client.post("/threads/search", json={"metadata": {"active": True}})
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
 
 class TestThreadGetState:
     """Test GET /threads/{thread_id}/state endpoint"""
@@ -620,6 +677,123 @@ class TestThreadUpdateState:
         )
         assert resp.status_code == 400
         assert "no associated graph" in resp.json()["detail"]
+
+    def test_update_state_copy_checkpoint_with_as_node(self):
+        """values=None + as_node must create a copy checkpoint via aupdate_state.
+
+        Regression test: LangGraph Studio posts {"values": null,
+        "as_node": "__copy__", "checkpoint_id": X} to anchor a "Re-run
+        from here" fork at checkpoint X. Previously the handler short-
+        circuited to get_thread_state whenever values was None, so no
+        new checkpoint was created and subsequent runs forked from the
+        thread's latest checkpoint instead of X.
+        """
+        app = create_test_app(include_runs=False, include_threads=True)
+        thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        mock_agent = AsyncMock()
+        mock_agent.aupdate_state.return_value = {"configurable": {"checkpoint_id": "copy-cp", "checkpoint_ns": ""}}
+        mock_agent.with_config = Mock(return_value=mock_agent)
+
+        with patch("aegra_api.services.langgraph_service.get_langgraph_service") as mock_get_service:
+            mock_service = mock_get_service.return_value
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
+
+            resp = client.post(
+                "/threads/test-123/state",
+                json={
+                    "values": None,
+                    "as_node": "__copy__",
+                    "checkpoint_id": "original-cp",
+                },
+            )
+
+            assert resp.status_code == 200
+            result = resp.json()
+            assert result["checkpoint"]["checkpoint_id"] == "copy-cp"
+
+            # aupdate_state must be invoked with the Studio-supplied checkpoint_id
+            # so the copy is anchored to the correct parent.
+            mock_agent.aupdate_state.assert_called_once()
+            cfg, values, *_ = mock_agent.aupdate_state.call_args[0]
+            assert values is None
+            assert cfg["configurable"]["checkpoint_id"] == "original-cp"
+            assert mock_agent.aupdate_state.call_args[1]["as_node"] == "__copy__"
+
+    def test_update_state_body_checkpoint_id_routes_to_update_path(self):
+        """Body-only checkpoint_id must flow to aupdate_state, not the GET shim
+        which reads query params and would silently drop the body field."""
+        app = create_test_app(include_runs=False, include_threads=True)
+        thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        mock_agent = AsyncMock()
+        mock_agent.aupdate_state.return_value = {"configurable": {"checkpoint_id": "new-cp", "checkpoint_ns": ""}}
+        mock_agent.with_config = Mock(return_value=mock_agent)
+
+        with patch("aegra_api.services.langgraph_service.get_langgraph_service") as mock_get_service:
+            mock_service = mock_get_service.return_value
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
+
+            resp = client.post(
+                "/threads/test-123/state",
+                json={"values": None, "as_node": None, "checkpoint_id": "body-cp"},
+            )
+
+            assert resp.status_code == 200
+            mock_agent.aupdate_state.assert_called_once()
+            cfg, values, *_ = mock_agent.aupdate_state.call_args[0]
+            assert values is None
+            assert cfg["configurable"]["checkpoint_id"] == "body-cp"
+
+    def test_update_state_body_checkpoint_dict_routes_to_update_path(self):
+        """Mirror of the checkpoint_id case for the `checkpoint` dict variant
+        so neither half of the gate condition can regress silently."""
+        app = create_test_app(include_runs=False, include_threads=True)
+        thread = _thread_row("test-123", metadata={"graph_id": "test-graph"})
+
+        class Session(DummySessionBase):
+            async def scalar(self, _stmt):
+                return thread
+
+        app.dependency_overrides[core_get_session] = override_get_session_dep(Session)
+        client = make_client(app)
+
+        mock_agent = AsyncMock()
+        mock_agent.aupdate_state.return_value = {"configurable": {"checkpoint_id": "new-cp", "checkpoint_ns": ""}}
+        mock_agent.with_config = Mock(return_value=mock_agent)
+
+        with patch("aegra_api.services.langgraph_service.get_langgraph_service") as mock_get_service:
+            mock_service = mock_get_service.return_value
+            mock_service.get_graph = create_get_graph_mock(return_value=mock_agent)
+
+            resp = client.post(
+                "/threads/test-123/state",
+                json={
+                    "values": None,
+                    "as_node": None,
+                    "checkpoint": {"checkpoint_id": "body-cp", "checkpoint_ns": ""},
+                },
+            )
+
+            assert resp.status_code == 200
+            mock_agent.aupdate_state.assert_called_once()
+            cfg, values, *_ = mock_agent.aupdate_state.call_args[0]
+            assert values is None
+            assert cfg["configurable"]["checkpoint_id"] == "body-cp"
 
 
 class TestThreadStateCheckpoint:

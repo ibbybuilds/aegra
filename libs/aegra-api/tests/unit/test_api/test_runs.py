@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from aegra_api.api.runs import create_run, get_run, join_run, list_runs, update_run
 from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.core.orm import Run as RunORM
+from aegra_api.core.orm import Thread as ThreadORM
 from aegra_api.models import Run, RunCreate, RunStatus, User
 
 
@@ -26,6 +27,17 @@ class TestRunsEndpoints:
         session.refresh = AsyncMock()
         session.add = MagicMock()  # session.add is synchronous
         return session
+
+    @pytest.fixture
+    def sample_thread(self) -> ThreadORM:
+        return ThreadORM(
+            thread_id="test-thread-123",
+            user_id="test-user",
+            status="idle",
+            metadata_json={},
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
 
     @pytest.fixture
     def sample_assistant(self) -> AssistantORM:
@@ -68,8 +80,8 @@ class TestRunsEndpoints:
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
-            # DB setup
-            mock_session.scalar.return_value = sample_assistant
+            # DB setup: first scalar = thread ownership check (None = new thread), second = assistant
+            mock_session.scalar.side_effect = [None, sample_assistant]
 
             result = await create_run(thread_id, request, mock_user, mock_session)
 
@@ -88,7 +100,9 @@ class TestRunsEndpoints:
             mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_run_assistant_not_found(self, mock_user: User, mock_session: AsyncMock) -> None:
+    async def test_create_run_assistant_not_found(
+        self, mock_user: User, mock_session: AsyncMock, sample_thread: ThreadORM
+    ) -> None:
         """Test creation with non-existent assistant."""
         thread_id = "test-thread-123"
         request = RunCreate(assistant_id="nonexistent", input={})
@@ -100,8 +114,8 @@ class TestRunsEndpoints:
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
 
-            # Return None for assistant lookup
-            mock_session.scalar.return_value = None
+            # First scalar call: thread ownership check (pass). Second: assistant lookup (None).
+            mock_session.scalar.side_effect = [sample_thread, None]
 
             with pytest.raises(HTTPException) as exc:
                 await create_run(thread_id, request, mock_user, mock_session)
@@ -128,7 +142,7 @@ class TestRunsEndpoints:
             # Graph not in available graphs
             mock_lg_service.return_value.list_graphs.return_value = ["other-graph"]
 
-            mock_session.scalar.return_value = sample_assistant
+            mock_session.scalar.side_effect = [None, sample_assistant]
 
             with pytest.raises(HTTPException) as exc:
                 await create_run(thread_id, request, mock_user, mock_session)
@@ -137,7 +151,9 @@ class TestRunsEndpoints:
             assert "Graph" in str(exc.value.detail)
 
     @pytest.mark.asyncio
-    async def test_create_run_config_context_allowed(self, mock_user: User, mock_session: AsyncMock) -> None:
+    async def test_create_run_config_context_allowed(
+        self, mock_user: User, mock_session: AsyncMock, sample_thread: ThreadORM
+    ) -> None:
         """Test both configurable and context are accepted."""
         thread_id = "test-thread-123"
         request = RunCreate(
@@ -156,7 +172,8 @@ class TestRunsEndpoints:
             ),
         ):
             mock_lg_service.return_value.list_graphs.return_value = ["test-graph"]
-            mock_session.scalar.return_value = None
+            # First scalar call: thread ownership check (pass). Second: assistant lookup (None).
+            mock_session.scalar.side_effect = [sample_thread, None]
 
             with pytest.raises(HTTPException) as exc:
                 await create_run(thread_id, request, mock_user, mock_session)

@@ -21,9 +21,19 @@ Usage::
 """
 
 import contextvars
+import logging
+from typing import Any
 
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
+
+logger = logging.getLogger(__name__)
+
+# OTEL span attributes only accept primitive scalar types. The
+# observability SDK silently drops any other value at attribute-set
+# time, so we filter at this layer and emit an aegra-level warning
+# instead of letting drops happen invisibly inside the SDK.
+_PRIMITIVE_ATTR_TYPES: tuple[type, ...] = (str, int, float, bool)
 
 # Per-request context variable holding span attributes to inject.
 # None means no trace context is set; on_start() is a no-op in that case.
@@ -118,24 +128,79 @@ def set_trace_context(
     _trace_attrs.set(attrs or None)
 
 
+def merge_run_metadata(
+    extra_metadata: dict[str, Any] | None,
+    system_metadata: dict[str, str | int | float | bool],
+) -> dict[str, str | int | float | bool]:
+    """Merge user-supplied metadata with system-injected runtime keys.
+
+    Any key already present in ``system_metadata`` (currently
+    ``run_id``, ``thread_id``, ``graph_id``, and ``original_request_id``
+    on the worker path) wins on collision: the system value is kept and
+    a warning is logged so the override is visible during debugging
+    without breaking the request. ``system_metadata`` is the single
+    source of truth for "what the runtime owns" — there is no separate
+    reserved-key registry to drift out of sync with caller behavior.
+
+    Non-primitive values (anything other than ``str``, ``int``, ``float``,
+    ``bool``) are dropped with a warning. OTEL span attributes accept
+    only primitives; passing a nested dict or list to ``span.set_attribute``
+    is a silent no-op at the SDK level. Filtering here surfaces the drop
+    with the offending key so callers can fix the payload upstream.
+    """
+    if not extra_metadata:
+        return dict(system_metadata)
+    merged: dict[str, str | int | float | bool] = {}
+    for key, value in extra_metadata.items():
+        if key in system_metadata:
+            logger.warning(
+                "User metadata key '%s' overridden by system value",
+                key,
+            )
+            continue
+        if not isinstance(value, _PRIMITIVE_ATTR_TYPES):
+            logger.warning(
+                "User metadata key '%s' has non-primitive type %s; dropping "
+                "(OTEL attributes accept str/int/float/bool only)",
+                key,
+                type(value).__name__,
+            )
+            continue
+        merged[key] = value
+    merged.update(system_metadata)
+    return merged
+
+
 def make_run_trace_context(
     run_id: str,
     thread_id: str,
     graph_id: str,
     user_identity: str | None,
+    *,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> contextvars.Context:
     """Return an isolated context copy with OTEL trace attributes pre-set for a run.
 
     Creates a copy of the current context and populates it with per-request
     span attributes.  Pass the returned context to ``asyncio.create_task(...,
     context=ctx)`` so the background task starts with the correct trace data.
+
+    User-supplied ``extra_metadata`` is merged with the system runtime keys
+    (``run_id``, ``thread_id``, ``graph_id``).  System keys win on collision —
+    see :func:`merge_run_metadata`.
     """
+    system_metadata: dict[str, str | int | float | bool] = {
+        "run_id": run_id,
+        "thread_id": thread_id,
+        "graph_id": graph_id,
+    }
+    metadata = merge_run_metadata(extra_metadata, system_metadata)
     ctx = contextvars.copy_context()
     ctx.run(
         set_trace_context,
         user_id=user_identity,
         session_id=thread_id,
         trace_name=graph_id,
-        metadata={"run_id": run_id, "thread_id": thread_id, "graph_id": graph_id},
+        metadata=metadata,
     )
     return ctx

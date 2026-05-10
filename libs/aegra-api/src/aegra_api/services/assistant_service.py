@@ -121,6 +121,17 @@ def _extract_graph_schemas(graph) -> dict:
     }
 
 
+def _escape_like(value: str) -> str:
+    """Escape LIKE-special characters (``%``, ``_``, ``\\``) in user input.
+
+    User-supplied search terms are interpolated into ILIKE patterns. Without
+    escaping, a caller could supply ``%`` / ``_`` to alter the intended
+    pattern semantics (LIKE injection — CWE-89 variant). The backslash is
+    escaped first so we do not double-escape the escapes added afterwards.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class AssistantService:
     """Service for managing assistants"""
 
@@ -249,10 +260,10 @@ class AssistantService:
         stmt = select(AssistantORM).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
 
         if request.name:
-            stmt = stmt.where(AssistantORM.name.ilike(f"%{request.name}%"))
+            stmt = stmt.where(AssistantORM.name.ilike(f"%{_escape_like(request.name)}%", escape="\\"))
 
         if request.description:
-            stmt = stmt.where(AssistantORM.description.ilike(f"%{request.description}%"))
+            stmt = stmt.where(AssistantORM.description.ilike(f"%{_escape_like(request.description)}%", escape="\\"))
 
         if request.graph_id:
             stmt = stmt.where(AssistantORM.graph_id == request.graph_id)
@@ -283,10 +294,10 @@ class AssistantService:
         stmt = select(func.count()).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
 
         if request.name:
-            stmt = stmt.where(AssistantORM.name.ilike(f"%{request.name}%"))
+            stmt = stmt.where(AssistantORM.name.ilike(f"%{_escape_like(request.name)}%", escape="\\"))
 
         if request.description:
-            stmt = stmt.where(AssistantORM.description.ilike(f"%{request.description}%"))
+            stmt = stmt.where(AssistantORM.description.ilike(f"%{_escape_like(request.description)}%", escape="\\"))
 
         if request.graph_id:
             stmt = stmt.where(AssistantORM.graph_id == request.graph_id)

@@ -35,5 +35,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Restore the index so the schema state at d9e0f1a23456 still has the
+    # GIN predicate /assistants/search relies on. See the thread rebuild
+    # for the rebuild-via-CONCURRENTLY rationale.
     with op.get_context().autocommit_block():
         op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {INDEX_NAME}")
+        op.execute(f"CREATE INDEX CONCURRENTLY {INDEX_NAME} ON assistant USING gin (metadata jsonb_path_ops)")

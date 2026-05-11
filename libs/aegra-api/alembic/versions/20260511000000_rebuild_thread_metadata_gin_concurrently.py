@@ -43,5 +43,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Restore the index so the schema state at c8d9e0f1a234 still has the
+    # GIN predicate /threads/search relies on. We rebuild CONCURRENTLY rather
+    # than reproducing the original transactional lock-build — the schema
+    # outcome is identical and downgrade should be safe to run live.
     with op.get_context().autocommit_block():
         op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {INDEX_NAME}")
+        op.execute(f"CREATE INDEX CONCURRENTLY {INDEX_NAME} ON thread USING gin (metadata_json jsonb_path_ops)")

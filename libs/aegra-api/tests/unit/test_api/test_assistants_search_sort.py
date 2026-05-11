@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from aegra_api.api.assistants import (
-    _merge_handler_filters_into_metadata,
+    _apply_handler_filters,
     _resolve_sort,
 )
 from aegra_api.core.orm import Assistant as AssistantORM
@@ -61,26 +61,26 @@ class TestMergeHandlerFilters:
 
     def test_no_filters_no_value_metadata_leaves_metadata_alone(self) -> None:
         request = AssistantSearchRequest(metadata={"keep": "me"})
-        _merge_handler_filters_into_metadata(request, None, {})
+        _apply_handler_filters(request, None, {})
         assert request.metadata == {"keep": "me"}
 
     def test_handler_returns_flat_filters_merges_into_metadata(self) -> None:
         """Handler returning ``{"owner": "u1"}`` becomes a metadata containment filter."""
         request = AssistantSearchRequest(metadata={"env": "prod"})
-        _merge_handler_filters_into_metadata(request, {"owner": "u1"}, {})
+        _apply_handler_filters(request, {"owner": "u1"}, {})
         assert request.metadata == {"env": "prod", "owner": "u1"}
 
     def test_handler_returns_metadata_key_unwraps_it(self) -> None:
         """Handler returning ``{"metadata": {"owner": "u1"}}`` is unwrapped, not nested."""
         request = AssistantSearchRequest(metadata={"env": "prod"})
-        _merge_handler_filters_into_metadata(request, {"metadata": {"owner": "u1"}}, {})
+        _apply_handler_filters(request, {"metadata": {"owner": "u1"}}, {})
         assert request.metadata == {"env": "prod", "owner": "u1"}
 
     def test_handler_mutated_value_metadata_is_picked_up(self) -> None:
         """Handler that mutates ``value['metadata']`` instead of returning is honoured."""
         request = AssistantSearchRequest(metadata={"env": "prod"})
         value = {"metadata": {"owner": "u1"}}
-        _merge_handler_filters_into_metadata(request, None, value)
+        _apply_handler_filters(request, None, value)
         assert request.metadata == {"env": "prod", "owner": "u1"}
 
     def test_request_filters_attribute_does_not_exist(self) -> None:
@@ -91,14 +91,14 @@ class TestMergeHandlerFilters:
     def test_handler_filters_override_request_metadata(self) -> None:
         """When keys conflict, handler filters win (auth must not be bypassable)."""
         request = AssistantSearchRequest(metadata={"owner": "attacker"})
-        _merge_handler_filters_into_metadata(request, {"owner": "real-user"}, {})
+        _apply_handler_filters(request, {"owner": "real-user"}, {})
         assert request.metadata == {"owner": "real-user"}
 
     def test_value_metadata_set_to_non_mapping_does_not_crash(self) -> None:
         """If a handler mutates ``value['metadata']`` to a non-mapping (e.g. a
         bare string), the merge must skip rather than ``TypeError`` on ``**``."""
         request = AssistantSearchRequest(metadata={"env": "prod"})
-        _merge_handler_filters_into_metadata(request, None, {"metadata": "not-a-dict"})
+        _apply_handler_filters(request, None, {"metadata": "not-a-dict"})
         assert request.metadata == {"env": "prod"}
 
     def test_handler_returning_both_nested_metadata_and_flat_keys_merges_both(self) -> None:
@@ -106,7 +106,7 @@ class TestMergeHandlerFilters:
         apply BOTH constraints. Earlier code returned after the nested branch and
         silently dropped the flat keys — leaking rows the flat scope would exclude."""
         request = AssistantSearchRequest(metadata={"env": "prod"})
-        _merge_handler_filters_into_metadata(
+        _apply_handler_filters(
             request,
             {"metadata": {"tenant": "x"}, "owner": "u1"},
             {},

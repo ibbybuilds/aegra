@@ -508,6 +508,58 @@ class TestSearchThreads:
         assert isinstance(resp.json(), list)
 
 
+class TestSearchThreadsAuthHandlerFilterCompilation:
+    """Issue #360 — auth handler filter contract on /threads/search.
+
+    Before the compiler, every non-metadata key was either dropped silently
+    (most cases) or stuffed into metadata containment. These tests pin the
+    routed behavior for operator dicts, column filters, and unsupported ops.
+    """
+
+    @pytest.fixture
+    def app_with_session(self):
+        app = create_test_app(include_runs=False, include_threads=True)
+        threads = [
+            _thread_row("thread-1", status="idle", metadata={"env": "prod"}),
+            _thread_row("thread-2", status="busy", metadata={"env": "dev"}),
+        ]
+        from tests.fixtures.session_fixtures import ThreadSession
+
+        override_session_dependency(app, ThreadSession, threads=threads)
+        return app
+
+    def test_status_handler_filter_does_not_500(self, app_with_session):
+        """Handler returning ``{"status": "idle"}`` is now routed to the column.
+
+        Previously this key was silently dropped by the threads search merger.
+        """
+        with patch("aegra_api.api.threads.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"status": "idle"}
+            resp = make_client(app_with_session).post("/threads/search", json={})
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    def test_owner_handler_filter_routes_to_metadata(self, app_with_session):
+        """Non-whitelisted keys still route to metadata containment."""
+        with patch("aegra_api.api.threads.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"owner": "u1"}
+            resp = make_client(app_with_session).post("/threads/search", json={})
+        assert resp.status_code == 200
+
+    def test_eq_operator_does_not_500(self, app_with_session):
+        with patch("aegra_api.api.threads.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"status": {"$eq": "idle"}}
+            resp = make_client(app_with_session).post("/threads/search", json={})
+        assert resp.status_code == 200
+
+    def test_unsupported_operator_returns_400(self, app_with_session):
+        with patch("aegra_api.api.threads.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"owner": {"$ne": "attacker"}}
+            resp = make_client(app_with_session).post("/threads/search", json={})
+        assert resp.status_code == 400
+        assert "$ne" in resp.json()["detail"]
+
+
 class TestThreadGetState:
     """Test GET /threads/{thread_id}/state endpoint"""
 

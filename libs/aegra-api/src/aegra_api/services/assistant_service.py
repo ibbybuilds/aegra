@@ -15,6 +15,7 @@ applied to other APIs (runs, threads, crons) as part of ongoing refactoring.
 """
 
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -121,6 +122,19 @@ def _extract_graph_schemas(graph) -> dict:
     }
 
 
+def _apply_extra_column_filters(stmt: Any, extra: Mapping[str, Any] | None) -> Any:
+    """AND auth-handler column filters onto an assistant query.
+
+    Keys are the whitelist in ``auth_filters._WHITELISTED_COLUMNS["assistants"]``;
+    the compiler is the only producer so any key here is already validated.
+    """
+    if not extra:
+        return stmt
+    for column_name, value in extra.items():
+        stmt = stmt.where(getattr(AssistantORM, column_name) == value)
+    return stmt
+
+
 class AssistantService:
     """Service for managing assistants"""
 
@@ -224,16 +238,21 @@ class AssistantService:
         user_identity: str,
         *,
         metadata: dict[str, Any] | None = None,
+        extra_column_filters: Mapping[str, Any] | None = None,
     ) -> list[Assistant]:
         """List user's assistants and system assistants.
 
         Optionally filtered by a metadata containment predicate. Unlike
         ``search_assistants``, this method does not paginate — callers that
         need pagination should use search.
+
+        ``extra_column_filters`` carries auth-handler-derived exact-match
+        constraints on whitelisted top-level columns; AND'd with user filters.
         """
         stmt = select(AssistantORM).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
         if metadata:
             stmt = stmt.where(AssistantORM.metadata_dict.op("@>")(metadata))
+        stmt = _apply_extra_column_filters(stmt, extra_column_filters)
         result = await self.session.scalars(stmt)
         return [to_pydantic(a) for a in result.all()]
 
@@ -244,8 +263,13 @@ class AssistantService:
         *,
         sort_column: Any | None = None,
         sort_asc: bool = False,
+        extra_column_filters: Mapping[str, Any] | None = None,
     ) -> list[Assistant]:
-        """Search assistants with filters"""
+        """Search assistants with filters.
+
+        ``extra_column_filters`` carries auth-handler-derived exact-match
+        constraints on whitelisted top-level columns; AND'd with user filters.
+        """
         stmt = select(AssistantORM).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
 
         if request.name:
@@ -259,6 +283,8 @@ class AssistantService:
 
         if request.metadata:
             stmt = stmt.where(AssistantORM.metadata_dict.op("@>")(request.metadata))
+
+        stmt = _apply_extra_column_filters(stmt, extra_column_filters)
 
         column = sort_column if sort_column is not None else AssistantORM.created_at
         direction = column.asc() if sort_asc else column.desc()
@@ -277,8 +303,14 @@ class AssistantService:
         self,
         request: Any,  # AssistantSearchRequest
         user_identity: str,
+        *,
+        extra_column_filters: Mapping[str, Any] | None = None,
     ) -> int:
-        """Count assistants with filters"""
+        """Count assistants with filters.
+
+        ``extra_column_filters`` carries auth-handler-derived exact-match
+        constraints on whitelisted top-level columns; AND'd with user filters.
+        """
         # Include both user's assistants and system assistants (like search_assistants does)
         stmt = select(func.count()).where(or_(AssistantORM.user_id == user_identity, AssistantORM.user_id == "system"))
 
@@ -293,6 +325,8 @@ class AssistantService:
 
         if request.metadata:
             stmt = stmt.where(AssistantORM.metadata_dict.op("@>")(request.metadata))
+
+        stmt = _apply_extra_column_filters(stmt, extra_column_filters)
 
         total = await self.session.scalar(stmt)
         return total or 0

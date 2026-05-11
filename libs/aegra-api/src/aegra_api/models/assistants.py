@@ -15,10 +15,12 @@ class AssistantCreate(BaseModel):
         description="Human-readable assistant name (auto-generated if not provided)",
     )
     description: str | None = Field(None, description="Assistant description")
-    config: dict[str, Any] | None = Field({}, description="Assistant configuration")
-    context: dict[str, Any] | None = Field({}, description="Assistant context")
+    config: dict[str, Any] | None = Field(default_factory=dict, description="Assistant configuration")
+    context: dict[str, Any] | None = Field(default_factory=dict, description="Assistant context")
     graph_id: str = Field(..., description="LangGraph graph ID from aegra.json")
-    metadata: dict[str, Any] | None = Field({}, description="Metadata to use for searching and filtering assistants.")
+    metadata: dict[str, Any] | None = Field(
+        default_factory=dict, description="Metadata to use for searching and filtering assistants."
+    )
     if_exists: str | None = Field("error", description="What to do if assistant exists: error or do_nothing")
 
 
@@ -49,13 +51,15 @@ class AssistantUpdate(BaseModel):
 
     name: str | None = Field(None, description="The name of the assistant (auto-generated if not provided)")
     description: str | None = Field(None, description="The description of the assistant. Defaults to null.")
-    config: dict[str, Any] | None = Field({}, description="Configuration to use for the graph.")
+    config: dict[str, Any] | None = Field(default_factory=dict, description="Configuration to use for the graph.")
     graph_id: str = Field("agent", description="The ID of the graph")
     context: dict[str, Any] | None = Field(
-        {},
+        default_factory=dict,
         description="The context to use for the graph. Useful when graph is configurable.",
     )
-    metadata: dict[str, Any] | None = Field({}, description="Metadata to use for searching and filtering assistants.")
+    metadata: dict[str, Any] | None = Field(
+        default_factory=dict, description="Metadata to use for searching and filtering assistants."
+    )
 
 
 class AssistantList(BaseModel):

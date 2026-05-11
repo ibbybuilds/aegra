@@ -629,9 +629,7 @@ class TestSearchAuthHandlerFilterCompilation:
         assert kwargs["extra_column_filters"] == {"graph_id": "agent-v2"}
         # graph_id must NOT leak into metadata — that was the empty-result bug.
         called_request = mock_assistant_service.search_assistants.call_args.args[0]
-        assert called_request.metadata in (None, {}, {"graph_id": "agent-v2"}) is False or "graph_id" not in (
-            called_request.metadata or {}
-        )
+        assert "graph_id" not in (called_request.metadata or {})
 
     def test_search_handles_eq_operator_on_column(self, mock_assistant_service):
         mock_assistant_service.search_assistants.return_value = []

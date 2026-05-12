@@ -17,6 +17,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
+import structlog
 from sqlalchemy import (
     TIMESTAMP,
     ForeignKey,
@@ -31,20 +32,43 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column
 from sqlalchemy.types import TypeDecorator
 
+_logger = structlog.getLogger(__name__)
 
-def _strip_null_bytes(value: Any) -> Any:
+# Safety net against pathological/adversarial nesting. Real agent JSON rarely
+# exceeds a few dozen levels; Python's default frame limit is ~1000. 200 is
+# well above any legitimate payload and well below the interpreter ceiling.
+_MAX_STRIP_DEPTH = 200
+
+
+def _strip_null_bytes(value: Any, _depth: int = 0) -> Any:
     """Recursively strip U+0000 from strings inside JSON-compatible structures.
 
     Postgres JSONB rejects \\u0000 with UntranslatableCharacterError; agent
     output can contain literal NULL bytes from untrusted input or model
     hallucination. Stripping at the type boundary protects every JSONB column.
+
+    Beyond ``_MAX_STRIP_DEPTH`` the value is returned untouched — a deeper
+    payload than that is almost certainly adversarial, and letting Postgres
+    reject it surfaces a clearer signal than a RecursionError at bind time.
     """
+    if _depth >= _MAX_STRIP_DEPTH:
+        _logger.warning("jsonb_strip_depth_exceeded", depth=_depth, type=type(value).__name__)
+        return value
     if isinstance(value, str):
         return value.replace("\x00", "") if "\x00" in value else value
     if isinstance(value, dict):
-        return {_strip_null_bytes(k): _strip_null_bytes(v) for k, v in value.items()}
+        result: dict[Any, Any] = {}
+        for k, v in value.items():
+            stripped_k = _strip_null_bytes(k, _depth + 1)
+            if stripped_k in result:
+                # Two distinct raw keys collapsed to the same stripped key — the
+                # earlier value is being dropped by last-wins. Surface so silent
+                # data loss is visible in logs.
+                _logger.warning("jsonb_strip_key_collision", stripped_key=stripped_k)
+            result[stripped_k] = _strip_null_bytes(v, _depth + 1)
+        return result
     if isinstance(value, (list, tuple)):
-        return [_strip_null_bytes(v) for v in value]
+        return [_strip_null_bytes(v, _depth + 1) for v in value]
     return value
 
 

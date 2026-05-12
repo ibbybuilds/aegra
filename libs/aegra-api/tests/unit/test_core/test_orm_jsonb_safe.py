@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from aegra_api.core.orm import JsonbSafe, _strip_null_bytes
+from aegra_api.core.orm import _MAX_STRIP_DEPTH, JsonbSafe, _strip_null_bytes
 
 
 class TestStripNullBytes:
@@ -73,3 +73,60 @@ class TestJsonbSafeBindParam:
         # SQLAlchemy requires cache_ok on user-defined TypeDecorators to participate
         # in statement caching; without it every statement is re-compiled.
         assert JsonbSafe.cache_ok is True
+
+
+class TestDepthGuard:
+    """Recursion stops at _MAX_STRIP_DEPTH to avoid RecursionError on adversarial payloads."""
+
+    def test_depth_within_limit_processed(self) -> None:
+        # Build a nested chain just under the limit; stripping must still work.
+        depth = _MAX_STRIP_DEPTH - 10
+        value: Any = "leaf\x00"
+        for _ in range(depth):
+            value = [value]
+        result = _strip_null_bytes(value)
+        # Walk down to leaf and verify it was stripped.
+        cursor = result
+        for _ in range(depth):
+            cursor = cursor[0]
+        assert cursor == "leaf"
+
+    def test_depth_overflow_returns_untouched(self, caplog: pytest.LogCaptureFixture) -> None:
+        # Build a payload deeper than the guard; deepest values must come back
+        # unchanged (no RecursionError, no infinite loop).
+        depth = _MAX_STRIP_DEPTH + 50
+        value: Any = "leaf\x00"
+        for _ in range(depth):
+            value = [value]
+        result = _strip_null_bytes(value)
+        # First _MAX_STRIP_DEPTH levels were entered; below that, value returned
+        # as-is. We don't assert the exact pivot, only that no exception fired
+        # and the result is structurally a list (recursion didn't crash).
+        assert isinstance(result, list)
+
+
+class TestKeyCollisionWarning:
+    """Stripped-key collisions must log a warning so silent data loss is visible."""
+
+    def test_collision_logs_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Patch the module-level structlog logger to capture warning calls
+        # without relying on the structlog config (caplog only sees stdlib logs).
+        from aegra_api.core import orm
+
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        def _record(event: str, **kw: Any) -> None:
+            calls.append((event, kw))
+
+        monkeypatch.setattr(orm._logger, "warning", _record)
+        result = orm._strip_null_bytes({"a\x00": "first", "a": "second"})
+        assert result == {"a": "second"}
+        assert any(event == "jsonb_strip_key_collision" for event, _ in calls)
+
+    def test_no_collision_no_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from aegra_api.core import orm
+
+        calls: list[str] = []
+        monkeypatch.setattr(orm._logger, "warning", lambda event, **kw: calls.append(event))
+        orm._strip_null_bytes({"a\x00": "v1", "b": "v2"})
+        assert "jsonb_strip_key_collision" not in calls

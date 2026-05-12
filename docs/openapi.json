@@ -3,7 +3,7 @@
   "info": {
     "title": "Aegra",
     "description": "Production-ready Agent Protocol server",
-    "version": "0.9.14"
+    "version": "0.9.15"
   },
   "paths": {
     "/info": {
@@ -3018,8 +3018,7 @@
               }
             ],
             "title": "Config",
-            "description": "Assistant configuration",
-            "default": {}
+            "description": "Assistant configuration"
           },
           "context": {
             "anyOf": [
@@ -3032,8 +3031,7 @@
               }
             ],
             "title": "Context",
-            "description": "Assistant context",
-            "default": {}
+            "description": "Assistant context"
           },
           "graph_id": {
             "type": "string",
@@ -3051,8 +3049,7 @@
               }
             ],
             "title": "Metadata",
-            "description": "Metadata to use for searching and filtering assistants.",
-            "default": {}
+            "description": "Metadata to use for searching and filtering assistants."
           },
           "if_exists": {
             "anyOf": [
@@ -3254,8 +3251,7 @@
               }
             ],
             "title": "Config",
-            "description": "Configuration to use for the graph.",
-            "default": {}
+            "description": "Configuration to use for the graph."
           },
           "graph_id": {
             "type": "string",
@@ -3274,8 +3270,7 @@
               }
             ],
             "title": "Context",
-            "description": "The context to use for the graph. Useful when graph is configurable.",
-            "default": {}
+            "description": "The context to use for the graph. Useful when graph is configurable."
           },
           "metadata": {
             "anyOf": [
@@ -3288,8 +3283,7 @@
               }
             ],
             "title": "Metadata",
-            "description": "Metadata to use for searching and filtering assistants.",
-            "default": {}
+            "description": "Metadata to use for searching and filtering assistants."
           }
         },
         "type": "object",

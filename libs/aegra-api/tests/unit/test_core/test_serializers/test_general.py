@@ -238,6 +238,29 @@ class TestGeneralSerializer:
         assert self.serializer.serialize(-42) == -42
         assert self.serializer.serialize(-3.14) == -3.14
 
+    def test_serialize_pydantic_class_not_instance(self):
+        """Regression for #356: passing a Pydantic class (not an instance) must
+        not invoke unbound model_dump(). LangChain's with_structured_output
+        stores the class reference inside the runnable chain, and LangGraph
+        checkpointing then walks it through this serializer."""
+        result = self.serializer.serialize(PydanticV2Model)
+        assert isinstance(result, str)
+        assert "PydanticV2Model" in result
+
+    def test_serialize_pydantic_v1_class_not_instance(self):
+        """Same defect on the .dict() branch — classes with a dict method
+        (Pydantic v1 style) would also crash without the isclass guard."""
+        result = self.serializer.serialize(PydanticV1Style)
+        assert isinstance(result, str)
+        assert "PydanticV1Style" in result
+
+    def test_serialize_builtin_class_passthrough(self):
+        """Builtin types (dict, list, str) hit the same path; render as str
+        rather than blowing up on missing __module__/__qualname__."""
+        result = self.serializer.serialize(dict)
+        assert isinstance(result, str)
+        assert "dict" in result
+
 
 class MockTask:
     """Mock LangGraph task"""

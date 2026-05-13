@@ -596,6 +596,117 @@ class TestSearchAssistantsSortAndAuth:
         mock_assistant_service.list_assistants.assert_called_once()
 
 
+class TestSearchAuthHandlerFilterCompilation:
+    """Issue #360 — auth handler filter contract.
+
+    Auth handlers can return operator dicts and top-level column filters; the
+    compiler routes them correctly instead of silently producing empty result
+    sets via JSONB containment.
+    """
+
+    @staticmethod
+    def _app(mock_service):
+        from aegra_api.api import assistants as assistants_module
+        from aegra_api.services.assistant_service import get_assistant_service
+
+        app = create_test_app(include_runs=False, include_threads=False)
+        app.include_router(assistants_module.router)
+        app.dependency_overrides[get_assistant_service] = lambda: mock_service
+        return app
+
+    def test_search_routes_graph_id_to_column_filter(self, mock_assistant_service):
+        """Handler returning ``{"graph_id": "agent-v2"}`` filters by the column,
+        not by metadata containment (which would silently return zero rows)."""
+        mock_assistant_service.search_assistants.return_value = []
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"graph_id": "agent-v2"}
+            resp = make_client(app).post("/assistants/search", json={})
+
+        assert resp.status_code == 200
+        kwargs = mock_assistant_service.search_assistants.call_args.kwargs
+        assert kwargs["extra_column_filters"] == {"graph_id": "agent-v2"}
+        # graph_id must NOT leak into metadata — that was the empty-result bug.
+        called_request = mock_assistant_service.search_assistants.call_args.args[0]
+        assert "graph_id" not in (called_request.metadata or {})
+
+    def test_search_handles_eq_operator_on_column(self, mock_assistant_service):
+        mock_assistant_service.search_assistants.return_value = []
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"graph_id": {"$eq": "agent-v2"}}
+            resp = make_client(app).post("/assistants/search", json={})
+
+        assert resp.status_code == 200
+        kwargs = mock_assistant_service.search_assistants.call_args.kwargs
+        assert kwargs["extra_column_filters"] == {"graph_id": "agent-v2"}
+
+    def test_search_handles_contains_operator_on_metadata(self, mock_assistant_service):
+        """``{"participants": {"$contains": "u1"}}`` becomes ``metadata @> {"participants": ["u1"]}``."""
+        mock_assistant_service.search_assistants.return_value = []
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"participants": {"$contains": "u1"}}
+            resp = make_client(app).post("/assistants/search", json={})
+
+        assert resp.status_code == 200
+        called_request = mock_assistant_service.search_assistants.call_args.args[0]
+        assert called_request.metadata == {"participants": ["u1"]}
+
+    def test_search_returns_400_for_unsupported_operator(self, mock_assistant_service):
+        """``$ne`` isn't compilable to JSONB containment — surface as 400 instead
+        of silently returning zero rows."""
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"owner": {"$ne": "attacker"}}
+            resp = make_client(app).post("/assistants/search", json={})
+
+        assert resp.status_code == 400
+        assert "$ne" in resp.json()["detail"]
+        mock_assistant_service.search_assistants.assert_not_called()
+
+    def test_search_returns_400_for_contains_on_column(self, mock_assistant_service):
+        """``$contains`` is metadata-only — using it on a column is a handler bug."""
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"graph_id": {"$contains": "agent"}}
+            resp = make_client(app).post("/assistants/search", json={})
+
+        assert resp.status_code == 400
+        assert "$contains" in resp.json()["detail"]
+
+    def test_count_routes_column_filters(self, mock_assistant_service):
+        mock_assistant_service.count_assistants.return_value = 5
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"graph_id": "agent-v2", "owner": "u1"}
+            resp = make_client(app).post("/assistants/count", json={})
+
+        assert resp.status_code == 200
+        kwargs = mock_assistant_service.count_assistants.call_args.kwargs
+        assert kwargs["extra_column_filters"] == {"graph_id": "agent-v2"}
+        called_request = mock_assistant_service.count_assistants.call_args.args[0]
+        assert called_request.metadata == {"owner": "u1"}
+
+    def test_list_routes_column_filters(self, mock_assistant_service):
+        mock_assistant_service.list_assistants.return_value = []
+        app = self._app(mock_assistant_service)
+
+        with patch("aegra_api.api.assistants.handle_event", new_callable=AsyncMock) as mock_handle:
+            mock_handle.return_value = {"graph_id": "agent-v2"}
+            resp = make_client(app).get("/assistants")
+
+        assert resp.status_code == 200
+        kwargs = mock_assistant_service.list_assistants.call_args.kwargs
+        assert kwargs["extra_column_filters"] == {"graph_id": "agent-v2"}
+
+
 class TestCountAssistants:
     """Test POST /assistants/count"""
 

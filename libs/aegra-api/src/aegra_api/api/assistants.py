@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Query
 
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
+from aegra_api.core.auth_filters import compile_handler_filters
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Assistant as AssistantORM
 from aegra_api.models import (
@@ -44,29 +45,32 @@ def _resolve_sort(request: AssistantSearchRequest) -> tuple[Any, bool]:
     return AssistantORM.created_at, False
 
 
-def _merge_handler_filters_into_metadata(
+def _apply_handler_filters(
     request: AssistantSearchRequest,
     filters: dict[str, Any] | None,
     value: dict[str, Any],
-) -> None:
-    """Merge auth-handler filters into request.metadata.
+) -> dict[str, Any]:
+    """Compile handler filters and merge metadata payload into ``request``.
 
-    Mirrors create/update assistant: handlers may either return
-    ``{"metadata": {...}}`` or mutate ``value["metadata"]`` directly. Other
-    top-level filter keys are treated as metadata constraints (e.g.
-    ``{"owner": user_id}`` → metadata containment match), matching the
-    LangGraph SDK auth contract.
+    Handlers can return ``{"metadata": {...}}``, whitelisted column keys
+    (``graph_id``, ``name``), or arbitrary flat keys (treated as metadata
+    containment, matching the LangGraph SDK auth contract). They may also
+    mutate ``value["metadata"]`` directly without returning a filters dict.
+
+    Returns the column-filter dict to pass to the service layer; the
+    metadata payload is merged onto ``request.metadata`` here so the existing
+    service-layer ``metadata @>`` predicate picks it up.
     """
-    if filters:
-        # A handler may return both a nested metadata payload AND flat scope
-        # constraints (e.g. {"metadata": {...}, "owner": "u1"}). Merge both.
-        nested_meta = filters["metadata"] if isinstance(filters.get("metadata"), dict) else {}
-        flat_meta = {k: v for k, v in filters.items() if k != "metadata"}
-        request.metadata = {**(request.metadata or {}), **nested_meta, **flat_meta}
-        return
-    value_meta = value.get("metadata")
-    if isinstance(value_meta, dict) and value_meta:
-        request.metadata = {**(request.metadata or {}), **value_meta}
+    compiled = compile_handler_filters(filters, resource="assistants")
+    if compiled.metadata_containment:
+        request.metadata = {**(request.metadata or {}), **compiled.metadata_containment}
+    elif not filters:
+        # Handler didn't return filters; honor in-place mutation of value.metadata
+        # (handlers may modify the value dict directly to inject metadata).
+        value_meta = value.get("metadata")
+        if isinstance(value_meta, dict) and value_meta:
+            request.metadata = {**(request.metadata or {}), **value_meta}
+    return compiled.column_filters
 
 
 @router.post("/assistants", response_model=Assistant, response_model_by_alias=False)
@@ -112,12 +116,16 @@ async def list_assistants(
     filters = await handle_event(ctx, value)
 
     if filters or value.get("metadata"):
-        # Build a transient request just to reuse the merge helper, then hand
-        # the resulting metadata filter to list_assistants — which doesn't
-        # paginate. Using search_assistants here would silently cap at 20.
+        # Build a transient request just to reuse the compile helper, then hand
+        # the resulting metadata + column filters to list_assistants — which
+        # doesn't paginate. Using search_assistants here would silently cap at 20.
         search_request = AssistantSearchRequest()
-        _merge_handler_filters_into_metadata(search_request, filters, value)
-        assistants = await service.list_assistants(user.identity, metadata=search_request.metadata)
+        column_filters = _apply_handler_filters(search_request, filters, value)
+        assistants = await service.list_assistants(
+            user.identity,
+            metadata=search_request.metadata,
+            extra_column_filters=column_filters,
+        )
     else:
         assistants = await service.list_assistants(user.identity)
 
@@ -139,10 +147,16 @@ async def search_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    _merge_handler_filters_into_metadata(request, filters, value)
+    column_filters = _apply_handler_filters(request, filters, value)
     column, asc = _resolve_sort(request)
 
-    return await service.search_assistants(request, user.identity, sort_column=column, sort_asc=asc)
+    return await service.search_assistants(
+        request,
+        user.identity,
+        sort_column=column,
+        sort_asc=asc,
+        extra_column_filters=column_filters,
+    )
 
 
 @router.post("/assistants/count", response_model=int)
@@ -160,9 +174,9 @@ async def count_assistants(
     ctx = build_auth_context(user, "assistants", "search")
     value = request.model_dump()
     filters = await handle_event(ctx, value)
-    _merge_handler_filters_into_metadata(request, filters, value)
+    column_filters = _apply_handler_filters(request, filters, value)
 
-    return await service.count_assistants(request, user.identity)
+    return await service.count_assistants(request, user.identity, extra_column_filters=column_filters)
 
 
 @router.get(

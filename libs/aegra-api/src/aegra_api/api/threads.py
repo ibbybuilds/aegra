@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aegra_api.core.active_runs import active_runs
 from aegra_api.core.auth_deps import auth_dependency, get_current_user
+from aegra_api.core.auth_filters import compile_handler_filters
 from aegra_api.core.auth_handlers import build_auth_context, handle_event
 from aegra_api.core.orm import Run as RunORM
 from aegra_api.core.orm import Thread as ThreadORM
@@ -870,19 +871,19 @@ async def search_threads(
     value = request.model_dump()
     filters = await handle_event(ctx, value)
 
-    # Merge handler filters with request metadata
-    # Note: ThreadSearchRequest doesn't have a filters field,
-    # so we merge authorization filters into metadata if needed
-    if filters and "metadata" in filters:
-        # If filters contain metadata, merge with request metadata
-        handler_meta = filters["metadata"]
-        if isinstance(handler_meta, dict):
-            request.metadata = {**(request.metadata or {}), **handler_meta}
-        # Other filter types can be handled here if needed
+    # Compile handler filters into column constraints + metadata containment.
+    # See aegra_api.core.auth_filters for supported shapes and operators.
+    compiled = compile_handler_filters(filters, resource="threads")
+    if compiled.metadata_containment:
+        request.metadata = {**(request.metadata or {}), **compiled.metadata_containment}
+
     stmt = select(ThreadORM).where(ThreadORM.user_id == user.identity)
 
     if request.status:
         stmt = stmt.where(ThreadORM.status == request.status)
+
+    for column_name, column_value in compiled.column_filters.items():
+        stmt = stmt.where(getattr(ThreadORM, column_name) == column_value)
 
     if request.metadata:
         # JSONB containment: type-correct, deep-nested, GIN-indexable. Mirrors

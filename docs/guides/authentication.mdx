@@ -140,6 +140,34 @@ async def filter_by_team(ctx, value):
     return {"metadata": {"team_id": ctx.user.team_id}}
 ```
 
+### Supported filter shapes
+
+Aegra compiles `@auth.on.*.search` and `@auth.on.*` filter return values into safe SQL constraints on `/assistants/search`, `/assistants/count`, `GET /assistants`, and `/threads/search`. The accepted shapes:
+
+| Filter value | Behavior |
+|---|---|
+| `{"key": "v"}` | Routed to a top-level column (`graph_id`/`name` for assistants, `status` for threads) or to a `metadata @> {"key": "v"}` containment predicate otherwise |
+| `{"key": {"$eq": "v"}}` | Same as `{"key": "v"}` — explicit equality alias |
+| `{"key": {"$contains": "v"}}` | `metadata @> {"key": ["v"]}` — JSONB array containment. Metadata-only; using `$contains` on a top-level column is rejected |
+| `{"metadata": {...}}` | Nested form for metadata containment; merges with flat keys if both are returned |
+
+Whitelisted top-level columns per resource:
+
+- **assistants**: `graph_id`, `name`
+- **threads**: `status`
+
+Handler filters AND with user-supplied filters at the SQL layer, so a handler can only restrict — never relax — the user's view.
+
+Other operators (`$ne`, `$gt`, `$in`, etc.) return HTTP 400 instead of silently producing empty result sets, surfacing handler bugs at deploy time rather than as ghost-empty queries in production.
+
+**Operator example:**
+
+```python
+@auth.on.threads.search
+async def filter_by_membership(ctx, value):
+    return {"participants": {"$contains": ctx.user.identity}}
+```
+
 ### Handler context
 
 The `ctx` parameter provides:

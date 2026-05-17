@@ -44,6 +44,17 @@ def _resolve_sort(request: AssistantSearchRequest) -> tuple[Any, bool]:
     return AssistantORM.created_at, False
 
 
+async def _authorize_assistant_read(user: User, assistant_id: str) -> None:
+    """Fire ``assistants.read`` for endpoints that fetch assistant-derived data.
+
+    Shared by versions/schemas/graph/subgraphs so any handler that scopes
+    assistant visibility (e.g. tenant guards) applies uniformly across the
+    read surface, not only on ``GET /assistants/{id}``.
+    """
+    ctx = build_auth_context(user, "assistants", "read")
+    await handle_event(ctx, {"assistant_id": assistant_id})
+
+
 def _merge_handler_filters_into_metadata(
     request: AssistantSearchRequest,
     filters: dict[str, Any] | None,
@@ -256,6 +267,9 @@ async def set_assistant_latest(
     After calling this endpoint, the assistant will use the specified version's
     configuration when executing runs.
     """
+    ctx = build_auth_context(user, "assistants", "update")
+    await handle_event(ctx, {"assistant_id": assistant_id, "version": version})
+
     return await service.set_assistant_latest(assistant_id, version, user.identity)
 
 
@@ -275,6 +289,8 @@ async def list_assistant_versions(
     Returns versions ordered from newest to oldest. Each version captures the
     assistant's configuration at the time of creation or update.
     """
+    await _authorize_assistant_read(user, assistant_id)
+
     return await service.list_assistant_versions(assistant_id, user.identity)
 
 
@@ -293,6 +309,8 @@ async def get_assistant_schemas(
     Returns the input, output, state, and config schemas derived from the
     underlying graph's type annotations.
     """
+    await _authorize_assistant_read(user, assistant_id)
+
     return await service.get_assistant_schemas(assistant_id, user)
 
 
@@ -311,6 +329,8 @@ async def get_assistant_graph(
     rendering in graph visualizers. Use `xray` to expand subgraph nodes into
     their internal structure.
     """
+    await _authorize_assistant_read(user, assistant_id)
+
     # Default to False if not provided
     xray_value = xray if xray is not None else False
     return await service.get_assistant_graph(assistant_id, xray_value, user)
@@ -330,4 +350,6 @@ async def get_assistant_subgraphs(
     `recurse=true` to include deeply nested subgraphs, or filter to a single
     namespace.
     """
+    await _authorize_assistant_read(user, assistant_id)
+
     return await service.get_assistant_subgraphs(assistant_id, namespace, recurse, user)

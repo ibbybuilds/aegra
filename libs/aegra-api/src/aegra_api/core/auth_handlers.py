@@ -134,9 +134,9 @@ async def handle_event(
     except AssertionError as e:
         # Handler used assert for authorization check
         raise HTTPException(status_code=403, detail=str(e)) from e
-    except Exception as e:
-        # Unexpected error in handler
-        raise HTTPException(status_code=500, detail=f"Authorization error: {str(e)}") from e
+    # Programmer errors (TypeError, AttributeError, ...) propagate so the
+    # standard error handler logs the stack and returns a generic 500 — we
+    # don't want a handler bug to leak its exception text to API clients.
 
     # Interpret handler result
     if result in (None, True):

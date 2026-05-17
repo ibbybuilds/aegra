@@ -272,26 +272,27 @@ class TestHandleEvent:
             assert "Not authorized" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    async def test_handler_raises_unexpected_exception(self):
-        """Test that handler raising unexpected exception returns 500"""
+    async def test_handler_raises_unexpected_exception_propagates(self):
+        """Programmer errors propagate so the standard error handler logs the
+        stack and returns a generic 500 — wrapping leaks handler internals to
+        the API client and swallows the traceback."""
         user = User(identity="user-123")
         ctx = build_auth_context(user, "threads", "create")
 
-        mock_handler = AsyncMock(side_effect=ValueError("Unexpected error"))
+        mock_handler = AsyncMock(side_effect=ValueError("internal handler bug"))
         mock_auth = Mock(spec=Auth)
         mock_auth._handlers = {("threads", "create"): [mock_handler]}
         mock_auth._global_handlers = []
         mock_auth._handler_cache = {}
 
-        with patch(
-            "aegra_api.core.auth_handlers.get_auth_instance",
-            return_value=mock_auth,
+        with (
+            patch(
+                "aegra_api.core.auth_handlers.get_auth_instance",
+                return_value=mock_auth,
+            ),
+            pytest.raises(ValueError, match="internal handler bug"),
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await handle_event(ctx, {})
-
-            assert exc_info.value.status_code == 500
-            assert "Authorization error" in exc_info.value.detail
+            await handle_event(ctx, {})
 
     @pytest.mark.asyncio
     async def test_handler_returns_invalid_type(self):

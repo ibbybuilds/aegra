@@ -849,3 +849,94 @@ class TestGetAssistantSubgraphs:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, dict)
+
+
+class TestAssistantExtrasAuthHandlerDispatch:
+    """Pin auth handler dispatch on latest/versions/schemas/graph/subgraphs.
+
+    These endpoints previously skipped ``handle_event`` entirely — any handler
+    restricting assistant visibility (tenant scoping, role gates) was silently
+    bypassed. Each case verifies the handler is invoked and that its rejection
+    propagates as 403 instead of the request reaching the service layer.
+    """
+
+    @pytest.fixture
+    def app(self, mock_assistant_service):
+        app = create_test_app(include_runs=False, include_threads=False)
+        from aegra_api.api import assistants as assistants_module
+
+        app.include_router(assistants_module.router)
+        app.dependency_overrides[get_assistant_service] = lambda: mock_assistant_service
+        return app
+
+    @staticmethod
+    def _patched_handler(allow: bool = True):
+        """Patch ``handle_event`` to allow (None) or reject (403)."""
+        from fastapi import HTTPException
+
+        mock = AsyncMock()
+        if allow:
+            mock.return_value = None
+        else:
+            mock.side_effect = HTTPException(status_code=403, detail="forbidden")
+        return patch("aegra_api.api.assistants.handle_event", mock)
+
+    def test_set_latest_invokes_update_handler(self, app, mock_assistant_service):
+        mock_assistant_service.set_assistant_latest.return_value = make_assistant()
+        with self._patched_handler() as mock_handle:
+            resp = make_client(app).post("/assistants/asst-1/latest", json={"version": 3})
+        assert resp.status_code == 200
+        ctx, value = mock_handle.call_args.args
+        assert (ctx.resource, ctx.action) == ("assistants", "update")
+        assert value == {"assistant_id": "asst-1", "version": 3}
+
+    def test_set_latest_rejection_returns_403(self, app, mock_assistant_service):
+        with self._patched_handler(allow=False):
+            resp = make_client(app).post("/assistants/asst-1/latest", json={"version": 3})
+        assert resp.status_code == 403
+        mock_assistant_service.set_assistant_latest.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("method", "path", "service_attr", "return_value"),
+        [
+            ("post", "/assistants/asst-1/versions", "list_assistant_versions", []),
+            (
+                "get",
+                "/assistants/asst-1/schemas",
+                "get_assistant_schemas",
+                {
+                    "input_schema": {},
+                    "output_schema": {},
+                    "state_schema": {},
+                    "config_schema": {},
+                },
+            ),
+            ("get", "/assistants/asst-1/graph", "get_assistant_graph", {"nodes": [], "edges": []}),
+            ("get", "/assistants/asst-1/subgraphs", "get_assistant_subgraphs", {}),
+        ],
+    )
+    def test_read_endpoints_invoke_read_handler(
+        self, app, mock_assistant_service, method, path, service_attr, return_value
+    ):
+        getattr(mock_assistant_service, service_attr).return_value = return_value
+        with self._patched_handler() as mock_handle:
+            resp = getattr(make_client(app), method)(path)
+        assert resp.status_code == 200
+        ctx, value = mock_handle.call_args.args
+        assert (ctx.resource, ctx.action) == ("assistants", "read")
+        assert value == {"assistant_id": "asst-1"}
+
+    @pytest.mark.parametrize(
+        ("method", "path", "service_attr"),
+        [
+            ("post", "/assistants/asst-1/versions", "list_assistant_versions"),
+            ("get", "/assistants/asst-1/schemas", "get_assistant_schemas"),
+            ("get", "/assistants/asst-1/graph", "get_assistant_graph"),
+            ("get", "/assistants/asst-1/subgraphs", "get_assistant_subgraphs"),
+        ],
+    )
+    def test_read_endpoints_reject_propagates_403(self, app, mock_assistant_service, method, path, service_attr):
+        with self._patched_handler(allow=False):
+            resp = getattr(make_client(app), method)(path)
+        assert resp.status_code == 403
+        getattr(mock_assistant_service, service_attr).assert_not_called()

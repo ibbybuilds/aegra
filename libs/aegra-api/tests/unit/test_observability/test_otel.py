@@ -1,6 +1,6 @@
 """Unit tests for the OpenTelemetry provider."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -179,7 +179,7 @@ class TestOpenTelemetryProviderSetup:
                 "deployment.environment": "test",
             }
         )
-        mock_deps["tp"].assert_called_with(resource=mock_deps["resource"].create.return_value)
+        mock_deps["tp"].assert_called_with(resource=mock_deps["resource"].create.return_value, id_generator=ANY)
 
     def test_setup_attaches_configured_targets(self, mock_deps):
         """Test that exporters from targets are attached to the tracer."""

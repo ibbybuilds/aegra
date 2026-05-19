@@ -27,10 +27,6 @@ depends_on = None
 def upgrade() -> None:
     """Create initial database schema for Aegra Agent Protocol server."""
 
-    # gen_random_uuid() is in Postgres 13+ core; no extension needed.
-    # Earlier revisions created the "uuid-ossp" extension here, which is
-    # blocked on managed services (e.g. Azure) that restrict extensions.
-
     # Create assistant table
     op.create_table(
         "assistant",

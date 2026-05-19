@@ -26,6 +26,7 @@ import random
 import uuid as _uuid
 from typing import Any
 
+from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
@@ -245,6 +246,7 @@ def make_run_trace_context(
     }
     metadata = merge_run_metadata(extra_metadata, system_metadata)
     ctx = contextvars.copy_context()
+    ctx.run(otel_context.attach, trace.set_span_in_context(trace.INVALID_SPAN))
     ctx.run(seed_otel_trace_id, run_id)
     ctx.run(
         set_trace_context,

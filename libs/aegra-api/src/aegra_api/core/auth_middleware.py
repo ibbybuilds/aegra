@@ -49,20 +49,20 @@ def _authenticate_kwargs_for_handler(
     conn: HTTPConnection,
     handler: Callable[..., Any],
 ) -> dict[str, Any]:
-    """Build kwargs for ``@auth.authenticate`` using LangGraph SDK inject-by-name rules.
+    """Build kwargs for ``@auth.authenticate`` using inject-by-name rules.
 
-    See ``langgraph_sdk.auth.types.Authenticator`` — supported parameter names:
-    ``request``, ``body``, ``path``, ``method``, ``path_params``, ``query_params``,
-    ``headers``, ``authorization``.
+    Aegra injects only a focused subset of ``langgraph_sdk`` Authenticator
+    parameters — enough for route-aware auth without exposing ``request`` or
+    ``body`` (reading the ASGI body in middleware would break downstream handlers).
+
+    Supported parameter names: ``path``, ``method``, ``headers``,
+    ``authorization``.
 
     Handlers that only declare ``headers`` (Aegra's historical contract) keep
     receiving only that argument.
     """
     headers = _headers_from_connection(conn)
     scope = getattr(conn, "scope", None) or {}
-    path_params = scope.get("path_params") or {}
-    if not isinstance(path_params, dict):
-        path_params = dict(path_params)
 
     url = getattr(conn, "url", None)
     path = getattr(url, "path", "/") if url is not None else "/"
@@ -71,12 +71,7 @@ def _authenticate_kwargs_for_handler(
         "headers": headers,
         "path": path,
         "method": scope.get("method", "GET"),
-        "path_params": path_params,
-        "query_params": dict(getattr(conn, "query_params", {})),
         "authorization": _authorization_from_headers(headers),
-        # Request body is not consumed here; match LangGraph API behavior for auth hooks.
-        "body": {},
-        "request": conn,
     }
 
     try:
@@ -94,29 +89,7 @@ def _authenticate_kwargs_for_handler(
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
             inspect.Parameter.KEYWORD_ONLY,
         ) and name in candidates:
-            value = candidates[name]
-            if name == "request":
-                from starlette.requests import Request
-
-                receive = getattr(conn, "receive", None)
-                send = getattr(conn, "send", None)
-                value = Request(scope, receive, send)
-            kwargs[name] = value
-
-    # Legacy handlers: single ``headers`` parameter (positional or keyword).
-    if not kwargs:
-        params = [
-            p
-            for p in sig.parameters.values()
-            if p.kind
-            in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                inspect.Parameter.KEYWORD_ONLY,
-            )
-        ]
-        if len(params) == 1 and params[0].name == "headers":
-            kwargs["headers"] = headers
+            kwargs[name] = candidates[name]
 
     return kwargs
 

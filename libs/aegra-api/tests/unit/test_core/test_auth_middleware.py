@@ -424,19 +424,38 @@ class TestAuthenticateHandlerInjection:
         assert kwargs["headers"]["authorization"] == "Bearer tok"
 
     def test_kwargs_path_method_included_when_declared(self):
-        seen: dict = {}
-
         async def authenticate(method: str, path: str, headers: dict) -> dict:
-            seen["method"] = method
-            seen["path"] = path
-            seen["headers"] = headers
             return {"identity": "x"}
 
         conn = self._mock_connection(path="/assistants/search", method="POST")
         kwargs = _authenticate_kwargs_for_handler(conn, authenticate)
-        assert kwargs["method"] == "POST"
-        assert kwargs["path"] == "/assistants/search"
-        assert "headers" in kwargs
+        assert kwargs == {
+            "method": "POST",
+            "path": "/assistants/search",
+            "headers": {"authorization": "Bearer tok"},
+        }
+
+    def test_request_and_body_not_injected(self):
+        """``request`` / ``body`` are intentionally unsupported in middleware auth."""
+
+        async def authenticate(request, body: dict, headers: dict) -> dict:
+            return {"identity": "x"}
+
+        conn = self._mock_connection()
+        kwargs = _authenticate_kwargs_for_handler(conn, authenticate)
+        assert set(kwargs.keys()) == {"headers"}
+
+    def test_path_params_and_query_params_not_injected(self):
+        async def authenticate(
+            path_params: dict,
+            query_params: dict,
+            headers: dict,
+        ) -> dict:
+            return {"identity": "x"}
+
+        conn = self._mock_connection()
+        kwargs = _authenticate_kwargs_for_handler(conn, authenticate)
+        assert set(kwargs.keys()) == {"headers"}
 
     @pytest.mark.asyncio
     async def test_call_authenticate_handler_invokes_with_path(self):

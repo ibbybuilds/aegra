@@ -20,7 +20,7 @@ from aegra_api.core.auth_middleware import (
 
 
 def _http_connection(headers: dict) -> Mock:
-    """Minimal HTTPConnection mock with fields used by auth injection."""
+    """Build a minimal ``HTTPConnection`` mock for auth middleware tests."""
     mock_conn = Mock(spec=HTTPConnection)
     mock_conn.headers = headers
     mock_conn.scope = {"method": "GET", "path_params": {}}
@@ -365,6 +365,7 @@ class TestLangGraphAuthBackend:
         captured: dict = {}
 
         async def authenticate(headers: dict) -> dict:
+            """Record headers passed by the auth backend."""
             captured["headers"] = headers
             return {"identity": "user-123"}
 
@@ -401,6 +402,7 @@ class TestAuthenticateHandlerInjection:
         path_params: dict | None = None,
         headers: dict | None = None,
     ) -> Mock:
+        """Build an ``HTTPConnection`` mock with path/method scope fields."""
         mock_conn = Mock(spec=HTTPConnection)
         mock_conn.url = Mock()
         mock_conn.url.path = path
@@ -416,6 +418,7 @@ class TestAuthenticateHandlerInjection:
 
     def test_kwargs_headers_only_signature(self):
         async def authenticate(headers: dict) -> dict:
+            """Headers-only handler stub."""
             return {"identity": "x"}
 
         conn = self._mock_connection()
@@ -425,6 +428,7 @@ class TestAuthenticateHandlerInjection:
 
     def test_kwargs_path_method_included_when_declared(self):
         async def authenticate(method: str, path: str, headers: dict) -> dict:
+            """Handler stub that declares path and method."""
             return {"identity": "x"}
 
         conn = self._mock_connection(path="/assistants/search", method="POST")
@@ -439,6 +443,7 @@ class TestAuthenticateHandlerInjection:
         """``request`` / ``body`` are intentionally unsupported in middleware auth."""
 
         async def authenticate(request, body: dict, headers: dict) -> dict:
+            """Handler stub declaring unsupported request/body params."""
             return {"identity": "x"}
 
         conn = self._mock_connection()
@@ -451,6 +456,7 @@ class TestAuthenticateHandlerInjection:
             query_params: dict,
             headers: dict,
         ) -> dict:
+            """Handler stub declaring unsupported path/query params."""
             return {"identity": "x"}
 
         conn = self._mock_connection()
@@ -462,6 +468,7 @@ class TestAuthenticateHandlerInjection:
         captured: dict = {}
 
         async def authenticate(method: str, path: str, headers: dict) -> dict:
+            """Capture path/method from injected kwargs."""
             captured["method"] = method
             captured["path"] = path
             return {"identity": "user-1"}
@@ -477,6 +484,7 @@ class TestAuthenticateHandlerInjection:
         captured: dict = {}
 
         async def authenticate(method: str, path: str, headers: dict) -> dict:
+            """Capture path from backend authenticate flow."""
             captured["path"] = path
             return {"identity": "user-1"}
 

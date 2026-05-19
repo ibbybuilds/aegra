@@ -42,6 +42,7 @@ def _headers_from_connection(conn: HTTPConnection) -> dict[str, str]:
 
 
 def _authorization_from_headers(headers: dict[str, str]) -> str | None:
+    """Return the ``Authorization`` header value, if present."""
     return headers.get("authorization") or headers.get("Authorization")
 
 

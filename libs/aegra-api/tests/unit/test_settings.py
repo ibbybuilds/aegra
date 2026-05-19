@@ -136,8 +136,9 @@ class TestDatabaseURLSupport:
         assert db.database_url == "postgresql+asyncpg://rdsuser:rdspass@rds.aws.com:5432/prod"
         assert db.database_url_sync == "postgresql://rdsuser:rdspass@rds.aws.com:5432/prod"
 
-    def test_query_params_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """SSL and other query params from DATABASE_URL are preserved."""
+    def test_query_params_preserved_for_sync_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Sync URL (psycopg) preserves libpq query params verbatim — psycopg
+        speaks libpq natively."""
         monkeypatch.setenv(
             "DATABASE_URL",
             "postgresql://user:pass@host:5432/db?sslmode=require&connect_timeout=10",
@@ -145,11 +146,79 @@ class TestDatabaseURLSupport:
 
         db = DatabaseSettings(_env_file=None)
 
-        assert "sslmode=require" in db.database_url
-        assert "connect_timeout=10" in db.database_url
         assert "sslmode=require" in db.database_url_sync
-        assert db.database_url.startswith("postgresql+asyncpg://")
+        assert "connect_timeout=10" in db.database_url_sync
         assert db.database_url_sync.startswith("postgresql://")
+
+    def test_async_url_translates_sslmode_require_to_ssl_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """asyncpg rejects ``sslmode`` as an unknown kwarg. We translate it
+        to ``ssl=true`` so the async engine starts cleanly when users paste
+        a libpq-style URL (the common shape from RDS/Azure/GCP consoles)."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://user:pass@host:5432/db?sslmode=require",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "sslmode" not in db.database_url
+        assert "ssl=true" in db.database_url
+        assert db.database_url.startswith("postgresql+asyncpg://")
+
+    @pytest.mark.parametrize(
+        ("sslmode", "expected_ssl"),
+        [
+            ("disable", "false"),
+            ("allow", "false"),
+            ("prefer", "false"),
+            ("require", "true"),
+            ("verify-ca", "true"),
+            ("verify-full", "true"),
+        ],
+    )
+    def test_async_url_translates_all_sslmode_values(
+        self, monkeypatch: pytest.MonkeyPatch, sslmode: str, expected_ssl: str
+    ) -> None:
+        monkeypatch.setenv("DATABASE_URL", f"postgresql://u:p@h:5432/db?sslmode={sslmode}")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert f"ssl={expected_ssl}" in db.database_url
+        assert "sslmode" not in db.database_url
+
+    def test_async_url_strips_other_libpq_only_params(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``channel_binding`` / ``sslcert`` etc. also crash asyncpg as unknown
+        kwargs. Strip them from the async URL; users needing them must set
+        PG* env vars instead (psycopg sync path still sees the libpq form)."""
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://u:p@h:5432/db?channel_binding=require&sslcert=/x.pem&connect_timeout=10",
+        )
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "channel_binding" not in db.database_url
+        assert "sslcert" not in db.database_url
+        # Non-libpq-only params are preserved.
+        assert "connect_timeout=10" in db.database_url
+
+    def test_async_url_unknown_sslmode_is_dropped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Unknown sslmode values are dropped (with a warning) rather than
+        forwarded to asyncpg, which would crash on the unknown kwarg."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h:5432/db?sslmode=bogus")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "sslmode" not in db.database_url
+        assert "ssl=" not in db.database_url
+
+    def test_async_url_no_query_params_untouched(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h:5432/db")
+
+        db = DatabaseSettings(_env_file=None)
+
+        assert "?" not in db.database_url
+        assert db.database_url.endswith("/db")
 
     def test_driver_prefix_normalized(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Driver prefix is always normalized regardless of input."""
@@ -310,7 +379,10 @@ class TestMultiHostDatabaseURL:
         assert db.database_url_sync == "postgresql://user:pass@h1:5432,h2:5433/db"
 
     def test_multihost_preserves_query_params(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Query params like target_session_attrs are preserved after conversion."""
+        """Multi-host conversion plays nicely with the libpq → asyncpg
+        translation layer: hosts/ports preserved verbatim, ``sslmode`` rewritten
+        to ``ssl``, and libpq-only kwargs (``target_session_attrs``) stripped
+        because asyncpg rejects them."""
         monkeypatch.setenv(
             "DATABASE_URL",
             "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write&sslmode=require",
@@ -322,8 +394,13 @@ class TestMultiHostDatabaseURL:
         assert url.startswith("postgresql+asyncpg://user:pass@/db?")
         assert "host=h1,h2" in url
         assert "port=5432,5432" in url
-        assert "target_session_attrs=read-write" in url
-        assert "sslmode=require" in url
+        assert "ssl=true" in url
+        # libpq-only kwargs that asyncpg would reject are stripped.
+        assert "target_session_attrs" not in url
+        assert "sslmode" not in url
+        # Sync (psycopg) URL keeps the libpq spelling — psycopg accepts it.
+        assert "target_session_attrs=read-write" in db.database_url_sync
+        assert "sslmode=require" in db.database_url_sync
 
     @pytest.mark.parametrize(
         ("env_url", "expected_hosts", "expected_ports"),
@@ -416,7 +493,11 @@ class TestMultiHostDatabaseURL:
         assert db.database_url == "postgresql+asyncpg:///db?host=h1,h2&port=5432,5432"
 
     def test_multihost_rewritten_url_parses_with_sqlalchemy(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Asyncpg multi-host URL must parse via SQLAlchemy (alembic env path)."""
+        """Asyncpg multi-host URL must parse via SQLAlchemy (alembic env path).
+
+        ``target_session_attrs`` is libpq-only and stripped from the async URL
+        (asyncpg would reject it as an unknown kwarg). The sync URL retains it.
+        """
         monkeypatch.setenv(
             "DATABASE_URL",
             "postgresql://user:pass@h1:5432,h2:5432/db?target_session_attrs=read-write",
@@ -430,7 +511,7 @@ class TestMultiHostDatabaseURL:
         # Multi-host details live in query params, not in url.host.
         assert url.query["host"] == "h1,h2"
         assert url.query["port"] == "5432,5432"
-        assert url.query["target_session_attrs"] == "read-write"
+        assert "target_session_attrs" not in url.query
 
     def test_database_url_sync_preserves_libpq_multihost(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """database_url_sync must preserve libpq comma-host syntax (psycopg consumers)."""

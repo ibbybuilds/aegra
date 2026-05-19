@@ -165,10 +165,11 @@ Two ways to configure the database connection:
 <Tabs>
   <Tab title="Connection string (recommended for production)">
     ```bash
-    DATABASE_URL=postgresql://user:password@host:5432/mydb?sslmode=require
+    DATABASE_URL=postgresql://user:password@host:5432/mydb
+    PGSSLMODE=require
     ```
 
-    The URL is used directly by both SQLAlchemy and LangGraph with the appropriate driver prefix applied automatically. Query parameters (like `?sslmode=require`) are preserved.
+    The URL is used directly by both SQLAlchemy and LangGraph with the appropriate driver prefix applied automatically. Set `PGSSLMODE` as an env var for managed Postgres (RDS, Azure, GCP) that requires TLS; both drivers read it. See [TLS/SSL options](/reference/environment-variables#tls--ssl) for details, including how `?sslmode=` in the URL is handled.
   </Tab>
   <Tab title="Individual fields">
     Used when `DATABASE_URL` is not set:

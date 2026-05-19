@@ -1,12 +1,43 @@
+import logging
 import re
 from typing import Annotated
-from urllib.parse import quote_plus
+from urllib.parse import parse_qsl, quote_plus, urlencode
 
 from pydantic import BeforeValidator, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aegra_api import __version__
 from aegra_api.constants import MULTIHOST_URL_RE
+
+_logger = logging.getLogger(__name__)
+
+# libpq sslmode → asyncpg ssl query param. asyncpg has no analog for
+# "allow"/"prefer" (try-then-fallback) — both map to off, matching the
+# safer-of-the-two interpretation for an application server.
+_SSLMODE_TO_ASYNCPG: dict[str, str] = {
+    "disable": "false",
+    "allow": "false",
+    "prefer": "false",
+    "require": "true",
+    "verify-ca": "true",
+    "verify-full": "true",
+}
+
+# libpq params that asyncpg rejects as unknown kwargs. We strip these from
+# the async URL — users who need them must use PG* env vars or a custom
+# SSLContext, neither of which fits the URL-only fast path.
+_LIBPQ_ONLY_PARAMS: frozenset[str] = frozenset(
+    {
+        "sslmode",
+        "sslcert",
+        "sslkey",
+        "sslrootcert",
+        "sslcrl",
+        "channel_binding",
+        "gssencmode",
+        "target_session_attrs",
+    }
+)
 
 
 def parse_lower(v: str) -> str:
@@ -116,6 +147,64 @@ class DatabaseSettings(EnvBase):
         return re.sub(r"^postgres(?:ql)?(\+\w+)?://", f"{target_scheme}://", url)
 
     @staticmethod
+    def _translate_libpq_params_for_asyncpg(url: str) -> str:
+        """Strip libpq-only query params from an asyncpg URL.
+
+        SQLAlchemy's asyncpg dialect forwards every URL query param as a
+        kwarg to ``asyncpg.connect()``. asyncpg rejects libpq spellings
+        (``sslmode``, ``channel_binding``, ``sslcert``, …) as unknown
+        kwargs, so a URL copied from any libpq-aware tool crashes at
+        startup. We translate ``sslmode`` to asyncpg's ``ssl`` query param
+        and drop the rest with a warning.
+
+        psycopg (sync) accepts libpq syntax natively — ``database_url_sync``
+        is not affected.
+        """
+        # String-splice on "?" rather than urlsplit/urlunsplit: stdlib drops
+        # the "//" authority marker when netloc is empty (e.g. multi-host
+        # URLs with no userinfo), corrupting ``postgresql+asyncpg:///db``
+        # into ``postgresql+asyncpg:/db``.
+        head, sep, query = url.partition("?")
+        if not sep:
+            return url
+
+        rewritten: list[tuple[str, str]] = []
+        dropped: list[str] = []
+
+        for key, value in parse_qsl(query, keep_blank_values=True):
+            if key == "sslmode":
+                mapped = _SSLMODE_TO_ASYNCPG.get(value.lower())
+                if mapped is None:
+                    _logger.warning("Unknown sslmode=%r in DATABASE_URL; ignoring", value)
+                    continue
+                if value.lower() in ("verify-ca", "verify-full"):
+                    _logger.warning(
+                        "DATABASE_URL sslmode=%s requires an SSLContext for cert verification; "
+                        "asyncpg will negotiate TLS but skip the verify-* check. "
+                        "Use PGSSLMODE + PGSSLROOTCERT env vars for full verification.",
+                        value,
+                    )
+                rewritten.append(("ssl", mapped))
+            elif key in _LIBPQ_ONLY_PARAMS:
+                dropped.append(key)
+            else:
+                rewritten.append((key, value))
+
+        if dropped:
+            _logger.warning(
+                "DATABASE_URL contains libpq-only params %s that asyncpg cannot accept; "
+                "set them via PG* env vars instead.",
+                sorted(dropped),
+            )
+
+        if not rewritten:
+            return head
+        # safe=",[]:" preserves the comma-separated host/port lists and
+        # IPv6 literals (``[::1]``) produced by _to_sqlalchemy_multihost —
+        # asyncpg's URL parser expects these raw, not percent-encoded.
+        return f"{head}?{urlencode(rewritten, safe=',[]:')}"
+
+    @staticmethod
     def _to_sqlalchemy_multihost(url: str) -> str:
         """Convert a libpq multi-host URL to SQLAlchemy query-param format.
 
@@ -180,7 +269,8 @@ class DatabaseSettings(EnvBase):
         """
         if self.DATABASE_URL:
             url = self._normalize_scheme(self.DATABASE_URL, "postgresql+asyncpg")
-            return self._to_sqlalchemy_multihost(url)
+            url = self._to_sqlalchemy_multihost(url)
+            return self._translate_libpq_params_for_asyncpg(url)
         return (
             f"postgresql+asyncpg://{quote_plus(self.POSTGRES_USER)}:{quote_plus(self.POSTGRES_PASSWORD)}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"

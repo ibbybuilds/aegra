@@ -27,8 +27,12 @@ depends_on = None
 def upgrade() -> None:
     """Create initial database schema for Aegra Agent Protocol server."""
 
-    # Create PostgreSQL extensions
-    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
+    # UUID generation uses gen_random_uuid() (Postgres 13+ core) — no
+    # extension needed. Earlier revisions of this migration created the
+    # "uuid-ossp" extension explicitly, but it is blocked on managed
+    # services (e.g. Azure Database for PostgreSQL) that restrict the
+    # extension allowlist. Deployments that already have it installed
+    # keep it; nothing here depends on it any longer.
 
     # Create assistant table
     op.create_table(
@@ -36,7 +40,7 @@ def upgrade() -> None:
         sa.Column(
             "assistant_id",
             sa.Text(),
-            server_default=sa.text("public.uuid_generate_v4()::text"),
+            server_default=sa.text("gen_random_uuid()::text"),
             nullable=False,
         ),
         sa.Column("name", sa.Text(), nullable=False),
@@ -114,7 +118,7 @@ def upgrade() -> None:
         sa.Column(
             "run_id",
             sa.Text(),
-            server_default=sa.text("public.uuid_generate_v4()::text"),
+            server_default=sa.text("gen_random_uuid()::text"),
             nullable=False,
         ),
         sa.Column("thread_id", sa.Text(), nullable=False),

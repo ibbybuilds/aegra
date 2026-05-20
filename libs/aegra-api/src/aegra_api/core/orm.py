@@ -92,10 +92,8 @@ Base = declarative_base()
 class Assistant(Base):
     __tablename__ = "assistant"
 
-    # TEXT PK with DB-side generation using uuid_generate_v4()::text
-    assistant_id: Mapped[str] = mapped_column(
-        Text, primary_key=True, server_default=text("public.uuid_generate_v4()::text")
-    )
+    # gen_random_uuid() is in Postgres 13+ core; no extension needed.
+    assistant_id: Mapped[str] = mapped_column(Text, primary_key=True, server_default=text("gen_random_uuid()::text"))
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     graph_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -155,8 +153,8 @@ class Thread(Base):
 class Run(Base):
     __tablename__ = "runs"
 
-    # TEXT PK with DB-side generation using uuid_generate_v4()::text
-    run_id: Mapped[str] = mapped_column(Text, primary_key=True, server_default=text("public.uuid_generate_v4()::text"))
+    # gen_random_uuid() is in Postgres 13+ core; no extension needed.
+    run_id: Mapped[str] = mapped_column(Text, primary_key=True, server_default=text("gen_random_uuid()::text"))
     thread_id: Mapped[str] = mapped_column(Text, ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False)
     assistant_id: Mapped[str | None] = mapped_column(Text, ForeignKey("assistant.assistant_id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(Text, server_default=text("'pending'"))

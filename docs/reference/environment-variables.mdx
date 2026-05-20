@@ -25,10 +25,31 @@ Two ways to configure the database connection:
 ### Option 1: Connection string
 
 ```bash
-DATABASE_URL=postgresql://user:password@host:5432/aegra?sslmode=require
+DATABASE_URL=postgresql://user:password@host:5432/aegra
 ```
 
-The URL is used by both SQLAlchemy (async) and LangGraph (sync) with the appropriate driver prefix applied automatically. Query parameters are preserved.
+The URL is used by both SQLAlchemy (async) and LangGraph (sync) with the appropriate driver prefix applied automatically.
+
+#### TLS / SSL
+
+For managed Postgres (RDS, Azure, GCP CloudSQL, etc.) that requires TLS, set `PGSSLMODE` as an environment variable rather than embedding `?sslmode=` in the URL:
+
+```bash
+DATABASE_URL=postgresql://user:password@host:5432/aegra
+PGSSLMODE=require
+```
+
+Both drivers Aegra uses (psycopg and asyncpg) read `PGSSLMODE` from the environment.
+
+If you keep `?sslmode=...` in the URL (e.g. when pasting a connection string from a cloud console), Aegra translates it for the async driver automatically:
+
+| `sslmode` | Behavior on the async path |
+|---|---|
+| `disable`, `allow`, `prefer` | TLS off |
+| `require` | TLS on |
+| `verify-ca`, `verify-full` | TLS on, but cert verification requires `PGSSLMODE` + `PGSSLROOTCERT` env vars — the URL form cannot configure an `SSLContext` |
+
+Other libpq-only parameters (`sslcert`, `sslkey`, `sslrootcert`, `channel_binding`, `gssencmode`, `target_session_attrs`) are stripped from the async URL with a warning. Use the matching `PG*` env vars instead — those are honored by both drivers.
 
 ### Option 2: Individual fields
 
